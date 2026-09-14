@@ -101,7 +101,6 @@ enum kernel_test_scenario {
     KERNEL_TEST_NETWORK_MISSING_LINUX_CAT,
     KERNEL_TEST_NETWORK_FILES,
     KERNEL_TEST_NETWORK_NOTES,
-    KERNEL_TEST_NETWORK_MEDIA_EDITOR,
     KERNEL_TEST_NETWORK_PERSISTENCE,
     KERNEL_TEST_NETWORK_SOCKET_ISOLATION,
     KERNEL_TEST_NETWORK_TCP_LISTEN,
@@ -116,7 +115,6 @@ enum kernel_test_scenario {
     KERNEL_TEST_NATIVE,
     KERNEL_TEST_NATIVE_LUA,
     KERNEL_TEST_NATIVE_SQLITE,
-    KERNEL_TEST_NATIVE_CANVAS,
     KERNEL_TEST_NATIVE_NETWORK,
     KERNEL_TEST_NATIVE_RUST,
     KERNEL_TEST_NATIVE_CRASH,
@@ -191,7 +189,6 @@ _Noreturn void kernel_test_complete_nvidia(void);
 _Noreturn void kernel_test_complete_native(void);
 _Noreturn void kernel_test_complete_native_lua(void);
 _Noreturn void kernel_test_complete_native_sqlite(void);
-_Noreturn void kernel_test_complete_native_canvas(void);
 _Noreturn void kernel_test_complete_native_network(void);
 _Noreturn void kernel_test_complete_native_rust(void);
 _Noreturn void kernel_test_complete_native_crash(void);

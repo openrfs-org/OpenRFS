@@ -14,18 +14,6 @@ concurrency:
     cancel-in-progress: true
 
 jobs:
-    media-editor-foundation:
-        name: media-editor-foundation
-        runs-on: ubuntu-24.04
-        timeout-minutes: 25
-        steps:
-            - name: Check out source
-              uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-            - name: Install the bare-metal Rust target
-              run: rustup target add x86_64-unknown-none
-            - name: Verify the Media Editor foundation
-              run: make -C userspace/media-editor verify
-
     build-and-boot:
         name: build-and-boot
         runs-on: ubuntu-24.04
@@ -76,9 +64,6 @@ jobs:
                       "phipia-files-minimized.png",
                       "phipia-files-restored.png",
                       "phipia-notes-formatted.png",
-                      "phipia-paint-working.png",
-                      "phipia-media-editor.png",
-                      "phipia-media-editor-exported.png",
                       "phipia-settings.png",
                       "phipia-store.png",
                       "phipia-task-manager.png",
@@ -97,13 +82,7 @@ jobs:
                       raise SystemExit(f"UI recording is not exact: {duration}")
                   report = json.loads((captures / "fat32-report.json").read_text())
                   names = {item["path"] for item in report["files"]}
-                  # QEMU deliberately has no webcam source. Camera's real
-                  # publisher/snapshot contract is exercised by make verify;
-                  # the UI must not invent PHOTO00.BMP without a device.
-                  for name in (
-                      "NOTES.TXT", "MEDIAEDT.PHI", "PHIPMED.PHI",
-                      "EXPORT.BMP",
-                  ):
+                  for name in ("NOTES.TXT",):
                       if name not in names:
                           raise SystemExit(f"missing retained guest artifact: {name}")
                   PY

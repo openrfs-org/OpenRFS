@@ -35,7 +35,6 @@ STORAGE = {
     "network-missing-linux-cat",
     "network-files",
     "network-notes",
-    "network-media-editor",
     "network-persistence",
     "network-native",
     "native-https",

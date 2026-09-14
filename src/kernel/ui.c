@@ -3,15 +3,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <phipia/app_icons.h>
 #include <phipia/boot_ledger.h>
-#include <phipia/camera.h>
 #include <phipia/clock.h>
 #include <phipia/console.h>
 #include <phipia/cursor.h>
 #include <phipia/cpu.h>
 #include <phipia/dialog.h>
 #include <phipia/dock3d.h>
-#include <phipia/editor.h>
 #include <phipia/explorer.h>
 #include <phipia/framebuffer.h>
 #include <phipia/fat32_fs.h>
@@ -20,14 +19,11 @@
 #include <phipia/memory.h>
 #include <phipia/network.h>
 #include <phipia/notes.h>
-#include <phipia/paint.h>
 #include <phipia/pci.h>
-#include <phipia/phipia_camera.h>
 #include <phipia/pointer.h>
 #include <phipia/rtc.h>
 #include <phipia/screen.h>
 #include <phipia/settings.h>
-#include <phipia/media_editor_icon.h>
 #include <phipia/store.h>
 #include <phipia/taskbar.h>
 #include <phipia/taskmgr.h>
@@ -56,7 +52,7 @@
 #define UI_HERO_MAX_WIDTH 640U
 #define UI_HERO_HEIGHT 388U
 #define UI_HERO_TITLE_HEIGHT 24U
-#define UI_DOCK_WIDTH 652U
+#define UI_DOCK_WIDTH 418U
 #define UI_DOCK_ITEM_WIDTH 70U
 #define UI_DOCK_ITEM_HEIGHT 98U
 #define UI_DOCK_GAP 8U
@@ -65,24 +61,8 @@
 #define UI_FONT_ASCENT 15U
 #define UI_FONT_DESCENT 4U
 #define UI_PANEL_TITLE_HEIGHT 26U
-#define UI_MEDIA_SOURCE_MAX_CLIPS 6U
-#define UI_MEDIA_SOURCE_PATH_BYTES 64U
-#define UI_MEDIA_SOURCE_PROJECT_BYTES 424U
-#define UI_MEDIA_PROJECT_BYTES \
-    (16U + EDITOR_MAX_ITEMS * (16U + EDITOR_TEXT_BYTES))
-#define UI_MEDIA_SOURCE_PREVIEW_WIDTH 320U
-#define UI_MEDIA_SOURCE_PREVIEW_HEIGHT 180U
-#define UI_MEDIA_SOURCE_BMP_HEADER_BYTES 54U
-#define UI_MEDIA_SOURCE_BMP_MAX_WIDTH 1920U
-#define UI_MEDIA_SOURCE_BMP_MAX_HEIGHT 1080U
-#define UI_CAMERA_CAPTURE_WIDTH 320U
-#define UI_CAMERA_CAPTURE_HEIGHT 180U
-#define UI_CAMERA_BMP_HEADER_BYTES 54U
-#define UI_PAINT_BMP_HEADER_BYTES 54U
-#define UI_SETTINGS_CATEGORY_COUNT 12U
+#define UI_SETTINGS_CATEGORY_COUNT 11U
 #define UI_WALLPAPER_COUNT 14U
-#define UI_CAMERA_SCENE_WIDTH 704U
-#define UI_CAMERA_SCENE_HEIGHT 424U
 #define UI_SPRING_FRAME_NS UINT64_C(16000000)
 #define UI_REDRAW_DIAGNOSTIC_TILE 16U
 #define UI_REDRAW_DIAGNOSTIC_COLUMNS \
@@ -105,9 +85,6 @@
 static const char label_files[] = "Files";
 static const char label_terminal[] = "Phip";
 static const char label_notes[] = "Notes";
-static const char label_media_editor[] = "Media Editor";
-static const char label_camera[] = "Camera";
-static const char label_canvas[] = "Paint";
 static const char label_store[] = "Store";
 static const char label_settings[] = "Settings";
 
@@ -132,10 +109,6 @@ static uint8_t logo_alpha[UI_LOGO_PIXELS];
 static uint8_t logo_red_shift;
 static uint8_t logo_green_shift;
 static uint8_t logo_blue_shift;
-static uint32_t media_editor_icon_pixels[80U * 80U];
-static uint8_t media_editor_icon_alpha[80U * 80U];
-static uint32_t media_editor_icon_width;
-static uint32_t media_editor_icon_height;
 static uint32_t settings_icon_pixels[80U * 80U];
 static uint8_t settings_icon_alpha[80U * 80U];
 static uint32_t settings_icon_width;
@@ -148,14 +121,6 @@ static uint32_t terminal_icon_pixels[80U * 80U];
 static uint8_t terminal_icon_alpha[80U * 80U];
 static uint32_t terminal_icon_width;
 static uint32_t terminal_icon_height;
-static uint32_t camera_icon_pixels[80U * 80U];
-static uint8_t camera_icon_alpha[80U * 80U];
-static uint32_t camera_icon_width;
-static uint32_t camera_icon_height;
-static uint32_t canvas_icon_pixels[80U * 80U];
-static uint8_t canvas_icon_alpha[80U * 80U];
-static uint32_t canvas_icon_width;
-static uint32_t canvas_icon_height;
 static uint32_t store_icon_pixels[80U * 80U];
 static uint8_t store_icon_alpha[80U * 80U];
 static uint32_t store_icon_width;
@@ -173,9 +138,6 @@ static uint8_t settings_category_icon_alpha[256U * 192U];
 static uint32_t settings_category_icon_width;
 static uint32_t settings_category_icon_height;
 static uint32_t wallpaper_pixels[1024U * 768U];
-static uint32_t camera_scene_pixels[
-    UI_CAMERA_SCENE_WIDTH * UI_CAMERA_SCENE_HEIGHT
-];
 static struct phipfs_list_entry file_entries[12U];
 static size_t file_entry_count;
 static char file_directory[PHIPFS_MAX_PATH + 1U] = ".";
@@ -186,22 +148,6 @@ static bool note_dirty;
 static bool note_savable = true;
 static bool terminal_welcomed;
 static char app_status[80U] = "data volume ready";
-static uint32_t media_source_clip_durations[UI_MEDIA_SOURCE_MAX_CLIPS];
-static char media_source_clip_paths[UI_MEDIA_SOURCE_MAX_CLIPS][UI_MEDIA_SOURCE_PATH_BYTES + 1U];
-static uint32_t media_source_preview_pixels[
-    UI_MEDIA_SOURCE_PREVIEW_WIDTH * UI_MEDIA_SOURCE_PREVIEW_HEIGHT
-];
-static uint8_t media_source_bmp_row[UI_MEDIA_SOURCE_BMP_MAX_WIDTH * 3U + 4U];
-static uint32_t media_source_preview_width;
-static uint32_t media_source_preview_height;
-static bool media_source_preview_loaded;
-static bool media_editor_export_active;
-static uint32_t media_source_playhead;
-static uint8_t media_source_clip_count;
-static uint8_t media_source_selected_clip = UINT8_MAX;
-static bool media_source_dirty;
-static bool media_editor_dirty;
-static char media_source_status[64U] = "Project ready";
 static int8_t settings_page = -1;
 static bool dock_dark;
 static bool dock_magnification = true;
@@ -229,13 +175,6 @@ static bool window_shadows = true;
 static bool window_bevels = true;
 static bool window_title_gradient = true;
 static uint8_t desktop_wallpaper;
-static uint32_t camera_capture_count;
-static bool camera_frame_available;
-static uint64_t camera_seen_generation;
-static char camera_status[64U] = "No camera connected";
-static uint8_t camera_bmp_row[UI_CAMERA_CAPTURE_WIDTH * 3U];
-static uint8_t paint_bmp_row[PAINT_MAX_ROW_BYTES];
-static uint32_t camera_preview_row[UI_MAX_WIDTH];
 static uint8_t explorer_copy_buffer[4096U];
 static uint32_t settings_wallpaper_thumbnail_pixels[128U * 72U];
 static uint32_t dock_backdrop_pixels[UI_MAX_WIDTH * 48U];
@@ -243,10 +182,6 @@ static uint64_t redraw_tile_hashes[
     UI_REDRAW_DIAGNOSTIC_COLUMNS * UI_REDRAW_DIAGNOSTIC_ROWS
 ];
 
-static void media_editor_sync_clip(void);
-static enum phipfs_status media_editor_load(void);
-static enum phipfs_status media_editor_save(void);
-static enum phipfs_status paint_save(void);
 enum ui_anim_pending {
     UI_ANIM_PENDING_NONE = 0,
     UI_ANIM_PENDING_OPEN,
@@ -307,7 +242,6 @@ static enum ui_status draw_circle(
     struct ui_rect damage,
     uint32_t pixel
 );
-static struct ui_rect camera_preview_rect(void);
 static enum ui_status render_region(struct ui_rect damage, bool full_draw);
 static enum ui_status phipia_set_panel_frame(enum ui_panel_id panel,
     struct ui_rect frame);
@@ -809,24 +743,19 @@ enum ui_status ui_layout_build(
 
     static const enum ui_element_id ids[UI_DOCK_ITEM_COUNT] = {
         UI_ELEMENT_DOCK_FILES, UI_ELEMENT_DOCK_TERMINAL,
-        UI_ELEMENT_DOCK_NOTES, UI_ELEMENT_DOCK_MEDIA_EDITOR,
-        UI_ELEMENT_DOCK_CAMERA, UI_ELEMENT_DOCK_CANVAS,
-        UI_ELEMENT_DOCK_STORE,
+        UI_ELEMENT_DOCK_NOTES, UI_ELEMENT_DOCK_STORE,
         UI_ELEMENT_DOCK_SETTINGS
     };
     static const char *const labels[UI_DOCK_ITEM_COUNT] = {
-        label_files, label_terminal, label_notes, label_media_editor,
-        label_camera, label_canvas, label_store, label_settings
+        label_files, label_terminal, label_notes,
+        label_store, label_settings
     };
     static const enum ui_action actions[UI_DOCK_ITEM_COUNT] = {
-        UI_ACTION_OPEN_FILES, UI_ACTION_OPEN_TERMINAL, UI_ACTION_OPEN_NOTES,
-        UI_ACTION_OPEN_MEDIA_EDITOR, UI_ACTION_OPEN_CAMERA, UI_ACTION_OPEN_CANVAS,
-        UI_ACTION_OPEN_STORE,
+        UI_ACTION_OPEN_FILES, UI_ACTION_OPEN_TERMINAL, UI_ACTION_OPEN_NOTES, UI_ACTION_OPEN_STORE,
         UI_ACTION_OPEN_SETTINGS
     };
     static const enum ui_panel_id panels[UI_DOCK_ITEM_COUNT] = {
-        UI_PANEL_FILES, UI_PANEL_TERMINAL, UI_PANEL_NOTES, UI_PANEL_MEDIA_EDITOR,
-        UI_PANEL_CAMERA, UI_PANEL_PAINT, UI_PANEL_STORE, UI_PANEL_SETTINGS
+        UI_PANEL_FILES, UI_PANEL_TERMINAL, UI_PANEL_NOTES, UI_PANEL_STORE, UI_PANEL_SETTINGS
     };
 
     for (size_t index = 0U; index < UI_DOCK_ITEM_COUNT; ++index) {
@@ -920,8 +849,7 @@ enum ui_status ui_layout_validate(const struct ui_layout *layout)
         if (item->id <= UI_ELEMENT_NONE || item->id >= UI_ELEMENT_COUNT ||
             item->action <= UI_ACTION_NONE || item->action >= UI_ACTION_COUNT ||
             item->panel >= UI_PANEL_COUNT ||
-            (item->panel == UI_PANEL_NONE &&
-                item->action != UI_ACTION_OPEN_CANVAS) ||
+            item->panel == UI_PANEL_NONE ||
             item->label == NULL) {
             return UI_STATUS_BAD_ELEMENT;
         }
@@ -1589,41 +1517,13 @@ static enum ui_status draw_icon(
                 page.width - 8U, 1U }, damage,
                 framebuffer_pack(0xB8U, 0xD1U, 0xDCU));
         }
-    } else if (id == UI_ELEMENT_DOCK_MEDIA_EDITOR) {
-        uint32_t mark_width = bounds.width;
-        uint32_t mark_height = mark_width * media_editor_icon_height /
-            media_editor_icon_width;
-
-        if (mark_height > bounds.height) {
-            mark_height = bounds.height;
-            mark_width = mark_height * media_editor_icon_width /
-                media_editor_icon_height;
-        }
-        status = draw_alpha_image((struct ui_rect){
-            bounds.x + (bounds.width - mark_width) / 2U,
-            bounds.y + (bounds.height - mark_height) / 2U,
-            mark_width, mark_height
-        }, damage, media_editor_icon_pixels, media_editor_icon_alpha,
-            media_editor_icon_width, media_editor_icon_height);
-    } else if (id == UI_ELEMENT_DOCK_CAMERA ||
-            id == UI_ELEMENT_DOCK_CANVAS ||
-            id == UI_ELEMENT_DOCK_STORE ||
+    } else if (id == UI_ELEMENT_DOCK_STORE ||
             id == UI_ELEMENT_DOCK_SETTINGS) {
-        const bool camera = id == UI_ELEMENT_DOCK_CAMERA;
-        const bool drawing = id == UI_ELEMENT_DOCK_CANVAS;
         const bool store = id == UI_ELEMENT_DOCK_STORE;
-        const uint32_t *icon_pixels = camera ? camera_icon_pixels :
-            (drawing ? canvas_icon_pixels :
-                (store ? store_icon_pixels : settings_icon_pixels));
-        const uint8_t *icon_alpha = camera ? camera_icon_alpha :
-            (drawing ? canvas_icon_alpha :
-                (store ? store_icon_alpha : settings_icon_alpha));
-        const uint32_t source_width = camera ? camera_icon_width :
-            (drawing ? canvas_icon_width :
-                (store ? store_icon_width : settings_icon_width));
-        const uint32_t source_height = camera ? camera_icon_height :
-            (drawing ? canvas_icon_height :
-                (store ? store_icon_height : settings_icon_height));
+        const uint32_t *icon_pixels = store ? store_icon_pixels : settings_icon_pixels;
+        const uint8_t *icon_alpha = store ? store_icon_alpha : settings_icon_alpha;
+        const uint32_t source_width = store ? store_icon_width : settings_icon_width;
+        const uint32_t source_height = store ? store_icon_height : settings_icon_height;
         uint32_t mark_width = bounds.width;
         uint32_t mark_height = mark_width * source_height / source_width;
 
@@ -2038,18 +1938,6 @@ static uint8_t dock_icon_alpha_at(
         alpha = terminal_icon_alpha;
         source_width = terminal_icon_width;
         source_height = terminal_icon_height;
-    } else if (id == UI_ELEMENT_DOCK_MEDIA_EDITOR) {
-        alpha = media_editor_icon_alpha;
-        source_width = media_editor_icon_width;
-        source_height = media_editor_icon_height;
-    } else if (id == UI_ELEMENT_DOCK_CAMERA) {
-        alpha = camera_icon_alpha;
-        source_width = camera_icon_width;
-        source_height = camera_icon_height;
-    } else if (id == UI_ELEMENT_DOCK_CANVAS) {
-        alpha = canvas_icon_alpha;
-        source_width = canvas_icon_width;
-        source_height = canvas_icon_height;
     } else if (id == UI_ELEMENT_DOCK_STORE) {
         alpha = store_icon_alpha;
         source_width = store_icon_width;
@@ -2335,25 +2223,6 @@ static bool entry_path(const char *name, char *path)
     return at != 0U && at <= PHIPFS_MAX_PATH;
 }
 
-static bool file_is_internal(const char *name)
-{
-    static const char *const internal[] = {
-        "MEDIAEDT.PHI", "MEDTEMP.PHI", "MEDBACK.PHI",
-        "STUOUT.BMP", "OUTBACK.BMP", "PNTTEMP.BMP", "PNTBACK.BMP"
-    };
-
-    if (!strings_equal(file_directory, ".")) {
-        return false;
-    }
-    for (size_t index = 0U; index < sizeof(internal) / sizeof(internal[0]);
-         ++index) {
-        if (strings_equal(name, internal[index])) {
-            return true;
-        }
-    }
-    return false;
-}
-
 static uint8_t ascii_lower(uint8_t value)
 {
     return value >= (uint8_t)'A' && value <= (uint8_t)'Z' ?
@@ -2492,17 +2361,6 @@ static enum phipfs_status files_refresh(void)
     const enum phipfs_status status = phipfs_list(PHIPFS_VOLUME_DATA,
         file_directory, file_entries,
         sizeof(file_entries) / sizeof(file_entries[0]), &file_entry_count);
-
-    if (status == PHIPFS_STATUS_OK) {
-        size_t visible = 0U;
-
-        for (size_t index = 0U; index < file_entry_count; ++index) {
-            if (!file_is_internal(file_entries[index].name)) {
-                file_entries[visible++] = file_entries[index];
-            }
-        }
-        file_entry_count = visible;
-    }
 
     set_app_status(status == PHIPFS_STATUS_OK ?
         "data volume / fat32 / synchronized view" : "Files", status);
@@ -3022,1304 +2880,6 @@ static enum phipfs_status note_save(void)
     return status;
 }
 
-static void media_source_set_status(const char *message)
-{
-    if (!copy_string(media_source_status, sizeof(media_source_status), message)) {
-        (void)copy_string(media_source_status, sizeof(media_source_status), "Media Editor status");
-    }
-}
-
-static void media_source_reset(bool dirty)
-{
-    for (size_t index = 0U; index < UI_MEDIA_SOURCE_MAX_CLIPS; ++index) {
-        media_source_clip_durations[index] = 0U;
-        media_source_clip_paths[index][0] = '\0';
-    }
-    media_source_preview_width = 0U;
-    media_source_preview_height = 0U;
-    media_source_preview_loaded = false;
-    media_source_clip_count = 0U;
-    media_source_selected_clip = UINT8_MAX;
-    media_source_playhead = 0U;
-    media_source_dirty = dirty;
-    media_source_set_status(dirty ? "New project" : "Project ready");
-}
-
-static void media_source_store_u32(uint8_t *bytes, size_t offset, uint32_t value)
-{
-    bytes[offset] = (uint8_t)value;
-    bytes[offset + 1U] = (uint8_t)(value >> 8U);
-    bytes[offset + 2U] = (uint8_t)(value >> 16U);
-    bytes[offset + 3U] = (uint8_t)(value >> 24U);
-}
-
-static void media_source_store_u16(uint8_t *bytes, size_t offset, uint16_t value)
-{
-    bytes[offset] = (uint8_t)value;
-    bytes[offset + 1U] = (uint8_t)(value >> 8U);
-}
-
-static uint16_t media_source_load_u16(const uint8_t *bytes, size_t offset)
-{
-    return (uint16_t)((uint16_t)bytes[offset] |
-        (uint16_t)((uint16_t)bytes[offset + 1U] << 8U));
-}
-
-static uint32_t media_source_load_u32(const uint8_t *bytes, size_t offset)
-{
-    return (uint32_t)bytes[offset] |
-        (uint32_t)bytes[offset + 1U] << 8U |
-        (uint32_t)bytes[offset + 2U] << 16U |
-        (uint32_t)bytes[offset + 3U] << 24U;
-}
-
-static void media_source_encode_project(uint8_t *bytes)
-{
-    static const uint8_t magic[8U] = {
-        'P', 'H', 'I', 'P', 'M', 'E', 'D', '2'
-    };
-
-    for (size_t index = 0U; index < UI_MEDIA_SOURCE_PROJECT_BYTES; ++index) {
-        bytes[index] = 0U;
-    }
-    for (size_t index = 0U; index < sizeof(magic); ++index) {
-        bytes[index] = magic[index];
-    }
-    bytes[8U] = media_source_clip_count;
-    bytes[9U] = media_source_selected_clip;
-    media_source_store_u32(bytes, 12U, media_source_playhead);
-    for (size_t index = 0U; index < UI_MEDIA_SOURCE_MAX_CLIPS; ++index) {
-        const size_t record = 16U + index * (4U + UI_MEDIA_SOURCE_PATH_BYTES);
-
-        media_source_store_u32(bytes, record, media_source_clip_durations[index]);
-        for (size_t at = 0U; at < UI_MEDIA_SOURCE_PATH_BYTES &&
-             media_source_clip_paths[index][at] != '\0'; ++at) {
-            bytes[record + 4U + at] =
-                (uint8_t)media_source_clip_paths[index][at];
-        }
-    }
-}
-
-static bool media_source_decode_project(const uint8_t *bytes)
-{
-    static const uint8_t magic[8U] = {
-        'P', 'H', 'I', 'P', 'M', 'E', 'D', '2'
-    };
-
-    for (size_t index = 0U; index < sizeof(magic); ++index) {
-        if (bytes[index] != magic[index]) {
-            return false;
-        }
-    }
-    if (bytes[8U] > UI_MEDIA_SOURCE_MAX_CLIPS ||
-        (bytes[9U] != UINT8_MAX && bytes[9U] >= bytes[8U]) ||
-        media_source_load_u32(bytes, 12U) > 1000U) {
-        return false;
-    }
-    media_source_clip_count = bytes[8U];
-    media_source_selected_clip = bytes[9U];
-    media_source_playhead = media_source_load_u32(bytes, 12U);
-    for (size_t index = 0U; index < UI_MEDIA_SOURCE_MAX_CLIPS; ++index) {
-        const size_t record = 16U + index * (4U + UI_MEDIA_SOURCE_PATH_BYTES);
-        const uint32_t duration = media_source_load_u32(bytes, record);
-        size_t path_length = 0U;
-
-        if ((index < media_source_clip_count && (duration == 0U || duration > 1000U)) ||
-            (index >= media_source_clip_count && duration != 0U)) {
-            return false;
-        }
-        while (path_length < UI_MEDIA_SOURCE_PATH_BYTES &&
-               bytes[record + 4U + path_length] != 0U) {
-            const uint8_t character = bytes[record + 4U + path_length];
-
-            if (character < 0x20U || character > 0x7EU ||
-                character == '\\') {
-                return false;
-            }
-            media_source_clip_paths[index][path_length] = (char)character;
-            ++path_length;
-        }
-        media_source_clip_paths[index][path_length] = '\0';
-        if ((index < media_source_clip_count && path_length == 0U) ||
-            (index >= media_source_clip_count && path_length != 0U)) {
-            return false;
-        }
-        media_source_clip_durations[index] = duration;
-    }
-    return true;
-}
-
-static enum phipfs_status media_source_load_preview(const char *path);
-
-static enum phipfs_status media_source_remove_if_present(const char *path)
-{
-    struct phipfs_stat stat;
-    enum phipfs_status status = phipfs_stat_path(PHIPFS_VOLUME_DATA, path, &stat);
-
-    if (status == PHIPFS_STATUS_NOT_FOUND) {
-        return PHIPFS_STATUS_OK;
-    }
-    if (status != PHIPFS_STATUS_OK) {
-        return status;
-    }
-    return stat.directory ? PHIPFS_STATUS_IS_DIRECTORY :
-        phipfs_unlink(PHIPFS_VOLUME_DATA, path);
-}
-
-static enum phipfs_status media_source_regular_presence(
-    const char *path,
-    bool *present
-)
-{
-    struct phipfs_stat stat;
-    enum phipfs_status status;
-
-    if (present == NULL) {
-        return PHIPFS_STATUS_INVALID_ARGUMENT;
-    }
-    status = phipfs_stat_path(PHIPFS_VOLUME_DATA, path, &stat);
-    if (status == PHIPFS_STATUS_NOT_FOUND) {
-        *present = false;
-        return PHIPFS_STATUS_OK;
-    }
-    if (status != PHIPFS_STATUS_OK) {
-        return status;
-    }
-    if (stat.directory) {
-        return PHIPFS_STATUS_IS_DIRECTORY;
-    }
-    *present = true;
-    return PHIPFS_STATUS_OK;
-}
-
-static enum phipfs_status media_source_recover_project(void)
-{
-    static const char project[] = "MEDIAEDT.PHI";
-    static const char scratch[] = "MEDTEMP.PHI";
-    static const char backup[] = "MEDBACK.PHI";
-    bool primary = false;
-    bool saved = false;
-    bool staged = false;
-    bool changed = false;
-    enum phipfs_status status = media_source_regular_presence(project, &primary);
-
-    if (status == PHIPFS_STATUS_OK) {
-        status = media_source_regular_presence(backup, &saved);
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = media_source_regular_presence(scratch, &staged);
-    }
-    if (status != PHIPFS_STATUS_OK) {
-        return status;
-    }
-    if (!primary && saved) {
-        status = phipfs_rename(PHIPFS_VOLUME_DATA, backup, project);
-        changed = status == PHIPFS_STATUS_OK;
-    } else if (!primary && !saved && staged) {
-        status = phipfs_rename(PHIPFS_VOLUME_DATA, scratch, project);
-        changed = status == PHIPFS_STATUS_OK;
-        staged = status != PHIPFS_STATUS_OK;
-    } else if (primary && saved) {
-        status = media_source_remove_if_present(backup);
-        changed = status == PHIPFS_STATUS_OK;
-    }
-    if (status == PHIPFS_STATUS_OK && staged) {
-        status = media_source_remove_if_present(scratch);
-        changed = changed || status == PHIPFS_STATUS_OK;
-    }
-    if (status == PHIPFS_STATUS_OK && changed) {
-        status = phipfs_sync(PHIPFS_VOLUME_DATA);
-    }
-    return status;
-}
-
-static enum phipfs_status media_source_load(void)
-{
-    static const char project[] = "MEDIAEDT.PHI";
-    uint8_t bytes[UI_MEDIA_SOURCE_PROJECT_BYTES];
-    struct phipfs_stat stat;
-    phipfs_handle handle;
-    size_t read_bytes = 0U;
-    enum phipfs_status status = media_source_recover_project();
-
-    media_source_reset(false);
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_stat_path(PHIPFS_VOLUME_DATA, project, &stat);
-    }
-    if (status == PHIPFS_STATUS_NOT_FOUND) {
-        media_source_set_status("New project / ready to edit");
-        return PHIPFS_STATUS_OK;
-    }
-    if (status == PHIPFS_STATUS_OK &&
-        (stat.directory || stat.size != UI_MEDIA_SOURCE_PROJECT_BYTES)) {
-        status = PHIPFS_STATUS_CORRUPT;
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_open(PHIPFS_VOLUME_DATA, project,
-            PHIPFS_ACCESS_READ, &handle);
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_read(handle, bytes, sizeof(bytes), &read_bytes);
-        const enum phipfs_status close_status = phipfs_close(handle);
-
-        if (status == PHIPFS_STATUS_OK && close_status != PHIPFS_STATUS_OK) {
-            status = close_status;
-        }
-    }
-    if (status == PHIPFS_STATUS_OK &&
-        (read_bytes != sizeof(bytes) || !media_source_decode_project(bytes))) {
-        status = PHIPFS_STATUS_CORRUPT;
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        media_source_dirty = false;
-        if (media_source_selected_clip != UINT8_MAX &&
-            media_source_load_preview(media_source_clip_paths[media_source_selected_clip]) !=
-                PHIPFS_STATUS_OK) {
-            media_source_set_status("Project opened / source offline");
-        } else {
-            media_source_set_status("Project opened");
-        }
-    } else {
-        media_source_reset(false);
-        media_source_set_status("Project unavailable");
-    }
-    return status;
-}
-
-static enum phipfs_status media_source_write_scratch(const uint8_t *bytes)
-{
-    static const char scratch[] = "MEDTEMP.PHI";
-    phipfs_handle handle;
-    size_t written = 0U;
-    enum phipfs_status status = phipfs_create(PHIPFS_VOLUME_DATA, scratch);
-
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_open(PHIPFS_VOLUME_DATA, scratch,
-            PHIPFS_ACCESS_WRITE, &handle);
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_write(handle, bytes, UI_MEDIA_SOURCE_PROJECT_BYTES, &written);
-        const enum phipfs_status close_status = phipfs_close(handle);
-
-        if (status == PHIPFS_STATUS_OK && close_status != PHIPFS_STATUS_OK) {
-            status = close_status;
-        }
-    }
-    if (status == PHIPFS_STATUS_OK && written != UI_MEDIA_SOURCE_PROJECT_BYTES) {
-        status = PHIPFS_STATUS_WRITEBACK;
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_sync(PHIPFS_VOLUME_DATA);
-    }
-    if (status != PHIPFS_STATUS_OK) {
-        (void)media_source_remove_if_present(scratch);
-    }
-    return status;
-}
-
-static enum phipfs_status media_source_save(void)
-{
-    static const char project[] = "MEDIAEDT.PHI";
-    static const char scratch[] = "MEDTEMP.PHI";
-    static const char backup[] = "MEDBACK.PHI";
-    uint8_t bytes[UI_MEDIA_SOURCE_PROJECT_BYTES];
-    struct phipfs_stat stat;
-    bool original_exists = false;
-    bool backed_up = false;
-    bool replacement_visible = false;
-    enum phipfs_status status = media_source_recover_project();
-
-    media_source_encode_project(bytes);
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_stat_path(PHIPFS_VOLUME_DATA, project, &stat);
-        if (status == PHIPFS_STATUS_OK) {
-            original_exists = true;
-        } else if (status == PHIPFS_STATUS_NOT_FOUND) {
-            status = PHIPFS_STATUS_OK;
-        }
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = media_source_write_scratch(bytes);
-    }
-    if (status == PHIPFS_STATUS_OK && original_exists) {
-        status = phipfs_rename(PHIPFS_VOLUME_DATA, project, backup);
-        backed_up = status == PHIPFS_STATUS_OK;
-        if (status == PHIPFS_STATUS_OK) {
-            status = phipfs_sync(PHIPFS_VOLUME_DATA);
-        }
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_rename(PHIPFS_VOLUME_DATA, scratch, project);
-        replacement_visible = status == PHIPFS_STATUS_OK;
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_sync(PHIPFS_VOLUME_DATA);
-    }
-    if (status != PHIPFS_STATUS_OK && backed_up) {
-        if (replacement_visible) {
-            (void)phipfs_rename(PHIPFS_VOLUME_DATA, project, scratch);
-        }
-        const enum phipfs_status restore = phipfs_rename(PHIPFS_VOLUME_DATA,
-            backup, project);
-
-        if (restore == PHIPFS_STATUS_OK) {
-            (void)phipfs_sync(PHIPFS_VOLUME_DATA);
-            (void)media_source_remove_if_present(scratch);
-        } else {
-            status = restore;
-        }
-    } else if (status != PHIPFS_STATUS_OK) {
-        (void)media_source_remove_if_present(scratch);
-    }
-    if (status == PHIPFS_STATUS_OK && original_exists) {
-        status = media_source_remove_if_present(backup);
-        if (status == PHIPFS_STATUS_OK) {
-            status = phipfs_sync(PHIPFS_VOLUME_DATA);
-        }
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        media_source_dirty = false;
-        media_source_set_status("Project saved");
-    } else {
-        media_source_set_status("Save failed / project retained");
-    }
-    return status;
-}
-
-static bool media_source_file_is_bmp(const char *name)
-{
-    size_t length = 0U;
-
-    if (name == NULL) {
-        return false;
-    }
-    while (name[length] != '\0') {
-        ++length;
-    }
-    if (length < 5U || name[length - 4U] != '.') {
-        return false;
-    }
-    const char b = name[length - 3U];
-    const char m = name[length - 2U];
-    const char p = name[length - 1U];
-
-    return (b == 'B' || b == 'b') && (m == 'M' || m == 'm') &&
-        (p == 'P' || p == 'p');
-}
-
-static bool media_source_path_used(const char *path)
-{
-    for (size_t index = 0U; index < media_source_clip_count; ++index) {
-        if (strings_equal(media_source_clip_paths[index], path)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-static enum phipfs_status media_source_load_preview(const char *path)
-{
-    uint8_t header[UI_MEDIA_SOURCE_BMP_HEADER_BYTES];
-    struct phipfs_stat stat;
-    phipfs_handle handle = 0U;
-    size_t read_bytes = 0U;
-    enum phipfs_status status = phipfs_stat_path(PHIPFS_VOLUME_DATA, path, &stat);
-    uint32_t width = 0U;
-    uint32_t height = 0U;
-    uint32_t pixel_offset = 0U;
-    uint32_t row_stride = 0U;
-    bool top_down = false;
-
-    media_source_preview_loaded = false;
-    if (status == PHIPFS_STATUS_OK &&
-        (stat.directory || stat.size < sizeof(header))) {
-        status = PHIPFS_STATUS_CORRUPT;
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_open(PHIPFS_VOLUME_DATA, path, PHIPFS_ACCESS_READ,
-            &handle);
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_read(handle, header, sizeof(header), &read_bytes);
-    }
-    if (status == PHIPFS_STATUS_OK && read_bytes != sizeof(header)) {
-        status = PHIPFS_STATUS_CORRUPT;
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        const int32_t signed_width = (int32_t)media_source_load_u32(header, 18U);
-        const int32_t signed_height = (int32_t)media_source_load_u32(header, 22U);
-
-        pixel_offset = media_source_load_u32(header, 10U);
-        if (header[0U] != 'B' || header[1U] != 'M' ||
-            media_source_load_u32(header, 14U) < 40U ||
-            media_source_load_u16(header, 26U) != 1U ||
-            media_source_load_u16(header, 28U) != 24U ||
-            media_source_load_u32(header, 30U) != 0U ||
-            signed_width <= 0 || signed_height == 0 ||
-            signed_height == INT32_MIN) {
-            status = PHIPFS_STATUS_CORRUPT;
-        } else {
-            width = (uint32_t)signed_width;
-            top_down = signed_height < 0;
-            height = (uint32_t)(top_down ? -signed_height : signed_height);
-        }
-    }
-    if (status == PHIPFS_STATUS_OK &&
-        (width > UI_MEDIA_SOURCE_BMP_MAX_WIDTH ||
-            height > UI_MEDIA_SOURCE_BMP_MAX_HEIGHT ||
-            pixel_offset < sizeof(header))) {
-        status = PHIPFS_STATUS_RANGE;
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        const uint64_t row_bytes = (uint64_t)width * 3U;
-        const uint64_t stride = (row_bytes + 3U) & ~UINT64_C(3);
-        const uint64_t required = (uint64_t)pixel_offset +
-            stride * height;
-
-        if (stride > sizeof(media_source_bmp_row) || required > stat.size) {
-            status = PHIPFS_STATUS_RANGE;
-        } else {
-            row_stride = (uint32_t)stride;
-        }
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        if ((uint64_t)width * UI_MEDIA_SOURCE_PREVIEW_HEIGHT <=
-            (uint64_t)height * UI_MEDIA_SOURCE_PREVIEW_WIDTH) {
-            media_source_preview_height = UI_MEDIA_SOURCE_PREVIEW_HEIGHT;
-            media_source_preview_width = (uint32_t)((uint64_t)width *
-                UI_MEDIA_SOURCE_PREVIEW_HEIGHT / height);
-        } else {
-            media_source_preview_width = UI_MEDIA_SOURCE_PREVIEW_WIDTH;
-            media_source_preview_height = (uint32_t)((uint64_t)height *
-                UI_MEDIA_SOURCE_PREVIEW_WIDTH / width);
-        }
-        if (media_source_preview_width == 0U || media_source_preview_height == 0U) {
-            status = PHIPFS_STATUS_RANGE;
-        }
-    }
-    for (size_t index = 0U;
-         index < UI_MEDIA_SOURCE_PREVIEW_WIDTH * UI_MEDIA_SOURCE_PREVIEW_HEIGHT; ++index) {
-        media_source_preview_pixels[index] = framebuffer_pack(0U, 0U, 0U);
-    }
-    for (uint32_t y = 0U; y < media_source_preview_height &&
-         status == PHIPFS_STATUS_OK; ++y) {
-        const uint32_t source_y = (uint32_t)((uint64_t)y * height /
-            media_source_preview_height);
-        const uint32_t stored_y = top_down ? source_y :
-            height - 1U - source_y;
-        const uint64_t row_offset = (uint64_t)pixel_offset +
-            (uint64_t)stored_y * row_stride;
-        uint64_t position = 0U;
-
-        status = phipfs_seek(handle, (int64_t)row_offset, PHIPFS_SEEK_START,
-            &position);
-        if (status == PHIPFS_STATUS_OK && position != row_offset) {
-            status = PHIPFS_STATUS_RANGE;
-        }
-        if (status == PHIPFS_STATUS_OK) {
-            status = phipfs_read(handle, media_source_bmp_row, row_stride,
-                &read_bytes);
-        }
-        if (status == PHIPFS_STATUS_OK && read_bytes != row_stride) {
-            status = PHIPFS_STATUS_CORRUPT;
-        }
-        for (uint32_t x = 0U; x < media_source_preview_width &&
-             status == PHIPFS_STATUS_OK; ++x) {
-            const uint32_t source_x = (uint32_t)((uint64_t)x * width /
-                media_source_preview_width);
-            const size_t source = (size_t)source_x * 3U;
-
-            media_source_preview_pixels[(size_t)y * UI_MEDIA_SOURCE_PREVIEW_WIDTH + x] =
-                framebuffer_pack(media_source_bmp_row[source + 2U],
-                    media_source_bmp_row[source + 1U], media_source_bmp_row[source]);
-        }
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        media_source_preview_loaded = true;
-    }
-    if (handle != 0U) {
-        const enum phipfs_status close_status = phipfs_close(handle);
-
-        if (status == PHIPFS_STATUS_OK && close_status != PHIPFS_STATUS_OK) {
-            status = close_status;
-            media_source_preview_loaded = false;
-        }
-    }
-    return status;
-}
-
-static void media_source_import_clip(void)
-{
-    struct phipfs_list_entry entries[12U];
-    size_t count = 0U;
-    enum phipfs_status status;
-
-    if (media_source_clip_count >= UI_MEDIA_SOURCE_MAX_CLIPS) {
-        media_source_set_status("Timeline is full");
-        return;
-    }
-    status = phipfs_list(PHIPFS_VOLUME_DATA, file_directory, entries,
-        sizeof(entries) / sizeof(entries[0]), &count);
-    if (status != PHIPFS_STATUS_OK) {
-        media_source_set_status("Import failed / data unavailable");
-        return;
-    }
-    for (size_t index = 0U; index < count; ++index) {
-        char path[PHIPFS_MAX_PATH + 1U];
-
-        if (entries[index].directory ||
-            !media_source_file_is_bmp(entries[index].name) ||
-            !entry_path(entries[index].name, path) ||
-            media_source_path_used(path)) {
-            continue;
-        }
-        size_t path_length = 0U;
-
-        while (path[path_length] != '\0') {
-            ++path_length;
-        }
-        if (path_length > UI_MEDIA_SOURCE_PATH_BYTES) {
-            media_source_set_status("Import path exceeds Media Editor bound");
-            return;
-        }
-        status = media_source_load_preview(path);
-        if (status != PHIPFS_STATUS_OK) {
-            media_source_set_status("BMP rejected / 24-bit RGB required");
-            return;
-        }
-        if (!copy_string(media_source_clip_paths[media_source_clip_count],
-                sizeof(media_source_clip_paths[media_source_clip_count]), path)) {
-            media_source_set_status("Import path exceeds Media Editor bound");
-            return;
-        }
-        media_source_clip_durations[media_source_clip_count] = 180U;
-        media_source_selected_clip = media_source_clip_count;
-        ++media_source_clip_count;
-        media_source_dirty = true;
-        media_source_set_status("BMP imported / ready to edit");
-        return;
-    }
-    media_source_set_status("No new BMP in current data folder");
-}
-
-static void media_source_trim_clip(void)
-{
-    if (media_source_selected_clip == UINT8_MAX ||
-        media_source_selected_clip >= media_source_clip_count) {
-        media_source_set_status("Select a clip to trim");
-        return;
-    }
-    if (media_source_clip_durations[media_source_selected_clip] <= 24U) {
-        media_source_set_status("Clip reached one-second minimum");
-        return;
-    }
-    media_source_clip_durations[media_source_selected_clip] -= 24U;
-    media_source_dirty = true;
-    media_source_set_status("Trimmed one second");
-}
-
-static enum phipfs_status media_source_write_all(
-    phipfs_handle handle,
-    const uint8_t *bytes,
-    size_t count
-)
-{
-    size_t written = 0U;
-    const enum phipfs_status status = phipfs_write(handle, bytes, count,
-        &written);
-
-    return status == PHIPFS_STATUS_OK && written != count ?
-        PHIPFS_STATUS_WRITEBACK : status;
-}
-
-static enum phipfs_status media_source_write_export_scratch(void)
-{
-    static const char scratch[] = "STUOUT.BMP";
-    uint8_t header[UI_MEDIA_SOURCE_BMP_HEADER_BYTES] = { 0U };
-    const uint32_t row_stride =
-        (media_source_preview_width * 3U + 3U) & ~UINT32_C(3);
-    const uint32_t file_bytes = UI_MEDIA_SOURCE_BMP_HEADER_BYTES +
-        row_stride * media_source_preview_height;
-    const struct ui_rect stage = editor_stage_rect();
-    const uint32_t editor_x = stage.x +
-        (stage.width > media_source_preview_width ?
-            (stage.width - media_source_preview_width) / 2U : 0U);
-    const uint32_t editor_y = stage.y +
-        (stage.height > media_source_preview_height ?
-            (stage.height - media_source_preview_height) / 2U : 0U);
-    phipfs_handle handle = 0U;
-    enum phipfs_status status = media_source_remove_if_present(scratch);
-
-    header[0U] = 'B';
-    header[1U] = 'M';
-    media_source_store_u32(header, 2U, file_bytes);
-    media_source_store_u32(header, 10U, UI_MEDIA_SOURCE_BMP_HEADER_BYTES);
-    media_source_store_u32(header, 14U, 40U);
-    media_source_store_u32(header, 18U, media_source_preview_width);
-    media_source_store_u32(header, 22U, media_source_preview_height);
-    media_source_store_u16(header, 26U, 1U);
-    media_source_store_u16(header, 28U, 24U);
-    media_source_store_u32(header, 34U,
-        row_stride * media_source_preview_height);
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_create(PHIPFS_VOLUME_DATA, scratch);
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_open(PHIPFS_VOLUME_DATA, scratch,
-            PHIPFS_ACCESS_WRITE, &handle);
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = media_source_write_all(handle, header, sizeof(header));
-    }
-    for (uint32_t row = 0U; row < media_source_preview_height &&
-         status == PHIPFS_STATUS_OK; ++row) {
-        const uint32_t source_y = media_source_preview_height - 1U - row;
-
-        for (uint32_t x = 0U; x < row_stride; ++x) {
-            media_source_bmp_row[x] = 0U;
-        }
-        for (uint32_t x = 0U; x < media_source_preview_width; ++x) {
-            uint32_t pixel = media_source_preview_pixels[
-                (size_t)source_y * UI_MEDIA_SOURCE_PREVIEW_WIDTH + x];
-            const size_t destination = (size_t)x * 3U;
-
-            if (media_editor_export_active &&
-                    (media_source_preview_width > stage.width ||
-                        media_source_preview_height > stage.height ||
-                        surface_read_pixel(canvas, editor_x + x,
-                            editor_y + source_y, &pixel) !=
-                                SURFACE_STATUS_OK)) {
-                status = PHIPFS_STATUS_IO;
-                break;
-            }
-
-            media_source_bmp_row[destination] =
-                (uint8_t)(pixel >> logo_blue_shift);
-            media_source_bmp_row[destination + 1U] =
-                (uint8_t)(pixel >> logo_green_shift);
-            media_source_bmp_row[destination + 2U] =
-                (uint8_t)(pixel >> logo_red_shift);
-        }
-        if (status == PHIPFS_STATUS_OK) {
-            status = media_source_write_all(handle, media_source_bmp_row, row_stride);
-        }
-    }
-    if (handle != 0U) {
-        const enum phipfs_status close_status = phipfs_close(handle);
-
-        if (status == PHIPFS_STATUS_OK && close_status != PHIPFS_STATUS_OK) {
-            status = close_status;
-        }
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_sync(PHIPFS_VOLUME_DATA);
-    }
-    if (status != PHIPFS_STATUS_OK) {
-        (void)media_source_remove_if_present(scratch);
-    }
-    return status;
-}
-
-static enum phipfs_status media_source_recover_export(void)
-{
-    static const char output[] = "EXPORT.BMP";
-    static const char scratch[] = "STUOUT.BMP";
-    static const char backup[] = "OUTBACK.BMP";
-    bool output_exists = false;
-    bool scratch_exists = false;
-    bool backup_exists = false;
-    bool changed = false;
-    enum phipfs_status status = media_source_regular_presence(output,
-        &output_exists);
-
-    if (status == PHIPFS_STATUS_OK) {
-        status = media_source_regular_presence(scratch, &scratch_exists);
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = media_source_regular_presence(backup, &backup_exists);
-    }
-    if (status == PHIPFS_STATUS_OK && !output_exists && backup_exists) {
-        status = phipfs_rename(PHIPFS_VOLUME_DATA, backup, output);
-        changed = status == PHIPFS_STATUS_OK;
-        backup_exists = status != PHIPFS_STATUS_OK;
-    }
-    if (status == PHIPFS_STATUS_OK && output_exists && backup_exists) {
-        status = media_source_remove_if_present(backup);
-        changed = status == PHIPFS_STATUS_OK;
-    }
-    if (status == PHIPFS_STATUS_OK && scratch_exists) {
-        status = media_source_remove_if_present(scratch);
-        changed = changed || status == PHIPFS_STATUS_OK;
-    }
-    if (status == PHIPFS_STATUS_OK && changed) {
-        status = phipfs_sync(PHIPFS_VOLUME_DATA);
-    }
-    return status;
-}
-
-static enum phipfs_status media_source_export(void)
-{
-    static const char output[] = "EXPORT.BMP";
-    static const char scratch[] = "STUOUT.BMP";
-    static const char backup[] = "OUTBACK.BMP";
-    struct phipfs_stat stat;
-    bool original_exists = false;
-    bool backed_up = false;
-    bool replacement_visible = false;
-    enum phipfs_status status;
-
-    if (!media_source_preview_loaded) {
-        media_source_set_status("Import a BMP before export");
-        return PHIPFS_STATUS_NOT_FOUND;
-    }
-    status = media_source_recover_export();
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_stat_path(PHIPFS_VOLUME_DATA, output, &stat);
-        if (status == PHIPFS_STATUS_OK) {
-            original_exists = !stat.directory;
-            status = stat.directory ? PHIPFS_STATUS_IS_DIRECTORY :
-                PHIPFS_STATUS_OK;
-        } else if (status == PHIPFS_STATUS_NOT_FOUND) {
-            status = PHIPFS_STATUS_OK;
-        }
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = media_source_write_export_scratch();
-    }
-    if (status == PHIPFS_STATUS_OK && original_exists) {
-        status = phipfs_rename(PHIPFS_VOLUME_DATA, output, backup);
-        backed_up = status == PHIPFS_STATUS_OK;
-        if (status == PHIPFS_STATUS_OK) {
-            status = phipfs_sync(PHIPFS_VOLUME_DATA);
-        }
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_rename(PHIPFS_VOLUME_DATA, scratch, output);
-        replacement_visible = status == PHIPFS_STATUS_OK;
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_sync(PHIPFS_VOLUME_DATA);
-    }
-    if (status != PHIPFS_STATUS_OK && backed_up) {
-        if (replacement_visible) {
-            (void)phipfs_rename(PHIPFS_VOLUME_DATA, output, scratch);
-        }
-        const enum phipfs_status restore = phipfs_rename(PHIPFS_VOLUME_DATA,
-            backup, output);
-
-        if (restore == PHIPFS_STATUS_OK) {
-            (void)phipfs_sync(PHIPFS_VOLUME_DATA);
-            (void)media_source_remove_if_present(scratch);
-        } else {
-            status = restore;
-        }
-    } else if (status != PHIPFS_STATUS_OK) {
-        (void)media_source_remove_if_present(scratch);
-    }
-    if (status == PHIPFS_STATUS_OK && original_exists) {
-        status = media_source_remove_if_present(backup);
-        if (status == PHIPFS_STATUS_OK) {
-            status = phipfs_sync(PHIPFS_VOLUME_DATA);
-        }
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        media_source_set_status("EXPORT.BMP written to data");
-        (void)files_refresh();
-    } else {
-        media_source_set_status("Export failed / previous output retained");
-    }
-    return status;
-}
-
-static enum phipfs_status paint_write_scratch(void)
-{
-    static const char scratch[] = "PNTTEMP.BMP";
-    const struct paint_image_info image = paint_image();
-    uint8_t header[UI_PAINT_BMP_HEADER_BYTES] = { 0U };
-    const uint32_t file_bytes = UI_PAINT_BMP_HEADER_BYTES +
-        image.row_stride * image.height;
-    phipfs_handle handle = 0U;
-    enum phipfs_status status = media_source_remove_if_present(scratch);
-
-    header[0U] = 'B';
-    header[1U] = 'M';
-    media_source_store_u32(header, 2U, file_bytes);
-    media_source_store_u32(header, 10U, UI_PAINT_BMP_HEADER_BYTES);
-    media_source_store_u32(header, 14U, 40U);
-    media_source_store_u32(header, 18U, image.width);
-    media_source_store_u32(header, 22U, image.height);
-    media_source_store_u16(header, 26U, 1U);
-    media_source_store_u16(header, 28U, 24U);
-    media_source_store_u32(header, 34U, image.row_stride * image.height);
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_create(PHIPFS_VOLUME_DATA, scratch);
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_open(PHIPFS_VOLUME_DATA, scratch,
-            PHIPFS_ACCESS_WRITE, &handle);
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = media_source_write_all(handle, header, sizeof(header));
-    }
-    for (uint32_t row = 0U; row < image.height &&
-         status == PHIPFS_STATUS_OK; ++row) {
-        size_t bytes = 0U;
-        const enum paint_status paint_status = paint_copy_bgr24_row(
-            image.height - 1U - row, paint_bmp_row, sizeof(paint_bmp_row),
-            &bytes);
-
-        if (paint_status != PAINT_STATUS_OK || bytes != image.row_stride) {
-            status = PHIPFS_STATUS_IO;
-            break;
-        }
-        status = media_source_write_all(handle, paint_bmp_row, bytes);
-    }
-    if (handle != 0U) {
-        const enum phipfs_status close_status = phipfs_close(handle);
-
-        if (status == PHIPFS_STATUS_OK && close_status != PHIPFS_STATUS_OK) {
-            status = close_status;
-        }
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_sync(PHIPFS_VOLUME_DATA);
-    }
-    if (status != PHIPFS_STATUS_OK) {
-        (void)media_source_remove_if_present(scratch);
-    }
-    return status;
-}
-
-static enum phipfs_status paint_recover_save(void)
-{
-    static const char output[] = "PAINT.BMP";
-    static const char scratch[] = "PNTTEMP.BMP";
-    static const char backup[] = "PNTBACK.BMP";
-    bool output_exists = false;
-    bool scratch_exists = false;
-    bool backup_exists = false;
-    bool changed = false;
-    enum phipfs_status status = media_source_regular_presence(output,
-        &output_exists);
-
-    if (status == PHIPFS_STATUS_OK) {
-        status = media_source_regular_presence(scratch, &scratch_exists);
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = media_source_regular_presence(backup, &backup_exists);
-    }
-    if (status == PHIPFS_STATUS_OK && !output_exists && backup_exists) {
-        status = phipfs_rename(PHIPFS_VOLUME_DATA, backup, output);
-        changed = status == PHIPFS_STATUS_OK;
-        backup_exists = status != PHIPFS_STATUS_OK;
-    }
-    if (status == PHIPFS_STATUS_OK && output_exists && backup_exists) {
-        status = media_source_remove_if_present(backup);
-        changed = status == PHIPFS_STATUS_OK;
-    }
-    if (status == PHIPFS_STATUS_OK && scratch_exists) {
-        status = media_source_remove_if_present(scratch);
-        changed = changed || status == PHIPFS_STATUS_OK;
-    }
-    if (status == PHIPFS_STATUS_OK && changed) {
-        status = phipfs_sync(PHIPFS_VOLUME_DATA);
-    }
-    return status;
-}
-
-static enum phipfs_status paint_save(void)
-{
-    static const char output[] = "PAINT.BMP";
-    static const char scratch[] = "PNTTEMP.BMP";
-    static const char backup[] = "PNTBACK.BMP";
-    bool output_exists = false;
-    bool backed_up = false;
-    bool replacement_visible = false;
-    enum phipfs_status status = paint_recover_save();
-
-    if (status == PHIPFS_STATUS_OK) {
-        status = media_source_regular_presence(output, &output_exists);
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = paint_write_scratch();
-    }
-    if (status == PHIPFS_STATUS_OK && output_exists) {
-        status = phipfs_rename(PHIPFS_VOLUME_DATA, output, backup);
-        backed_up = status == PHIPFS_STATUS_OK;
-        if (status == PHIPFS_STATUS_OK) {
-            status = phipfs_sync(PHIPFS_VOLUME_DATA);
-        }
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_rename(PHIPFS_VOLUME_DATA, scratch, output);
-        replacement_visible = status == PHIPFS_STATUS_OK;
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_sync(PHIPFS_VOLUME_DATA);
-    }
-    if (status != PHIPFS_STATUS_OK && backed_up) {
-        if (replacement_visible) {
-            (void)phipfs_rename(PHIPFS_VOLUME_DATA, output, scratch);
-        }
-        const enum phipfs_status restore = phipfs_rename(PHIPFS_VOLUME_DATA,
-            backup, output);
-
-        if (restore == PHIPFS_STATUS_OK) {
-            (void)phipfs_sync(PHIPFS_VOLUME_DATA);
-            (void)media_source_remove_if_present(scratch);
-        } else {
-            status = restore;
-        }
-    } else if (status != PHIPFS_STATUS_OK) {
-        (void)media_source_remove_if_present(scratch);
-    }
-    if (status == PHIPFS_STATUS_OK && output_exists) {
-        status = media_source_remove_if_present(backup);
-        if (status == PHIPFS_STATUS_OK) {
-            status = phipfs_sync(PHIPFS_VOLUME_DATA);
-        }
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        paint_mark_saved();
-        (void)files_refresh();
-        console_serial_write("Phipia: Paint saved PAINT.BMP\n");
-    }
-    return status;
-}
-
-/*
- * The Media Editor keeps its text/effect timeline separate from the media
- * source project's crash-safe import/export state.  The independently
- * recoverable MEDIAEDT.PHI and PHIPMED.PHI files preserve both concerns.
- */
-static void media_editor_clear_items(void)
-{
-    for (size_t index = 0U; index < EDITOR_MAX_ITEMS; ++index) {
-        (void)editor_set_item(index, NULL);
-    }
-}
-
-static void media_editor_sync_clip(void)
-{
-    struct editor_clip clip = { 0 };
-    struct ui_rect damage;
-
-    if (media_source_selected_clip == UINT8_MAX ||
-            media_source_selected_clip >= media_source_clip_count ||
-            !media_source_preview_loaded) {
-        (void)copy_string(clip.name, sizeof(clip.name), "No media loaded");
-        (void)editor_set_clip(&clip);
-        (void)editor_set_poster(NULL, 0U, 0U);
-        return;
-    }
-    (void)copy_string(clip.name, sizeof(clip.name),
-        media_source_clip_paths[media_source_selected_clip]);
-    clip.length_ms = media_source_clip_durations[media_source_selected_clip] >
-            UINT32_MAX / 1000U ? UINT32_MAX :
-        media_source_clip_durations[media_source_selected_clip] * 1000U;
-    (void)editor_set_clip(&clip);
-    (void)editor_set_poster(media_source_preview_pixels, media_source_preview_width,
-        media_source_preview_height);
-    (void)editor_seek(media_source_playhead > UINT32_MAX / 1000U ? UINT32_MAX :
-        media_source_playhead * 1000U, &damage);
-}
-
-static void media_editor_encode(uint8_t *bytes)
-{
-    static const uint8_t magic[8U] = {
-        'P', 'H', 'I', 'P', 'M', 'E', 'D', '1'
-    };
-
-    for (size_t index = 0U; index < UI_MEDIA_PROJECT_BYTES; ++index) {
-        bytes[index] = 0U;
-    }
-    for (size_t index = 0U; index < sizeof(magic); ++index) {
-        bytes[index] = magic[index];
-    }
-    for (size_t index = 0U; index < EDITOR_MAX_ITEMS; ++index) {
-        const struct editor_item *item = editor_item(index);
-        const size_t record = 16U + index * (16U + EDITOR_TEXT_BYTES);
-
-        if (item == NULL) {
-            continue;
-        }
-        bytes[record] = 1U;
-        bytes[record + 1U] = (uint8_t)item->track;
-        bytes[record + 2U] = (uint8_t)item->style;
-        bytes[record + 3U] = (uint8_t)item->effect;
-        media_source_store_u32(bytes, record + 4U, item->start_ms);
-        media_source_store_u32(bytes, record + 8U, item->length_ms);
-        bytes[record + 12U] = item->strength;
-        for (size_t at = 0U; at + 1U < EDITOR_TEXT_BYTES &&
-             item->label[at] != '\0'; ++at) {
-            bytes[record + 16U + at] = (uint8_t)item->label[at];
-        }
-    }
-}
-
-static bool media_editor_decode(const uint8_t *bytes)
-{
-    static const uint8_t magic[8U] = {
-        'P', 'H', 'I', 'P', 'M', 'E', 'D', '1'
-    };
-
-    for (size_t index = 0U; index < sizeof(magic); ++index) {
-        if (bytes[index] != magic[index]) {
-            return false;
-        }
-    }
-    media_editor_clear_items();
-    for (size_t index = 0U; index < EDITOR_MAX_ITEMS; ++index) {
-        const size_t record = 16U + index * (16U + EDITOR_TEXT_BYTES);
-        struct editor_item item = { 0 };
-        size_t length = 0U;
-
-        if (bytes[record] == 0U) {
-            continue;
-        }
-        if (bytes[record] != 1U ||
-                bytes[record + 1U] < EDITOR_TRACK_TEXT ||
-                bytes[record + 1U] > EDITOR_TRACK_EFFECT ||
-                bytes[record + 2U] >= EDITOR_STYLE_COUNT ||
-                bytes[record + 3U] >= EDITOR_EFFECT_COUNT ||
-                bytes[record + 12U] > 100U) {
-            media_editor_clear_items();
-            return false;
-        }
-        item.present = true;
-        item.track = (enum editor_track)bytes[record + 1U];
-        item.style = (enum editor_style)bytes[record + 2U];
-        item.effect = (enum editor_effect)bytes[record + 3U];
-        item.start_ms = media_source_load_u32(bytes, record + 4U);
-        item.length_ms = media_source_load_u32(bytes, record + 8U);
-        item.strength = bytes[record + 12U];
-        if (item.length_ms == 0U ||
-                item.start_ms > UINT32_MAX - item.length_ms) {
-            media_editor_clear_items();
-            return false;
-        }
-        while (length < EDITOR_TEXT_BYTES &&
-                bytes[record + 16U + length] != 0U) {
-            const uint8_t character = bytes[record + 16U + length];
-
-            if (character < 0x20U || character > 0x7EU ||
-                    length + 1U >= EDITOR_TEXT_BYTES) {
-                media_editor_clear_items();
-                return false;
-            }
-            item.label[length++] = (char)character;
-        }
-        item.label[length] = '\0';
-        if (editor_set_item(index, &item) != EDITOR_STATUS_OK) {
-            media_editor_clear_items();
-            return false;
-        }
-    }
-    return true;
-}
-
-static enum phipfs_status media_editor_recover(void)
-{
-    static const char project[] = "PHIPMED.PHI";
-    static const char scratch[] = "MEDTEMP.PHI";
-    static const char backup[] = "MEDBACK.PHI";
-    bool primary = false;
-    bool staged = false;
-    bool saved = false;
-    bool changed = false;
-    enum phipfs_status status = media_source_regular_presence(project, &primary);
-
-    if (status == PHIPFS_STATUS_OK) {
-        status = media_source_regular_presence(scratch, &staged);
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = media_source_regular_presence(backup, &saved);
-    }
-    if (status == PHIPFS_STATUS_OK && !primary && saved) {
-        status = phipfs_rename(PHIPFS_VOLUME_DATA, backup, project);
-        changed = status == PHIPFS_STATUS_OK;
-        saved = status != PHIPFS_STATUS_OK;
-    } else if (status == PHIPFS_STATUS_OK && !primary && !saved && staged) {
-        status = phipfs_rename(PHIPFS_VOLUME_DATA, scratch, project);
-        changed = status == PHIPFS_STATUS_OK;
-        staged = status != PHIPFS_STATUS_OK;
-    }
-    if (status == PHIPFS_STATUS_OK && primary && saved) {
-        status = media_source_remove_if_present(backup);
-        changed = status == PHIPFS_STATUS_OK;
-    }
-    if (status == PHIPFS_STATUS_OK && staged) {
-        status = media_source_remove_if_present(scratch);
-        changed = changed || status == PHIPFS_STATUS_OK;
-    }
-    if (status == PHIPFS_STATUS_OK && changed) {
-        status = phipfs_sync(PHIPFS_VOLUME_DATA);
-    }
-    return status;
-}
-
-static enum phipfs_status media_editor_load(void)
-{
-    static const char project[] = "PHIPMED.PHI";
-    uint8_t bytes[UI_MEDIA_PROJECT_BYTES];
-    struct phipfs_stat stat;
-    phipfs_handle handle = 0U;
-    size_t read_bytes = 0U;
-    enum phipfs_status status = media_editor_recover();
-
-    media_editor_clear_items();
-    media_editor_dirty = false;
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_stat_path(PHIPFS_VOLUME_DATA, project, &stat);
-    }
-    if (status == PHIPFS_STATUS_NOT_FOUND) {
-        return PHIPFS_STATUS_OK;
-    }
-    if (status == PHIPFS_STATUS_OK &&
-            (stat.directory || stat.size != sizeof(bytes))) {
-        status = PHIPFS_STATUS_CORRUPT;
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_open(PHIPFS_VOLUME_DATA, project,
-            PHIPFS_ACCESS_READ, &handle);
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_read(handle, bytes, sizeof(bytes), &read_bytes);
-    }
-    if (handle != 0U) {
-        const enum phipfs_status close_status = phipfs_close(handle);
-
-        if (status == PHIPFS_STATUS_OK && close_status != PHIPFS_STATUS_OK) {
-            status = close_status;
-        }
-    }
-    if (status == PHIPFS_STATUS_OK &&
-            (read_bytes != sizeof(bytes) || !media_editor_decode(bytes))) {
-        status = PHIPFS_STATUS_CORRUPT;
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        media_source_set_status("Media Editor project opened");
-    } else {
-        media_editor_clear_items();
-        media_source_set_status("Media Editor timeline unavailable");
-    }
-    return status;
-}
-
-static enum phipfs_status media_editor_write_scratch(const uint8_t *bytes)
-{
-    static const char scratch[] = "MEDTEMP.PHI";
-    phipfs_handle handle = 0U;
-    enum phipfs_status status = media_source_remove_if_present(scratch);
-
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_create(PHIPFS_VOLUME_DATA, scratch);
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_open(PHIPFS_VOLUME_DATA, scratch,
-            PHIPFS_ACCESS_WRITE, &handle);
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = media_source_write_all(handle, bytes, UI_MEDIA_PROJECT_BYTES);
-    }
-    if (handle != 0U) {
-        const enum phipfs_status close_status = phipfs_close(handle);
-
-        if (status == PHIPFS_STATUS_OK && close_status != PHIPFS_STATUS_OK) {
-            status = close_status;
-        }
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_sync(PHIPFS_VOLUME_DATA);
-    } else {
-        (void)media_source_remove_if_present(scratch);
-    }
-    return status;
-}
-
-static enum phipfs_status media_editor_save_timeline(void)
-{
-    static const char project[] = "PHIPMED.PHI";
-    static const char scratch[] = "MEDTEMP.PHI";
-    static const char backup[] = "MEDBACK.PHI";
-    uint8_t bytes[UI_MEDIA_PROJECT_BYTES];
-    struct phipfs_stat stat;
-    bool original_exists = false;
-    bool backed_up = false;
-    bool replacement_visible = false;
-    enum phipfs_status status = media_editor_recover();
-
-    media_editor_encode(bytes);
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_stat_path(PHIPFS_VOLUME_DATA, project, &stat);
-        if (status == PHIPFS_STATUS_OK) {
-            original_exists = !stat.directory;
-            status = stat.directory ? PHIPFS_STATUS_IS_DIRECTORY :
-                PHIPFS_STATUS_OK;
-        } else if (status == PHIPFS_STATUS_NOT_FOUND) {
-            status = PHIPFS_STATUS_OK;
-        }
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = media_editor_write_scratch(bytes);
-    }
-    if (status == PHIPFS_STATUS_OK && original_exists) {
-        status = phipfs_rename(PHIPFS_VOLUME_DATA, project, backup);
-        backed_up = status == PHIPFS_STATUS_OK;
-        if (status == PHIPFS_STATUS_OK) {
-            status = phipfs_sync(PHIPFS_VOLUME_DATA);
-        }
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_rename(PHIPFS_VOLUME_DATA, scratch, project);
-        replacement_visible = status == PHIPFS_STATUS_OK;
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_sync(PHIPFS_VOLUME_DATA);
-    }
-    if (status != PHIPFS_STATUS_OK && backed_up) {
-        if (replacement_visible) {
-            (void)phipfs_rename(PHIPFS_VOLUME_DATA, project, scratch);
-        }
-        const enum phipfs_status restore = phipfs_rename(PHIPFS_VOLUME_DATA,
-            backup, project);
-
-        if (restore == PHIPFS_STATUS_OK) {
-            (void)phipfs_sync(PHIPFS_VOLUME_DATA);
-            (void)media_source_remove_if_present(scratch);
-        } else {
-            status = restore;
-        }
-    } else if (status != PHIPFS_STATUS_OK) {
-        (void)media_source_remove_if_present(scratch);
-    }
-    if (status == PHIPFS_STATUS_OK && original_exists) {
-        status = media_source_remove_if_present(backup);
-        if (status == PHIPFS_STATUS_OK) {
-            status = phipfs_sync(PHIPFS_VOLUME_DATA);
-        }
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        media_editor_dirty = false;
-        media_source_set_status("Media Editor project saved");
-    } else {
-        media_source_set_status("Save failed / Media Editor project retained");
-    }
-    return status;
-}
-
-static enum phipfs_status media_editor_save(void)
-{
-    enum phipfs_status status;
-
-    media_source_playhead = editor_playhead_ms() / 1000U;
-    status = media_source_dirty ? media_source_save() : PHIPFS_STATUS_OK;
-    if (status == PHIPFS_STATUS_OK) {
-        status = media_editor_save_timeline();
-    }
-    return status;
-}
-
 static struct ui_rect settings_back_rect(void)
 {
     const struct ui_rect client = state.layout.panel_client;
@@ -4370,7 +2930,7 @@ static struct ui_rect settings_option_rect(size_t index)
 
 static size_t settings_interactive_option_count(size_t page)
 {
-    if (page == 2U || page == 10U) {
+    if (page == 2U || page == 9U) {
         return 3U;
     }
     if (page == 3U || page == 4U || page == 5U) {
@@ -4550,29 +3110,6 @@ static enum ui_status draw_settings_control_page(
         return status;
     }
     if (page == 9U) {
-        const struct camera_frame_info camera = camera_get_info();
-        char geometry[32] = "No signal";
-
-        if (camera.connected) {
-            size_t at = append_u64(geometry, sizeof(geometry), 0U,
-                camera.width);
-            at = append_text(geometry, sizeof(geometry), at, " x ");
-            (void)append_u64(geometry, sizeof(geometry), at, camera.height);
-        }
-        status = draw_settings_row(0U, damage, "Camera device",
-            camera.connected ? "Connected" : "Not connected", false,
-            camera.connected);
-        if (status == UI_STATUS_OK) {
-            status = draw_settings_row(1U, damage, "Live frame",
-                geometry, false, false);
-        }
-        if (status == UI_STATUS_OK) {
-            status = draw_settings_row(2U, damage, "Capture pipeline",
-                "RGB888 / BMP", false, false);
-        }
-        return status;
-    }
-    if (page == 10U) {
         status = draw_settings_row(0U, damage, "Window shadows",
             window_shadows ? "On" : "Off", true, window_shadows);
         if (status == UI_STATUS_OK) {
@@ -4586,7 +3123,7 @@ static enum ui_status draw_settings_control_page(
         }
         return status;
     }
-    if (page == 11U) {
+    if (page == 10U) {
         status = draw_settings_row(0U, damage, "Kernel",
             "Phipia 2.2.0 dev", false, false);
         if (status == UI_STATUS_OK) {
@@ -4609,6 +3146,8 @@ static enum ui_status draw_settings_category_icon(
     const uint8_t colour[3U]
 )
 {
+    const size_t asset_index = index >= 9U ? index + 1U : index;
+
     (void)colour;
     if (index >= UI_SETTINGS_CATEGORY_COUNT) {
         return UI_STATUS_BAD_ELEMENT;
@@ -4616,8 +3155,8 @@ static enum ui_status draw_settings_category_icon(
     return draw_alpha_subimage(icon, damage, settings_category_icon_pixels,
         settings_category_icon_alpha, settings_category_icon_width,
         settings_category_icon_height,
-        (struct ui_rect){ (uint32_t)(index % 4U) * 64U,
-            (uint32_t)(index / 4U) * 64U, 64U, 64U });
+        (struct ui_rect){ (uint32_t)(asset_index % 4U) * 64U,
+            (uint32_t)(asset_index / 4U) * 64U, 64U, 64U });
 #if 0
     enum ui_status status = gradient_rect(icon, damage,
         0xFAU, 0xFAU, 0xFAU, colour[0U], colour[1U], colour[2U]);
@@ -4870,14 +3409,14 @@ static enum ui_status draw_settings_app(struct ui_rect damage)
     static const char *const categories[UI_SETTINGS_CATEGORY_COUNT] = {
         "Appearance", "Desktop", "Dock", "Displays",
         "Keyboard", "Pointer", "Performance", "Network",
-        "Storage", "Camera", "Windows", "About"
+        "Storage", "Windows", "About"
     };
     static const uint8_t colours[UI_SETTINGS_CATEGORY_COUNT][3U] = {
         { 0x68U, 0xA9U, 0xC5U }, { 0x58U, 0x8CU, 0xB7U },
         { 0x9AU, 0xA0U, 0xA4U }, { 0x6EU, 0x8CU, 0xB2U },
         { 0xD0U, 0xD1U, 0xC8U }, { 0xE7U, 0xE7U, 0xE2U },
         { 0x94U, 0x7BU, 0xB4U }, { 0x64U, 0xA3U, 0x83U },
-        { 0xD1U, 0xACU, 0x58U }, { 0xB9U, 0x8BU, 0x52U },
+        { 0xD1U, 0xACU, 0x58U },
         { 0x7DU, 0x8FU, 0xA2U }, { 0xD9U, 0x55U, 0x4FU }
     };
     const struct ui_rect client = state.layout.panel_client;
@@ -4973,188 +3512,6 @@ static bool select_desktop_wallpaper(uint8_t index)
     return true;
 }
 
-static bool camera_refresh_frame(void)
-{
-    const struct camera_frame_info current = camera_get_info();
-    struct camera_frame_info snapshot;
-
-    if (!current.connected) {
-        camera_frame_available = false;
-        camera_seen_generation = current.generation;
-        (void)copy_string(camera_status, sizeof(camera_status),
-            "No camera connected");
-        return false;
-    }
-    if (camera_frame_available &&
-            current.generation == camera_seen_generation) {
-        return true;
-    }
-    if (camera_snapshot(camera_scene_pixels,
-            UI_CAMERA_SCENE_WIDTH * UI_CAMERA_SCENE_HEIGHT,
-            UI_CAMERA_SCENE_WIDTH, UI_CAMERA_SCENE_HEIGHT,
-            logo_red_shift, logo_green_shift, logo_blue_shift,
-            &snapshot) != CAMERA_STATUS_OK) {
-        camera_frame_available = false;
-        (void)copy_string(camera_status, sizeof(camera_status),
-            "Camera frame unavailable");
-        return false;
-    }
-    camera_frame_available = true;
-    camera_seen_generation = snapshot.generation;
-    (void)copy_string(camera_status, sizeof(camera_status),
-        "Camera ready");
-    return true;
-}
-
-static uint32_t camera_frame_pixel(
-    uint32_t x,
-    uint32_t y,
-    uint32_t width,
-    uint32_t height
-)
-{
-    if (!camera_frame_available || width == 0U || height == 0U) {
-        return framebuffer_pack(0x16U, 0x19U, 0x1CU);
-    }
-    const uint32_t source_x = x * UI_CAMERA_SCENE_WIDTH / width;
-    const uint32_t source_y = y * UI_CAMERA_SCENE_HEIGHT / height;
-
-    return camera_scene_pixels[(size_t)source_y * UI_CAMERA_SCENE_WIDTH +
-        source_x];
-}
-
-static struct ui_rect camera_preview_rect(void)
-{
-    const struct ui_rect client = state.layout.panel_client;
-
-    return (struct ui_rect){ client.x + 12U, client.y + 12U,
-        client.width - 24U, client.height - 102U };
-}
-
-static struct ui_rect camera_capture_rect(void)
-{
-    const struct ui_rect client = state.layout.panel_client;
-
-    return (struct ui_rect){ client.x + client.width / 2U - 27U,
-        client.y + client.height - 78U, 54U, 54U };
-}
-
-static struct ui_rect camera_controls_rect(void)
-{
-    const struct ui_rect client = state.layout.panel_client;
-    const struct ui_rect preview = camera_preview_rect();
-
-    return (struct ui_rect){ client.x, preview.y + preview.height + 4U,
-        client.width,
-        client.y + client.height - preview.y - preview.height - 4U };
-}
-
-static enum phipfs_status camera_capture(void)
-{
-    static const char scratch[] = "CAMTEMP.BMP";
-    char output[] = "PHOTO00.BMP";
-    uint8_t header[UI_CAMERA_BMP_HEADER_BYTES] = { 0U };
-    const uint32_t row_stride = UI_CAMERA_CAPTURE_WIDTH * 3U;
-    const uint32_t file_bytes = UI_CAMERA_BMP_HEADER_BYTES +
-        row_stride * UI_CAMERA_CAPTURE_HEIGHT;
-    phipfs_handle handle = 0U;
-    enum phipfs_status status = PHIPFS_STATUS_FULL;
-    bool output_found = false;
-    struct camera_frame_info frame;
-
-    if (camera_snapshot(camera_scene_pixels,
-            UI_CAMERA_SCENE_WIDTH * UI_CAMERA_SCENE_HEIGHT,
-            UI_CAMERA_CAPTURE_WIDTH, UI_CAMERA_CAPTURE_HEIGHT,
-            logo_red_shift, logo_green_shift, logo_blue_shift,
-            &frame) != CAMERA_STATUS_OK) {
-        camera_frame_available = false;
-        (void)copy_string(camera_status, sizeof(camera_status),
-            "Connect a camera before taking a photo");
-        return PHIPFS_STATUS_NOT_FOUND;
-    }
-
-    for (uint32_t number = 0U; number < 100U; ++number) {
-        struct phipfs_stat stat;
-        output[5U] = (char)('0' + number / 10U);
-        output[6U] = (char)('0' + number % 10U);
-        status = phipfs_stat_path(PHIPFS_VOLUME_DATA, output, &stat);
-        if (status == PHIPFS_STATUS_NOT_FOUND) {
-            status = PHIPFS_STATUS_OK;
-            output_found = true;
-            break;
-        }
-    }
-    if (!output_found || status != PHIPFS_STATUS_OK) {
-        (void)copy_string(camera_status, sizeof(camera_status),
-            "Photo library is full");
-        return status;
-    }
-    header[0U] = 'B'; header[1U] = 'M';
-    media_source_store_u32(header, 2U, file_bytes);
-    media_source_store_u32(header, 10U, UI_CAMERA_BMP_HEADER_BYTES);
-    media_source_store_u32(header, 14U, 40U);
-    media_source_store_u32(header, 18U, UI_CAMERA_CAPTURE_WIDTH);
-    media_source_store_u32(header, 22U, UI_CAMERA_CAPTURE_HEIGHT);
-    media_source_store_u16(header, 26U, 1U);
-    media_source_store_u16(header, 28U, 24U);
-    media_source_store_u32(header, 34U, row_stride * UI_CAMERA_CAPTURE_HEIGHT);
-    status = media_source_remove_if_present(scratch);
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_create(PHIPFS_VOLUME_DATA, scratch);
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_open(PHIPFS_VOLUME_DATA, scratch,
-            PHIPFS_ACCESS_WRITE, &handle);
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = media_source_write_all(handle, header, sizeof(header));
-    }
-    for (uint32_t row = 0U; row < UI_CAMERA_CAPTURE_HEIGHT &&
-         status == PHIPFS_STATUS_OK; ++row) {
-        const uint32_t source_y = UI_CAMERA_CAPTURE_HEIGHT - 1U - row;
-        for (uint32_t x = 0U; x < UI_CAMERA_CAPTURE_WIDTH; ++x) {
-            const uint32_t pixel = camera_scene_pixels[
-                (size_t)source_y * UI_CAMERA_CAPTURE_WIDTH + x];
-            const size_t destination = (size_t)x * 3U;
-            camera_bmp_row[destination] =
-                (uint8_t)(pixel >> logo_blue_shift);
-            camera_bmp_row[destination + 1U] =
-                (uint8_t)(pixel >> logo_green_shift);
-            camera_bmp_row[destination + 2U] =
-                (uint8_t)(pixel >> logo_red_shift);
-        }
-        status = media_source_write_all(handle, camera_bmp_row, row_stride);
-    }
-    if (handle != 0U) {
-        const enum phipfs_status close_status = phipfs_close(handle);
-        if (status == PHIPFS_STATUS_OK && close_status != PHIPFS_STATUS_OK) {
-            status = close_status;
-        }
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_sync(PHIPFS_VOLUME_DATA);
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_rename(PHIPFS_VOLUME_DATA, scratch, output);
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_sync(PHIPFS_VOLUME_DATA);
-    }
-    if (status == PHIPFS_STATUS_OK) {
-        ++camera_capture_count;
-        size_t at = append_text(camera_status, sizeof(camera_status), 0U,
-            "Saved ");
-        (void)append_text(camera_status, sizeof(camera_status), at, output);
-        (void)files_refresh();
-    } else {
-        (void)media_source_remove_if_present(scratch);
-        (void)copy_string(camera_status, sizeof(camera_status),
-            "Capture failed / no partial photo retained");
-    }
-    camera_frame_available = false;
-    return status;
-}
-
 static enum ui_status draw_circle(
     uint32_t center_x,
     uint32_t center_y,
@@ -5180,81 +3537,6 @@ static enum ui_status draw_circle(
                 break;
             }
         }
-    }
-    return status;
-}
-
-static enum ui_status draw_camera_app(struct ui_rect damage)
-{
-    const struct ui_rect client = state.layout.panel_client;
-    const struct ui_rect preview = camera_preview_rect();
-    const struct ui_rect clipped = rect_intersection(preview, damage);
-    const struct ui_rect controls = camera_controls_rect();
-    const struct ui_rect capture = camera_capture_rect();
-    enum ui_status status = fill_clipped(client, damage,
-        framebuffer_pack(0xD7U, 0xD9U, 0xDAU));
-
-    (void)camera_refresh_frame();
-
-    for (uint32_t y = 0U; y < clipped.height && status == UI_STATUS_OK; ++y) {
-        for (uint32_t x = 0U; x < clipped.width; ++x) {
-            const uint32_t local_x = clipped.x - preview.x + x;
-            const uint32_t local_y = clipped.y - preview.y + y;
-            camera_preview_row[x] = camera_frame_pixel(local_x, local_y,
-                preview.width, preview.height);
-        }
-        if (surface_blit(canvas, clipped.x, clipped.y + y,
-                camera_preview_row, clipped.width, 1U,
-                clipped.width * SURFACE_BYTES_PER_PIXEL) !=
-                    SURFACE_STATUS_OK) {
-            status = UI_STATUS_SURFACE_FAILURE;
-        }
-    }
-    if (status == UI_STATUS_OK) {
-        status = stroke_clipped(preview, damage, 1U,
-            framebuffer_pack(0x4CU, 0x51U, 0x54U));
-    }
-    if (status == UI_STATUS_OK && !camera_frame_available) {
-        status = draw_text(preview, damage,
-            centered_text_x(preview, "No camera connected"),
-            preview.y + preview.height / 2U,
-            "No camera connected", framebuffer_pack(0xD4U, 0xD8U, 0xDAU));
-    }
-    if (status == UI_STATUS_OK) {
-        status = gradient_rect(controls, damage, 0xF7U, 0xF7U, 0xF7U,
-            0xC1U, 0xC4U, 0xC6U);
-    }
-    if (status == UI_STATUS_OK) {
-        status = draw_circle(capture.x + capture.width / 2U,
-            capture.y + capture.height / 2U, 26U, damage,
-            framebuffer_pack(0xF8U, 0xF8U, 0xF8U));
-    }
-    if (status == UI_STATUS_OK) {
-        status = draw_circle(capture.x + capture.width / 2U,
-            capture.y + capture.height / 2U, 20U, damage,
-            state.theme.accent_red);
-    }
-    if (status == UI_STATUS_OK) {
-        const uint32_t center_x = capture.x + capture.width / 2U;
-        const uint32_t center_y = capture.y + capture.height / 2U;
-        status = fill_clipped((struct ui_rect){ center_x - 11U,
-            center_y - 7U, 22U, 15U }, damage, state.theme.white);
-        if (status == UI_STATUS_OK) {
-            status = fill_clipped((struct ui_rect){ center_x - 6U,
-                center_y - 10U, 9U, 4U }, damage, state.theme.white);
-        }
-        if (status == UI_STATUS_OK) {
-            status = draw_circle(center_x, center_y, 5U, damage,
-                state.theme.accent_red);
-        }
-        if (status == UI_STATUS_OK) {
-            status = draw_circle(center_x, center_y, 2U, damage,
-                state.theme.white);
-        }
-    }
-    if (status == UI_STATUS_OK) {
-        status = draw_text(controls, damage, controls.x + 18U,
-            controls.y + 36U, camera_status, state.theme.ink);
     }
     return status;
 }
@@ -5556,327 +3838,6 @@ static enum ui_status draw_notes_app(struct ui_rect damage)
         status = draw_text(paper, damage, paper.x + 18U,
             paper.y + 56U + line * 22U, text, state.theme.ink);
         ++line;
-    }
-    return status;
-}
-
-static struct ui_rect media_source_toolbar_rect(void)
-{
-    const struct ui_rect client = state.layout.panel_client;
-
-    return (struct ui_rect){ client.x, client.y, client.width, 38U };
-}
-
-static struct ui_rect media_source_button_rect(size_t index)
-{
-    const struct ui_rect toolbar = media_source_toolbar_rect();
-    static const uint32_t widths[] = { 64U, 68U, 68U, 60U, 68U };
-    uint32_t x = toolbar.x + 10U;
-
-    for (size_t before = 0U; before < index && before < 5U; ++before) {
-        x += widths[before] + 6U;
-    }
-    return index < 5U ?
-        (struct ui_rect){ x, toolbar.y + 7U, widths[index], 24U } :
-        (struct ui_rect){ 0U, 0U, 0U, 0U };
-}
-
-static struct ui_rect media_source_timeline_rect(void)
-{
-    const struct ui_rect client = state.layout.panel_client;
-    const uint32_t upper_height = (client.height - 38U) * 56U / 100U;
-
-    return (struct ui_rect){ client.x, client.y + 38U + upper_height,
-        client.width, client.height - 38U - upper_height };
-}
-
-static enum ui_status draw_media_source_button(
-    struct ui_rect button,
-    struct ui_rect damage,
-    const char *label
-)
-{
-    enum ui_status status = gradient_rect(button, damage,
-        0x78U, 0x7DU, 0x82U, 0x34U, 0x38U, 0x3CU);
-
-    if (status == UI_STATUS_OK) {
-        status = stroke_clipped(button, damage, 1U,
-            framebuffer_pack(0x0DU, 0x0FU, 0x11U));
-    }
-    if (status == UI_STATUS_OK) {
-        status = draw_text(button, damage, centered_text_x(button, label),
-            button.y + 17U, label, state.theme.white);
-    }
-    return status;
-}
-
-static enum ui_status draw_wallpaper_preview(
-    struct ui_rect bounds,
-    struct ui_rect damage
-)
-{
-    const struct ui_rect clipped = rect_intersection(bounds, damage);
-
-    for (uint32_t y = 0U; y < clipped.height; ++y) {
-        const uint32_t target_y = clipped.y + y;
-        const uint32_t source_y = (target_y - bounds.y) * 768U /
-            bounds.height;
-
-        for (uint32_t x = 0U; x < clipped.width; ++x) {
-            const uint32_t target_x = clipped.x + x;
-            const uint32_t source_x = (target_x - bounds.x) * 1024U /
-                bounds.width;
-
-            if (surface_pixel(canvas, target_x, target_y,
-                    wallpaper_pixels[(size_t)source_y * 1024U + source_x]) !=
-                    SURFACE_STATUS_OK) {
-                return UI_STATUS_SURFACE_FAILURE;
-            }
-        }
-    }
-    return UI_STATUS_OK;
-}
-
-static enum ui_status draw_media_source_preview(
-    struct ui_rect bounds,
-    struct ui_rect damage
-)
-{
-    if (!media_source_preview_loaded) {
-        return draw_wallpaper_preview(bounds, damage);
-    }
-    const struct ui_rect clipped = rect_intersection(bounds, damage);
-
-    for (uint32_t y = 0U; y < clipped.height; ++y) {
-        const uint32_t target_y = clipped.y + y;
-        const uint32_t source_y = (target_y - bounds.y) *
-            media_source_preview_height / bounds.height;
-
-        for (uint32_t x = 0U; x < clipped.width; ++x) {
-            const uint32_t target_x = clipped.x + x;
-            const uint32_t source_x = (target_x - bounds.x) *
-                media_source_preview_width / bounds.width;
-
-            if (surface_pixel(canvas, target_x, target_y,
-                    media_source_preview_pixels[(size_t)source_y *
-                        UI_MEDIA_SOURCE_PREVIEW_WIDTH + source_x]) !=
-                    SURFACE_STATUS_OK) {
-                return UI_STATUS_SURFACE_FAILURE;
-            }
-        }
-    }
-    return UI_STATUS_OK;
-}
-
-static void media_source_short_label(const char *path, char *label, size_t capacity)
-{
-    const char *name = path;
-    size_t length = 0U;
-
-    for (size_t index = 0U; path[index] != '\0'; ++index) {
-        if (path[index] == '/') {
-            name = &path[index + 1U];
-        }
-    }
-    while (name[length] != '\0' && length + 1U < capacity) {
-        label[length] = name[length];
-        ++length;
-    }
-    label[length] = '\0';
-}
-
-static enum ui_status draw_media_source_app(struct ui_rect damage)
-{
-    const struct ui_rect client = state.layout.panel_client;
-    const struct ui_rect toolbar = media_source_toolbar_rect();
-    const struct ui_rect timeline = media_source_timeline_rect();
-    const struct ui_rect upper = { client.x, toolbar.y + toolbar.height,
-        client.width, timeline.y - toolbar.y - toolbar.height };
-    const uint32_t side_width = client.width / 5U;
-    const struct ui_rect browser = { upper.x, upper.y, side_width,
-        upper.height };
-    const struct ui_rect inspector = { upper.x + upper.width - side_width,
-        upper.y, side_width, upper.height };
-    const struct ui_rect viewer = { browser.x + browser.width, upper.y,
-        upper.width - browser.width - inspector.width, upper.height };
-    const uint32_t preview_width = viewer.width > 36U ? viewer.width - 36U :
-        viewer.width;
-    const uint32_t preview_height = preview_width * 9U / 16U <
-        viewer.height - 58U ? preview_width * 9U / 16U : viewer.height - 58U;
-    const struct ui_rect preview = {
-        viewer.x + (viewer.width - preview_width) / 2U,
-        viewer.y + 26U + (viewer.height - 48U - preview_height) / 2U,
-        preview_width, preview_height
-    };
-    static const char *const button_labels[] = {
-        "New", "Import", "Trim 1s", "Save", "Export"
-    };
-    enum ui_status status = gradient_rect(toolbar, damage,
-        0x68U, 0x6DU, 0x71U, 0x25U, 0x29U, 0x2CU);
-
-    for (size_t index = 0U; index < 5U && status == UI_STATUS_OK; ++index) {
-        status = draw_media_source_button(media_source_button_rect(index), damage,
-            button_labels[index]);
-    }
-    if (status == UI_STATUS_OK) {
-        status = draw_text(toolbar, damage, toolbar.x + toolbar.width - 198U,
-            toolbar.y + 25U, media_source_dirty ? "Project - Edited" :
-            "Project", state.theme.white);
-    }
-    if (status == UI_STATUS_OK) {
-        status = fill_clipped(browser, damage,
-            framebuffer_pack(0x32U, 0x35U, 0x38U));
-    }
-    if (status == UI_STATUS_OK) {
-        status = fill_clipped(viewer, damage,
-            framebuffer_pack(0x12U, 0x14U, 0x16U));
-    }
-    if (status == UI_STATUS_OK) {
-        status = fill_clipped(inspector, damage,
-            framebuffer_pack(0x37U, 0x3AU, 0x3DU));
-    }
-    if (status == UI_STATUS_OK) {
-        status = stroke_clipped(browser, damage, 1U,
-            framebuffer_pack(0x0CU, 0x0DU, 0x0FU));
-    }
-    if (status == UI_STATUS_OK) {
-        status = stroke_clipped(inspector, damage, 1U,
-            framebuffer_pack(0x0CU, 0x0DU, 0x0FU));
-    }
-    if (status == UI_STATUS_OK) {
-        status = draw_text(browser, damage, browser.x + 10U,
-            browser.y + 22U, "LIBRARIES", state.theme.title_inactive);
-    }
-    if (status == UI_STATUS_OK) {
-        status = gradient_rect((struct ui_rect){ browser.x + 5U,
-            browser.y + 30U, browser.width - 10U, 28U }, damage,
-            0x65U, 0x83U, 0x96U, 0x35U, 0x55U, 0x68U);
-    }
-    if (status == UI_STATUS_OK) {
-        status = draw_text(browser, damage, browser.x + 16U,
-            browser.y + 49U, "Media Editor Library", state.theme.white);
-    }
-    if (status == UI_STATUS_OK) {
-        status = draw_text(browser, damage, browser.x + 10U,
-            browser.y + 82U, "IMPORTED MEDIA", state.theme.title_inactive);
-    }
-    for (size_t index = 0U; index < media_source_clip_count &&
-         status == UI_STATUS_OK; ++index) {
-        char label[18U];
-
-        media_source_short_label(media_source_clip_paths[index], label, sizeof(label));
-        status = draw_text(browser, damage, browser.x + 14U,
-            browser.y + 108U + (uint32_t)index * 23U, label,
-            index == media_source_selected_clip ? state.theme.accent_teal :
-                state.theme.white);
-    }
-    if (status == UI_STATUS_OK) {
-        status = draw_text(viewer, damage, viewer.x + 12U,
-            viewer.y + 20U, media_source_preview_loaded ?
-            "VIEWER / 24-BIT BMP" : "VIEWER / NO MEDIA",
-            state.theme.title_inactive);
-    }
-    if (status == UI_STATUS_OK) {
-        status = draw_media_source_preview(preview, damage);
-    }
-    if (status == UI_STATUS_OK) {
-        status = stroke_clipped(preview, damage, 1U,
-            framebuffer_pack(0x78U, 0x7CU, 0x80U));
-    }
-    if (status == UI_STATUS_OK) {
-        status = draw_text(viewer, damage,
-            centered_text_x(viewer, "00:00:00:00"),
-            viewer.y + viewer.height - 10U, "00:00:00:00",
-            state.theme.white);
-    }
-    if (status == UI_STATUS_OK) {
-        status = draw_text(inspector, damage, inspector.x + 10U,
-            inspector.y + 22U, "INSPECTOR", state.theme.title_inactive);
-    }
-    static const char *const inspector_labels[] = {
-        "Transform", "Position   0  0", "Scale      100%",
-        "Opacity    100%", "Audio", "Volume       0 dB"
-    };
-    for (size_t index = 0U; index < 6U && status == UI_STATUS_OK; ++index) {
-        const uint32_t color = index == 0U || index == 4U ?
-            state.theme.white : state.theme.title_inactive;
-
-        status = draw_text(inspector, damage, inspector.x + 12U,
-            inspector.y + 52U + (uint32_t)index * 27U,
-            inspector_labels[index], color);
-    }
-    if (status == UI_STATUS_OK) {
-        status = fill_clipped(timeline, damage,
-            framebuffer_pack(0x20U, 0x23U, 0x26U));
-    }
-    if (status == UI_STATUS_OK) {
-        status = fill_clipped((struct ui_rect){ timeline.x, timeline.y,
-            timeline.width, 28U }, damage,
-            framebuffer_pack(0x3CU, 0x40U, 0x44U));
-    }
-    if (status == UI_STATUS_OK) {
-        status = draw_text(timeline, damage, timeline.x + 10U,
-            timeline.y + 19U, media_source_status, state.theme.white);
-    }
-    for (uint32_t tick = 0U; tick <= 10U && status == UI_STATUS_OK; ++tick) {
-        const uint32_t x = timeline.x + 54U +
-            tick * (timeline.width - 68U) / 10U;
-
-        status = fill_clipped((struct ui_rect){ x, timeline.y + 28U,
-            1U, 8U }, damage, state.theme.title_inactive);
-    }
-    static const char *const track_labels[] = { "V1", "V2", "A1" };
-    for (size_t track = 0U; track < 3U && status == UI_STATUS_OK; ++track) {
-        const uint32_t y = timeline.y + 40U + (uint32_t)track * 30U;
-
-        status = draw_text(timeline, damage, timeline.x + 9U, y + 18U,
-            track_labels[track], state.theme.title_inactive);
-        if (status == UI_STATUS_OK) {
-            status = fill_clipped((struct ui_rect){ timeline.x + 38U, y,
-                timeline.width - 48U, 26U }, damage,
-                framebuffer_pack(0x2BU, 0x2FU, 0x32U));
-        }
-    }
-    uint32_t clip_x = timeline.x + 42U;
-    for (size_t index = 0U; index < media_source_clip_count &&
-         status == UI_STATUS_OK; ++index) {
-        uint32_t available;
-        uint32_t clip_width = 92U + media_source_clip_durations[index] / 12U;
-
-        if (clip_x >= timeline.x + timeline.width - 12U) {
-            break;
-        }
-        available = timeline.x + timeline.width - 12U - clip_x;
-        if (clip_width > available) {
-            clip_width = available;
-        }
-        if (clip_width == 0U) {
-            break;
-        }
-        const struct ui_rect clip = { clip_x, timeline.y + 42U,
-            clip_width, 22U };
-        status = gradient_rect(clip, damage,
-            index == media_source_selected_clip ? 0x96U : 0x68U,
-            index == media_source_selected_clip ? 0xBCU : 0x96U,
-            index == media_source_selected_clip ? 0xD0U : 0xAEU,
-            0x32U, 0x62U, 0x7CU);
-        if (status == UI_STATUS_OK) {
-            char label[14U];
-
-            media_source_short_label(media_source_clip_paths[index], label,
-                sizeof(label));
-            status = draw_text(clip, damage, clip.x + 6U, clip.y + 16U,
-                label, state.theme.white);
-        }
-        clip_x += clip_width + 5U;
-    }
-    if (status == UI_STATUS_OK) {
-        const uint32_t playhead_x = timeline.x + 38U +
-            media_source_playhead * (timeline.width - 48U) / 1000U;
-
-        status = fill_clipped((struct ui_rect){ playhead_x,
-            timeline.y + 28U, 2U, timeline.height - 32U }, damage,
-            state.theme.accent_red);
     }
     return status;
 }
@@ -6307,8 +4268,7 @@ static void begin_dock_spring(void)
 static bool phipia_panel(enum ui_panel_id panel)
 {
     return panel == UI_PANEL_FILES || panel == UI_PANEL_TERMINAL ||
-        panel == UI_PANEL_NOTES || panel == UI_PANEL_MEDIA_EDITOR ||
-        panel == UI_PANEL_CAMERA || panel == UI_PANEL_PAINT ||
+        panel == UI_PANEL_NOTES ||
         panel == UI_PANEL_STORE || panel == UI_PANEL_SETTINGS ||
         panel == UI_PANEL_TASKMGR;
 }
@@ -6330,15 +4290,6 @@ static enum ui_status phipia_set_panel_frame(
             UI_STATUS_OK : UI_STATUS_BAD_PANEL;
     case UI_PANEL_NOTES:
         return notes_set_frame(frame) == NOTES_STATUS_OK ?
-            UI_STATUS_OK : UI_STATUS_BAD_PANEL;
-    case UI_PANEL_MEDIA_EDITOR:
-        return editor_set_frame(frame) == EDITOR_STATUS_OK ?
-            UI_STATUS_OK : UI_STATUS_BAD_PANEL;
-    case UI_PANEL_CAMERA:
-        return phipia_camera_set_frame(frame) == PHIPIA_CAMERA_STATUS_OK ?
-            UI_STATUS_OK : UI_STATUS_BAD_PANEL;
-    case UI_PANEL_PAINT:
-        return paint_set_frame(frame) == PAINT_STATUS_OK ?
             UI_STATUS_OK : UI_STATUS_BAD_PANEL;
     case UI_PANEL_STORE:
         return store_set_frame(frame) == STORE_STATUS_OK ?
@@ -6369,12 +4320,6 @@ static void phipia_set_panel_focus(enum ui_panel_id panel, bool focused)
     case UI_PANEL_NOTES:
         (void)notes_set_focus(focused);
         break;
-    case UI_PANEL_CAMERA:
-        (void)phipia_camera_set_focus(focused);
-        break;
-    case UI_PANEL_PAINT:
-        (void)paint_set_focus(focused);
-        break;
     case UI_PANEL_STORE:
         (void)store_set_focus(focused);
         break;
@@ -6387,32 +4332,6 @@ static void phipia_set_panel_focus(enum ui_panel_id panel, bool focused)
     default:
         break;
     }
-}
-
-static enum ui_status phipia_draw_camera_panel(struct ui_rect damage)
-{
-    const bool feed = camera_refresh_frame();
-    const struct ui_rect view = phipia_camera_viewfinder_bounds();
-    const struct ui_rect clipped = rect_intersection(view, damage);
-
-    (void)phipia_camera_set_feed(feed);
-    if (feed) {
-        for (uint32_t y = 0U; y < clipped.height; ++y) {
-            for (uint32_t x = 0U; x < clipped.width; ++x) {
-                camera_preview_row[x] = camera_frame_pixel(
-                    clipped.x - view.x + x, clipped.y - view.y + y,
-                    view.width, view.height);
-            }
-            if (surface_blit(canvas, clipped.x, clipped.y + y,
-                    camera_preview_row, clipped.width, 1U,
-                    clipped.width * SURFACE_BYTES_PER_PIXEL) !=
-                        SURFACE_STATUS_OK) {
-                return UI_STATUS_SURFACE_FAILURE;
-            }
-        }
-    }
-    return phipia_camera_draw(damage) == PHIPIA_CAMERA_STATUS_OK ?
-        UI_STATUS_OK : UI_STATUS_SURFACE_FAILURE;
 }
 
 static enum ui_status phipia_draw_active_panel(
@@ -6440,14 +4359,6 @@ static enum ui_status phipia_draw_active_panel(
         return UI_STATUS_OK;
     case UI_PANEL_NOTES:
         return notes_draw(damage) == NOTES_STATUS_OK ?
-            UI_STATUS_OK : UI_STATUS_SURFACE_FAILURE;
-    case UI_PANEL_MEDIA_EDITOR:
-        return editor_draw(damage) == EDITOR_STATUS_OK ?
-            UI_STATUS_OK : UI_STATUS_SURFACE_FAILURE;
-    case UI_PANEL_CAMERA:
-        return phipia_draw_camera_panel(damage);
-    case UI_PANEL_PAINT:
-        return paint_draw(damage) == PAINT_STATUS_OK ?
             UI_STATUS_OK : UI_STATUS_SURFACE_FAILURE;
     case UI_PANEL_STORE:
         return store_draw(damage) == STORE_STATUS_OK ?
@@ -6478,15 +4389,6 @@ static enum ui_status phipia_pointer_move_active(
     case UI_PANEL_NOTES:
         return notes_pointer_move(point, damage) == NOTES_STATUS_OK ?
             UI_STATUS_OK : UI_STATUS_BAD_ELEMENT;
-    case UI_PANEL_MEDIA_EDITOR:
-        return editor_pointer_move(point, damage) == EDITOR_STATUS_OK ?
-            UI_STATUS_OK : UI_STATUS_BAD_ELEMENT;
-    case UI_PANEL_CAMERA:
-        return phipia_camera_pointer_move(point, damage) ==
-            PHIPIA_CAMERA_STATUS_OK ? UI_STATUS_OK : UI_STATUS_BAD_ELEMENT;
-    case UI_PANEL_PAINT:
-        return paint_pointer_move(point, damage) == PAINT_STATUS_OK ?
-            UI_STATUS_OK : UI_STATUS_BAD_ELEMENT;
     case UI_PANEL_STORE:
         return store_pointer_move(point, damage) == STORE_STATUS_OK ?
             UI_STATUS_OK : UI_STATUS_BAD_ELEMENT;
@@ -6513,30 +4415,6 @@ static enum ui_status phipia_pointer_press_active(
     case UI_PANEL_NOTES:
         return notes_pointer_press(point, damage) == NOTES_STATUS_OK ?
             UI_STATUS_OK : UI_STATUS_BAD_ELEMENT;
-    case UI_PANEL_MEDIA_EDITOR: {
-        const enum editor_status status = editor_pointer_press(point, damage);
-
-        if (status == EDITOR_STATUS_OK && damage->width != 0U &&
-                damage->height != 0U) {
-            media_editor_dirty = true;
-        }
-        return status == EDITOR_STATUS_OK ? UI_STATUS_OK :
-            UI_STATUS_BAD_ELEMENT;
-    }
-    case UI_PANEL_CAMERA:
-        return phipia_camera_pointer_press(point, damage) ==
-            PHIPIA_CAMERA_STATUS_OK ? UI_STATUS_OK : UI_STATUS_BAD_ELEMENT;
-    case UI_PANEL_PAINT: {
-        const enum paint_status status = paint_pointer_press(point, damage);
-
-        if (status != PAINT_STATUS_OK) {
-            return UI_STATUS_BAD_ELEMENT;
-        }
-        if (paint_take_save_request() && paint_save() != PHIPFS_STATUS_OK) {
-            return UI_STATUS_FILESYSTEM_FAILURE;
-        }
-        return UI_STATUS_OK;
-    }
     case UI_PANEL_STORE:
         return store_pointer_press(point, damage) == STORE_STATUS_OK ?
             UI_STATUS_OK : UI_STATUS_BAD_ELEMENT;
@@ -6567,9 +4445,6 @@ static enum cursor_kind phipia_cursor_over(struct ui_point point)
         break;
     case UI_PANEL_NOTES:
         kind = notes_cursor_at(point);
-        break;
-    case UI_PANEL_PAINT:
-        kind = paint_cursor_at(point);
         break;
     case UI_PANEL_SETTINGS:
         kind = settings_cursor_at(point);
@@ -6623,29 +4498,25 @@ static void taskbar_install_app(
 static void taskbar_install_apps(void)
 {
     static const char *const labels[] = {
-        "Files", "Phip", "Notes", "Media Editor", "Camera", "Paint",
-        "Store", "Settings", "Task Manager"
+        "Files", "Phip", "Notes", "Store", "Settings", "Task Manager"
     };
     static const char *const art[] = {
-        "files", "terminal", "notes", "editor", "camera", "paint",
-        "store", "settings", "taskmgr"
+        "files", "terminal", "notes", "store", "settings", "taskmgr"
     };
     static const enum taskbar_glyph glyphs[] = {
         TASKBAR_GLYPH_FILE_EXPLORER, TASKBAR_GLYPH_TERMINAL,
-        TASKBAR_GLYPH_NOTES, TASKBAR_GLYPH_CANVAS, TASKBAR_GLYPH_CAMERA,
-        TASKBAR_GLYPH_CANVAS, TASKBAR_GLYPH_STORE, TASKBAR_GLYPH_SETTINGS,
+        TASKBAR_GLYPH_NOTES, TASKBAR_GLYPH_STORE, TASKBAR_GLYPH_SETTINGS,
         TASKBAR_GLYPH_SETTINGS
     };
     static const enum ui_panel_id panels[] = {
-        UI_PANEL_FILES, UI_PANEL_TERMINAL, UI_PANEL_NOTES, UI_PANEL_MEDIA_EDITOR,
-        UI_PANEL_CAMERA, UI_PANEL_PAINT, UI_PANEL_STORE, UI_PANEL_SETTINGS,
+        UI_PANEL_FILES, UI_PANEL_TERMINAL, UI_PANEL_NOTES, UI_PANEL_STORE, UI_PANEL_SETTINGS,
         UI_PANEL_TASKMGR
     };
 
     for (size_t index = 0U; index < sizeof(panels) / sizeof(panels[0]);
          ++index) {
         taskbar_install_app(index, labels[index], art[index], glyphs[index],
-            panels[index], index != 8U || panel_open[UI_PANEL_TASKMGR]);
+            panels[index], index != 5U || panel_open[UI_PANEL_TASKMGR]);
         struct taskbar_start_entry entry = {
             .present = true,
             .heading = false,
@@ -6657,7 +4528,7 @@ static void taskbar_install_apps(void)
         (void)taskbar_set_start_entry(index, &entry);
     }
     (void)taskbar_set_start_group(0U, "Phipia");
-    for (size_t index = 0U; index < 8U; ++index) {
+    for (size_t index = 0U; index < 5U; ++index) {
         struct taskbar_start_tile tile = {
             .present = true,
             .icon = { .art = art[index], .glyph = glyphs[index] },
@@ -6686,7 +4557,7 @@ static bool phipia_seed_store(void)
         .price = "Install",
         .tagline = "Signed native SDL 2.32.10 game",
         .reviews = "Verified package",
-        .art = "paint",
+        .art = "store",
         .colour = 0U
     };
 
@@ -6697,8 +4568,7 @@ static bool phipia_seed_store(void)
 static void taskbar_sync_run_states(void)
 {
     static const enum ui_panel_id panels[] = {
-        UI_PANEL_FILES, UI_PANEL_TERMINAL, UI_PANEL_NOTES, UI_PANEL_MEDIA_EDITOR,
-        UI_PANEL_CAMERA, UI_PANEL_PAINT, UI_PANEL_STORE, UI_PANEL_SETTINGS
+        UI_PANEL_FILES, UI_PANEL_TERMINAL, UI_PANEL_NOTES, UI_PANEL_STORE, UI_PANEL_SETTINGS
     };
 
     if (!taskbar_is_initialized()) {
@@ -6708,7 +4578,7 @@ static void taskbar_sync_run_states(void)
          ++index) {
         (void)taskbar_set_run_state(index, taskbar_run_for(panels[index]));
     }
-    taskbar_install_app(8U, "Task Manager", "taskmgr",
+    taskbar_install_app(5U, "Task Manager", "taskmgr",
         TASKBAR_GLYPH_SETTINGS, UI_PANEL_TASKMGR,
         panel_open[UI_PANEL_TASKMGR]);
 }
@@ -6731,7 +4601,6 @@ static void phipia_seed_settings(void)
         { true, "Personalization", "Colour, transparency and layout", "brush", 0U },
         { true, "Network & internet", "Live connection status", "globe", 0U },
         { true, "Apps", "Store and installed applications", "layout-grid", 0U },
-        { true, "Privacy & security", "Camera and platform security", "shield-check", 0U },
         { true, "About", "Phipia system information", "circle-user", 0U }
     };
     static const struct settings_row system_rows[] = {
@@ -6760,11 +4629,6 @@ static void phipia_seed_settings(void)
         { true, SETTINGS_ROW_ACTION, "Phipia Store", "Browse signed applications", 0U,
             { "Open", "", "", "" } }
     };
-    static const struct settings_row privacy_rows[] = {
-        { true, SETTINGS_ROW_HEADING, "App permissions", "", 0U, { "" } },
-        { true, SETTINGS_ROW_ACTION, "Camera", "Open the camera permission surface", 0U,
-            { "Open", "", "", "" } }
-    };
     static const struct settings_row about_rows[] = {
         { true, SETTINGS_ROW_HEADING, "Phipia", "", 0U, { "" } },
         { true, SETTINGS_ROW_ACTION, "System information", "Read live kernel resource state", 0U,
@@ -6779,7 +4643,6 @@ static void phipia_seed_settings(void)
             sizeof(personalization_rows[0]) },
         { network_rows, sizeof(network_rows) / sizeof(network_rows[0]) },
         { app_rows, sizeof(app_rows) / sizeof(app_rows[0]) },
-        { privacy_rows, sizeof(privacy_rows) / sizeof(privacy_rows[0]) },
         { about_rows, sizeof(about_rows) / sizeof(about_rows[0]) }
     };
 
@@ -6809,13 +4672,11 @@ static void phipia_apply_settings(void)
 static bool phipia_refresh_taskmgr(bool force)
 {
     static const enum ui_panel_id panels[] = {
-        UI_PANEL_FILES, UI_PANEL_TERMINAL, UI_PANEL_NOTES, UI_PANEL_MEDIA_EDITOR,
-        UI_PANEL_CAMERA, UI_PANEL_PAINT, UI_PANEL_STORE, UI_PANEL_SETTINGS,
+        UI_PANEL_FILES, UI_PANEL_TERMINAL, UI_PANEL_NOTES, UI_PANEL_STORE, UI_PANEL_SETTINGS,
         UI_PANEL_TASKMGR
     };
     static const char *const arts[] = {
-        "files", "terminal", "notes", "editor", "camera", "paint",
-        "store", "settings", "taskmgr"
+        "files", "terminal", "notes", "store", "settings", "taskmgr"
     };
     const uint64_t second = clock_monotonic_ns() / UINT64_C(1000000000);
     const struct heap_state heap = heap_get_state();
@@ -6901,12 +4762,8 @@ static bool phipia_initialize_shell(uint32_t width, uint32_t height)
             notes_initialize(canvas, panel_home) != NOTES_STATUS_OK ||
             explorer_initialize(canvas, panel_home) != EXPLORER_STATUS_OK ||
             store_initialize(canvas, panel_home) != STORE_STATUS_OK ||
-            paint_initialize(canvas, panel_home) != PAINT_STATUS_OK ||
             settings_initialize(canvas, panel_home) != SETTINGS_STATUS_OK ||
-            phipia_camera_initialize(canvas, panel_home) !=
-                PHIPIA_CAMERA_STATUS_OK ||
             taskmgr_initialize(canvas, panel_home) != TASKMGR_STATUS_OK ||
-            editor_initialize(canvas, panel_home) != EDITOR_STATUS_OK ||
             dialog_initialize(canvas, state.layout.surface) !=
                 DIALOG_STATUS_OK ||
             taskbar_initialize(canvas, width, height) != TASKBAR_STATUS_OK) {
@@ -6915,11 +4772,9 @@ static bool phipia_initialize_shell(uint32_t width, uint32_t height)
     }
     (void)terminal_set_title("Phip");
     (void)explorer_set_title("Files");
-    (void)paint_set_title("Paint");
     (void)settings_set_account("Phipia", "Local account");
     (void)settings_set_heading("Phipia Settings");
     phipia_seed_settings();
-    (void)phipia_camera_set_feed(false);
     (void)taskbar_set_theme(TASKBAR_THEME_DARK);
     (void)taskbar_set_alignment(TASKBAR_ALIGNMENT_LEFT);
     (void)taskbar_set_search_visible(true);
@@ -6977,8 +4832,7 @@ static enum ui_status draw_one_panel(struct ui_rect damage, bool focused)
     }
     if (status == UI_STATUS_OK) {
         status = fill_clipped(state.layout.panel_client, damage,
-            state.active_panel == UI_PANEL_TERMINAL ||
-            state.active_panel == UI_PANEL_MEDIA_EDITOR ?
+            state.active_panel == UI_PANEL_TERMINAL ?
             framebuffer_pack(0x08U, 0x10U, 0x12U) :
             (window_high_contrast ? framebuffer_pack(0xFFU, 0xFFU, 0xFFU) :
                 state.theme.white));
@@ -7065,12 +4919,6 @@ static enum ui_status draw_one_panel(struct ui_rect damage, bool focused)
     }
     if (state.active_panel == UI_PANEL_NOTES) {
         return draw_notes_app(damage);
-    }
-    if (state.active_panel == UI_PANEL_MEDIA_EDITOR) {
-        return draw_media_source_app(damage);
-    }
-    if (state.active_panel == UI_PANEL_CAMERA) {
-        return draw_camera_app(damage);
     }
     if (state.active_panel == UI_PANEL_STORE) {
         return draw_store_app(damage);
@@ -7883,19 +5731,6 @@ enum ui_status ui_construct(bool pointer_present)
     logo_red_shift = framebuffer.red_position;
     logo_green_shift = framebuffer.green_position;
     logo_blue_shift = framebuffer.blue_position;
-    if (phipia_media_editor_icon_geometry(&media_editor_icon_width,
-            &media_editor_icon_height) != LOGO_STATUS_OK ||
-        media_editor_icon_width == 0U || media_editor_icon_width > 80U ||
-        media_editor_icon_height == 0U || media_editor_icon_height > 80U ||
-        phipia_media_editor_icon_decode(media_editor_icon_pixels,
-            (size_t)media_editor_icon_width * media_editor_icon_height,
-            framebuffer.red_position, framebuffer.green_position,
-            framebuffer.blue_position, 0U) != LOGO_STATUS_OK ||
-        phipia_media_editor_icon_decode_alpha(media_editor_icon_alpha,
-            (size_t)media_editor_icon_width * media_editor_icon_height) != LOGO_STATUS_OK) {
-        canvas = NULL;
-        return UI_STATUS_MEDIA_EDITOR_ICON_FAILURE;
-    }
     if (phipia_settings_icon_geometry(&settings_icon_width,
             &settings_icon_height) != LOGO_STATUS_OK ||
         settings_icon_width == 0U || settings_icon_width > 80U ||
@@ -7906,28 +5741,6 @@ enum ui_status ui_construct(bool pointer_present)
             framebuffer.blue_position, 0U) != LOGO_STATUS_OK ||
         phipia_settings_icon_decode_alpha(settings_icon_alpha,
             (size_t)settings_icon_width * settings_icon_height) !=
-                LOGO_STATUS_OK ||
-        phipia_camera_icon_geometry(&camera_icon_width,
-            &camera_icon_height) != LOGO_STATUS_OK ||
-        camera_icon_width == 0U || camera_icon_width > 80U ||
-        camera_icon_height == 0U || camera_icon_height > 80U ||
-        phipia_camera_icon_decode(camera_icon_pixels,
-            (size_t)camera_icon_width * camera_icon_height,
-            framebuffer.red_position, framebuffer.green_position,
-            framebuffer.blue_position, 0U) != LOGO_STATUS_OK ||
-        phipia_camera_icon_decode_alpha(camera_icon_alpha,
-            (size_t)camera_icon_width * camera_icon_height) !=
-                LOGO_STATUS_OK ||
-        phipia_canvas_icon_geometry(&canvas_icon_width,
-            &canvas_icon_height) != LOGO_STATUS_OK ||
-        canvas_icon_width == 0U || canvas_icon_width > 80U ||
-        canvas_icon_height == 0U || canvas_icon_height > 80U ||
-        phipia_canvas_icon_decode(canvas_icon_pixels,
-            (size_t)canvas_icon_width * canvas_icon_height,
-            framebuffer.red_position, framebuffer.green_position,
-            framebuffer.blue_position, 0U) != LOGO_STATUS_OK ||
-        phipia_canvas_icon_decode_alpha(canvas_icon_alpha,
-            (size_t)canvas_icon_width * canvas_icon_height) !=
                 LOGO_STATUS_OK) {
         canvas = NULL;
         return UI_STATUS_APP_ICON_FAILURE;
@@ -8044,12 +5857,6 @@ enum ui_status ui_construct(bool pointer_present)
     store_query[0] = '\0';
     store_installer_queued = false;
     desktop_wallpaper = 0U;
-    camera_capture_count = 0U;
-    camera_frame_available = false;
-    camera_seen_generation = 0U;
-    media_editor_export_active = false;
-    media_editor_dirty = false;
-    camera_initialize();
     ui_anim_reset(&panel_anim);
     panel_anim_panel = UI_PANEL_NONE;
     panel_anim_origin = (struct ui_rect){ 0U, 0U, 0U, 0U };
@@ -8328,19 +6135,6 @@ enum ui_status ui_handle_keyboard(const struct keyboard_event *event)
                 (event->scancode == 0x1CU ? '\n' : event->character));
         return ui_event_publish(&ui_event);
     }
-    if (phipia_shell_ready && state.active_panel == UI_PANEL_PAINT &&
-            (event->scancode == 0x0EU || event->scancode == 0x1CU ||
-                (event->control && (event->character == 's' ||
-                    event->character == 'S')) ||
-                (!event->control && event->character >= ' ' &&
-                    event->character <= '~'))) {
-        ui_event.type = UI_EVENT_TEXT_INPUT;
-        ui_event.control = event->control;
-        ui_event.character = event->control ? 's' :
-            (event->scancode == 0x0EU ? '\b' :
-                (event->scancode == 0x1CU ? '\n' : event->character));
-        return ui_event_publish(&ui_event);
-    }
     if (launcher_open) {
         if (!event->pressed) {
             return UI_STATUS_OK;
@@ -8387,8 +6181,7 @@ enum ui_status ui_handle_keyboard(const struct keyboard_event *event)
         ui_event.type = UI_EVENT_TEXT_INPUT;
         ui_event.character = event->scancode == 0x0EU ? '\b' :
             event->character;
-    } else if ((state.active_panel == UI_PANEL_NOTES ||
-            state.active_panel == UI_PANEL_MEDIA_EDITOR) &&
+    } else if (state.active_panel == UI_PANEL_NOTES &&
         event->scancode != 0x01U) {
         ui_event.type = UI_EVENT_TEXT_INPUT;
         ui_event.control = event->control;
@@ -8400,8 +6193,6 @@ enum ui_status ui_handle_keyboard(const struct keyboard_event *event)
             ui_event.character = event->character >= 'A' &&
                 event->character <= 'Z' ?
                 (char)(event->character - 'A' + 'a') : event->character;
-        } else if (state.active_panel == UI_PANEL_MEDIA_EDITOR) {
-            return UI_STATUS_OK;
         } else if (event->scancode == 0x0EU) {
             ui_event.character = '\b';
         } else if (event->scancode == 0x1CU) {
@@ -8479,12 +6270,6 @@ static enum ui_status set_panel(
         *damage = rect_union(*damage, state.layout.panel);
         return UI_STATUS_OK;
     }
-    if (panel == UI_PANEL_NONE && old_panel == UI_PANEL_MEDIA_EDITOR &&
-            (media_source_dirty || media_editor_dirty) &&
-            media_editor_save() != PHIPFS_STATUS_OK) {
-        *damage = rect_union(*damage, state.layout.panel);
-        return UI_STATUS_OK;
-    }
     for (size_t index = 0U; index < UI_DOCK_ITEM_COUNT; ++index) {
         if (state.layout.dock_items[index].panel == old_panel ||
             state.layout.dock_items[index].panel == panel) {
@@ -8497,9 +6282,7 @@ static enum ui_status set_panel(
         if (old_panel != UI_PANEL_NONE) {
             struct ui_rect close_damage = { 0U, 0U, 0U, 0U };
 
-            if (old_panel == UI_PANEL_MEDIA_EDITOR) {
-                (void)editor_close(&close_damage);
-            } else if (old_panel == UI_PANEL_TASKMGR) {
+            if (old_panel == UI_PANEL_TASKMGR) {
                 (void)taskmgr_close(&close_damage);
             }
             *damage = rect_union(*damage, close_damage);
@@ -8556,9 +6339,7 @@ static enum ui_status set_panel(
             panel_open[panel] = true;
             struct ui_rect open_damage = { 0U, 0U, 0U, 0U };
 
-            if (panel == UI_PANEL_MEDIA_EDITOR) {
-                (void)editor_open(&open_damage);
-            } else if (panel == UI_PANEL_TASKMGR) {
+            if (panel == UI_PANEL_TASKMGR) {
                 (void)taskmgr_open(&open_damage);
             }
             *damage = rect_union(*damage, open_damage);
@@ -8590,12 +6371,6 @@ static enum ui_status set_panel(
         (void)files_refresh();
     } else if (opening && panel == UI_PANEL_NOTES) {
         (void)note_load();
-    } else if (opening && panel == UI_PANEL_MEDIA_EDITOR) {
-        if (media_source_load() == PHIPFS_STATUS_OK && media_source_clip_count == 0U) {
-            media_source_import_clip();
-        }
-        media_editor_sync_clip();
-        (void)media_editor_load();
     }
 
     if (panel_open[UI_PANEL_TERMINAL]) {
@@ -8620,9 +6395,6 @@ static enum ui_status set_panel(
     }
     taskbar_sync_run_states();
     (void)phipia_refresh_taskmgr(true);
-    if (opening && panel == UI_PANEL_PAINT) {
-        console_serial_write("Phipia: Paint opened\n");
-    }
     return UI_STATUS_OK;
 }
 
@@ -8897,21 +6669,6 @@ static enum ui_element_id active_hit(struct ui_point point)
                 return (enum ui_element_id)(UI_ELEMENT_FILES_ENTRY_0 + index);
             }
         }
-    } else if (state.active_panel == UI_PANEL_MEDIA_EDITOR) {
-        static const enum ui_element_id ids[] = {
-            UI_ELEMENT_MEDIA_EDITOR_NEW, UI_ELEMENT_MEDIA_EDITOR_IMPORT,
-            UI_ELEMENT_MEDIA_EDITOR_TRIM, UI_ELEMENT_MEDIA_EDITOR_SAVE,
-            UI_ELEMENT_MEDIA_EDITOR_EXPORT
-        };
-
-        for (size_t index = 0U; index < 5U; ++index) {
-            if (rect_contains_point(media_source_button_rect(index), point)) {
-                return ids[index];
-            }
-        }
-        if (rect_contains_point(media_source_timeline_rect(), point)) {
-            return UI_ELEMENT_MEDIA_EDITOR_TIMELINE;
-        }
     } else if (state.active_panel == UI_PANEL_STORE) {
         if (rect_contains_point(store_search_rect(), point)) {
             return UI_ELEMENT_STORE_SEARCH;
@@ -8963,10 +6720,6 @@ static enum ui_element_id active_hit(struct ui_point point)
                         UI_ELEMENT_SETTINGS_OPTION_0 + index);
                 }
             }
-        }
-    } else if (state.active_panel == UI_PANEL_CAMERA) {
-        if (rect_contains_point(camera_capture_rect(), point)) {
-            return UI_ELEMENT_CAMERA_CAPTURE;
         }
     }
     return UI_ELEMENT_NONE;
@@ -9088,16 +6841,6 @@ static enum ui_status activate_element(
         *damage = state.layout.surface;
         dock3d_launch(&dock_model, dock_index);
         begin_dock_spring();
-        if (state.layout.dock_items[dock_index].action ==
-                UI_ACTION_OPEN_CANVAS &&
-                state.layout.dock_items[dock_index].panel == UI_PANEL_NONE) {
-            pending_native_origin =
-                state.layout.dock_items[dock_index].icon_bounds;
-            pending_native_origin_valid = true;
-            return copy_string(application_launch_path,
-                sizeof(application_launch_path), "CANVAS.MAN") ?
-                    UI_STATUS_OK : UI_STATUS_BAD_ELEMENT;
-        }
         return set_panel(state.layout.dock_items[dock_index].panel, damage);
     }
     if (element >= UI_ELEMENT_DOCK_FILES &&
@@ -9108,16 +6851,6 @@ static enum ui_status activate_element(
             dock_index);
         begin_dock_spring();
         *damage = rect_union(*damage, dock_visual_bounds(&state.layout));
-        if (state.layout.dock_items[dock_index].action ==
-                UI_ACTION_OPEN_CANVAS &&
-                state.layout.dock_items[dock_index].panel == UI_PANEL_NONE) {
-            pending_native_origin =
-                state.layout.dock_items[dock_index].icon_bounds;
-            pending_native_origin_valid = true;
-            return copy_string(application_launch_path,
-                sizeof(application_launch_path), "CANVAS.MAN") ?
-                    UI_STATUS_OK : UI_STATUS_BAD_ELEMENT;
-        }
         return set_panel(panel_for_element(element), damage);
     }
     if (element == UI_ELEMENT_WINDOW_CLOSE) {
@@ -9197,57 +6930,10 @@ static enum ui_status activate_element(
             (void)note_load();
             return set_panel(UI_PANEL_NOTES, damage);
         }
-    } else if (element == UI_ELEMENT_MEDIA_EDITOR_NEW) {
-        media_source_reset(true);
-    } else if (element == UI_ELEMENT_MEDIA_EDITOR_IMPORT) {
-        media_source_import_clip();
-    } else if (element == UI_ELEMENT_MEDIA_EDITOR_TRIM) {
-        media_source_trim_clip();
-    } else if (element == UI_ELEMENT_MEDIA_EDITOR_SAVE) {
-        (void)media_source_save();
-    } else if (element == UI_ELEMENT_MEDIA_EDITOR_EXPORT) {
-        media_editor_export_active = true;
-        (void)media_source_export();
-        media_editor_export_active = false;
-    } else if (element == UI_ELEMENT_MEDIA_EDITOR_TIMELINE) {
-        const struct ui_rect timeline = media_source_timeline_rect();
-        const uint32_t left = timeline.x + 38U;
-        const uint32_t right = timeline.x + timeline.width - 10U;
-        uint32_t pointer_x = state.pointer.x < 0 ? left :
-            (uint32_t)state.pointer.x;
-
-        if (pointer_x < left) {
-            pointer_x = left;
-        } else if (pointer_x > right) {
-            pointer_x = right;
-        }
-        media_source_playhead = (pointer_x - left) * 1000U / (right - left);
-        media_source_dirty = true;
-        uint32_t clip_x = timeline.x + 42U;
-
-        for (size_t index = 0U; index < media_source_clip_count; ++index) {
-            const uint32_t clip_width = 92U +
-                media_source_clip_durations[index] / 12U;
-
-            if (pointer_x >= clip_x && pointer_x < clip_x + clip_width) {
-                media_source_selected_clip = (uint8_t)index;
-                if (media_source_load_preview(media_source_clip_paths[index]) ==
-                    PHIPFS_STATUS_OK) {
-                    media_source_set_status("Clip selected / playhead moved");
-                } else {
-                    media_source_set_status("Source offline / playhead moved");
-                }
-                break;
-            }
-            clip_x += clip_width + 5U;
-        }
-        if (media_source_selected_clip == UINT8_MAX) {
-            media_source_set_status("Playhead moved");
-        }
     } else if (element == UI_ELEMENT_SETTINGS_BACK) {
         settings_page = -1;
     } else if (element >= UI_ELEMENT_SETTINGS_CATEGORY_0 &&
-            element <= UI_ELEMENT_SETTINGS_CATEGORY_11) {
+            element <= UI_ELEMENT_SETTINGS_CATEGORY_10) {
         settings_page = (int8_t)(element - UI_ELEMENT_SETTINGS_CATEGORY_0);
     } else if (element == UI_ELEMENT_SETTINGS_APPEARANCE_LIGHT ||
             element == UI_ELEMENT_SETTINGS_APPEARANCE_DARK) {
@@ -9295,7 +6981,7 @@ static enum ui_status activate_element(
                 cursor_damage_rect_for(state.pointer));
         } else if (settings_page == 6 && option < 1U) {
             window_motion = !window_motion;
-        } else if (settings_page == 10) {
+        } else if (settings_page == 9) {
             if (option == 0U) {
                 window_shadows = !window_shadows;
             } else if (option == 1U) {
@@ -9314,9 +7000,6 @@ static enum ui_status activate_element(
             return UI_STATUS_WALLPAPER_FAILURE;
         }
         *damage = state.layout.surface;
-    } else if (element == UI_ELEMENT_CAMERA_CAPTURE) {
-        (void)camera_capture();
-        return UI_STATUS_OK;
     } else {
         return UI_STATUS_BAD_ELEMENT;
     }
@@ -9545,25 +7228,6 @@ static enum ui_status apply_event(
         }
         return UI_STATUS_BAD_ELEMENT;
     }
-    if (phipia_shell_ready && event->type == UI_EVENT_TEXT_INPUT &&
-            state.active_panel == UI_PANEL_PAINT) {
-        enum paint_status paint_status;
-
-        if (event->control && (event->character == 's' ||
-                event->character == 'S')) {
-            return paint_save() == PHIPFS_STATUS_OK ? UI_STATUS_OK :
-                UI_STATUS_FILESYSTEM_FAILURE;
-        }
-        if (event->character == '\b') {
-            paint_status = paint_key_backspace(damage);
-        } else if (event->character == '\n') {
-            paint_status = paint_key_enter(damage);
-        } else {
-            paint_status = paint_text_input(event->character, damage);
-        }
-        return paint_status == PAINT_STATUS_OK ? UI_STATUS_OK :
-            UI_STATUS_BAD_ELEMENT;
-    }
     if (event->type == UI_EVENT_POINTER_MOVEMENT) {
         const struct ui_rect old_cursor = cursor_damage_rect_for(state.pointer);
         const enum ui_element_id old_hover = state.hover;
@@ -9735,9 +7399,6 @@ static enum ui_status apply_event(
                     if (page == 3U && row == 1U) {
                         return set_panel(UI_PANEL_STORE, damage);
                     }
-                    if (page == 4U && row == 1U) {
-                        return set_panel(UI_PANEL_CAMERA, damage);
-                    }
                     if (page == 2U && row == 1U) {
                         const struct network_state network =
                             network_get_state();
@@ -9760,7 +7421,7 @@ static enum ui_status apply_event(
                                 "An IPv4 address is configured." :
                                 "No IPv4 address is configured.");
                         (void)dialog_open(&request, damage);
-                    } else if (page == 5U && row == 1U) {
+                    } else if (page == 4U && row == 1U) {
                         const struct heap_state heap = heap_get_state();
                         const struct thread_system_state threads =
                             thread_get_state();
@@ -9788,9 +7449,7 @@ static enum ui_status apply_event(
 
                 if (taskmgr_take_ended_task(ended, sizeof(ended))) {
                     static const enum ui_panel_id panels[] = {
-                        UI_PANEL_FILES, UI_PANEL_TERMINAL, UI_PANEL_NOTES,
-                        UI_PANEL_MEDIA_EDITOR, UI_PANEL_CAMERA, UI_PANEL_PAINT,
-                        UI_PANEL_STORE, UI_PANEL_SETTINGS, UI_PANEL_TASKMGR
+                        UI_PANEL_FILES, UI_PANEL_TERMINAL, UI_PANEL_NOTES, UI_PANEL_STORE, UI_PANEL_SETTINGS, UI_PANEL_TASKMGR
                     };
 
                     for (size_t index = 0U;
@@ -9806,22 +7465,12 @@ static enum ui_status apply_event(
                         panel_open[panel] = false;
                         panel_minimized[panel] = false;
                         panel_maximized[panel] = false;
-                        if (panel == UI_PANEL_MEDIA_EDITOR) {
-                            struct ui_rect closed;
-
-                            (void)editor_close(&closed);
-                        }
                         taskbar_sync_run_states();
                         *damage = rect_union(*damage, taskbar_bounds());
                         phipia_refresh_taskmgr(true);
                         break;
                     }
                 }
-            }
-            if (state.active_panel == UI_PANEL_CAMERA &&
-                    rect_contains_point(phipia_camera_capture_bounds(),
-                        event->point)) {
-                (void)camera_capture();
             }
         }
         state.pressed = hit;
@@ -9837,15 +7486,6 @@ static enum ui_status apply_event(
         event->button == UI_POINTER_BUTTON_LEFT) {
         const enum ui_element_id pressed = state.pressed;
 
-        if (phipia_shell_ready && state.active_panel == UI_PANEL_PAINT) {
-            struct ui_rect paint_damage = { 0U, 0U, 0U, 0U };
-
-            if (paint_pointer_release(event->point, &paint_damage) !=
-                    PAINT_STATUS_OK) {
-                return UI_STATUS_BAD_ELEMENT;
-            }
-            *damage = rect_union(*damage, paint_damage);
-        }
         if (phipia_shell_ready && !panel_drag_active) {
             struct ui_rect shell_damage = { 0U, 0U, 0U, 0U };
             struct taskbar_action action = {
@@ -9962,33 +7602,6 @@ static enum ui_status apply_event(
         state.active_panel == UI_PANEL_NOTES) {
         note_input(event->character, event->control);
         *damage = rect_union(*damage, state.layout.panel);
-    } else if (event->type == UI_EVENT_TEXT_INPUT &&
-            state.active_panel == UI_PANEL_MEDIA_EDITOR && event->control) {
-        if (event->character == 's') {
-            if (media_editor_save() != PHIPFS_STATUS_OK) {
-                return UI_STATUS_FILESYSTEM_FAILURE;
-            }
-        } else if (event->character == 'o') {
-            media_source_import_clip();
-            media_editor_sync_clip();
-            media_editor_dirty = true;
-        } else if (event->character == 'e') {
-            media_editor_export_active = true;
-            const enum phipfs_status status = media_source_export();
-
-            media_editor_export_active = false;
-            if (status != PHIPFS_STATUS_OK) {
-                return UI_STATUS_FILESYSTEM_FAILURE;
-            }
-        } else if (event->character == 'n') {
-            media_source_reset(true);
-            media_editor_clear_items();
-            media_editor_sync_clip();
-            media_editor_dirty = true;
-        } else {
-            return UI_STATUS_OK;
-        }
-        *damage = rect_union(*damage, state.layout.panel);
     } else if (event->type == UI_EVENT_REDRAW_REQUEST) {
         *damage = state.layout.surface;
     } else if (event->type != UI_EVENT_POINTER_BUTTON_PRESS &&
@@ -10066,13 +7679,7 @@ enum ui_status ui_flush(void)
         moving = settings_animate(&motion_damage) || moving;
         damage = rect_union(damage, motion_damage);
         motion_damage = (struct ui_rect){ 0U, 0U, 0U, 0U };
-        moving = phipia_camera_animate(&motion_damage) || moving;
-        damage = rect_union(damage, motion_damage);
-        motion_damage = (struct ui_rect){ 0U, 0U, 0U, 0U };
         moving = taskmgr_animate(&motion_damage) || moving;
-        damage = rect_union(damage, motion_damage);
-        motion_damage = (struct ui_rect){ 0U, 0U, 0U, 0U };
-        moving = editor_animate(&motion_damage) || moving;
         damage = rect_union(damage, motion_damage);
         motion_damage = (struct ui_rect){ 0U, 0U, 0U, 0U };
         moving = terminal_blink(&motion_damage) || moving;
@@ -10110,14 +7717,6 @@ enum ui_status ui_flush(void)
             damage = rect_union(damage, rect_union(old_dock,
                 dock_visual_bounds(&state.layout)));
         }
-    }
-    if (panel_open[UI_PANEL_CAMERA] &&
-            camera_get_info().generation != camera_seen_generation) {
-        const enum ui_panel_id focused = state.active_panel;
-
-        install_panel_geometry(UI_PANEL_CAMERA);
-        damage = rect_union(damage, camera_preview_rect());
-        install_panel_geometry(focused);
     }
     ledger = boot_ledger_installed();
     const bool pass = ledger != NULL && ledger->executed && !ledger->degraded &&
@@ -10634,10 +8233,6 @@ bool ui_self_test(void)
         self_test_failure = dock3d_self_test_failure();
         return false;
     }
-    if (!camera_self_test()) {
-        self_test_failure = "bounded camera frame broker is invalid";
-        return false;
-    }
     if (!event_queue_self_test()) {
         self_test_failure = event_queue_failure;
         return false;
@@ -10661,21 +8256,16 @@ enum ui_status ui_verify_installed(struct ui_proof *proof)
 {
     static const enum ui_element_id ids[UI_DOCK_ITEM_COUNT] = {
         UI_ELEMENT_DOCK_FILES, UI_ELEMENT_DOCK_TERMINAL,
-        UI_ELEMENT_DOCK_NOTES, UI_ELEMENT_DOCK_MEDIA_EDITOR,
-        UI_ELEMENT_DOCK_CAMERA, UI_ELEMENT_DOCK_CANVAS,
-        UI_ELEMENT_DOCK_STORE,
+        UI_ELEMENT_DOCK_NOTES, UI_ELEMENT_DOCK_STORE,
         UI_ELEMENT_DOCK_SETTINGS
     };
     static const enum ui_action actions[UI_DOCK_ITEM_COUNT] = {
         UI_ACTION_OPEN_FILES, UI_ACTION_OPEN_TERMINAL,
-        UI_ACTION_OPEN_NOTES, UI_ACTION_OPEN_MEDIA_EDITOR,
-        UI_ACTION_OPEN_CAMERA, UI_ACTION_OPEN_CANVAS,
-        UI_ACTION_OPEN_STORE,
+        UI_ACTION_OPEN_NOTES, UI_ACTION_OPEN_STORE,
         UI_ACTION_OPEN_SETTINGS
     };
     static const enum ui_panel_id panels[UI_DOCK_ITEM_COUNT] = {
-        UI_PANEL_FILES, UI_PANEL_TERMINAL, UI_PANEL_NOTES, UI_PANEL_MEDIA_EDITOR,
-        UI_PANEL_CAMERA, UI_PANEL_PAINT, UI_PANEL_STORE, UI_PANEL_SETTINGS
+        UI_PANEL_FILES, UI_PANEL_TERMINAL, UI_PANEL_NOTES, UI_PANEL_STORE, UI_PANEL_SETTINGS
     };
 
     if (proof == NULL) {
@@ -10781,8 +8371,8 @@ const char *ui_installed_proof_failure(void)
 const char *ui_panel_name(enum ui_panel_id panel)
 {
     static const char *const names[] = {
-        "None", "Files", "Phip", "Notes", "Media Editor",
-        "Camera", "Paint", "Store", "Settings", "Task Manager"
+        "None", "Files", "Phip", "Notes",
+        "Store", "Settings", "Task Manager"
     };
     uint32_t slot;
 
@@ -10810,15 +8400,6 @@ const char *ui_element_name(enum ui_element_id element)
     }
     if (element == UI_ELEMENT_DOCK_NOTES) {
         return "Notes";
-    }
-    if (element == UI_ELEMENT_DOCK_MEDIA_EDITOR) {
-        return "Media Editor";
-    }
-    if (element == UI_ELEMENT_DOCK_CAMERA) {
-        return "Camera";
-    }
-    if (element == UI_ELEMENT_DOCK_CANVAS) {
-        return "Paint";
     }
     if (element == UI_ELEMENT_DOCK_STORE) {
         return "Store";
@@ -10854,7 +8435,6 @@ const char *ui_status_string(enum ui_status status)
         "UI font rendering failed",
         "cached surface rendering failed",
         "canonical logo rendering failed",
-        "Media Editor icon rendering failed",
         "application icon rendering failed",
         "desktop wallpaper rendering failed",
         "application filesystem operation failed",

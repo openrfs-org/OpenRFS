@@ -43,10 +43,10 @@
  * happens if I press here", so the thing that knows the answer is the
  * window under the pointer, and it is the window that says.  Eight of them
  * do: explorer_cursor_at() and taskmgr_cursor_at() return a resize at
- * their edges, paint_cursor_at() a crosshair over the sheet,
+ * their edges,
  * terminal_cursor_at() a caret across the console, notes_cursor_at() a
  * caret over the pad, settings_cursor_at() and taskbar_cursor_at() a caret
- * in their search boxes.  Editor, Camera and the dialog answer nothing,
+ * in their search boxes. The dialog answers nothing,
  * because their answer is the arrow everywhere and a function that only
  * ever returns the default is not worth having.
  *

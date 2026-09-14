@@ -55,8 +55,6 @@ jobs:
                       build/native-porting-qemu.txt
                       build/tests/native*/serial.log
                       build/tests/native*/data.raw
-                      build/tests/native-canvas/canvas.png
-                      build/tests/native-canvas/canvas.mp4
                       build/tests/native-audio/native-audio.wav
                       build/tests/native-sdl/sdl.png
                       build/tests/native-sdl/sdl.mp4

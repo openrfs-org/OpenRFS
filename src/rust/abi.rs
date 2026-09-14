@@ -717,12 +717,9 @@ pub(crate) unsafe extern "C" fn phipia_ext4_directory_entry(
 /// The run-length image, produced by `tools/make-logo-asset.py` at build time.
 /// The Makefile points `PHIPIA_LOGO_BLOB` at it; there is no committed copy.
 static LOGO: &[u8] = include_bytes!(env!("PHIPIA_LOGO_BLOB"));
-static MEDIA_EDITOR_ICON: &[u8] = include_bytes!(env!("PHIPIA_MEDIA_EDITOR_ICON_BLOB"));
 static SETTINGS_ICON: &[u8] = include_bytes!(env!("PHIPIA_SETTINGS_ICON_BLOB"));
 static FILES_ICON: &[u8] = include_bytes!(env!("PHIPIA_FILES_ICON_BLOB"));
 static TERMINAL_ICON: &[u8] = include_bytes!(env!("PHIPIA_TERMINAL_ICON_BLOB"));
-static CAMERA_ICON: &[u8] = include_bytes!(env!("PHIPIA_CAMERA_ICON_BLOB"));
-static CANVAS_ICON: &[u8] = include_bytes!(env!("PHIPIA_CANVAS_ICON_BLOB"));
 static STORE_ICON: &[u8] = include_bytes!(env!("PHIPIA_STORE_ICON_BLOB"));
 static STORE_UI_ICONS: &[u8] =
     include_bytes!(env!("PHIPIA_STORE_UI_ICONS_BLOB"));
@@ -901,72 +898,6 @@ pub unsafe extern "C" fn phipia_logo_decode_alpha(
     // refused above. The decoder performs all subsequent bounds checks.
     let pixels = unsafe { core::slice::from_raw_parts_mut(out, out_pixels) };
     match logo::decode_alpha(LOGO, pixels) {
-        Ok(_) => status_code(Status::Ok),
-        Err(status) => status_code(status),
-    }
-}
-
-/// Read the built-in Media Editor icon geometry.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn phipia_media_editor_icon_geometry(
-    width: *mut u32,
-    height: *mut u32,
-) -> i32 {
-    if width.is_null() || height.is_null() {
-        return status_code(Status::NullArgument);
-    }
-    match logo::geometry(MEDIA_EDITOR_ICON) {
-        Ok(geometry) => {
-            // SAFETY: both writable pointers were checked above.
-            unsafe {
-                *width = geometry.width;
-                *height = geometry.height;
-            }
-            status_code(Status::Ok)
-        }
-        Err(status) => status_code(status),
-    }
-}
-
-/// Decode the built-in Media Editor icon over the supplied background.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn phipia_media_editor_icon_decode(
-    out: *mut u32,
-    out_pixels: usize,
-    red_shift: u8,
-    green_shift: u8,
-    blue_shift: u8,
-    background: u32,
-) -> i32 {
-    if out.is_null() {
-        return status_code(Status::NullArgument);
-    }
-    // SAFETY: the caller supplies the writable extent and null was refused.
-    let pixels = unsafe { core::slice::from_raw_parts_mut(out, out_pixels) };
-    let format = Format {
-        red_shift,
-        green_shift,
-        blue_shift,
-        background,
-    };
-    match logo::decode(MEDIA_EDITOR_ICON, pixels, &format) {
-        Ok(_) => status_code(Status::Ok),
-        Err(status) => status_code(status),
-    }
-}
-
-/// Decode the built-in Media Editor icon alpha channel.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn phipia_media_editor_icon_decode_alpha(
-    out: *mut u8,
-    out_pixels: usize,
-) -> i32 {
-    if out.is_null() {
-        return status_code(Status::NullArgument);
-    }
-    // SAFETY: the caller supplies the writable extent and null was refused.
-    let pixels = unsafe { core::slice::from_raw_parts_mut(out, out_pixels) };
-    match logo::decode_alpha(MEDIA_EDITOR_ICON, pixels) {
         Ok(_) => status_code(Status::Ok),
         Err(status) => status_code(status),
     }
@@ -1168,80 +1099,6 @@ pub unsafe extern "C" fn phipia_settings_category_icons_decode_alpha(
 ) -> i32 {
     // SAFETY: forwarded unchanged to the checked pointer boundary.
     unsafe { app_icon_decode_alpha(SETTINGS_CATEGORY_ICONS, out, out_pixels) }
-}
-
-/// Read the exact classic Camera icon geometry.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn phipia_camera_icon_geometry(
-    width: *mut u32,
-    height: *mut u32,
-) -> i32 {
-    // SAFETY: forwarded unchanged to the checked pointer boundary.
-    unsafe { app_icon_geometry(CAMERA_ICON, width, height) }
-}
-
-/// Decode the exact classic Camera icon.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn phipia_camera_icon_decode(
-    out: *mut u32,
-    out_pixels: usize,
-    red_shift: u8,
-    green_shift: u8,
-    blue_shift: u8,
-    background: u32,
-) -> i32 {
-    // SAFETY: forwarded unchanged to the checked pointer boundary.
-    unsafe {
-        app_icon_decode(CAMERA_ICON, out, out_pixels, red_shift,
-            green_shift, blue_shift, background)
-    }
-}
-
-/// Decode the exact classic Camera icon alpha channel.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn phipia_camera_icon_decode_alpha(
-    out: *mut u8,
-    out_pixels: usize,
-) -> i32 {
-    // SAFETY: forwarded unchanged to the checked pointer boundary.
-    unsafe { app_icon_decode_alpha(CAMERA_ICON, out, out_pixels) }
-}
-
-/// Read the checked Canvas application icon geometry.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn phipia_canvas_icon_geometry(
-    width: *mut u32,
-    height: *mut u32,
-) -> i32 {
-    // SAFETY: forwarded unchanged to the checked pointer boundary.
-    unsafe { app_icon_geometry(CANVAS_ICON, width, height) }
-}
-
-/// Decode the checked Canvas application icon.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn phipia_canvas_icon_decode(
-    out: *mut u32,
-    out_pixels: usize,
-    red_shift: u8,
-    green_shift: u8,
-    blue_shift: u8,
-    background: u32,
-) -> i32 {
-    // SAFETY: forwarded unchanged to the checked pointer boundary.
-    unsafe {
-        app_icon_decode(CANVAS_ICON, out, out_pixels, red_shift,
-            green_shift, blue_shift, background)
-    }
-}
-
-/// Decode the checked Canvas application icon alpha channel.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn phipia_canvas_icon_decode_alpha(
-    out: *mut u8,
-    out_pixels: usize,
-) -> i32 {
-    // SAFETY: forwarded unchanged to the checked pointer boundary.
-    unsafe { app_icon_decode_alpha(CANVAS_ICON, out, out_pixels) }
 }
 
 /// Read the checked Phipia Store application icon geometry.

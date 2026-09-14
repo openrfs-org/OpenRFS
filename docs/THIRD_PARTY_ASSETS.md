@@ -101,7 +101,7 @@ fingerprint, glyph ranges, and alpha data are validated before installation.
 
 ## Lucide
 
-The thirty-three Settings, Canvas, Store, search, and window-control
+The selected Settings, Store, search, and window-control
 pictograms come from the
 official Lucide repository at commit
 `23f9abc4ed0146cffededd3d7f94c1018bfdf693`. The selected SVG sources and
@@ -110,10 +110,7 @@ Lucide ISC license are committed under `assets/icons/lucide/`.
 `tools/rasterize-settings-icons.py` composes those pictograms into one coherent
 4×3 glossy category sheet. The sheet is committed, so CairoSVG is a development
 regeneration dependency only; a normal Phipia build remains self-contained.
-`tools/rasterize-canvas-icons.py` parses the selected SVG path, arc, circle, and
-rounded-rectangle geometry with only Python's standard library, then applies
-bounded 4× coverage sampling to produce the checked `SCI1` alpha resource used
-by the native Canvas package. Phipia rasterizes the pinned Lucide search
+Phipia rasterizes the pinned Lucide search
 geometry with bounded integer supersampling at its two small display sizes,
 avoiding both a jagged hand-drawn glyph and a new kernel image decoder.
 The same bounded sampler renders the pinned Lucide X, square, and minus

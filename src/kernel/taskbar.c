@@ -1469,12 +1469,6 @@ static const struct taskbar_lucide_entry *glyph_entry(enum taskbar_glyph glyph)
     case TASKBAR_GLYPH_NOTES:
         name = "file-text";
         break;
-    case TASKBAR_GLYPH_CAMERA:
-        name = "camera";
-        break;
-    case TASKBAR_GLYPH_CANVAS:
-        name = "paintbrush";
-        break;
     case TASKBAR_GLYPH_STORE:
         name = "shopping-bag";
         break;

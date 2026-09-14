@@ -12,15 +12,14 @@ converted into a compact album during the build and validated before display.
 Wallpaper restoration uses cached row copies so pointer and window movement do
 not repaint the complete screen.
 
-The 3D Dock contains Files, Terminal, Notes, Media Editor, Camera, Canvas, Store,
-and Settings.
+The 3D Dock contains Files, Terminal, Notes, Store, and Settings.
 It uses fixed-point arithmetic for icon magnification, neighbor movement,
 reflections, tooltips, press feedback, and launch bounce. Dark appearance
 changes the shelf colour without changing its geometry or behavior.
 
 ## Windows
 
-All eight Dock applications can remain open. Clicking a window raises it;
+All five Dock applications can remain open. Clicking a window raises it;
 dragging the title bar moves it within the screen. The red control closes, the
 violet control toggles maximized geometry, and the white/grey control minimizes
 the window to its live Dock item.
@@ -51,24 +50,9 @@ Saving replaces the target through a synchronized temporary file.
 ### Settings
 
 Settings provides Appearance, Desktop, Dock, Displays, Keyboard, Pointer,
-Performance, Network, Storage, Camera, Windows, and About pages. Desktop and
+Performance, Network, Storage, Windows, and About pages. Desktop and
 Appearance are interactive. Hardware pages report the current configuration
 and mark unavailable facilities clearly.
-
-### Camera
-
-Camera has a preview, connection status, and shutter. A double-buffered RGB888
-provider publishes complete 320×180 frames; capture writes the next available
-`PHOTO00.BMP` through `PHOTO99.BMP` to the data volume.
-
-The standard QEMU profile has no webcam or UVC transport, so Camera reports
-`No camera connected`.
-
-### Canvas
-
-Canvas is a native ABI v1 process with an application-owned drawing surface,
-Lucide tools, palette and brush sizing. It remains outside the kernel UI and
-presents bounded damage rectangles through the public graphics contract.
 
 ### Store
 
@@ -86,31 +70,14 @@ Terminal exposes Phipia's shell, filesystem and networking commands, and the
 measured BusyBox profiles. `fetch` displays the Phipia mark and basic system
 information.
 
-### Media Editor
-
-Media Editor provides a source browser, viewer, inspector, timeline, tracks,
-clips, and a playhead. It can import an uncompressed 24-bit BMP from the data
-volume, trim and save a project, and export the selected frame as a 24-bit BMP
-up to 320×180.
-
-The vendored editor foundation contains the project model, timecode, render
-graph, compositing, audio, LUT, EDL, mask, transition, and freestanding image.
-Phipia's integrated workspace exposes the BMP workflow described above.
-
 ## Demo capture
 
 `make capture-phipia` boots the production ISO with separate system and data
 volumes. QMP sends pointer and keyboard input to the guest while the capture
-opens applications, changes the Dock appearance and wallpaper, edits a note,
-and uses Media Editor. Camera remains closed because the QEMU machine has no
-camera source.
-
-The same session saves the note and Media Editor project, exports a BMP, and
-checks the retained data image after shutdown.
+opens applications, exercises window controls, and edits a note.
+The session saves the note and checks the retained data image after shutdown.
 
 ## Limits
 
-Phipia has six integrated applications, six windows, one supported display
-geometry, and printable-ASCII text. Its integrated Camera and Media Editor
-workspaces use the bounded capture and BMP workflows described above. Native
-applications use the separate window and input ABI.
+Phipia has five integrated applications, one supported display geometry, and
+printable-ASCII text. Native applications use a separate window and input ABI.

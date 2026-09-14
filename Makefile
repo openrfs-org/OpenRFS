@@ -26,16 +26,16 @@ TEST_SCENARIOS := normal breakpoint invalid-opcode page-fault ist pit unexpected
 	network-http-nested network-http-replace network-http-disk-full \
 	network-nic-reset network-system-immutable network-missing-linux-echo \
 	network-missing-linux-uname network-missing-linux-cat network-files \
-	network-notes network-media-editor network-persistence network-socket-isolation \
+	network-notes network-persistence network-socket-isolation \
 	network-tcp-listen network-tcp-refused network-native \
 	multiprocess multiprocess-slots driver-matrix driver-matrix-builtin audio \
-	nvidia nvidia-builtin native native-lua native-sqlite native-canvas \
+	nvidia nvidia-builtin native native-lua native-sqlite \
 	native-rust native-crash native-elf-refusal native-digest-refusal \
 	native-abi-refusal native-relaunch native-audio native-sdl native-dynamic \
 	native-https native-phip
 TEST_TARGETS := $(addprefix qemu-test-,$(TEST_SCENARIOS))
-EXPECTED_TEST_SCENARIO_COUNT := 117
-EXPECTED_SHELL_ASSERTION_COUNT := 463
+EXPECTED_TEST_SCENARIO_COUNT := 115
+EXPECTED_SHELL_ASSERTION_COUNT := 458
 
 CC := gcc
 LD := ld
@@ -99,9 +99,6 @@ LOGO_CANONICAL_SOURCE := assets/phipia/logo.png
 LOGO_SOURCE := assets/phipia/logo.png
 LOGO_BLOB := $(BUILD_DIR)/logo.srl
 LOGO_MAX_DIMENSION := 280
-MEDIA_EDITOR_ICON_SOURCE := assets/phipia/media-editor.png
-MEDIA_EDITOR_ICON_BLOB := $(BUILD_DIR)/media-editor-icon.srl
-MEDIA_EDITOR_ICON_MAX_DIMENSION := 80
 SETTINGS_ICON_SOURCE := assets/settings-icon-dock.png
 SETTINGS_ICON_ORIGINAL := assets/settings-icon.png
 SETTINGS_ICON_BLOB := $(BUILD_DIR)/settings-icon.srl
@@ -114,14 +111,6 @@ TERMINAL_ICON_SOURCE := assets/terminal-icon-dock.png
 TERMINAL_ICON_ORIGINAL := assets/terminal-icon.png
 TERMINAL_ICON_BLOB := $(BUILD_DIR)/terminal-icon.srl
 TERMINAL_ICON_MAX_DIMENSION := 80
-CAMERA_ICON_SOURCE := assets/camera-icon-dock.png
-CAMERA_ICON_ORIGINAL := assets/camera-icon.png
-CAMERA_ICON_BLOB := $(BUILD_DIR)/camera-icon.srl
-CAMERA_ICON_MAX_DIMENSION := 80
-CANVAS_ICON_SOURCE := assets/canvas-icon-dock.png
-CANVAS_ICON_ORIGINAL := assets/canvas-icon.png
-CANVAS_ICON_BLOB := $(BUILD_DIR)/canvas-icon.srl
-CANVAS_ICON_MAX_DIMENSION := 80
 STORE_ICON_SOURCE := assets/store-icon-dock.png
 STORE_ICON_ORIGINAL := assets/store-icon.png
 STORE_ICON_BLOB := $(BUILD_DIR)/store-icon.srl
@@ -153,18 +142,6 @@ PHIPIA_PROOF_TERMINAL_IMAGE := assets/phipia/proof-terminal.png
 PHIPIA_PROOF_CAPTURE_DIR := $(BUILD_DIR)/phipia-proof-captures
 PHIPIA_PROOF_BOOT_VIDEO := assets/phipia-proof-boot-20s.mp4
 PHIPIA_CAPTURE_DIR := $(BUILD_DIR)/phipia-captures
-PHIPIA_IMAGE := assets/phipia.png
-PHIPIA_DOCK_IMAGE := assets/phipia-dock.png
-PHIPIA_FILES_IMAGE := assets/phipia-files.png
-PHIPIA_NOTES_IMAGE := assets/phipia-notes.png
-PHIPIA_MEDIA_EDITOR_IMAGE := assets/phipia-media-editor.png
-SETTINGS_ALL_IMAGE := assets/phipia-settings-all.png
-SETTINGS_DESKTOP_IMAGE := assets/phipia-settings-desktop.png
-SETTINGS_LIGHT_IMAGE := assets/phipia-settings-appearance-light.png
-SETTINGS_DARK_IMAGE := assets/phipia-settings-appearance-dark.png
-MULTITASK_IMAGE := assets/phipia-multitasking.png
-UI_FINAL_DOCK_IMAGE := assets/phipia-ui-redesign-final-dock.png
-PHIPIA_VIDEO := assets/phipia-ui-redesign-25s.mp4
 NETWORK_CAPTURE_DIR := $(BUILD_DIR)/networking-capture
 NVME_FIXTURE := $(TEST_BUILD_DIR)/nvme/nvme-fixture.raw
 FILESYSTEM_FIXTURE := $(TEST_BUILD_DIR)/filesystem/fat16-fixture.raw
@@ -276,12 +253,6 @@ SQLITE_APP := $(SQLITE_PORT_DIR)/SQLITE.APP
 SQLITE_PACKAGE := $(SQLITE_PORT_DIR)/SQLITE.SPK
 SQLITE_SYSTEM_IMAGE := $(SQLITE_PORT_DIR)/system.raw
 SQLITE_DATA_IMAGE := $(SQLITE_PORT_DIR)/data.raw
-CANVAS_APP_DIR := $(BUILD_DIR)/native-canvas
-CANVAS_APP := $(CANVAS_APP_DIR)/CANVAS.APP
-CANVAS_PACKAGE := $(CANVAS_APP_DIR)/CANVAS.SPK
-CANVAS_PROOF_PACKAGE := $(CANVAS_APP_DIR)/CANVAS-PROOF.SPK
-CANVAS_SYSTEM_IMAGE := $(CANVAS_APP_DIR)/system.raw
-CANVAS_DATA_IMAGE := $(CANVAS_APP_DIR)/data.raw
 NETAPP_DIR := $(BUILD_DIR)/native-network
 NETAPP_APP := $(NETAPP_DIR)/NETAPP.APP
 NETAPP_PACKAGE := $(NETAPP_DIR)/NETAPP.SPK
@@ -498,9 +469,6 @@ $(LUA_PORT_DIR):
 $(SQLITE_PORT_DIR):
 	mkdir -p $@
 
-$(CANVAS_APP_DIR):
-	mkdir -p $@
-
 $(NETAPP_DIR):
 	mkdir -p $@
 
@@ -602,34 +570,6 @@ $(SQLITE_SYSTEM_IMAGE): $(SQLITE_PACKAGE) tools/phipia-package.py \
 		--output $@ $(SQLITE_PACKAGE)
 
 $(SQLITE_DATA_IMAGE): tools/fat32_image.py | $(SQLITE_PORT_DIR)
-	$(PYTHON) tools/fat32_image.py format data $@
-
-$(CANVAS_APP_DIR)/main.o: apps/native-canvas/main.c \
-		$(SDK_BUILD_DIR)/.installed | $(CANVAS_APP_DIR)
-	$(SDK_CC) $(SDK_CFLAGS) -c $< -o $@
-
-$(CANVAS_APP): $(CANVAS_APP_DIR)/main.o $(SDK_BUILD_DIR)/.installed
-	$(SDK_LD) $(SDK_LDFLAGS) -Map=$(CANVAS_APP_DIR)/CANVAS.map \
-		-o $@ $(SDK_CRT) $< $(SDK_LIB)
-
-$(CANVAS_PACKAGE): $(CANVAS_APP) apps/native-canvas/manifest.json \
-		$(UI_FONT_BLOB) assets/canvas-tools.a8
-	$(PYTHON) tools/phipia-package.py build \
-		--spec apps/native-canvas/manifest.json --executable $< --output $@
-
-$(CANVAS_PROOF_PACKAGE): $(CANVAS_APP) \
-		apps/native-canvas/manifest-proof.json $(UI_FONT_BLOB) \
-		assets/canvas-tools.a8
-	$(PYTHON) tools/phipia-package.py build \
-		--spec apps/native-canvas/manifest-proof.json \
-		--executable $< --output $@
-
-$(CANVAS_SYSTEM_IMAGE): $(CANVAS_PROOF_PACKAGE) tools/phipia-package.py \
-		tools/fat32_image.py
-	$(PYTHON) tools/phipia-package.py install-system \
-		--output $@ $(CANVAS_PROOF_PACKAGE)
-
-$(CANVAS_DATA_IMAGE): tools/fat32_image.py | $(CANVAS_APP_DIR)
 	$(PYTHON) tools/fat32_image.py format data $@
 
 $(NETAPP_DIR)/main.o: apps/native-network/main.c \
@@ -849,7 +789,7 @@ $(ADMISSION_DATA_IMAGE): tools/fat32_image.py | $(ADMISSION_DIR)
 	$(PYTHON) tools/fat32_image.py format data $@
 
 native-apps: $(NATIVE_TEST_PACKAGE) $(LUA_PACKAGE) $(SQLITE_PACKAGE) \
-	$(CANVAS_PACKAGE) $(CANVAS_PROOF_PACKAGE) $(NETAPP_PACKAGE) \
+	$(NETAPP_PACKAGE) \
 	$(HTTPSAPP_PACKAGE) $(PHIPAPP_PACKAGE) $(PHIPAPP_REPAIR_PACKAGE) \
 	$(AUDIO_PACKAGE) $(AUDIO_REFUSAL_PACKAGE) $(RUST_APP_PACKAGE) \
 	$(CRASH_PACKAGE) $(SDL_PROOF_PACKAGE) $(SDL_CHESS_PACKAGE) \
@@ -885,8 +825,6 @@ port-tests: native-apps audio-wav-tests
 		$(RUST_NATIVE_IMAGE_TEST)
 	PHIPIA_NATIVE_TEST_ELF='$(CURDIR)/$(SQLITE_APP)' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	PHIPIA_NATIVE_TEST_ELF='$(CURDIR)/$(CANVAS_APP)' \
-		$(RUST_NATIVE_IMAGE_TEST)
 	PHIPIA_NATIVE_TEST_ELF='$(CURDIR)/$(NETAPP_APP)' \
 		$(RUST_NATIVE_IMAGE_TEST)
 	PHIPIA_NATIVE_TEST_ELF='$(CURDIR)/$(HTTPSAPP_APP)' \
@@ -907,8 +845,6 @@ port-tests: native-apps audio-wav-tests
 	$(PYTHON) tools/phipia-package.py inspect $(NATIVE_TEST_PACKAGE)
 	$(PYTHON) tools/phipia-package.py inspect $(LUA_PACKAGE)
 	$(PYTHON) tools/phipia-package.py inspect $(SQLITE_PACKAGE)
-	$(PYTHON) tools/phipia-package.py inspect $(CANVAS_PACKAGE)
-	$(PYTHON) tools/phipia-package.py inspect $(CANVAS_PROOF_PACKAGE)
 	$(PYTHON) tools/phipia-package.py inspect $(NETAPP_PACKAGE)
 	$(PYTHON) tools/phipia-package.py inspect $(HTTPSAPP_PACKAGE)
 	$(PYTHON) tools/phipia-package.py inspect $(PHIPAPP_PACKAGE)
@@ -921,12 +857,12 @@ port-tests: native-apps audio-wav-tests
 	$(PYTHON) tools/phipia-package.py inspect $(CRASH_PACKAGE)
 
 qemu-port-tests: qemu-test-native qemu-test-native-lua qemu-test-native-sqlite \
-	qemu-test-native-canvas qemu-test-network-native qemu-test-native-rust \
+	qemu-test-network-native qemu-test-native-rust \
 	qemu-test-native-crash qemu-test-native-elf-refusal \
 	qemu-test-native-digest-refusal qemu-test-native-abi-refusal \
 	qemu-test-native-relaunch qemu-test-native-audio qemu-test-native-sdl \
 	qemu-test-native-dynamic qemu-test-native-https qemu-test-native-phip
-	@echo 'native userspace, Lua, SQLite, Canvas, network, HTTPS, signed package lifecycle, audio, SDL, dynamic ELF and Rust QEMU scenarios passed'
+	@echo 'native userspace, Lua, SQLite, network, HTTPS, signed package lifecycle, audio, SDL, dynamic ELF and Rust QEMU scenarios passed'
 
 contract-counts:
 	@printf '%s %s\n' '$(EXPECTED_TEST_SCENARIO_COUNT)' \
@@ -982,10 +918,6 @@ $(LOGO_BLOB): $(LOGO_SOURCE) tools/make-logo-asset.py | $(BUILD_DIR)
 	$(PYTHON) tools/make-logo-asset.py $(LOGO_SOURCE) \
 		$(LOGO_MAX_DIMENSION) $@ --keep-canvas
 
-$(MEDIA_EDITOR_ICON_BLOB): $(MEDIA_EDITOR_ICON_SOURCE) tools/make-logo-asset.py | $(BUILD_DIR)
-	$(PYTHON) tools/make-logo-asset.py $(MEDIA_EDITOR_ICON_SOURCE) \
-		$(MEDIA_EDITOR_ICON_MAX_DIMENSION) $@
-
 $(SETTINGS_ICON_BLOB): $(SETTINGS_ICON_SOURCE) tools/make-logo-asset.py | $(BUILD_DIR)
 	$(PYTHON) tools/make-logo-asset.py $(SETTINGS_ICON_SOURCE) \
 		$(SETTINGS_ICON_MAX_DIMENSION) $@
@@ -997,14 +929,6 @@ $(FILES_ICON_BLOB): $(FILES_ICON_SOURCE) tools/make-logo-asset.py | $(BUILD_DIR)
 $(TERMINAL_ICON_BLOB): $(TERMINAL_ICON_SOURCE) tools/make-logo-asset.py | $(BUILD_DIR)
 	$(PYTHON) tools/make-logo-asset.py $(TERMINAL_ICON_SOURCE) \
 		$(TERMINAL_ICON_MAX_DIMENSION) $@
-
-$(CAMERA_ICON_BLOB): $(CAMERA_ICON_SOURCE) tools/make-logo-asset.py | $(BUILD_DIR)
-	$(PYTHON) tools/make-logo-asset.py $(CAMERA_ICON_SOURCE) \
-		$(CAMERA_ICON_MAX_DIMENSION) $@
-
-$(CANVAS_ICON_BLOB): $(CANVAS_ICON_SOURCE) tools/make-logo-asset.py | $(BUILD_DIR)
-	$(PYTHON) tools/make-logo-asset.py $(CANVAS_ICON_SOURCE) \
-		$(CANVAS_ICON_MAX_DIMENSION) $@
 
 $(STORE_ICON_BLOB): $(STORE_ICON_SOURCE) tools/make-logo-asset.py | $(BUILD_DIR)
 	$(PYTHON) tools/make-logo-asset.py $(STORE_ICON_SOURCE) \
@@ -1037,19 +961,16 @@ $(UI_FONT_BLOB): $(UI_FONT_SOURCE) $(UI_FONT_METRICS) \
 
 $(RUST_LIB): $(RUST_SOURCES) $(RUST_MANIFEST) $(RUST_LOCKFILE) \
 		.cargo/config.toml $(RUST_VENDOR_SOURCES) \
-		$(LOGO_BLOB) $(MEDIA_EDITOR_ICON_BLOB) \
+		$(LOGO_BLOB) \
 		$(SETTINGS_ICON_BLOB) $(FILES_ICON_BLOB) $(TERMINAL_ICON_BLOB) \
-		$(CAMERA_ICON_BLOB) $(CANVAS_ICON_BLOB) $(STORE_ICON_BLOB) \
+		$(STORE_ICON_BLOB) \
 		$(STORE_UI_ICONS_BLOB) \
 		$(SETTINGS_CATEGORY_ICONS_BLOB) \
 		$(WALLPAPER_BLOB) $(FONT_BLOB) $(UI_FONT_BLOB) | $(BUILD_DIR)
 	PHIPIA_LOGO_BLOB='$(CURDIR)/$(LOGO_BLOB)' \
-	PHIPIA_MEDIA_EDITOR_ICON_BLOB='$(CURDIR)/$(MEDIA_EDITOR_ICON_BLOB)' \
 	PHIPIA_SETTINGS_ICON_BLOB='$(CURDIR)/$(SETTINGS_ICON_BLOB)' \
 	PHIPIA_FILES_ICON_BLOB='$(CURDIR)/$(FILES_ICON_BLOB)' \
 	PHIPIA_TERMINAL_ICON_BLOB='$(CURDIR)/$(TERMINAL_ICON_BLOB)' \
-	PHIPIA_CAMERA_ICON_BLOB='$(CURDIR)/$(CAMERA_ICON_BLOB)' \
-	PHIPIA_CANVAS_ICON_BLOB='$(CURDIR)/$(CANVAS_ICON_BLOB)' \
 	PHIPIA_STORE_ICON_BLOB='$(CURDIR)/$(STORE_ICON_BLOB)' \
 	PHIPIA_STORE_UI_ICONS_BLOB='$(CURDIR)/$(STORE_UI_ICONS_BLOB)' \
 	PHIPIA_SETTINGS_CATEGORY_ICONS_BLOB='$(CURDIR)/$(SETTINGS_CATEGORY_ICONS_BLOB)' \
@@ -1117,12 +1038,12 @@ $(FAT32_SYSTEM_IMAGE): $(BUSYBOX_BINARY) $(BUSYBOX_UNAME_BINARY) \
 		--cat $(BUSYBOX_CAT_BINARY)
 
 $(DESKTOP_SYSTEM_IMAGE): $(BUSYBOX_BINARY) $(BUSYBOX_UNAME_BINARY) \
-		$(BUSYBOX_CAT_BINARY) $(CANVAS_PACKAGE) tools/phipia-package.py \
+		$(BUSYBOX_CAT_BINARY) tools/phipia-package.py \
 		tools/fat32_image.py
 	mkdir -p $(dir $@)
 	$(PYTHON) tools/phipia-package.py install-system \
 		--echo $(BUSYBOX_BINARY) --uname $(BUSYBOX_UNAME_BINARY) \
-		--cat $(BUSYBOX_CAT_BINARY) --output $@ $(CANVAS_PACKAGE)
+		--cat $(BUSYBOX_CAT_BINARY) --output $@
 
 $(FAT32_DATA_IMAGE): tools/fat32_image.py
 	mkdir -p $(dir $@)
@@ -1428,12 +1349,9 @@ verify: toolchain lint
 		https-tests tls-tests zlib-tests
 	$(PYTHON) tools/verify-ui-assets.py
 	@test '$(LOGO_MAX_DIMENSION)' -eq 280
-	@test '$(MEDIA_EDITOR_ICON_MAX_DIMENSION)' -eq 80
 	@test '$(SETTINGS_ICON_MAX_DIMENSION)' -eq 80
 	@test '$(FILES_ICON_MAX_DIMENSION)' -eq 80
 	@test '$(TERMINAL_ICON_MAX_DIMENSION)' -eq 80
-	@test '$(CAMERA_ICON_MAX_DIMENSION)' -eq 80
-	@test '$(CANVAS_ICON_MAX_DIMENSION)' -eq 80
 	@test '$(STORE_ICON_MAX_DIMENSION)' -eq 80
 	@test '$(STORE_UI_ICONS_MAX_DIMENSION)' -eq 256
 	@test '$(SETTINGS_CATEGORY_ICONS_MAX_DIMENSION)' -eq 256
@@ -2173,30 +2091,6 @@ capture-phipia: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 	$(PYTHON) tools/capture-phipia.py --iso $(ISO) \
 		--system $(FAT32_SYSTEM_IMAGE) --data $(FAT32_DATA_IMAGE) \
 		--output $(PHIPIA_CAPTURE_DIR) --ffmpeg $(FFMPEG)
-	cp $(PHIPIA_CAPTURE_DIR)/phipia.png \
-		$(PHIPIA_IMAGE)
-	cp $(PHIPIA_CAPTURE_DIR)/phipia-dock.png \
-		$(PHIPIA_DOCK_IMAGE)
-	cp $(PHIPIA_CAPTURE_DIR)/phipia-files.png \
-		$(PHIPIA_FILES_IMAGE)
-	cp $(PHIPIA_CAPTURE_DIR)/phipia-notes.png \
-		$(PHIPIA_NOTES_IMAGE)
-	cp $(PHIPIA_CAPTURE_DIR)/phipia-media-editor.png \
-		$(PHIPIA_MEDIA_EDITOR_IMAGE)
-	cp $(PHIPIA_CAPTURE_DIR)/phipia-settings-all.png \
-		$(SETTINGS_ALL_IMAGE)
-	cp $(PHIPIA_CAPTURE_DIR)/phipia-settings-desktop.png \
-		$(SETTINGS_DESKTOP_IMAGE)
-	cp $(PHIPIA_CAPTURE_DIR)/phipia-settings-appearance-light.png \
-		$(SETTINGS_LIGHT_IMAGE)
-	cp $(PHIPIA_CAPTURE_DIR)/phipia-settings-appearance-dark.png \
-		$(SETTINGS_DARK_IMAGE)
-	cp $(PHIPIA_CAPTURE_DIR)/phipia-multitasking.png \
-		$(MULTITASK_IMAGE)
-	cp $(PHIPIA_CAPTURE_DIR)/phipia-ui-redesign-final-dock.png \
-		$(UI_FINAL_DOCK_IMAGE)
-	cp $(PHIPIA_CAPTURE_DIR)/phipia-ui-redesign-25s.mp4 \
-		$(PHIPIA_VIDEO)
 
 capture-networking: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 	rm -rf $(NETWORK_CAPTURE_DIR)
@@ -2271,7 +2165,6 @@ qemu-test-network-%: $(TEST_BUILD_DIR)/network-%/phipia.iso
 		missing-linux-cat) expected=207 ;; \
 		files) expected=209 ;; \
 		notes) expected=211 ;; \
-		media-editor) expected=213 ;; \
 		persistence) expected=215 ;; \
 		socket-isolation) expected=217 ;; \
 		tcp-listen) expected=219 ;; \
@@ -2286,7 +2179,7 @@ qemu-test-network-%: $(TEST_BUILD_DIR)/network-%/phipia.iso
 			$(MAKE) '$(NETAPP_SYSTEM_IMAGE)' '$(NETAPP_DATA_IMAGE)' || exit 1 ;; \
 		http-length|http-chunked|http-redirect|http-malformed|http-nested|\
 		http-replace|system-immutable|missing-linux-echo|missing-linux-uname|\
-		missing-linux-cat|files|notes|media-editor|persistence) \
+		missing-linux-cat|files|notes|persistence) \
 			$(MAKE) '$(FAT32_SYSTEM_IMAGE)' '$(FAT32_DATA_IMAGE)' || exit 1 ;; \
 	esac; \
 	system='$(FAT32_SYSTEM_IMAGE)'; data='$(FAT32_DATA_IMAGE)'; \
@@ -2420,7 +2313,6 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/phipia.iso
 		native) expected=237 ;; \
 		native-lua) expected=239 ;; \
 		native-sqlite) expected=241 ;; \
-		native-canvas) expected=243 ;; \
 		native-rust) expected=247 ;; \
 		native-crash) expected=249 ;; \
 		native-elf-refusal) expected=251 ;; \
@@ -2492,10 +2384,6 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/phipia.iso
 				$(MAKE) '$(SQLITE_SYSTEM_IMAGE)' '$(SQLITE_DATA_IMAGE)' || exit 1; \
 				cp '$(SQLITE_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
 				hardware='-boot order=d -blockdev driver=file,filename=$(SQLITE_SYSTEM_IMAGE),node-name=sqlite-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=sqlite-system-file,node-name=sqlite-system-raw,read-only=on -device nvme,serial=phipia-system-fat32,drive=sqlite-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=sqlite-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=sqlite-data-file,node-name=sqlite-data-raw,read-only=off -device nvme,serial=phipia-data-fat32,drive=sqlite-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
-			native-canvas) \
-				$(MAKE) '$(CANVAS_SYSTEM_IMAGE)' '$(CANVAS_DATA_IMAGE)' || exit 1; \
-				cp '$(CANVAS_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(CANVAS_SYSTEM_IMAGE),node-name=canvas-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=canvas-system-file,node-name=canvas-system-raw,read-only=on -device nvme,serial=phipia-system-fat32,drive=canvas-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=canvas-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=canvas-data-file,node-name=canvas-data-raw,read-only=off -device nvme,serial=phipia-data-fat32,drive=canvas-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			native-rust) \
 				$(MAKE) '$(RUST_APP_SYSTEM_IMAGE)' '$(RUST_APP_DATA_IMAGE)' || exit 1; \
 				cp '$(RUST_APP_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
@@ -2580,7 +2468,6 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/phipia.iso
 		native) timeout_seconds=180 ;; \
 		native-lua) timeout_seconds=150 ;; \
 		native-sqlite) timeout_seconds=240 ;; \
-		native-canvas) timeout_seconds=180 ;; \
 		native-crash|native-relaunch|native-audio) timeout_seconds=180 ;; \
 		native-sdl) timeout_seconds=240 ;; \
 		native-dynamic) timeout_seconds=120 ;; \
@@ -2595,20 +2482,6 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/phipia.iso
 		$(PYTHON) tools/qemu-send-keys.py --monitor "$$monitor_socket" \
 			--serial "$$log" --marker 'PHIPIA LUA INPUT READY' \
 			--text phipia --enter --timeout 120 & injector=$$!; \
-	elif test '$*' = native-canvas; then \
-		monitor_socket='$(TEST_BUILD_DIR)/$*/monitor.sock'; \
-		rm -f "$$monitor_socket"; \
-		monitor_argument="-monitor unix:$$monitor_socket,server=on,wait=off"; \
-		$(PYTHON) tools/qemu-send-keys.py --monitor "$$monitor_socket" \
-			--serial "$$log" --marker 'PHIPIA CANVAS READY' \
-			--marker-count 2 --text k --hmp 'mouse_move 20 -20' \
-			--hmp 'mouse_button 1' --hmp 'mouse_move 42 -18' \
-			--hmp 'mouse_move 38 24' --hmp 'mouse_button 0' \
-			--capture-dir '$(abspath $(TEST_BUILD_DIR)/$*/canvas-frames)' \
-			--screenshot '$(abspath $(TEST_BUILD_DIR)/$*/canvas.png)' \
-			--video '$(abspath $(TEST_BUILD_DIR)/$*/canvas.mp4)' \
-			--ffmpeg '$(FFMPEG)' --timeout 150 \
-			& injector=$$!; \
 	elif test '$*' = native-sdl; then \
 		monitor_socket='$(TEST_BUILD_DIR)/$*/monitor.sock'; \
 		rm -f "$$monitor_socket"; \
@@ -2808,7 +2681,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/phipia.iso
 			grep -Fxq 'Phipia: Boot Ledger installed proof passed' "$$log" || \
 				diagnostics_ok=false ;; \
 		phipia-proof) \
-		grep -Eq '^ST PHIPIA_PROOF geometry 1024x768 dock 8 events [1-9][0-9]* panels [1-9][0-9]* cursor [1-9][0-9]* damage [1-9][0-9]* glyphs [1-9][0-9]* fingerprint 0x[0-9A-F]{16}$$' "$$log" && \
+		grep -Eq '^ST PHIPIA_PROOF geometry 1024x768 dock 5 events [1-9][0-9]* panels [1-9][0-9]* cursor [1-9][0-9]* damage [1-9][0-9]* glyphs [1-9][0-9]* fingerprint 0x[0-9A-F]{16}$$' "$$log" && \
 			grep -Fxq 'Phipia: installed proof passed' "$$log" || \
 				diagnostics_ok=false ;; \
 		device-substrate) \
@@ -2984,15 +2857,6 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/phipia.iso
 			grep -Fxq 'PHIPIA SQLITE PHASE1 PASS rows=3 locking=busy' "$$log" && \
 			grep -Fxq 'PHIPIA SQLITE PHASE2 PASS rows=3 sum=66 integrity=ok' "$$log" && \
 			grep -Fxq 'Phipia: upstream SQLite retained and verified three rows after reboot' "$$log" || \
-				diagnostics_ok=false ;; \
-		native-canvas) \
-			test -s '$(TEST_BUILD_DIR)/$*/canvas.png' && \
-			test -s '$(TEST_BUILD_DIR)/$*/canvas.mp4' && \
-			test "$$(grep -Ec '^PHIPIA PERF canvas brush_damage_samples=[1-9][0-9]* max_pixels=[1-9][0-9]* total_ns=[1-9][0-9]* average_ns=[1-9][0-9]*$$' "$$log")" -ge 1 && \
-			test "$$(grep -Ec '^PHIPIA CANVAS READY width=420 height=250$$' "$$log")" -eq 2 && \
-			test "$$(grep -Ec '^PHIPIA CANVAS PASS focus=[1-9][0-9]* key=[0-9]+ pointer=[0-9]+ strokes=[0-9]+ colors=[0-9]+ partial=[1-9][0-9]*$$' "$$log")" -eq 2 && \
-			grep -Eq '^PHIPIA CANVAS PASS focus=[1-9][0-9]* key=[1-9][0-9]* pointer=[1-9][0-9]* strokes=[1-9][0-9]* colors=[1-9][0-9]* partial=[1-9][0-9]*$$' "$$log" && \
-			grep -Fxq 'Phipia: two native Canvas windows handled focus, input and partial damage' "$$log" || \
 				diagnostics_ok=false ;; \
 		native-rust) \
 			grep -Fxq 'PHIPIA RUST PASS alloc file time entropy thread' "$$log" && \

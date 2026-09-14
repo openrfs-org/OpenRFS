@@ -521,9 +521,6 @@ static enum kernel_test_scenario scenario_from_value(
     if (token_equals(value, length, "network-notes")) {
         return KERNEL_TEST_NETWORK_NOTES;
     }
-    if (token_equals(value, length, "network-media-editor")) {
-        return KERNEL_TEST_NETWORK_MEDIA_EDITOR;
-    }
     if (token_equals(value, length, "network-persistence")) {
         return KERNEL_TEST_NETWORK_PERSISTENCE;
     }
@@ -565,9 +562,6 @@ static enum kernel_test_scenario scenario_from_value(
     }
     if (token_equals(value, length, "native-sqlite")) {
         return KERNEL_TEST_NATIVE_SQLITE;
-    }
-    if (token_equals(value, length, "native-canvas")) {
-        return KERNEL_TEST_NATIVE_CANVAS;
     }
     if (token_equals(value, length, "network-native")) {
         return KERNEL_TEST_NATIVE_NETWORK;
@@ -771,7 +765,6 @@ static uint8_t scenario_exit_value(enum kernel_test_scenario scenario)
     case KERNEL_TEST_NETWORK_MISSING_LINUX_CAT: return UINT8_C(0x67);
     case KERNEL_TEST_NETWORK_FILES: return UINT8_C(0x68);
     case KERNEL_TEST_NETWORK_NOTES: return UINT8_C(0x69);
-    case KERNEL_TEST_NETWORK_MEDIA_EDITOR: return UINT8_C(0x6A);
     case KERNEL_TEST_NETWORK_PERSISTENCE: return UINT8_C(0x6B);
     case KERNEL_TEST_NETWORK_SOCKET_ISOLATION: return UINT8_C(0x6C);
     case KERNEL_TEST_NETWORK_TCP_LISTEN: return UINT8_C(0x6D);
@@ -786,7 +779,6 @@ static uint8_t scenario_exit_value(enum kernel_test_scenario scenario)
     case KERNEL_TEST_NATIVE: return UINT8_C(0x76);
     case KERNEL_TEST_NATIVE_LUA: return UINT8_C(0x77);
     case KERNEL_TEST_NATIVE_SQLITE: return UINT8_C(0x78);
-    case KERNEL_TEST_NATIVE_CANVAS: return UINT8_C(0x79);
     case KERNEL_TEST_NATIVE_NETWORK: return UINT8_C(0x7A);
     case KERNEL_TEST_NATIVE_RUST: return UINT8_C(0x7B);
     case KERNEL_TEST_NATIVE_CRASH: return UINT8_C(0x7C);
@@ -4740,7 +4732,6 @@ void kernel_test_run(
     case KERNEL_TEST_NETWORK_MISSING_LINUX_CAT:
     case KERNEL_TEST_NETWORK_FILES:
     case KERNEL_TEST_NETWORK_NOTES:
-    case KERNEL_TEST_NETWORK_MEDIA_EDITOR:
     case KERNEL_TEST_NETWORK_PERSISTENCE:
     case KERNEL_TEST_NETWORK_SOCKET_ISOLATION:
     case KERNEL_TEST_NETWORK_TCP_LISTEN:
@@ -4754,7 +4745,6 @@ void kernel_test_run(
     case KERNEL_TEST_NATIVE:
     case KERNEL_TEST_NATIVE_LUA:
     case KERNEL_TEST_NATIVE_SQLITE:
-    case KERNEL_TEST_NATIVE_CANVAS:
     case KERNEL_TEST_NATIVE_NETWORK:
     case KERNEL_TEST_NATIVE_RUST:
     case KERNEL_TEST_NATIVE_CRASH:
@@ -5307,61 +5297,6 @@ _Noreturn void kernel_test_complete_native_sqlite(void)
         kernel_test_fail("SQLite reboot result is wrong or could not be synchronized");
     }
     console_write("Phipia: upstream SQLite retained and verified three rows after reboot\n");
-    kernel_test_pass();
-}
-
-_Noreturn void kernel_test_complete_native_canvas(void)
-{
-    struct native_process_result result;
-    uint64_t first_generation;
-    uint64_t second_generation;
-    enum native_process_status run_status;
-
-    if (active_scenario != KERNEL_TEST_NATIVE_CANVAS) {
-        kernel_test_fail("Canvas completion used outside its scenario");
-    }
-    if (native_process_spawn("CANVAS.MAN", &first_generation) !=
-            NATIVE_PROCESS_OK ||
-        native_process_spawn("CANVAS.MAN", &second_generation) !=
-            NATIVE_PROCESS_OK ||
-        first_generation == 0U || second_generation <= first_generation) {
-        kernel_test_fail("Canvas applications were not admitted together");
-    }
-    run_status = native_process_run(&result);
-    if (run_status != NATIVE_PROCESS_OK || !result.exited ||
-        result.faulted || result.exit_status != 0 ||
-        result.generation != second_generation || !result.resources_released ||
-        result.syscall_count < 20U || result.thread_switches < 10U ||
-        !native_process_resources_released() ||
-        ui_native_window_is_open(0U) || ui_native_window_is_open(1U)) {
-        console_write("Phipia: native Canvas run ");
-        console_write(native_process_status_string(run_status));
-        console_write(" generation ");
-        console_write_u64(result.generation);
-        console_write(" expected ");
-        console_write_u64(second_generation);
-        console_write(" exit ");
-        if (result.exit_status < 0) {
-            console_putc('-');
-            console_write_u64((uint64_t)(-(int64_t)result.exit_status));
-        } else {
-            console_write_u64((uint64_t)result.exit_status);
-        }
-        console_write(" syscalls ");
-        console_write_u64(result.syscall_count);
-        console_write(" switches ");
-        console_write_u64(result.thread_switches);
-        console_write(" faulted ");
-        console_write(result.faulted ? "yes" : "no");
-        console_write(" released ");
-        console_write(result.resources_released ? "yes" : "no");
-        console_write(" windows ");
-        console_write(ui_native_window_is_open(0U) ? "1" : "0");
-        console_write(ui_native_window_is_open(1U) ? "1" : "0");
-        console_putc('\n');
-        kernel_test_fail("Canvas windows did not exit with a clean census");
-    }
-    console_write("Phipia: two native Canvas windows handled focus, input and partial damage\n");
     kernel_test_pass();
 }
 
@@ -6246,21 +6181,17 @@ _Noreturn void kernel_test_complete_phipia_proof(void)
 {
     static const enum ui_element_id ids[UI_DOCK_ITEM_COUNT] = {
         UI_ELEMENT_DOCK_FILES, UI_ELEMENT_DOCK_TERMINAL,
-        UI_ELEMENT_DOCK_NOTES, UI_ELEMENT_DOCK_MEDIA_EDITOR,
-        UI_ELEMENT_DOCK_CAMERA, UI_ELEMENT_DOCK_CANVAS,
-        UI_ELEMENT_DOCK_STORE,
+        UI_ELEMENT_DOCK_NOTES, UI_ELEMENT_DOCK_STORE,
         UI_ELEMENT_DOCK_SETTINGS
     };
     static const enum ui_action actions[UI_DOCK_ITEM_COUNT] = {
         UI_ACTION_OPEN_FILES, UI_ACTION_OPEN_TERMINAL,
-        UI_ACTION_OPEN_NOTES, UI_ACTION_OPEN_MEDIA_EDITOR,
-        UI_ACTION_OPEN_CAMERA, UI_ACTION_OPEN_CANVAS,
-        UI_ACTION_OPEN_STORE,
+        UI_ACTION_OPEN_NOTES, UI_ACTION_OPEN_STORE,
         UI_ACTION_OPEN_SETTINGS
     };
     static const enum ui_panel_id panels[UI_DOCK_ITEM_COUNT] = {
-        UI_PANEL_FILES, UI_PANEL_TERMINAL, UI_PANEL_NOTES, UI_PANEL_MEDIA_EDITOR,
-        UI_PANEL_CAMERA, UI_PANEL_PAINT, UI_PANEL_STORE, UI_PANEL_SETTINGS
+        UI_PANEL_FILES, UI_PANEL_TERMINAL, UI_PANEL_NOTES,
+        UI_PANEL_STORE, UI_PANEL_SETTINGS
     };
     const struct boot_ledger *ledger = boot_ledger_installed();
     const struct boot_stage_receipt *font;
@@ -6374,8 +6305,7 @@ _Noreturn void kernel_test_complete_phipia_proof(void)
     }
 
     /* Exercise the launcher a person can actually see: open the taskbar's
-     * search box, launch Store as the best match, reopen it, then filter and
-     * launch Paint. */
+     * search box and launch Store as the best match. */
     {
         struct ui_rect first_app;
         const struct ui_rect bar = taskbar_bounds();
@@ -6440,33 +6370,6 @@ _Noreturn void kernel_test_complete_phipia_proof(void)
             console_serial_write(
                 "ST PHIPIA STORE signed package action passed\n");
         }
-        phipia_proof_click_point(search_x, search_y,
-            "Phipia taskbar search did not reopen");
-        if (!taskbar_search_panel_open()) {
-            kernel_test_fail("Phipia taskbar search did not reopen");
-        }
-        static const char paint_query[] = "paint";
-        for (size_t index = 0U; index < sizeof(paint_query) - 1U; ++index) {
-            search_key.scancode = 0U;
-            search_key.character = paint_query[index];
-            if (ui_handle_keyboard(&search_key) != UI_STATUS_OK) {
-                kernel_test_fail("Phipia Paint search failed");
-            }
-        }
-        phipia_proof_process_ui("Phipia Paint search draw failed");
-        search_key.scancode = 0x1CU;
-        search_key.character = '\0';
-        if (ui_handle_keyboard(&search_key) != UI_STATUS_OK) {
-            kernel_test_fail("Phipia Paint search activation failed");
-        }
-        phipia_proof_process_ui("Phipia Paint search activation draw failed");
-        char manifest[13U];
-        if (ui_get_state()->active_panel != UI_PANEL_PAINT ||
-                ui_application_launch_dequeue(manifest, sizeof(manifest))) {
-            kernel_test_fail("Phipia search chose the wrong Paint app");
-        }
-        phipia_proof_settle_ui(
-            "Phipia Paint search animation did not settle");
     }
 
     for (size_t index = 0U; index < UI_DOCK_ITEM_COUNT; ++index) {
@@ -8653,13 +8556,6 @@ _Noreturn void kernel_test_complete_network(void)
             kernel_test_fail("networking regressed Notes");
         }
         break;
-    case KERNEL_TEST_NETWORK_MEDIA_EDITOR:
-        fat32_require_base(true);
-        network_require_dhcp();
-        if (!ui_is_active() || ui_flush() != UI_STATUS_OK) {
-            kernel_test_fail("networking regressed Media Editor");
-        }
-        break;
     case KERNEL_TEST_NETWORK_PERSISTENCE: {
         struct phipfs_stat stat;
         enum phipfs_status status;
@@ -9486,8 +9382,6 @@ const char *kernel_test_scenario_name(enum kernel_test_scenario scenario)
         return "network-files";
     case KERNEL_TEST_NETWORK_NOTES:
         return "network-notes";
-    case KERNEL_TEST_NETWORK_MEDIA_EDITOR:
-        return "network-media-editor";
     case KERNEL_TEST_NETWORK_PERSISTENCE:
         return "network-persistence";
     case KERNEL_TEST_NETWORK_SOCKET_ISOLATION:
@@ -9516,8 +9410,6 @@ const char *kernel_test_scenario_name(enum kernel_test_scenario scenario)
         return "native-lua";
     case KERNEL_TEST_NATIVE_SQLITE:
         return "native-sqlite";
-    case KERNEL_TEST_NATIVE_CANVAS:
-        return "native-canvas";
     case KERNEL_TEST_NATIVE_NETWORK:
         return "network-native";
     case KERNEL_TEST_NATIVE_RUST:

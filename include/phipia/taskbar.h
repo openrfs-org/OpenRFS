@@ -107,8 +107,6 @@ enum taskbar_glyph {
     TASKBAR_GLYPH_FILE_EXPLORER,
     TASKBAR_GLYPH_TERMINAL,
     TASKBAR_GLYPH_NOTES,
-    TASKBAR_GLYPH_CAMERA,
-    TASKBAR_GLYPH_CANVAS,
     TASKBAR_GLYPH_STORE,
     TASKBAR_GLYPH_SETTINGS,
     TASKBAR_GLYPH_CHEVRON_UP,
@@ -131,7 +129,7 @@ enum taskbar_glyph {
  */
 struct taskbar_icon {
     /*
-     * Built-in artwork by name - "start", "files", "terminal", "camera",
+     * Built-in artwork by name - "start", "files", "terminal",
      * "store" - which the taskbar carries at every size it draws at and picks
      * between at draw time.  This is the sharpest option, because each size
      * was resampled from the original rather than from a larger cell.

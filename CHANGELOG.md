@@ -2,6 +2,11 @@
 
 # Changelog
 
+## Unreleased
+
+- Removed the Media Editor, Camera, and Paint/Canvas applications, their assets,
+  package and capture paths, and app-specific acceptance scenarios.
+
 ## Phipia
 
 - Replaced the former shell presentation with the Phipia desktop and the

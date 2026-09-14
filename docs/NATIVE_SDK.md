@@ -53,7 +53,7 @@ and `localtime_r` support Unix seconds from 1970 through 9999, with local time
 defined as UTC until a timezone database exists. See
 [`WALL_CLOCK.md`](WALL_CLOCK.md).
 
-`make native-apps` builds the C proof, Lua, SQLite, Canvas, the native network
+`make native-apps` builds the C proof, Lua, SQLite, the native network
 client, and the Rust proof entirely from checked-in inputs. The Lua and SQLite
 scripts extract their pinned archives into disposable build directories and do
 not modify the upstream source archives.
