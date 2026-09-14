@@ -119,6 +119,7 @@ static size_t current_tab;
 static struct store_app apps[STORE_MAX_APPS];
 static char shelf_heading[STORE_MAX_SHELVES][STORE_TEXT_BYTES];
 static size_t hover_app = (size_t)-1;
+static bool package_action_pending;
 /*
  * The card being LEFT, and the two fades.  Windows cross-fades a hover
  * rather than switching it: the card you are leaving is still half lit while
@@ -581,6 +582,31 @@ static struct ui_rect spotlight_rect(void)
         area.width - STORE_PAD * 2U, STORE_SPOTLIGHT_HEIGHT };
 }
 
+static struct ui_rect spotlight_action_rect(void)
+{
+    if (spotlight_index() == (size_t)-1) {
+        return (struct ui_rect){ 0U, 0U, 0U, 0U };
+    }
+    const struct ui_rect panel = spotlight_rect();
+
+    return (struct ui_rect){ panel.x + 32U + STORE_SPOTLIGHT_LOGO + 32U,
+        panel.y + panel.height - 46U, STORE_GET_WIDTH, STORE_GET_HEIGHT };
+}
+
+struct ui_rect store_spotlight_action_bounds(void)
+{
+    return initialized ? spotlight_action_rect() :
+        (struct ui_rect){ 0U, 0U, 0U, 0U };
+}
+
+bool store_take_package_action(void)
+{
+    const bool pending = package_action_pending;
+
+    package_action_pending = false;
+    return pending;
+}
+
 /* How tall one shelf is: its heading, then a row of cards. */
 static uint32_t shelf_height(void)
 {
@@ -814,9 +840,7 @@ static enum store_status draw_spotlight(struct ui_rect damage)
     const struct store_app *app = &apps[index];
     const struct ui_rect panel = spotlight_rect();
     const struct store_rgb plate = plate_of(app);
-    const struct ui_rect button = { panel.x + 32U + STORE_SPOTLIGHT_LOGO +
-        32U, panel.y + panel.height - 46U, STORE_GET_WIDTH,
-        STORE_GET_HEIGHT };
+    const struct ui_rect button = spotlight_action_rect();
     enum store_status status = fill(panel, damage, plate);
 
     if (status == STORE_STATUS_OK) {
@@ -1177,6 +1201,11 @@ enum store_status store_pointer_press(struct ui_point point,
         return STORE_STATUS_NOT_INITIALIZED;
     }
     *damage = (struct ui_rect){ 0U, 0U, 0U, 0U };
+    if (holds(spotlight_action_rect(), point)) {
+        package_action_pending = true;
+        *damage = spotlight_action_rect();
+        return STORE_STATUS_OK;
+    }
     if (!holds(nav, point)) {
         return STORE_STATUS_OK;
     }
@@ -1241,6 +1270,7 @@ enum store_status store_initialize(struct surface *target,
     }
     canvas = target;
     initialized = true;
+    package_action_pending = false;
     return STORE_STATUS_OK;
 }
 

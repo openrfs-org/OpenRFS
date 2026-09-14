@@ -89,6 +89,10 @@ enum store_status store_pointer_move(struct ui_point point,
 enum store_status store_pointer_press(struct ui_point point,
     struct ui_rect *damage);
 
+/* The visible spotlight action and its one-shot signed-package request. */
+struct ui_rect store_spotlight_action_bounds(void);
+bool store_take_package_action(void);
+
 /* Advance the hover cross-fade to the monotonic clock.  Returns true while
  * another frame is still owed. */
 bool store_animate(struct ui_rect *damage);

@@ -6538,8 +6538,16 @@ static enum ui_status phipia_pointer_press_active(
         return UI_STATUS_OK;
     }
     case UI_PANEL_STORE:
-        return store_pointer_press(point, damage) == STORE_STATUS_OK ?
-            UI_STATUS_OK : UI_STATUS_BAD_ELEMENT;
+        if (store_pointer_press(point, damage) != STORE_STATUS_OK) {
+            return UI_STATUS_BAD_ELEMENT;
+        }
+        if (store_take_package_action() &&
+                (application_launch_path[0] != '\0' ||
+                !copy_string(application_launch_path,
+                    sizeof(application_launch_path), "PHIP.MAN"))) {
+            return UI_STATUS_BAD_ELEMENT;
+        }
+        return UI_STATUS_OK;
     case UI_PANEL_SETTINGS:
         return settings_pointer_press(point, damage) == SETTINGS_STATUS_OK ?
             UI_STATUS_OK : UI_STATUS_BAD_ELEMENT;
@@ -6890,6 +6898,19 @@ static bool phipia_initialize_shell(uint32_t width, uint32_t height)
             dialog_initialize(canvas, state.layout.surface) !=
                 DIALOG_STATUS_OK ||
             taskbar_initialize(canvas, width, height) != TASKBAR_STATUS_OK) {
+        taskbar_shutdown();
+        return false;
+    }
+    const struct store_app package_client = {
+        .spotlight = true,
+        .name = "Phip",
+        .category = "Signed packages",
+        .price = "Open",
+        .tagline = "Install and update signed apps",
+        .art = "store"
+    };
+
+    if (store_set_app(0U, &package_client) != STORE_STATUS_OK) {
         taskbar_shutdown();
         return false;
     }

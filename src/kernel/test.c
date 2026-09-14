@@ -51,6 +51,7 @@
 #include <phipia/shell.h>
 #include <phipia/pm_timer.h>
 #include <phipia/surface.h>
+#include <phipia/store.h>
 #include <phipia/taskbar.h>
 #include <phipia/test.h>
 #include <phipia/thread.h>
@@ -6390,14 +6391,15 @@ _Noreturn void kernel_test_complete_phipia_proof(void)
         phipia_proof_settle_ui(
             "Phipia Store search animation did not settle");
         {
-            const struct ui_rect client = ui_get_state()->layout.panel_client;
-            const uint32_t sidebar_width = client.width >= 700U ? 202U : 176U;
-            const uint32_t card_x = client.x + sidebar_width + 29U;
-            const uint32_t card_width = client.width - sidebar_width - 57U;
+            const struct ui_rect action =
+                store_spotlight_action_bounds();
             char manifest[13U];
 
-            phipia_proof_click_point(card_x + card_width - 80U,
-                client.y + 271U,
+            if (action.width == 0U || action.height == 0U) {
+                kernel_test_fail("Phipia Store package action is unavailable");
+            }
+            phipia_proof_click_point(action.x + action.width / 2U,
+                action.y + action.height / 2U,
                 "Phipia Store package action did not activate");
             if (!ui_application_launch_dequeue(manifest, sizeof(manifest)) ||
                     manifest[0] != 'P' || manifest[1] != 'H' ||
