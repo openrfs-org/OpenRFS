@@ -3,12 +3,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/clock.h>
-#include <phipia/fat32_fs.h>
-#include <phipia/memory.h>
-#include <phipia/network.h>
-#include <phipia/network_syscall.h>
-#include <phipia/random.h>
+#include <trait/clock.h>
+#include <trait/fat32_fs.h>
+#include <trait/memory.h>
+#include <trait/network.h>
+#include <trait/network_syscall.h>
+#include <trait/random.h>
 
 #define TOKEN_KIND UINT64_C(0x4e53000000000000)
 #define TOKEN_KIND_MASK UINT64_C(0xffff000000000000)
@@ -23,7 +23,7 @@ struct syscall_context {
     bool active;
     uint8_t transfer[NETWORK_SYSCALL_MAX_TRANSFER];
     char primary_text[768];
-    char secondary_text[PHIPFS_MAX_PATH + 1U];
+    char secondary_text[TRAITFS_MAX_PATH + 1U];
 };
 
 static struct syscall_context contexts[NETWORK_SYSCALL_MAX_CONTEXTS];
@@ -401,7 +401,7 @@ static enum network_syscall_status dispatch_operation(
             struct network_http_result result;
 
             if (request->primary_length >= sizeof(context->primary_text) ||
-                request->secondary_length > PHIPFS_MAX_PATH ||
+                request->secondary_length > TRAITFS_MAX_PATH ||
                 !copy_text(context, request->primary_address,
                     request->primary_length, context->primary_text,
                     sizeof(context->primary_text)) ||

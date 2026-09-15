@@ -15,30 +15,30 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/acpi.h>
-#include <phipia/apic.h>
-#include <phipia/apic_timer.h>
-#include <phipia/boot.h>
-#include <phipia/clock.h>
-#include <phipia/console.h>
-#include <phipia/cpu.h>
-#include <phipia/framebuffer.h>
-#include <phipia/heap.h>
-#include <phipia/interrupts.h>
-#include <phipia/logo.h>
-#include <phipia/ioapic.h>
-#include <phipia/memory.h>
-#include <phipia/paging.h>
-#include <phipia/pci.h>
-#include <phipia/pic.h>
-#include <phipia/pit.h>
-#include <phipia/pm_timer.h>
-#include <phipia/self_test.h>
-#include <phipia/test.h>
-#include <phipia/thread.h>
-#include <phipia/timer.h>
-#include <phipia/tsc.h>
-#include <phipia/boot_stages.h>
+#include <trait/acpi.h>
+#include <trait/apic.h>
+#include <trait/apic_timer.h>
+#include <trait/boot.h>
+#include <trait/clock.h>
+#include <trait/console.h>
+#include <trait/cpu.h>
+#include <trait/framebuffer.h>
+#include <trait/heap.h>
+#include <trait/interrupts.h>
+#include <trait/logo.h>
+#include <trait/ioapic.h>
+#include <trait/memory.h>
+#include <trait/paging.h>
+#include <trait/pci.h>
+#include <trait/pic.h>
+#include <trait/pit.h>
+#include <trait/pm_timer.h>
+#include <trait/self_test.h>
+#include <trait/test.h>
+#include <trait/thread.h>
+#include <trait/timer.h>
+#include <trait/tsc.h>
+#include <trait/boot_stages.h>
 
 /*
  * A loader may name itself with an arbitrarily long string. The transcript is a
@@ -48,7 +48,7 @@
 
 void report_boot_information(const struct boot_information *context)
 {
-    console_write("Phipia: boot loader: ");
+    console_write("Trait OS: boot loader: ");
 
     if (context->boot_loader_name == NULL) {
         console_write("unnamed");
@@ -68,41 +68,41 @@ void report_boot_information(const struct boot_information *context)
 
     console_putc('\n');
 
-    console_write("Phipia: memory map entries: ");
+    console_write("Trait OS: memory map entries: ");
     console_write_u64(context->memory_map_entry_count);
     console_putc('\n');
 
-    console_write("Phipia: reported usable bytes: ");
+    console_write("Trait OS: reported usable bytes: ");
     console_write_u64(context->reported_usable_bytes);
     console_putc('\n');
 
-    console_write("Phipia: highest reported address: ");
+    console_write("Trait OS: highest reported address: ");
     console_write_hex(context->highest_reported_address);
     console_putc('\n');
 }
 
 void report_allocator(const struct frame_allocator_stats *stats)
 {
-    console_write("Phipia: allocatable frames: ");
+    console_write("Trait OS: allocatable frames: ");
     console_write_u64(stats->allocatable_frames);
     console_putc('\n');
 
-    console_write("Phipia: free frames: ");
+    console_write("Trait OS: free frames: ");
     console_write_u64(stats->free_frames);
     console_putc('\n');
 
-    console_write("Phipia: reserved frames: ");
+    console_write("Trait OS: reserved frames: ");
     console_write_u64(stats->reserved_frames);
     console_putc('\n');
 
-    console_write("Phipia: highest allocatable address: ");
+    console_write("Trait OS: highest allocatable address: ");
     console_write_hex(stats->highest_allocatable_address);
     console_putc('\n');
 }
 
 void report_acpi_root(const struct acpi_root *root)
 {
-    console_write("Phipia: ACPI ");
+    console_write("Trait OS: ACPI ");
     console_write(acpi_root_kind_string(root->kind));
     console_write(" at ");
     console_write_hex(root->physical_address);
@@ -113,7 +113,7 @@ void report_acpi_root(const struct acpi_root *root)
 
 void report_acpi_madt(const struct acpi_madt *madt)
 {
-    console_write("Phipia: ACPI MADT at ");
+    console_write("Trait OS: ACPI MADT at ");
     console_write_hex(madt->physical_address);
     console_write(" local APIC ");
     console_write_hex(madt->local_apic_address);
@@ -121,7 +121,7 @@ void report_acpi_madt(const struct acpi_madt *madt)
     console_write_hex(madt->flags);
     console_putc('\n');
 
-    console_write("Phipia: ACPI root entries: ");
+    console_write("Trait OS: ACPI root entries: ");
     console_write_u64(madt->root_entry_count);
     console_write(" MADT OEM ");
     console_write_n(madt->oem_id, 6U);
@@ -132,7 +132,7 @@ void report_acpi_madt(const struct acpi_madt *madt)
 
 void report_acpi_fadt(const struct acpi_fadt *fadt)
 {
-    console_write("Phipia: ACPI FADT at ");
+    console_write("Trait OS: ACPI FADT at ");
     console_write_hex(fadt->physical_address);
     console_write(" revision ");
     console_write_u64(fadt->revision);
@@ -143,7 +143,7 @@ void report_acpi_fadt(const struct acpi_fadt *fadt)
 
 void report_pm_timer(const struct pm_timer_state *pm_timer)
 {
-    console_write("Phipia: ACPI PM timer port ");
+    console_write("Trait OS: ACPI PM timer port ");
     console_write_hex(pm_timer->port);
     console_write(" width ");
     console_write_u64(pm_timer->counter_bits);
@@ -153,7 +153,7 @@ void report_pm_timer(const struct pm_timer_state *pm_timer)
 }
 
 /*
- * The one firmware table Phipia reads whose absence is not a fault. A machine
+ * The one firmware table Trait OS reads whose absence is not a fault. A machine
  * with no PCI Express host bridge publishes no MCFG, and configuration space is
  * still reachable through the I/O ports the PCI specification has always
  * defined, so absence is reported and boot continues.
@@ -161,11 +161,11 @@ void report_pm_timer(const struct pm_timer_state *pm_timer)
 void report_acpi_mcfg(const struct acpi_mcfg *mcfg, bool present)
 {
     if (!present) {
-        console_write("Phipia: ACPI MCFG absent\n");
+        console_write("Trait OS: ACPI MCFG absent\n");
         return;
     }
 
-    console_write("Phipia: ACPI MCFG at ");
+    console_write("Trait OS: ACPI MCFG at ");
     console_write_hex(mcfg->physical_address);
     console_write(" windows ");
     console_write_u64(mcfg->allocation_count);
@@ -175,7 +175,7 @@ void report_acpi_mcfg(const struct acpi_mcfg *mcfg, bool present)
         const struct acpi_ecam_allocation *allocation =
             &mcfg->allocations[index];
 
-        console_write("Phipia: ACPI ECAM segment ");
+        console_write("Trait OS: ACPI ECAM segment ");
         console_write_u64(allocation->segment);
         console_write(" base ");
         console_write_hex(allocation->base_address);
@@ -191,7 +191,7 @@ void report_acpi_mcfg(const struct acpi_mcfg *mcfg, bool present)
 
 void report_acpi_topology(const struct acpi_topology *topology)
 {
-    console_write("Phipia: ACPI local APIC base ");
+    console_write("Trait OS: ACPI local APIC base ");
     console_write_hex(topology->local_apic_address);
 
     if (topology->local_apic_address_overridden) {
@@ -200,7 +200,7 @@ void report_acpi_topology(const struct acpi_topology *topology)
 
     console_putc('\n');
 
-    console_write("Phipia: ACPI processors: ");
+    console_write("Trait OS: ACPI processors: ");
     console_write_u64(topology->local_apic_count);
     console_write(" enabled ");
     console_write_u64(topology->enabled_processor_count);
@@ -213,7 +213,7 @@ void report_acpi_topology(const struct acpi_topology *topology)
     for (size_t index = 0; index < topology->io_apic_count; ++index) {
         const struct acpi_io_apic *io_apic = &topology->io_apics[index];
 
-        console_write("Phipia: ACPI I/O APIC id ");
+        console_write("Trait OS: ACPI I/O APIC id ");
         console_write_u64(io_apic->identifier);
         console_write(" at ");
         console_write_hex(io_apic->address);
@@ -226,7 +226,7 @@ void report_acpi_topology(const struct acpi_topology *topology)
         const struct acpi_interrupt_override *override =
             &topology->interrupt_overrides[index];
 
-        console_write("Phipia: ACPI override ISA IRQ ");
+        console_write("Trait OS: ACPI override ISA IRQ ");
         console_write_u64(override->source);
         console_write(" to GSI ");
         console_write_u64(override->global_system_interrupt);
@@ -238,7 +238,7 @@ void report_acpi_topology(const struct acpi_topology *topology)
 
 void report_apic(const struct apic_state *apic)
 {
-    console_write("Phipia: local APIC id ");
+    console_write("Trait OS: local APIC id ");
     console_write_u64(apic->id);
     console_write(" version ");
     console_write_hex(apic->version);
@@ -248,11 +248,11 @@ void report_apic(const struct apic_state *apic)
     console_write_hex(apic->base_address);
     console_putc('\n');
 
-    console_write("Phipia: local APIC legacy routing ");
+    console_write("Trait OS: local APIC legacy routing ");
     console_write(apic->legacy_interrupts_routed ? "LINT0 ExtINT" : "masked");
     console_putc('\n');
 
-    console_write("Phipia: local APIC EOI-broadcast suppression ");
+    console_write("Trait OS: local APIC EOI-broadcast suppression ");
     console_write(
         apic->eoi_broadcast_suppression_supported ? "supported" : "unsupported"
     );
@@ -266,7 +266,7 @@ void report_ioapic(const struct ioapic_state *ioapic)
     for (size_t index = 0; index < ioapic->count; ++index) {
         const struct ioapic_unit *unit = &ioapic->units[index];
 
-        console_write("Phipia: I/O APIC id ");
+        console_write("Trait OS: I/O APIC id ");
         console_write_u64(unit->identifier);
         console_write(" version ");
         console_write_hex(unit->version);

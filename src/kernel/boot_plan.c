@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * The installed Phipia Boot Ledger plan.
+ * The installed Trait OS Boot Ledger plan.
  *
  * Every function that performs migrated boot work is private to this file and
  * can only be reached through a typed descriptor. kernel_main constructs,
@@ -10,67 +10,67 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/acpi.h>
-#include <phipia/apic.h>
-#include <phipia/apic_timer.h>
-#include <phipia/boot.h>
-#include <phipia/boot_ledger.h>
-#include <phipia/boot_plan.h>
-#include <phipia/boot_stages.h>
-#include <phipia/clock.h>
-#include <phipia/console.h>
-#include <phipia/cpu.h>
-#include <phipia/device_substrate.h>
-#include <phipia/dma.h>
-#include <phipia/framebuffer.h>
-#include <phipia/filesystem.h>
-#include <phipia/elf64.h>
-#include <phipia/heap.h>
-#include <phipia/interrupts.h>
-#include <phipia/interrupt_vector.h>
-#include <phipia/font.h>
-#include <phipia/logo.h>
-#include <phipia/ioapic.h>
-#include <phipia/keyboard.h>
-#include <phipia/linux_abi.h>
-#include <phipia/linux_cat.h>
-#include <phipia/linux_syscall.h>
-#include <phipia/linux_uname.h>
-#include <phipia/memory.h>
-#include <phipia/msix.h>
-#include <phipia/network.h>
-#include <phipia/network_syscall.h>
-#include <phipia/nvidia.h>
-#include <phipia/nvme.h>
-#include <phipia/audio.h>
-#include <phipia/driver.h>
-#include <phipia/multiprocess.h>
-#include <phipia/paging.h>
-#include <phipia/pci.h>
-#include <phipia/pci_resource.h>
-#include <phipia/pointer.h>
-#include <phipia/process.h>
-#include <phipia/pm_timer.h>
-#include <phipia/random.h>
-#include <phipia/screen.h>
-#include <phipia/self_test.h>
-#include <phipia/shell.h>
-#include <phipia/surface.h>
-#include <phipia/test.h>
-#include <phipia/thread.h>
-#include <phipia/timer.h>
-#include <phipia/tsc.h>
-#include <phipia/ui.h>
-#include <phipia/wall_clock.h>
-#include <phipia/ui_font.h>
-#include <phipia/xhci.h>
+#include <trait/acpi.h>
+#include <trait/apic.h>
+#include <trait/apic_timer.h>
+#include <trait/boot.h>
+#include <trait/boot_ledger.h>
+#include <trait/boot_plan.h>
+#include <trait/boot_stages.h>
+#include <trait/clock.h>
+#include <trait/console.h>
+#include <trait/cpu.h>
+#include <trait/device_substrate.h>
+#include <trait/dma.h>
+#include <trait/framebuffer.h>
+#include <trait/filesystem.h>
+#include <trait/elf64.h>
+#include <trait/heap.h>
+#include <trait/interrupts.h>
+#include <trait/interrupt_vector.h>
+#include <trait/font.h>
+#include <trait/logo.h>
+#include <trait/ioapic.h>
+#include <trait/keyboard.h>
+#include <trait/linux_abi.h>
+#include <trait/linux_cat.h>
+#include <trait/linux_syscall.h>
+#include <trait/linux_uname.h>
+#include <trait/memory.h>
+#include <trait/msix.h>
+#include <trait/network.h>
+#include <trait/network_syscall.h>
+#include <trait/nvidia.h>
+#include <trait/nvme.h>
+#include <trait/audio.h>
+#include <trait/driver.h>
+#include <trait/multiprocess.h>
+#include <trait/paging.h>
+#include <trait/pci.h>
+#include <trait/pci_resource.h>
+#include <trait/pointer.h>
+#include <trait/process.h>
+#include <trait/pm_timer.h>
+#include <trait/random.h>
+#include <trait/screen.h>
+#include <trait/self_test.h>
+#include <trait/shell.h>
+#include <trait/surface.h>
+#include <trait/test.h>
+#include <trait/thread.h>
+#include <trait/timer.h>
+#include <trait/tsc.h>
+#include <trait/ui.h>
+#include <trait/wall_clock.h>
+#include <trait/ui_font.h>
+#include <trait/xhci.h>
 
-static bool test_uses_phipia_proof_userland(enum kernel_test_scenario scenario)
+static bool test_uses_trait_proof_userland(enum kernel_test_scenario scenario)
 {
-    return scenario == KERNEL_TEST_PHIPIA_PROOF_USERLAND ||
-        scenario == KERNEL_TEST_PHIPIA_PROOF_USERLAND_ABSENT ||
-        scenario == KERNEL_TEST_PHIPIA_PROOF_USERLAND_INTERACTIVE ||
-        scenario == KERNEL_TEST_PHIPIA_PROOF_USERLAND_INTERACTIVE_ABSENT;
+    return scenario == KERNEL_TEST_TRAIT_PROOF_USERLAND ||
+        scenario == KERNEL_TEST_TRAIT_PROOF_USERLAND_ABSENT ||
+        scenario == KERNEL_TEST_TRAIT_PROOF_USERLAND_INTERACTIVE ||
+        scenario == KERNEL_TEST_TRAIT_PROOF_USERLAND_INTERACTIVE_ABSENT;
 }
 
 static bool test_uses_fat32_volumes(enum kernel_test_scenario scenario)
@@ -80,7 +80,7 @@ static bool test_uses_fat32_volumes(enum kernel_test_scenario scenario)
         (scenario >= KERNEL_TEST_NETWORK_NIC_DISCOVERY &&
             scenario <= KERNEL_TEST_NETWORK_SOCKET_ISOLATION) ||
         (scenario >= KERNEL_TEST_NATIVE &&
-            scenario <= KERNEL_TEST_NATIVE_PHIP);
+            scenario <= KERNEL_TEST_NATIVE_TRAIT);
 }
 
 static void stage_failed(
@@ -133,7 +133,7 @@ static void report_optional_window_refusal(
     enum paging_status status
 )
 {
-    console_write("Phipia: ");
+    console_write("Trait OS: ");
     console_write(paging_device_window_kind_string(kind));
     console_write(" unavailable: ");
     console_write(paging_status_string(status));
@@ -179,7 +179,7 @@ static enum paging_status construct_device_windows(
         const uint64_t base = mcfg->allocations[0].base_address;
 
         if (base == 0U ||
-            base > PHIPIA_EARLY_PHYSICAL_LIMIT - PAGING_ECAM_WINDOW_SIZE) {
+            base > TRAIT_EARLY_PHYSICAL_LIMIT - PAGING_ECAM_WINDOW_SIZE) {
             report_optional_window_refusal(PAGING_DEVICE_WINDOW_PCI_ECAM,
                 PAGING_STATUS_DEVICE_WINDOW_UNSUPPORTED_RANGE);
         } else if ((base & (PAGING_HUGE_PAGE_SIZE - 1U)) != 0U) {
@@ -215,7 +215,7 @@ static enum paging_status construct_device_windows(
             const uint64_t framebuffer_end =
                 framebuffer->address + framebuffer->size;
 
-            if (framebuffer_end > PHIPIA_EARLY_PHYSICAL_LIMIT) {
+            if (framebuffer_end > TRAIT_EARLY_PHYSICAL_LIMIT) {
                 report_optional_window_refusal(
                     PAGING_DEVICE_WINDOW_FRAMEBUFFER,
                     PAGING_STATUS_DEVICE_WINDOW_UNSUPPORTED_RANGE);
@@ -277,7 +277,7 @@ static void execute_interrupt_foundation(
 
     if (status != INTERRUPT_STATUS_OK) {
         if (status == INTERRUPT_STATUS_CPU_TABLE_FAILURE) {
-            console_write("Phipia: CPU table detail: ");
+            console_write("Trait OS: CPU table detail: ");
             console_write(cpu_status_string(cpu_tables_validate()));
             console_putc('\n');
         }
@@ -286,9 +286,9 @@ static void execute_interrupt_foundation(
         return;
     }
 
-    console_write("Phipia: kernel online\n");
-    console_write("Phipia: descriptor tables verified\n");
-    console_write("Phipia: interrupt foundation online\n");
+    console_write("Trait OS: kernel online\n");
+    console_write("Trait OS: descriptor tables verified\n");
+    console_write("Trait OS: interrupt foundation online\n");
     boot_stage_result_succeed(descriptor, result);
 }
 
@@ -348,9 +348,9 @@ static void execute_pure_self_tests(
         failure = ui_font_self_test_failure();
     } else if (!ui_self_test()) {
         failure = ui_self_test_failure();
-    } else if (phipia_logo_self_test() != 1) {
+    } else if (trait_logo_self_test() != 1) {
         failure = "logo decoder self-test failed";
-    } else if (phipia_font_self_test() != 1) {
+    } else if (trait_font_self_test() != 1) {
         failure = "font reader self-test failed";
     }
 
@@ -359,7 +359,7 @@ static void execute_pure_self_tests(
         return;
     }
 
-    console_write("Phipia: parser rejection tests passed\n");
+    console_write("Trait OS: parser rejection tests passed\n");
     boot_stage_result_succeed(descriptor, result);
 }
 
@@ -467,11 +467,11 @@ static void execute_interrupt_controllers(
     report_acpi_fadt(&context->acpi_fadt);
     report_pm_timer(&pm_timer_state);
     report_acpi_mcfg(&context->acpi_mcfg, context->mcfg_present);
-    console_write("Phipia: ACPI root verified\n");
-    console_write("Phipia: ACPI MADT verified\n");
-    console_write("Phipia: ACPI topology verified\n");
-    console_write("Phipia: ACPI FADT verified\n");
-    console_write("Phipia: ACPI configuration windows verified\n");
+    console_write("Trait OS: ACPI root verified\n");
+    console_write("Trait OS: ACPI MADT verified\n");
+    console_write("Trait OS: ACPI topology verified\n");
+    console_write("Trait OS: ACPI FADT verified\n");
+    console_write("Trait OS: ACPI configuration windows verified\n");
 
     apic_status = apic_bring_online(&context->topology);
     if (apic_status != APIC_STATUS_OK) {
@@ -481,7 +481,7 @@ static void execute_interrupt_controllers(
 
     apic_state = apic_get_state();
     report_apic(&apic_state);
-    console_write("Phipia: local APIC online\n");
+    console_write("Trait OS: local APIC online\n");
     ioapic_status = ioapic_initialize(&context->topology);
 
     if (ioapic_status != IOAPIC_STATUS_OK) {
@@ -491,7 +491,7 @@ static void execute_interrupt_controllers(
 
     ioapic_state = ioapic_get_state();
     report_ioapic(&ioapic_state);
-    console_write("Phipia: I/O APIC online\n");
+    console_write("Trait OS: I/O APIC online\n");
     boot_stage_result_succeed(descriptor, result);
 }
 
@@ -663,10 +663,10 @@ static void execute_ui_font(
         return;
     }
 
-    console_write("Phipia: font verified\n");
+    console_write("Trait OS: font verified\n");
     boot_stage_result_succeed(descriptor, result);
-    result->proof_counters[0] = phipia_ui_font_size();
-    result->proof_counters[1] = phipia_ui_font_fingerprint();
+    result->proof_counters[0] = trait_ui_font_size();
+    result->proof_counters[1] = trait_ui_font_fingerprint();
     result->proof_counter_count = 2U;
 }
 
@@ -680,9 +680,9 @@ static void execute_pointer_decision(
 
     (void)context;
     if (status == POINTER_STATUS_OK) {
-        console_write("Phipia: PS/2 pointer available\n");
+        console_write("Trait OS: PS/2 pointer available\n");
     } else {
-        console_write("Phipia: PS/2 pointer unavailable: ");
+        console_write("Trait OS: PS/2 pointer unavailable: ");
         console_write(pointer_status_string(status));
         console_putc('\n');
     }
@@ -725,7 +725,7 @@ static void execute_ui_layout(
         return;
     }
 
-    console_write("Phipia: layout validated\n");
+    console_write("Trait OS: layout validated\n");
     boot_stage_result_succeed(descriptor, result);
     result->proof_counters[0] = framebuffer.width;
     result->proof_counters[1] = framebuffer.height;
@@ -738,8 +738,8 @@ static void execute_early_scenario(
     struct boot_stage_result *result
 )
 {
-    console_write("Phipia: day one passed\n");
-    console_write("Phipia: memory foundation passed\n");
+    console_write("Trait OS: day one passed\n");
+    console_write("Trait OS: memory foundation passed\n");
     context->test_scenario = kernel_test_select(&context->information);
     context->test_context.mcfg = context->mcfg_present ?
         &context->acpi_mcfg : NULL;
@@ -850,8 +850,8 @@ static void execute_pci_resource_foundation(
             "PCI BAR transaction negative controls failed");
         return;
     }
-    console_write("Phipia: PCI resource ownership negative controls 4/4 passed\n");
-    console_write("Phipia: supervisor NX UC device-MMIO arena established\n");
+    console_write("Trait OS: PCI resource ownership negative controls 4/4 passed\n");
+    console_write("Trait OS: supervisor NX UC device-MMIO arena established\n");
     boot_stage_result_succeed(descriptor, result);
     result->proof_counters[0] =
         pci_resource_get_state().arena_pages;
@@ -876,8 +876,8 @@ static void execute_dynamic_vector_foundation(
             "dynamic vector or MSI-X negative controls failed");
         return;
     }
-    console_write("Phipia: dynamic vector negative controls 4/4 passed\n");
-    console_write("Phipia: dynamic interrupt vector foundation established\n");
+    console_write("Trait OS: dynamic vector negative controls 4/4 passed\n");
+    console_write("Trait OS: dynamic interrupt vector foundation established\n");
     boot_stage_result_succeed(descriptor, result);
     result->proof_counters[0] = interrupt_vector_get_state().capacity;
     result->proof_counter_count = 1U;
@@ -899,8 +899,8 @@ static void execute_dma_foundation(
         stage_failed(context, result, "DMA ownership negative controls failed");
         return;
     }
-    console_write("Phipia: bounded DMA negative controls 2/2 passed\n");
-    console_write("Phipia: contiguous DMA ownership foundation established\n");
+    console_write("Trait OS: bounded DMA negative controls 2/2 passed\n");
+    console_write("Trait OS: contiguous DMA ownership foundation established\n");
     boot_stage_result_succeed(descriptor, result);
 }
 
@@ -930,17 +930,17 @@ static void execute_network_foundation(
         stage_failed(context, result, network_status_string(status));
         return;
     }
-    console_write("Phipia: network controls ");
+    console_write("Trait OS: network controls ");
     console_write_u64(network_tests + syscall_tests);
     console_write(" passed; entropy ");
     console_write(random_capability_string(random_get_state().capability));
     console_putc('\n');
     if (status == NETWORK_STATUS_OK) {
-        console_write("Phipia: virtio-net0 initialized\n");
+        console_write("Trait OS: virtio-net0 initialized\n");
     } else if (status == NETWORK_STATUS_LINK_DOWN) {
-        console_write("Phipia: virtio-net0 initialized without carrier\n");
+        console_write("Trait OS: virtio-net0 initialized without carrier\n");
     } else {
-        console_write("Phipia: virtio-net0 absent\n");
+        console_write("Trait OS: virtio-net0 absent\n");
     }
     boot_stage_result_succeed(descriptor, result);
     result->proof_counters[0] = network_tests + syscall_tests;
@@ -1032,7 +1032,7 @@ static void execute_device_substrate_proof(
 
     status = device_substrate_prove(&proof);
     if (status == DEVICE_SUBSTRATE_STATUS_ABSENT) {
-        console_write("Phipia: device-substrate fixture absent\n");
+        console_write("Trait OS: device-substrate fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
@@ -1040,7 +1040,7 @@ static void execute_device_substrate_proof(
         const struct pci_function *function = pci_find_device(
             UINT16_C(0x1AF4), UINT16_C(0x1044));
 
-        console_write("Phipia: PCI ");
+        console_write("Trait OS: PCI ");
         if (function != NULL) {
             console_write_u64(function->address.segment);
             console_putc(':');
@@ -1059,19 +1059,19 @@ static void execute_device_substrate_proof(
         return;
     }
 
-    console_write("Phipia: VirtIO RNG device DMA wrote ");
+    console_write("Trait OS: VirtIO RNG device DMA wrote ");
     console_write_u64(proof.random_bytes);
     console_write(" bytes; nonzero ");
     console_write_u64(proof.nonzero_bytes);
     console_putc('\n');
-    console_write("Phipia: MSI-X delivered ");
+    console_write("Trait OS: MSI-X delivered ");
     console_write_u64(proof.interrupt_count);
     console_write(" interrupt; used ring ");
     console_write_u64(proof.used_before);
     console_write(" -> ");
     console_write_u64(proof.used_after);
     console_putc('\n');
-    console_write("Phipia: device substrate teardown complete\n");
+    console_write("Trait OS: device substrate teardown complete\n");
     boot_stage_result_succeed(descriptor, result);
     result->proof_counters[0] = proof.interrupt_count;
     result->proof_counters[1] = proof.random_bytes;
@@ -1092,13 +1092,13 @@ static void execute_xhci_foundation(
             "xHCI foundation robustness controls failed");
         return;
     }
-    console_write("Phipia: xHCI foundation robustness controls ");
+    console_write("Trait OS: xHCI foundation robustness controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(XHCI_FOUNDATION_ROBUSTNESS_TESTS);
     console_write(" passed\n");
     console_write(
-        "Phipia: bounded xHCI host-controller foundation established\n");
+        "Trait OS: bounded xHCI host-controller foundation established\n");
     boot_stage_result_succeed(descriptor, result);
 }
 
@@ -1173,14 +1173,14 @@ static void execute_xhci_descriptor_proof(
 
     status = xhci_descriptor_prove(&proof);
     if (status == XHCI_STATUS_ABSENT) {
-        console_write("Phipia: xHCI fixture absent\n");
+        console_write("Trait OS: xHCI fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
     if (status != XHCI_STATUS_OK) {
         const struct pci_function *function = xhci_pci_function();
 
-        console_write("Phipia: PCI ");
+        console_write("Trait OS: PCI ");
         if (function == NULL) {
             console_write("unknown");
         } else {
@@ -1219,16 +1219,16 @@ static void execute_xhci_descriptor_proof(
         return;
     }
 
-    console_write("Phipia: xHCI controller ready\n");
-    console_write("Phipia: USB device descriptor DMA completed: ");
+    console_write("Trait OS: xHCI controller ready\n");
+    console_write("Trait OS: USB device descriptor DMA completed: ");
     console_write_u64(proof.descriptor_bytes);
     console_write(" bytes\n");
-    console_write("Phipia: xHCI MSI-X descriptor completion count ");
+    console_write("Trait OS: xHCI MSI-X descriptor completion count ");
     console_write_u64(proof.msix_completion_count);
     console_putc('\n');
     console_write(
-        "Phipia: xHCI DMA ownership CPU-CONTROLLER-CPU complete\n");
-    console_write("Phipia: xHCI teardown complete\n");
+        "Trait OS: xHCI DMA ownership CPU-CONTROLLER-CPU complete\n");
+    console_write("Trait OS: xHCI teardown complete\n");
     boot_stage_result_succeed(descriptor, result);
     result->proof_counters[0] = proof.descriptor_bytes;
     result->proof_counters[1] = proof.msix_completion_count;
@@ -1249,13 +1249,13 @@ static void execute_nvme_foundation(
             "NVMe foundation robustness controls failed");
         return;
     }
-    console_write("Phipia: NVMe foundation robustness controls ");
+    console_write("Trait OS: NVMe foundation robustness controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(NVME_FOUNDATION_ROBUSTNESS_TESTS);
     console_write(" passed\n");
     console_write(
-        "Phipia: bounded NVMe block-controller foundation established\n");
+        "Trait OS: bounded NVMe block-controller foundation established\n");
     boot_stage_result_succeed(descriptor, result);
 }
 
@@ -1320,38 +1320,38 @@ static void execute_nvme_read_proof(
         context->test_scenario == KERNEL_TEST_LINUX_ABI ||
         context->test_scenario == KERNEL_TEST_LINUX_ABI_UNAME ||
         context->test_scenario == KERNEL_TEST_EXT4_RECOVERY ||
-        test_uses_phipia_proof_userland(context->test_scenario) ||
+        test_uses_trait_proof_userland(context->test_scenario) ||
         test_uses_fat32_volumes(context->test_scenario)) {
-        console_write("Phipia: NVMe fixture absent\n");
+        console_write("Trait OS: NVMe fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
 
     status = nvme_read_prove(&proof);
     if (status == NVME_STATUS_ABSENT) {
-        console_write("Phipia: NVMe fixture absent\n");
+        console_write("Trait OS: NVMe fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
     if (status != NVME_STATUS_OK) {
-        console_write("Phipia: NVMe read proof violated invariant: ");
+        console_write("Trait OS: NVMe read proof violated invariant: ");
         console_write(nvme_status_string(status));
         console_putc('\n');
         stage_failed(context, result, nvme_status_string(status));
         return;
     }
 
-    console_write("Phipia: NVMe controller ready\n");
-    console_write("Phipia: NVMe namespace ready\n");
-    console_write("Phipia: NVMe block read completed: ");
+    console_write("Trait OS: NVMe controller ready\n");
+    console_write("Trait OS: NVMe namespace ready\n");
+    console_write("Trait OS: NVMe block read completed: ");
     console_write_u64(proof.block_bytes);
     console_write(" bytes\n");
-    console_write("Phipia: NVMe MSI-X read completion count ");
+    console_write("Trait OS: NVMe MSI-X read completion count ");
     console_write_u64(proof.msix_completion_count);
     console_putc('\n');
     console_write(
-        "Phipia: NVMe DMA ownership CPU-CONTROLLER-CPU complete\n");
-    console_write("Phipia: NVMe teardown complete\n");
+        "Trait OS: NVMe DMA ownership CPU-CONTROLLER-CPU complete\n");
+    console_write("Trait OS: NVMe teardown complete\n");
     boot_stage_result_succeed(descriptor, result);
     result->proof_counters[0] = proof.block_bytes;
     result->proof_counters[1] = proof.msix_completion_count;
@@ -1372,13 +1372,13 @@ static void execute_fat16_foundation(
             "FAT16 foundation robustness controls failed");
         return;
     }
-    console_write("Phipia: FAT16 foundation robustness controls ");
+    console_write("Trait OS: FAT16 foundation robustness controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(FILESYSTEM_INTEGRATION_CONTROLS);
     console_write(" passed\n");
     console_write(
-        "Phipia: bounded read-only FAT16 foundation established\n");
+        "Trait OS: bounded read-only FAT16 foundation established\n");
     boot_stage_result_succeed(descriptor, result);
 }
 
@@ -1444,38 +1444,38 @@ static void execute_filesystem_file_proof(
         context->test_scenario == KERNEL_TEST_LINUX_ABI ||
         context->test_scenario == KERNEL_TEST_LINUX_ABI_UNAME ||
         context->test_scenario == KERNEL_TEST_EXT4_RECOVERY ||
-        test_uses_phipia_proof_userland(context->test_scenario) ||
+        test_uses_trait_proof_userland(context->test_scenario) ||
         test_uses_fat32_volumes(context->test_scenario)) {
-        console_write("Phipia: FAT16 fixture absent\n");
+        console_write("Trait OS: FAT16 fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
 
     status = filesystem_file_prove(&proof);
     if (status == FILESYSTEM_STATUS_ABSENT) {
-        console_write("Phipia: FAT16 fixture absent\n");
+        console_write("Trait OS: FAT16 fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
     if (status != FILESYSTEM_STATUS_OK) {
-        console_write("Phipia: FAT16 file proof violated invariant: ");
+        console_write("Trait OS: FAT16 file proof violated invariant: ");
         console_write(filesystem_status_string(status));
         console_putc('\n');
         stage_failed(context, result, filesystem_status_string(status));
         return;
     }
 
-    console_write("Phipia: FAT16 volume ready\n");
-    console_write("Phipia: FAT16 file PHIPIA.BIN read: ");
+    console_write("Trait OS: FAT16 volume ready\n");
+    console_write("Trait OS: FAT16 file TRAIT.BIN read: ");
     console_write_u64(proof.file_bytes);
     console_write(" bytes\n");
-    console_write("Phipia: FAT16 MSI-X completion count ");
+    console_write("Trait OS: FAT16 MSI-X completion count ");
     console_write_u64(proof.msix_completion_count);
     console_putc('\n');
     console_write(
-        "Phipia: FAT16 DMA ownership CPU-CONTROLLER-CPU complete\n");
-    console_write("Phipia: FAT16 teardown complete\n");
-    console_write("ST FAT16 file PHIPIA.BIN bytes ");
+        "Trait OS: FAT16 DMA ownership CPU-CONTROLLER-CPU complete\n");
+    console_write("Trait OS: FAT16 teardown complete\n");
+    console_write("ST FAT16 file TRAIT.BIN bytes ");
     console_write_u64(proof.file_bytes);
     console_write(" reads ");
     console_write_u64(proof.read_count);
@@ -1505,7 +1505,7 @@ static void execute_process_address_space_foundation(
             "private process address-space controls failed");
         return;
     }
-    console_write("Phipia: process address-space foundation controls ");
+    console_write("Trait OS: process address-space foundation controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(PROCESS_ADDRESS_SPACE_FOUNDATION_CONTROLS);
@@ -1526,7 +1526,7 @@ static void execute_elf64_loader_foundation(
         stage_failed(context, result, "bounded ELF64 parser controls failed");
         return;
     }
-    console_write("Phipia: ELF64 parser robustness controls ");
+    console_write("Trait OS: ELF64 parser robustness controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(ELF64_PARSER_ROBUSTNESS_CONTROLS);
@@ -1604,25 +1604,25 @@ static void execute_process_installed_proof(
     }
 
     if (context->test_scenario != KERNEL_TEST_PROCESS) {
-        console_write("Phipia: process fixture absent\n");
+        console_write("Trait OS: process fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
 
     status = process_installed_prove(&proof);
     if (status == PROCESS_STATUS_ABSENT) {
-        console_write("Phipia: process fixture absent\n");
+        console_write("Trait OS: process fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
     if (status != PROCESS_STATUS_OK) {
-        console_write("Phipia: process proof violated invariant: ");
+        console_write("Trait OS: process proof violated invariant: ");
         console_write(process_status_string(status));
         console_putc('\n');
         stage_failed(context, result, process_status_string(status));
         return;
     }
-    console_write("ST PROCESS ELF64 PHIPIA.BIN bytes ");
+    console_write("ST PROCESS ELF64 TRAIT.BIN bytes ");
     console_write_u64(proof.file_bytes);
     console_write(" segments ");
     console_write_u64(proof.segment_count);
@@ -1650,7 +1650,7 @@ static void execute_linux_syscall_cpu_foundation(
             "Linux SYSCALL CPU foundation controls failed");
         return;
     }
-    console_write("Phipia: Linux SYSCALL CPU foundation controls ");
+    console_write("Trait OS: Linux SYSCALL CPU foundation controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(LINUX_SYSCALL_CPU_FOUNDATION_CONTROLS);
@@ -1672,7 +1672,7 @@ static void execute_linux_image_stack_foundation(
             "BusyBox ELF and Linux initial-stack controls failed");
         return;
     }
-    console_write("Phipia: BusyBox image and Linux stack controls ");
+    console_write("Trait OS: BusyBox image and Linux stack controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(LINUX_ABI_IMAGE_STACK_FOUNDATION_CONTROLS);
@@ -1691,7 +1691,7 @@ static void execute_linux_uname_image_uts_foundation(
 
     if (!linux_uname_image_uts_foundation_self_test(&completed) ||
         completed != LINUX_UNAME_ABI_IMAGE_UTS_FOUNDATION_CONTROLS) {
-        console_write("Phipia: BusyBox uname foundation stopped after ");
+        console_write("Trait OS: BusyBox uname foundation stopped after ");
         console_write_u64(completed);
         console_write(" counted controls\n");
         stage_failed(context, result,
@@ -1700,19 +1700,19 @@ static void execute_linux_uname_image_uts_foundation(
     }
     if (!linux_cat_image_stdin_foundation_self_test(&cat_completed) ||
         cat_completed != LINUX_CAT_ABI_IMAGE_STDIN_FOUNDATION_CONTROLS) {
-        console_write("Phipia: BusyBox cat foundation stopped after ");
+        console_write("Trait OS: BusyBox cat foundation stopped after ");
         console_write_u64(cat_completed);
         console_write(" counted controls\n");
         stage_failed(context, result,
             "BusyBox cat ELF, stack, and stdin controls failed");
         return;
     }
-    console_write("Phipia: BusyBox uname image and UTS controls ");
+    console_write("Trait OS: BusyBox uname image and UTS controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(LINUX_UNAME_ABI_IMAGE_UTS_FOUNDATION_CONTROLS);
     console_write(" passed\n");
-    console_write("Phipia: BusyBox cat image and stdin controls ");
+    console_write("Trait OS: BusyBox cat image and stdin controls ");
     console_write_u64(cat_completed);
     console_putc('/');
     console_write_u64(LINUX_CAT_ABI_IMAGE_STDIN_FOUNDATION_CONTROLS);
@@ -1792,18 +1792,18 @@ static void execute_linux_installed_proof(
         return;
     }
     if (context->test_scenario != KERNEL_TEST_LINUX_ABI) {
-        console_write("Phipia: Linux ABI fixture absent\n");
+        console_write("Trait OS: Linux ABI fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
     status = linux_abi_installed_prove(&proof);
     if (status == LINUX_ABI_STATUS_ABSENT) {
-        console_write("Phipia: Linux ABI fixture absent\n");
+        console_write("Trait OS: Linux ABI fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
     if (status != LINUX_ABI_STATUS_OK) {
-        console_write("Phipia: Linux ABI proof violated invariant: ");
+        console_write("Trait OS: Linux ABI proof violated invariant: ");
         console_write(linux_abi_status_string(status));
         console_putc('\n');
         stage_failed(context, result, linux_abi_status_string(status));
@@ -1899,18 +1899,18 @@ static void execute_linux_uname_installed_proof(
         return;
     }
     if (context->test_scenario != KERNEL_TEST_LINUX_ABI_UNAME) {
-        console_write("Phipia: Linux uname ABI fixture absent\n");
+        console_write("Trait OS: Linux uname ABI fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
     status = linux_uname_abi_installed_prove(&proof);
     if (status == LINUX_UNAME_ABI_STATUS_ABSENT) {
-        console_write("Phipia: Linux uname ABI fixture absent\n");
+        console_write("Trait OS: Linux uname ABI fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
     if (status != LINUX_UNAME_ABI_STATUS_OK) {
-        console_write("Phipia: Linux uname ABI proof violated invariant: ");
+        console_write("Trait OS: Linux uname ABI proof violated invariant: ");
         console_write(linux_uname_abi_status_string(status));
         console_putc('\n');
         stage_failed(context, result, linux_uname_abi_status_string(status));
@@ -2031,37 +2031,37 @@ static void execute_closing_proofs(
         }
     }
 
-    console_write("Phipia: exception probes passed\n");
-    console_write("Phipia: PIC spurious paths passed\n");
-    console_write("Phipia: PIT delivered eight interrupts\n");
-    console_write("Phipia: I/O APIC delivered eight interrupts\n");
-    console_write("Phipia: legacy 8259 retired\n");
-    console_write("Phipia: timer survives legacy retirement\n");
+    console_write("Trait OS: exception probes passed\n");
+    console_write("Trait OS: PIC spurious paths passed\n");
+    console_write("Trait OS: PIT delivered eight interrupts\n");
+    console_write("Trait OS: I/O APIC delivered eight interrupts\n");
+    console_write("Trait OS: legacy 8259 retired\n");
+    console_write("Trait OS: timer survives legacy retirement\n");
     console_write(
-        "Phipia: I/O APIC delivered eight level-triggered interrupts\n"
+        "Trait OS: I/O APIC delivered eight level-triggered interrupts\n"
     );
-    console_write("Phipia: level-triggered routing established\n");
-    console_write("Phipia: local APIC timer delivered eight interrupts\n");
-    console_write("Phipia: TSC reference established\n");
-    console_write("Phipia: PM timer independent reference established\n");
-    console_write("Phipia: PIT retired\n");
-    console_write("Phipia: clocks survive PIT retirement\n");
-    console_write("Phipia: deadline timers online\n");
-    console_write("Phipia: monotonic time established\n");
-    console_write("Phipia: virtual memory established\n");
-    console_write("Phipia: kernel heap established\n");
-    console_write("Phipia: PCI enumeration established\n");
-    console_write("Phipia: device foundations established\n");
-    console_write("Phipia: kernel threads passed\n");
-    console_write("Phipia: preemption passed\n");
+    console_write("Trait OS: level-triggered routing established\n");
+    console_write("Trait OS: local APIC timer delivered eight interrupts\n");
+    console_write("Trait OS: TSC reference established\n");
+    console_write("Trait OS: PM timer independent reference established\n");
+    console_write("Trait OS: PIT retired\n");
+    console_write("Trait OS: clocks survive PIT retirement\n");
+    console_write("Trait OS: deadline timers online\n");
+    console_write("Trait OS: monotonic time established\n");
+    console_write("Trait OS: virtual memory established\n");
+    console_write("Trait OS: kernel heap established\n");
+    console_write("Trait OS: PCI enumeration established\n");
+    console_write("Trait OS: device foundations established\n");
+    console_write("Trait OS: kernel threads passed\n");
+    console_write("Trait OS: preemption passed\n");
     if (framebuffer_is_active()) {
-        console_write("Phipia: framebuffer passed\n");
-        console_write("Phipia: logo passed\n");
-        console_write("Phipia: screen console passed\n");
-        console_write("Phipia: shell passed\n");
+        console_write("Trait OS: framebuffer passed\n");
+        console_write("Trait OS: logo passed\n");
+        console_write("Trait OS: screen console passed\n");
+        console_write("Trait OS: shell passed\n");
     }
-    console_write("Phipia: keyboard passed\n");
-    console_write("Phipia: never triple fault milestone passed\n");
+    console_write("Trait OS: keyboard passed\n");
+    console_write("Trait OS: never triple fault milestone passed\n");
     boot_stage_result_succeed(descriptor, result);
 }
 
@@ -2074,14 +2074,14 @@ static void execute_desktop_construction(
     const enum ui_status status = ui_construct(pointer_is_present());
 
     if (status != UI_STATUS_OK) {
-        console_write("Phipia: desktop construction failed: ");
+        console_write("Trait OS: desktop construction failed: ");
         console_write(ui_status_string(status));
         console_putc('\n');
         stage_failed(context, result, ui_status_string(status));
         return;
     }
 
-    console_write("Phipia: desktop constructed\n");
+    console_write("Trait OS: desktop constructed\n");
     boot_stage_result_succeed(descriptor, result);
 }
 
@@ -2094,18 +2094,18 @@ static void execute_desktop_activation(
     const enum ui_status status = ui_activate();
 
     if (status != UI_STATUS_OK) {
-        console_write("Phipia: desktop activation failed: ");
+        console_write("Trait OS: desktop activation failed: ");
         console_write(ui_status_string(status));
         console_putc('\n');
         stage_failed(context, result, ui_status_string(status));
         return;
     }
 
-    console_write("Phipia: desktop activated\n");
+    console_write("Trait OS: desktop activated\n");
     boot_stage_result_succeed(descriptor, result);
 }
 
-static void execute_phipia_installed_proof(
+static void execute_trait_installed_proof(
     struct boot_context *context,
     const struct boot_stage_descriptor *descriptor,
     struct boot_stage_result *result
@@ -2119,7 +2119,7 @@ static void execute_phipia_installed_proof(
         return;
     }
 
-    console_write("Phipia: installed proof passed\n");
+    console_write("Trait OS: installed proof passed\n");
     boot_stage_result_succeed(descriptor, result);
     result->proof_counters[0] = proof.render_hash;
     result->proof_counters[1] = proof.glyphs;
@@ -2140,7 +2140,7 @@ static void execute_multiprocess_foundation(
             "bounded multiprocess foundation controls failed");
         return;
     }
-    console_write("Phipia: multiprocess foundation controls ");
+    console_write("Trait OS: multiprocess foundation controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(MULTIPROCESS_CONTROLLED_ROBUSTNESS_TESTS);
@@ -2218,7 +2218,7 @@ static void execute_multiprocess_proof(
 
     status = multiprocess_prove(&proof);
     if (status != MULTIPROCESS_STATUS_OK) {
-        console_write("Phipia: multiprocess proof violated invariant: ");
+        console_write("Trait OS: multiprocess proof violated invariant: ");
         console_write(multiprocess_status_string(status));
         console_putc('\n');
         stage_failed(context, result, multiprocess_status_string(status));
@@ -2259,7 +2259,7 @@ static void execute_driver_matrix_foundation(
             "bounded PCI driver matrix controls failed");
         return;
     }
-    console_write("Phipia: PCI driver matrix controls ");
+    console_write("Trait OS: PCI driver matrix controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(DRIVER_MATRIX_CONTROLLED_CONTROLS);
@@ -2336,19 +2336,19 @@ static void execute_driver_matrix_probe(
 
     if (context->test_scenario != KERNEL_TEST_DRIVER_MATRIX &&
         context->test_scenario != KERNEL_TEST_DRIVER_MATRIX_BUILTIN) {
-        console_write("Phipia: PCI driver matrix devices absent\n");
+        console_write("Trait OS: PCI driver matrix devices absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
 
     status = driver_matrix_bind(&matrix);
     if (status == DRIVER_STATUS_ABSENT) {
-        console_write("Phipia: PCI driver matrix devices absent\n");
+        console_write("Trait OS: PCI driver matrix devices absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
     if (status != DRIVER_STATUS_OK) {
-        console_write("Phipia: PCI driver matrix violated invariant: ");
+        console_write("Trait OS: PCI driver matrix violated invariant: ");
         console_write(driver_status_string(status));
         if (matrix.failed_driver < driver_matrix_count()) {
             const struct driver_probe *failed =
@@ -2419,7 +2419,7 @@ static void execute_audio_foundation(
         stage_failed(context, result, "bounded HD Audio controls failed");
         return;
     }
-    console_write("Phipia: HD Audio foundation controls ");
+    console_write("Trait OS: HD Audio foundation controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(AUDIO_CONTROLLED_CONTROLS);
@@ -2494,19 +2494,19 @@ static void execute_audio_codec_proof(
     }
 
     if (context->test_scenario != KERNEL_TEST_AUDIO) {
-        console_write("Phipia: HD Audio controller absent\n");
+        console_write("Trait OS: HD Audio controller absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
 
     status = audio_prove(&proof);
     if (status == AUDIO_STATUS_ABSENT) {
-        console_write("Phipia: HD Audio controller absent\n");
+        console_write("Trait OS: HD Audio controller absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
     if (status != AUDIO_STATUS_OK) {
-        console_write("Phipia: HD Audio proof violated invariant: ");
+        console_write("Trait OS: HD Audio proof violated invariant: ");
         console_write(audio_status_string(status));
         console_putc('\n');
         stage_failed(context, result, audio_status_string(status));
@@ -2603,7 +2603,7 @@ static void execute_nvidia_foundation(
         stage_failed(context, result, "bounded NVIDIA controls failed");
         return;
     }
-    console_write("Phipia: NVIDIA driver foundation controls ");
+    console_write("Trait OS: NVIDIA driver foundation controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(NVIDIA_CONTROLLED_CONTROLS);
@@ -2679,14 +2679,14 @@ static void execute_nvidia_probe(
         return;
     }
     if (context->test_scenario != KERNEL_TEST_NVIDIA) {
-        console_write("Phipia: NVIDIA functions absent\n");
+        console_write("Trait OS: NVIDIA functions absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
 
     status = nvidia_bind(&probe);
     if (status != NVIDIA_STATUS_OK) {
-        console_write("Phipia: NVIDIA probe violated invariant: ");
+        console_write("Trait OS: NVIDIA probe violated invariant: ");
         console_write(nvidia_status_string(status));
         console_putc('\n');
         stage_failed(context, result, nvidia_status_string(status));
@@ -2813,7 +2813,7 @@ static const struct boot_stage_descriptor installed_descriptors[] = {
         execute_keyboard),
     OPTIONAL_STAGE(BOOT_STAGE_SHELL, "interactive shell",
         BOOT_PHASE_RUNTIME, BOOT_IRREVERSIBLE_NONE, execute_shell),
-    OPTIONAL_STAGE(BOOT_STAGE_UI_FONT, "Phipia UI font",
+    OPTIONAL_STAGE(BOOT_STAGE_UI_FONT, "Trait OS UI font",
         BOOT_PHASE_RUNTIME, BOOT_IRREVERSIBLE_NONE, execute_ui_font),
     OPTIONAL_STAGE(BOOT_STAGE_POINTER_DECISION,
         "pointer availability decision", BOOT_PHASE_RUNTIME,
@@ -2821,7 +2821,7 @@ static const struct boot_stage_descriptor installed_descriptors[] = {
     OPTIONAL_NEUTRAL_STAGE(BOOT_STAGE_POINTER_OUTCOME,
         "pointer availability outcome", BOOT_PHASE_RUNTIME,
         BOOT_IRREVERSIBLE_NONE, execute_pointer_outcome),
-    OPTIONAL_STAGE(BOOT_STAGE_UI_LAYOUT, "Phipia layout",
+    OPTIONAL_STAGE(BOOT_STAGE_UI_LAYOUT, "Trait OS layout",
         BOOT_PHASE_RUNTIME, BOOT_IRREVERSIBLE_NONE, execute_ui_layout),
     REQUIRED_STAGE(BOOT_STAGE_EARLY_SCENARIO, "early scenario gate",
         BOOT_PHASE_RUNTIME, BOOT_IRREVERSIBLE_NONE, execute_early_scenario),
@@ -2929,9 +2929,9 @@ static const struct boot_stage_descriptor installed_descriptors[] = {
     OPTIONAL_STAGE(BOOT_STAGE_DESKTOP_ACTIVATION, "desktop activation",
         BOOT_PHASE_PROOFS, BOOT_IRREVERSIBLE_NONE,
         execute_desktop_activation),
-    OPTIONAL_STAGE(BOOT_STAGE_PHIPIA_INSTALLED_PROOF,
-        "Phipia installed proof", BOOT_PHASE_PROOFS,
-        BOOT_IRREVERSIBLE_NONE, execute_phipia_installed_proof)
+    OPTIONAL_STAGE(BOOT_STAGE_TRAIT_INSTALLED_PROOF,
+        "Trait OS installed proof", BOOT_PHASE_PROOFS,
+        BOOT_IRREVERSIBLE_NONE, execute_trait_installed_proof)
 };
 
 _Static_assert(sizeof(installed_descriptors) /
@@ -3780,7 +3780,7 @@ static bool declare_dependencies(
             BOOT_CAPABILITY_DESKTOP_SHELL_ACTIVATED;
         descriptor->provided_capability_count = 1U;
         break;
-    case BOOT_STAGE_PHIPIA_INSTALLED_PROOF:
+    case BOOT_STAGE_TRAIT_INSTALLED_PROOF:
         descriptor->required_capabilities[0] =
             BOOT_CAPABILITY_DESKTOP_SHELL_ACTIVATED;
         descriptor->required_capabilities[1] =
@@ -3789,7 +3789,7 @@ static bool declare_dependencies(
             BOOT_CAPABILITY_BOOT_PROOFS_COMPLETE;
         descriptor->required_capability_count = 3U;
         descriptor->provided_capabilities[0] =
-            BOOT_CAPABILITY_PHIPIA_INSTALLED_PROOF_COMPLETE;
+            BOOT_CAPABILITY_TRAIT_INSTALLED_PROOF_COMPLETE;
         descriptor->provided_capability_count = 1U;
         break;
     case BOOT_STAGE_INVALID:

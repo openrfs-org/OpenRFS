@@ -3,15 +3,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/cpu.h>
-#include <phipia/clock.h>
-#include <phipia/console.h>
-#include <phipia/dma.h>
-#include <phipia/interrupts.h>
-#include <phipia/msix.h>
-#include <phipia/pci.h>
-#include <phipia/pci_resource.h>
-#include <phipia/virtio_net.h>
+#include <trait/cpu.h>
+#include <trait/clock.h>
+#include <trait/console.h>
+#include <trait/dma.h>
+#include <trait/interrupts.h>
+#include <trait/msix.h>
+#include <trait/pci.h>
+#include <trait/pci_resource.h>
+#include <trait/virtio_net.h>
 
 #define VIRTIO_VENDOR_ID UINT16_C(0x1AF4)
 #define VIRTIO_NET_MODERN_DEVICE_ID UINT16_C(0x1041)
@@ -74,7 +74,7 @@
 #define VIRTIO_NET_ARENA_BYTES \
     ((uint64_t)VIRTIO_NET_PACKET_COUNT * VIRTIO_NET_PACKET_BYTES)
 #define VIRTIO_NET_ARENA_PAGES \
-    ((VIRTIO_NET_ARENA_BYTES + PHIPIA_PAGE_SIZE - 1U) / PHIPIA_PAGE_SIZE)
+    ((VIRTIO_NET_ARENA_BYTES + TRAIT_PAGE_SIZE - 1U) / TRAIT_PAGE_SIZE)
 
 struct virtio_capability_region {
     uint8_t type;
@@ -128,7 +128,7 @@ struct virtio_net_runtime {
 static struct virtio_net_runtime runtime;
 static uint64_t next_device_generation = UINT64_C(1);
 
-_Static_assert(VIRTIO_NET_ARENA_BYTES % PHIPIA_PAGE_SIZE == 0U,
+_Static_assert(VIRTIO_NET_ARENA_BYTES % TRAIT_PAGE_SIZE == 0U,
     "network packet arena must use complete DMA pages");
 _Static_assert(VIRTIO_NET_HEADER_BYTES + VIRTIO_NET_MAX_FRAME_SIZE <=
     VIRTIO_NET_PACKET_BYTES, "network packet buffer is too small");
@@ -654,12 +654,12 @@ static enum virtio_net_status allocate_dma(void)
 {
     struct dma_request queue_request = {
         .page_count = 1U,
-        .alignment = PHIPIA_PAGE_SIZE,
+        .alignment = TRAIT_PAGE_SIZE,
         .maximum_physical_address = UINT32_MAX
     };
     struct dma_request arena_request = {
         .page_count = VIRTIO_NET_ARENA_PAGES,
-        .alignment = PHIPIA_PAGE_SIZE,
+        .alignment = TRAIT_PAGE_SIZE,
         .maximum_physical_address = UINT32_MAX
     };
 
@@ -888,7 +888,7 @@ enum virtio_net_status virtio_net_initialize(void)
     }
     resource_status = pci_claim_device(function, &runtime.claim);
     if (resource_status != PCI_RESOURCE_STATUS_OK) {
-        console_write("Phipia: virtio-net PCI claim failed: ");
+        console_write("Trait OS: virtio-net PCI claim failed: ");
         console_write(pci_resource_status_string(resource_status));
         console_putc('\n');
         return VIRTIO_NET_STATUS_CLAIM_FAILURE;
@@ -1154,14 +1154,14 @@ bool virtio_net_self_test(size_t *completed_tests)
     if (completed_tests == NULL) {
         return false;
     }
-    if (!queue_layout(VIRTIO_NET_QUEUE_LENGTH, PHIPIA_PAGE_SIZE,
+    if (!queue_layout(VIRTIO_NET_QUEUE_LENGTH, TRAIT_PAGE_SIZE,
             &available, &used) || available != 256U || used != 296U) {
         return false;
     }
     ++completed;
-    if (queue_layout(0U, PHIPIA_PAGE_SIZE, &available, &used) ||
-        queue_layout(3U, PHIPIA_PAGE_SIZE, &available, &used) ||
-        queue_layout(VIRTIO_NET_QUEUE_LENGTH + 1U, PHIPIA_PAGE_SIZE,
+    if (queue_layout(0U, TRAIT_PAGE_SIZE, &available, &used) ||
+        queue_layout(3U, TRAIT_PAGE_SIZE, &available, &used) ||
+        queue_layout(VIRTIO_NET_QUEUE_LENGTH + 1U, TRAIT_PAGE_SIZE,
             &available, &used)) {
         return false;
     }

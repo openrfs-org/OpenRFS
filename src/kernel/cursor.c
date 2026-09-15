@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * The pointer.  See include/phipia/cursor.h for what this is, what it is
+ * The pointer.  See include/trait/cursor.h for what this is, what it is
  * not, and the two Windows cursors it does not draw.
  */
 
-#include <phipia/cursor.h>
+#include <trait/cursor.h>
 
-#include <phipia/clock.h>
-#include <phipia/framebuffer.h>
+#include <trait/clock.h>
+#include <trait/framebuffer.h>
 
 #include "cursor_art.h"
 

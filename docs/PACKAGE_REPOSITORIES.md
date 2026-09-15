@@ -2,7 +2,7 @@
 
 # Signed package repositories
 
-`tools/phipia-repository.py` defines Phipia's deterministic repository index and
+`tools/trait-repository.py` defines Trait OS's deterministic repository index and
 host lock format. It builds and verifies a canonical binary index, authenticates
 it against an external immutable Ed25519 root, checks freshness and
 repository-version floors, verifies downloaded package bytes, and emits an exact
@@ -10,22 +10,22 @@ dependency-first install plan and lock representation.
 
 The guest parser/planner in `package_manager.c` consumes the same canonical
 index and package-v3 metadata behind the fail-closed `package_trust.c` immutable-key
-and Ed25519 callbacks. The platform table provisions those keys, the Phip
+and Ed25519 callbacks. The platform table provisions those keys, the Trait
 client fetches the index and payloads over HTTPS, and the package controller
-binds them to staged generation commits. Store actions queue that same client
+binds them to staged generation commits. Desktop package actions queue that same client
 path. See
 [`PACKAGE_MANAGER.md`](PACKAGE_MANAGER.md) for the integration boundary.
 
 ## Repository index version 1
 
-An index starts with the eight-byte `PHIPIDX1` magic and a fixed 512-byte header.
+An index starts with the eight-byte `TRTIDX01` magic and a fixed 512-byte header.
 All integers are little-endian. Fixed-width text is printable ASCII or the more
 restrictive package identifier/path/SemVer grammar, NUL-terminated, and followed
 only by zero tail bytes. The whole index is at most 32 MiB.
 
 | Offset | Bytes | Field |
 | ---: | ---: | --- |
-| 0 | 8 | `PHIPIDX1` magic |
+| 0 | 8 | `TRTIDX01` magic |
 | 8 | 2 | format version (`1`) |
 | 10 | 2 | header bytes (`512`) |
 | 12 | 4 | flags (`0`) |
@@ -130,25 +130,25 @@ A JSON build specification mirrors the fields above. Package entries use
 `publisher_key_id`, and optional `root_key_id` are 64 hexadecimal digits.
 
 ```sh
-python3 tools/phipia-repository.py build \
+python3 tools/trait-repository.py build \
     --spec repository/index.json \
     --signing-key keys/repository-root-private.pem \
     --output build/repository/index.sri
 
-python3 tools/phipia-repository.py inspect \
+python3 tools/trait-repository.py inspect \
     --trusted-root keys/repository-root-public.pem \
     --minimum-version 42 \
     build/repository/index.sri
 
-python3 tools/phipia-repository.py resolve \
+python3 tools/trait-repository.py resolve \
     --trusted-root keys/repository-root-public.pem \
     --minimum-version 42 --abi 1 \
     --lock-output build/repository/desktop.lock \
-    build/repository/index.sri org.phipia.desktop@^3.0.0
+    build/repository/index.sri org.trait.desktop@^3.0.0
 
-python3 tools/phipia-repository.py verify-download \
+python3 tools/trait-repository.py verify-download \
     --trusted-root keys/repository-root-public.pem \
-    --identifier org.phipia.desktop --version 3.0.0 \
+    --identifier org.trait.desktop --version 3.0.0 \
     --file downloads/desktop-3.0.0.spk \
     build/repository/index.sri
 ```

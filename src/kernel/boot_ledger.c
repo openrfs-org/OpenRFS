@@ -3,24 +3,24 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/boot_ledger.h>
-#include <phipia/device_substrate.h>
-#include <phipia/dma.h>
-#include <phipia/elf64.h>
-#include <phipia/framebuffer.h>
-#include <phipia/filesystem.h>
-#include <phipia/interrupt_vector.h>
-#include <phipia/linux_abi.h>
-#include <phipia/linux_uname.h>
-#include <phipia/msix.h>
-#include <phipia/nvme.h>
-#include <phipia/paging.h>
-#include <phipia/pci_resource.h>
-#include <phipia/pointer.h>
-#include <phipia/process.h>
-#include <phipia/ui.h>
-#include <phipia/ui_font.h>
-#include <phipia/xhci.h>
+#include <trait/boot_ledger.h>
+#include <trait/device_substrate.h>
+#include <trait/dma.h>
+#include <trait/elf64.h>
+#include <trait/framebuffer.h>
+#include <trait/filesystem.h>
+#include <trait/interrupt_vector.h>
+#include <trait/linux_abi.h>
+#include <trait/linux_uname.h>
+#include <trait/msix.h>
+#include <trait/nvme.h>
+#include <trait/paging.h>
+#include <trait/pci_resource.h>
+#include <trait/pointer.h>
+#include <trait/process.h>
+#include <trait/ui.h>
+#include <trait/ui_font.h>
+#include <trait/xhci.h>
 
 #define BOOT_FINGERPRINT_OFFSET UINT64_C(14695981039346656037)
 #define BOOT_FINGERPRINT_PRIME UINT64_C(1099511628211)
@@ -59,13 +59,13 @@ static const char *const stage_names[] = {
     "threading",
     "scheduler",
     "closing boot proofs",
-    "Phipia UI font",
+    "Trait OS UI font",
     "pointer availability decision",
     "pointer availability outcome",
-    "Phipia layout",
+    "Trait OS layout",
     "desktop construction",
     "desktop activation",
-    "Phipia installed proof",
+    "Trait OS installed proof",
     "PCI resource ownership",
     "dynamic interrupt vectors",
     "DMA foundation",
@@ -135,7 +135,7 @@ static const char *const capability_names[] = {
     "UI layout validated",
     "desktop shell available",
     "desktop shell activated",
-    "Phipia installed proof complete",
+    "Trait OS installed proof complete",
     "PCI resource ownership available",
     "dynamic vector foundation available",
     "DMA foundation available",
@@ -1666,7 +1666,7 @@ enum boot_ledger_status boot_ledger_verify_installed(
                  linux_receipt->proof_counters[1] != 9U ||
                  proof.file_bytes != LINUX_ABI_IMAGE_BYTES ||
                  proof.program_headers != 5U || proof.load_segments != 4U ||
-                 proof.file_clusters != 9U || proof.stdout_bytes != 7U ||
+                 proof.file_clusters != 9U || proof.stdout_bytes != 6U ||
                  proof.syscall_count != 9U ||
                  proof.distinct_syscalls != 7U || proof.exit_status != 0U ||
                  proof.robustness_tests !=
@@ -1740,7 +1740,7 @@ enum boot_ledger_status boot_ledger_verify_installed(
     }
 
     if (boot_ledger_has_capability(ledger,
-            BOOT_CAPABILITY_PHIPIA_INSTALLED_PROOF_COMPLETE)) {
+            BOOT_CAPABILITY_TRAIT_INSTALLED_PROOF_COMPLETE)) {
         const struct boot_stage_receipt *font = boot_ledger_receipt_for(ledger,
             BOOT_STAGE_UI_FONT);
         const struct boot_stage_receipt *pointer_decision =
@@ -1755,7 +1755,7 @@ enum boot_ledger_status boot_ledger_verify_installed(
         const struct boot_stage_receipt *activation =
             boot_ledger_receipt_for(ledger, BOOT_STAGE_DESKTOP_ACTIVATION);
         const struct boot_stage_receipt *proof = boot_ledger_receipt_for(ledger,
-            BOOT_STAGE_PHIPIA_INSTALLED_PROOF);
+            BOOT_STAGE_TRAIT_INSTALLED_PROOF);
         const struct boot_stage_receipt *wc = boot_ledger_receipt_for(ledger,
             BOOT_STAGE_FRAMEBUFFER_WC);
         const struct boot_stage_receipt *closing =
@@ -1772,8 +1772,8 @@ enum boot_ledger_status boot_ledger_verify_installed(
 
         if (font == NULL || font->result != BOOT_RECEIPT_RAN ||
             font->proof_counter_count != 2U ||
-            font->proof_counters[0] != phipia_ui_font_size() ||
-            font->proof_counters[1] != phipia_ui_font_fingerprint() ||
+            font->proof_counters[0] != trait_ui_font_size() ||
+            font->proof_counters[1] != trait_ui_font_fingerprint() ||
             !ui_font_is_verified() || metrics.width != 16U ||
             metrics.height != 19U || metrics.ascent != 15U ||
             metrics.descent != 4U || metrics.advance != 15U ||
@@ -1834,7 +1834,7 @@ enum boot_ledger_status boot_ledger_verify_installed(
             closing->sequence >= activation->sequence ||
             activation->sequence >= proof->sequence) {
             set_refusal(ledger, BOOT_LEDGER_STATUS_RECEIPT_MISMATCH,
-                BOOT_STAGE_PHIPIA_INSTALLED_PROOF,
+                BOOT_STAGE_TRAIT_INSTALLED_PROOF,
                 BOOT_CAPABILITY_DESKTOP_SHELL_ACTIVATED);
             return ledger->status;
         }
@@ -1851,8 +1851,8 @@ enum boot_ledger_status boot_ledger_verify_installed(
     } else if (boot_ledger_has_capability(ledger,
             BOOT_CAPABILITY_DESKTOP_SHELL_ACTIVATED)) {
         set_refusal(ledger, BOOT_LEDGER_STATUS_RECEIPT_MISMATCH,
-            BOOT_STAGE_PHIPIA_INSTALLED_PROOF,
-            BOOT_CAPABILITY_PHIPIA_INSTALLED_PROOF_COMPLETE);
+            BOOT_STAGE_TRAIT_INSTALLED_PROOF,
+            BOOT_CAPABILITY_TRAIT_INSTALLED_PROOF_COMPLETE);
         return ledger->status;
     }
 

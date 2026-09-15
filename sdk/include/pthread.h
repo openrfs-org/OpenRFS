@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef PHIPIA_PTHREAD_H
-#define PHIPIA_PTHREAD_H
+#ifndef TRAIT_PTHREAD_H
+#define TRAIT_PTHREAD_H
 
 #include <stdint.h>
 

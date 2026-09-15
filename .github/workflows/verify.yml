@@ -14,18 +14,6 @@ concurrency:
     cancel-in-progress: true
 
 jobs:
-    media-editor-foundation:
-        name: media-editor-foundation
-        runs-on: ubuntu-24.04
-        timeout-minutes: 25
-        steps:
-            - name: Check out source
-              uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-            - name: Install the bare-metal Rust target
-              run: rustup target add x86_64-unknown-none
-            - name: Verify the Media Editor foundation
-              run: make -C userspace/media-editor verify
-
     build-and-boot:
         name: build-and-boot
         runs-on: ubuntu-24.04
@@ -50,75 +38,52 @@ jobs:
                   qemu-system-x86_64 -device nvme,help
             - name: Verify the kernel artifact
               run: make verify
-            - name: Capture the functional Phipia desktop from QEMU
+            - name: Capture the functional Trait OS desktop from QEMU
               run: |
                   make iso
-                  python3 tools/capture-phipia.py \
-                      --iso build/phipia.iso \
-                      --system build/userspace/phipia-system-fat32.raw \
-                      --data build/userspace/phipia-data-fat32.raw \
-                      --output build/phipia-captures \
+                  python3 tools/capture-trait.py \
+                      --iso build/trait.iso \
+                      --system build/userspace/trait-system-fat32.raw \
+                      --data build/userspace/trait-data-fat32.raw \
+                      --output build/trait-captures \
                       --ffmpeg ffmpeg
                   python3 tools/fat32_image.py inspect \
-                      build/phipia-captures/phipia-data.raw \
-                      --report build/phipia-captures/fat32-report.json
+                      build/trait-captures/trait-data.raw \
+                      --report build/trait-captures/fat32-report.json
                   python3 - <<'PY'
                   import json
-                  import subprocess
                   from pathlib import Path
 
-                  captures = Path("build/phipia-captures")
+                  captures = Path("build/trait-captures")
                   required = (
-                      "phipia-desktop.png",
-                      "phipia-taskbar.png",
-                      "phipia-files-windowed.png",
-                      "phipia-files-maximized.png",
-                      "phipia-files-minimized.png",
-                      "phipia-files-restored.png",
-                      "phipia-notes-formatted.png",
-                      "phipia-paint-working.png",
-                      "phipia-media-editor.png",
-                      "phipia-media-editor-exported.png",
-                      "phipia-settings.png",
-                      "phipia-store.png",
-                      "phipia-task-manager.png",
-                      "phipia-desktop-restored.png",
+                      "trait-desktop.png",
+                      "trait-files.png",
+                      "trait-terminal.png",
+                      "trait-task-manager.png",
+                      "trait-packages.png",
+                      "trait-settings.png",
                   )
                   for name in required:
                       if not (captures / name).is_file():
                           raise SystemExit(f"missing QEMU UI evidence: {name}")
-                  video = captures / "phipia-massive-update-25s.mp4"
-                  duration = float(subprocess.check_output((
-                      "ffprobe", "-v", "error", "-show_entries",
-                      "format=duration", "-of", "default=nk=1:nw=1",
-                      str(video),
-                  ), text=True).strip())
-                  if not 24.99 <= duration <= 25.01:
-                      raise SystemExit(f"UI recording is not exact: {duration}")
                   report = json.loads((captures / "fat32-report.json").read_text())
-                  names = {item["path"] for item in report["files"]}
-                  # QEMU deliberately has no webcam source. Camera's real
-                  # publisher/snapshot contract is exercised by make verify;
-                  # the UI must not invent PHOTO00.BMP without a device.
-                  for name in (
-                      "NOTES.TXT", "MEDIAEDT.PHI", "PHIPMED.PHI",
-                      "EXPORT.BMP",
-                  ):
-                      if name not in names:
-                          raise SystemExit(f"missing retained guest artifact: {name}")
+                  if (not report["fat_copies_match"] or report["cycles"] != 0 or
+                          report["cross_links"] != 0 or
+                          report["leaked_clusters"] != 0):
+                      raise SystemExit("desktop capture FAT32 audit failed")
                   PY
-            - name: Upload Phipia desktop captures
+            - name: Upload Trait OS desktop captures
               if: always()
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
-                  name: phipia-desktop-captures
-                  path: build/phipia-captures
+                  name: trait-desktop-captures
+                  path: build/trait-captures
                   if-no-files-found: error
             - name: Prove faults and interrupts in QEMU
               run: |
                   make qemu-test-ext4-recovery
                   make qemu-test-ext4-powercuts
-                  make qemu-test-phipia-proof-userland-interactive
+                  make qemu-test-trait-proof-userland-interactive
                   make qemu-test-fat32-data
                   make qemu-test-fat32-nested qemu-test-fat32-growth \
                       qemu-test-fat32-random qemu-test-fat32-truncate \
@@ -132,6 +97,6 @@ jobs:
               if: ${{ always() }}
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
-                  name: phipia-ext4-powercuts
+                  name: trait-ext4-powercuts
                   path: build/tests/ext4-powercuts
                   if-no-files-found: error

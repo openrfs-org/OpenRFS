@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* CPU admission for the Phipia-owned native ABI, separate from Linux profiles. */
+/* CPU admission for the Trait-OS-owned native ABI, separate from Linux profiles. */
 
-#include <phipia/native_syscall.h>
+#include <trait/native_syscall.h>
 
-#include <phipia/cpu.h>
-#include <phipia/native_process.h>
-#include <phipia/process.h>
+#include <trait/cpu.h>
+#include <trait/native_process.h>
+#include <trait/process.h>
 
 #define CPUID_EXTENDED_ROOT UINT32_C(0x80000000)
 #define CPUID_EXTENDED_FEATURES UINT32_C(0x80000001)

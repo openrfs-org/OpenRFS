@@ -2,7 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/font.h>
+#include <trait/font.h>
 
 /*
  * The C half of the console font: the names for what the Rust reader can

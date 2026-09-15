@@ -1,38 +1,38 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#include <phipia/tls.h>
+#include <trait/tls.h>
 
 #include <limits.h>
-#include <phipia/network.h>
-#include <phipia/runtime.h>
+#include <trait/network.h>
+#include <trait/runtime.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define PHIPIA_TLS_MAX_HOSTNAME 253U
-#define PHIPIA_TLS_MAX_LABEL 63U
-#define PHIPIA_TLS_MAX_TRUST_ANCHORS 16U
-#define PHIPIA_TLS_MAX_TRUST_BYTES 81920U
-#define PHIPIA_TLS_MAX_HANDSHAKE_STEPS 4096U
-#define PHIPIA_TLS_UNIX_EPOCH_DAYS UINT64_C(719528)
-#define PHIPIA_TLS_ENTROPY_BYTES 32U
-#define PHIPIA_TLS_CLOCK_MIN UINT64_C(1577836800)
-#define PHIPIA_TLS_CLOCK_MAX UINT64_C(4102444799)
-#define PHIPIA_HTTPS_REQUEST_BYTES 1536U
-#define PHIPIA_HTTPS_BODY_CHUNK_BYTES 4096U
+#define TRAIT_TLS_MAX_HOSTNAME 253U
+#define TRAIT_TLS_MAX_LABEL 63U
+#define TRAIT_TLS_MAX_TRUST_ANCHORS 16U
+#define TRAIT_TLS_MAX_TRUST_BYTES 81920U
+#define TRAIT_TLS_MAX_HANDSHAKE_STEPS 4096U
+#define TRAIT_TLS_UNIX_EPOCH_DAYS UINT64_C(719528)
+#define TRAIT_TLS_ENTROPY_BYTES 32U
+#define TRAIT_TLS_CLOCK_MIN UINT64_C(1577836800)
+#define TRAIT_TLS_CLOCK_MAX UINT64_C(4102444799)
+#define TRAIT_HTTPS_REQUEST_BYTES 1536U
+#define TRAIT_HTTPS_BODY_CHUNK_BYTES 4096U
 
-struct phipia_tls_client {
+struct trait_tls_client {
     br_ssl_client_context ssl;
     br_x509_minimal_context x509;
     br_sslio_context io;
     unsigned char buffer[BR_SSL_BUFSIZE_BIDI];
-    br_x509_trust_anchor anchors[PHIPIA_TLS_MAX_TRUST_ANCHORS];
+    br_x509_trust_anchor anchors[TRAIT_TLS_MAX_TRUST_ANCHORS];
     unsigned char *anchor_storage;
     size_t anchor_storage_length;
-    char hostname[PHIPIA_TLS_MAX_HOSTNAME + 1U];
-    phipia_handle_t stream;
+    char hostname[TRAIT_TLS_MAX_HOSTNAME + 1U];
+    trait_handle_t stream;
     uint64_t deadline_ns;
     long transport_error;
-    enum phipia_tls_status status;
+    enum trait_tls_status status;
     bool tls_ready;
     bool peer_closed;
     bool canceled;
@@ -72,14 +72,14 @@ static bool hostname_valid(const char *hostname)
         return false;
     }
     length = strlen(hostname);
-    if (length == 0U || length > PHIPIA_TLS_MAX_HOSTNAME) {
+    if (length == 0U || length > TRAIT_TLS_MAX_HOSTNAME) {
         return false;
     }
     for (size_t index = 0U; index < length; ++index) {
         const unsigned char value = (unsigned char)hostname[index];
 
         if (value == '.') {
-            if (label == 0U || label > PHIPIA_TLS_MAX_LABEL ||
+            if (label == 0U || label > TRAIT_TLS_MAX_LABEL ||
                 hostname[index - 1U] == '-') {
                 return false;
             }
@@ -93,7 +93,7 @@ static bool hostname_valid(const char *hostname)
         }
         ++label;
     }
-    return label != 0U && label <= PHIPIA_TLS_MAX_LABEL &&
+    return label != 0U && label <= TRAIT_TLS_MAX_LABEL &&
         hostname[length - 1U] != '-';
 }
 
@@ -141,7 +141,7 @@ static bool trust_storage_size(const br_x509_trust_anchor *anchors,
         }
         if (!size_add(used, anchor->dn.len, &used) ||
             !size_add(used, key_bytes, &used) ||
-            used > PHIPIA_TLS_MAX_TRUST_BYTES) {
+            used > TRAIT_TLS_MAX_TRUST_BYTES) {
             return false;
         }
     }
@@ -149,7 +149,7 @@ static bool trust_storage_size(const br_x509_trust_anchor *anchors,
     return true;
 }
 
-static bool copy_trust_anchors(struct phipia_tls_client *client,
+static bool copy_trust_anchors(struct trait_tls_client *client,
     const br_x509_trust_anchor *source, size_t count)
 {
     unsigned char *cursor;
@@ -189,7 +189,7 @@ static bool copy_trust_anchors(struct phipia_tls_client *client,
     return (size_t)(cursor - client->anchor_storage) == total;
 }
 
-static void diagnostics_clear(struct phipia_tls_diagnostics *diagnostics)
+static void diagnostics_clear(struct trait_tls_diagnostics *diagnostics)
 {
     if (diagnostics != NULL) {
         diagnostics->bearssl_error = 0;
@@ -197,8 +197,8 @@ static void diagnostics_clear(struct phipia_tls_diagnostics *diagnostics)
     }
 }
 
-static void diagnostics_capture(const struct phipia_tls_client *client,
-    struct phipia_tls_diagnostics *diagnostics)
+static void diagnostics_capture(const struct trait_tls_client *client,
+    struct trait_tls_diagnostics *diagnostics)
 {
     if (client != NULL && diagnostics != NULL) {
         diagnostics->bearssl_error =
@@ -207,25 +207,25 @@ static void diagnostics_capture(const struct phipia_tls_client *client,
     }
 }
 
-static long deadline_error(struct phipia_tls_client *client)
+static long deadline_error(struct trait_tls_client *client)
 {
     if (__atomic_load_n(&client->canceled, __ATOMIC_ACQUIRE)) {
-        return -(long)PHIPIA_ECANCELED;
+        return -(long)TRAIT_ECANCELED;
     }
-    if (client->deadline_ns <= phipia_monotonic_ns()) {
-        return -(long)PHIPIA_ETIMEDOUT;
+    if (client->deadline_ns <= trait_monotonic_ns()) {
+        return -(long)TRAIT_ETIMEDOUT;
     }
     return 0;
 }
 
-static bool set_operation_deadline(struct phipia_tls_client *client,
+static bool set_operation_deadline(struct trait_tls_client *client,
     uint64_t deadline_ns)
 {
     client->deadline_ns = deadline_ns;
     client->transport_error = 0;
-    if (deadline_ns <= phipia_monotonic_ns()) {
-        client->transport_error = -(long)PHIPIA_ETIMEDOUT;
-        client->status = PHIPIA_TLS_IO;
+    if (deadline_ns <= trait_monotonic_ns()) {
+        client->transport_error = -(long)TRAIT_ETIMEDOUT;
+        client->status = TRAIT_TLS_IO;
         return false;
     }
     return true;
@@ -233,21 +233,21 @@ static bool set_operation_deadline(struct phipia_tls_client *client,
 
 static int transport_read(void *context, unsigned char *buffer, size_t length)
 {
-    struct phipia_tls_client *client = context;
+    struct trait_tls_client *client = context;
     long count = deadline_error(client);
 
     if (count == 0) {
-        count = phipia_stream_read(client->stream, buffer, length,
+        count = trait_stream_read(client->stream, buffer, length,
             client->deadline_ns);
     }
     if (count <= 0 || count > INT_MAX || (size_t)count > length) {
-        if (count == -(long)PHIPIA_EIO &&
+        if (count == -(long)TRAIT_EIO &&
             client->received_transport_bytes) {
             /* A reset after record bytes is an authenticated-stream
              * truncation; a reset before any bytes remains a reset. */
-            count = -(long)PHIPIA_EPIPE;
+            count = -(long)TRAIT_EPIPE;
         }
-        client->transport_error = count == 0 ? -(long)PHIPIA_EPIPE : count;
+        client->transport_error = count == 0 ? -(long)TRAIT_EPIPE : count;
         return -1;
     }
     client->received_transport_bytes = true;
@@ -257,31 +257,31 @@ static int transport_read(void *context, unsigned char *buffer, size_t length)
 static int transport_write(void *context, const unsigned char *buffer,
     size_t length)
 {
-    struct phipia_tls_client *client = context;
+    struct trait_tls_client *client = context;
     long count = deadline_error(client);
 
     if (count == 0) {
-        count = phipia_stream_write(client->stream, buffer, length,
+        count = trait_stream_write(client->stream, buffer, length,
             client->deadline_ns);
     }
     if (count <= 0 || count > INT_MAX || (size_t)count > length) {
-        client->transport_error = count == 0 ? -(long)PHIPIA_EPIPE : count;
+        client->transport_error = count == 0 ? -(long)TRAIT_EPIPE : count;
         return -1;
     }
     return (int)count;
 }
 
-static enum phipia_tls_status drive_handshake(struct phipia_tls_client *client)
+static enum trait_tls_status drive_handshake(struct trait_tls_client *client)
 {
-    for (size_t step = 0U; step < PHIPIA_TLS_MAX_HANDSHAKE_STEPS; ++step) {
+    for (size_t step = 0U; step < TRAIT_TLS_MAX_HANDSHAKE_STEPS; ++step) {
         const unsigned state = br_ssl_engine_current_state(&client->ssl.eng);
         size_t length = 0U;
 
         if ((state & BR_SSL_CLOSED) != 0U) {
-            return PHIPIA_TLS_HANDSHAKE;
+            return TRAIT_TLS_HANDSHAKE;
         }
         if ((state & (BR_SSL_SENDAPP | BR_SSL_RECVAPP)) != 0U) {
-            return PHIPIA_TLS_OK;
+            return TRAIT_TLS_OK;
         }
         if ((state & BR_SSL_SENDREC) != 0U) {
             unsigned char *data = br_ssl_engine_sendrec_buf(
@@ -289,11 +289,11 @@ static enum phipia_tls_status drive_handshake(struct phipia_tls_client *client)
             int count;
 
             if (data == NULL || length == 0U) {
-                return PHIPIA_TLS_HANDSHAKE;
+                return TRAIT_TLS_HANDSHAKE;
             }
             count = transport_write(client, data, length);
             if (count <= 0) {
-                return PHIPIA_TLS_TRANSPORT;
+                return TRAIT_TLS_TRANSPORT;
             }
             br_ssl_engine_sendrec_ack(&client->ssl.eng, (size_t)count);
             continue;
@@ -304,31 +304,31 @@ static enum phipia_tls_status drive_handshake(struct phipia_tls_client *client)
             int count;
 
             if (data == NULL || length == 0U) {
-                return PHIPIA_TLS_HANDSHAKE;
+                return TRAIT_TLS_HANDSHAKE;
             }
             count = transport_read(client, data, length);
             if (count <= 0) {
-                return PHIPIA_TLS_TRANSPORT;
+                return TRAIT_TLS_TRANSPORT;
             }
             br_ssl_engine_recvrec_ack(&client->ssl.eng, (size_t)count);
             continue;
         }
-        return PHIPIA_TLS_HANDSHAKE;
+        return TRAIT_TLS_HANDSHAKE;
     }
-    return PHIPIA_TLS_HANDSHAKE;
+    return TRAIT_TLS_HANDSHAKE;
 }
 
-static void release_client(struct phipia_tls_client *client,
+static void release_client(struct trait_tls_client *client,
     uint64_t deadline_ns)
 {
     if (client == NULL) {
         return;
     }
-    if (client->stream != PHIPIA_HANDLE_INVALID) {
-        (void)phipia_stream_shutdown(client->stream,
-            PHIPIA_SHUTDOWN_WRITE | PHIPIA_SHUTDOWN_READ, deadline_ns);
-        (void)phipia_handle_close(client->stream);
-        client->stream = PHIPIA_HANDLE_INVALID;
+    if (client->stream != TRAIT_HANDLE_INVALID) {
+        (void)trait_stream_shutdown(client->stream,
+            TRAIT_SHUTDOWN_WRITE | TRAIT_SHUTDOWN_READ, deadline_ns);
+        (void)trait_handle_close(client->stream);
+        client->stream = TRAIT_HANDLE_INVALID;
     }
     if (client->anchor_storage != NULL) {
         secure_zero(client->anchor_storage, client->anchor_storage_length);
@@ -339,89 +339,89 @@ static void release_client(struct phipia_tls_client *client,
     free(client);
 }
 
-enum phipia_tls_status phipia_tls_client_open_diagnostic(
-    const struct phipia_tls_client_config *config,
-    struct phipia_tls_diagnostics *diagnostics,
-    struct phipia_tls_client **result)
+enum trait_tls_status trait_tls_client_open_diagnostic(
+    const struct trait_tls_client_config *config,
+    struct trait_tls_diagnostics *diagnostics,
+    struct trait_tls_client **result)
 {
-    struct phipia_tls_client *client;
-    struct phipia_ipv4_endpoint endpoint;
-    unsigned char entropy[PHIPIA_TLS_ENTROPY_BYTES];
+    struct trait_tls_client *client;
+    struct trait_ipv4_endpoint endpoint;
+    unsigned char entropy[TRAIT_TLS_ENTROPY_BYTES];
     size_t hostname_length;
     long realtime;
     long resolved;
     long opened;
     long connected;
-    enum phipia_tls_status status;
+    enum trait_tls_status status;
 
     diagnostics_clear(diagnostics);
     if (result == NULL) {
-        return PHIPIA_TLS_ARGUMENT;
+        return TRAIT_TLS_ARGUMENT;
     }
     *result = NULL;
     if (config == NULL || config->reserved != 0U || config->port == 0U ||
         !hostname_valid(config->hostname) ||
         config->trust_anchors == NULL || config->trust_anchor_count == 0U ||
-        config->trust_anchor_count > PHIPIA_TLS_MAX_TRUST_ANCHORS ||
-        config->deadline_ns <= phipia_monotonic_ns()) {
-        return PHIPIA_TLS_ARGUMENT;
+        config->trust_anchor_count > TRAIT_TLS_MAX_TRUST_ANCHORS ||
+        config->deadline_ns <= trait_monotonic_ns()) {
+        return TRAIT_TLS_ARGUMENT;
     }
     for (size_t index = 0U; index < config->trust_anchor_count; ++index) {
         if (!trust_anchor_valid(&config->trust_anchors[index])) {
-            return PHIPIA_TLS_TRUST;
+            return TRAIT_TLS_TRUST;
         }
     }
-    realtime = phipia_realtime_seconds();
-    if (realtime < 0 || (uint64_t)realtime < PHIPIA_TLS_CLOCK_MIN ||
-        (uint64_t)realtime > PHIPIA_TLS_CLOCK_MAX ||
+    realtime = trait_realtime_seconds();
+    if (realtime < 0 || (uint64_t)realtime < TRAIT_TLS_CLOCK_MIN ||
+        (uint64_t)realtime > TRAIT_TLS_CLOCK_MAX ||
         (uint64_t)realtime / UINT64_C(86400) >
-            UINT32_MAX - PHIPIA_TLS_UNIX_EPOCH_DAYS) {
-        return PHIPIA_TLS_CLOCK;
+            UINT32_MAX - TRAIT_TLS_UNIX_EPOCH_DAYS) {
+        return TRAIT_TLS_CLOCK;
     }
     client = calloc(1U, sizeof(*client));
     if (client == NULL) {
-        return PHIPIA_TLS_NO_MEMORY;
+        return TRAIT_TLS_NO_MEMORY;
     }
-    client->stream = PHIPIA_HANDLE_INVALID;
+    client->stream = TRAIT_HANDLE_INVALID;
     client->deadline_ns = config->deadline_ns;
     hostname_length = strlen(config->hostname);
     (void)memcpy(client->hostname, config->hostname, hostname_length + 1U);
     if (!copy_trust_anchors(client, config->trust_anchors,
             config->trust_anchor_count)) {
         release_client(client, config->deadline_ns);
-        return PHIPIA_TLS_NO_MEMORY;
+        return TRAIT_TLS_NO_MEMORY;
     }
-    if (phipia_random_strong(entropy, sizeof(entropy)) !=
+    if (trait_random_strong(entropy, sizeof(entropy)) !=
             (long)sizeof(entropy)) {
         secure_zero(entropy, sizeof(entropy));
         release_client(client, config->deadline_ns);
-        return PHIPIA_TLS_ENTROPY;
+        return TRAIT_TLS_ENTROPY;
     }
-    resolved = phipia_dns_resolve(client->hostname, config->deadline_ns);
+    resolved = trait_dns_resolve(client->hostname, config->deadline_ns);
     if (resolved <= 0 || (uint64_t)resolved > UINT32_MAX) {
         secure_zero(entropy, sizeof(entropy));
         release_client(client, config->deadline_ns);
-        return PHIPIA_TLS_DNS;
+        return TRAIT_TLS_DNS;
     }
-    opened = phipia_stream_open();
+    opened = trait_stream_open();
     if (opened < 0) {
         secure_zero(entropy, sizeof(entropy));
         client->transport_error = opened;
         diagnostics_capture(client, diagnostics);
         release_client(client, config->deadline_ns);
-        return PHIPIA_TLS_TRANSPORT;
+        return TRAIT_TLS_TRANSPORT;
     }
-    client->stream = (phipia_handle_t)opened;
-    endpoint = (struct phipia_ipv4_endpoint){
+    client->stream = (trait_handle_t)opened;
+    endpoint = (struct trait_ipv4_endpoint){
         (uint32_t)resolved, config->port, 0U};
-    connected = phipia_stream_connect(client->stream, &endpoint,
+    connected = trait_stream_connect(client->stream, &endpoint,
         config->deadline_ns);
     if (connected < 0) {
         secure_zero(entropy, sizeof(entropy));
         client->transport_error = connected;
         diagnostics_capture(client, diagnostics);
         release_client(client, config->deadline_ns);
-        return PHIPIA_TLS_TRANSPORT;
+        return TRAIT_TLS_TRANSPORT;
     }
 
     br_ssl_client_init_full(&client->ssl, &client->x509,
@@ -435,17 +435,17 @@ enum phipia_tls_status phipia_tls_client_open_diagnostic(
     br_x509_minimal_set_minrsa(&client->x509, 256);
     br_x509_minimal_set_time(&client->x509,
         (uint32_t)((uint64_t)realtime / UINT64_C(86400) +
-            PHIPIA_TLS_UNIX_EPOCH_DAYS),
+            TRAIT_TLS_UNIX_EPOCH_DAYS),
         (uint32_t)((uint64_t)realtime % UINT64_C(86400)));
     br_ssl_engine_inject_entropy(&client->ssl.eng, entropy, sizeof(entropy));
     secure_zero(entropy, sizeof(entropy));
     if (!br_ssl_client_reset(&client->ssl, client->hostname, 0)) {
         diagnostics_capture(client, diagnostics);
         release_client(client, config->deadline_ns);
-        return PHIPIA_TLS_HANDSHAKE;
+        return TRAIT_TLS_HANDSHAKE;
     }
     status = drive_handshake(client);
-    if (status != PHIPIA_TLS_OK) {
+    if (status != TRAIT_TLS_OK) {
         client->status = status;
         diagnostics_capture(client, diagnostics);
         release_client(client, config->deadline_ns);
@@ -454,19 +454,19 @@ enum phipia_tls_status phipia_tls_client_open_diagnostic(
     br_sslio_init(&client->io, &client->ssl.eng, transport_read, client,
         transport_write, client);
     client->tls_ready = true;
-    client->status = PHIPIA_TLS_OK;
+    client->status = TRAIT_TLS_OK;
     *result = client;
-    return PHIPIA_TLS_OK;
+    return TRAIT_TLS_OK;
 }
 
-enum phipia_tls_status phipia_tls_client_open(
-    const struct phipia_tls_client_config *config,
-    struct phipia_tls_client **result)
+enum trait_tls_status trait_tls_client_open(
+    const struct trait_tls_client_config *config,
+    struct trait_tls_client **result)
 {
-    return phipia_tls_client_open_diagnostic(config, NULL, result);
+    return trait_tls_client_open_diagnostic(config, NULL, result);
 }
 
-long phipia_tls_client_read(struct phipia_tls_client *client, void *buffer,
+long trait_tls_client_read(struct trait_tls_client *client, void *buffer,
     size_t length, uint64_t deadline_ns)
 {
     int count;
@@ -488,13 +488,13 @@ long phipia_tls_client_read(struct phipia_tls_client *client, void *buffer,
             client->peer_closed = true;
             return 0;
         }
-        client->status = PHIPIA_TLS_IO;
+        client->status = TRAIT_TLS_IO;
         return -1;
     }
     return count;
 }
 
-long phipia_tls_client_write(struct phipia_tls_client *client,
+long trait_tls_client_write(struct trait_tls_client *client,
     const void *buffer, size_t length, uint64_t deadline_ns)
 {
     int count;
@@ -511,57 +511,57 @@ long phipia_tls_client_write(struct phipia_tls_client *client,
     }
     count = br_sslio_write(&client->io, buffer, length);
     if (count < 0) {
-        client->status = PHIPIA_TLS_IO;
+        client->status = TRAIT_TLS_IO;
         return -1;
     }
     return count;
 }
 
-enum phipia_tls_status phipia_tls_client_flush(
-    struct phipia_tls_client *client, uint64_t deadline_ns)
+enum trait_tls_status trait_tls_client_flush(
+    struct trait_tls_client *client, uint64_t deadline_ns)
 {
     if (client == NULL || !client->tls_ready || client->peer_closed) {
-        return PHIPIA_TLS_ARGUMENT;
+        return TRAIT_TLS_ARGUMENT;
     }
     if (!set_operation_deadline(client, deadline_ns)) {
-        return PHIPIA_TLS_IO;
+        return TRAIT_TLS_IO;
     }
     if (br_sslio_flush(&client->io) != 0) {
-        client->status = PHIPIA_TLS_IO;
+        client->status = TRAIT_TLS_IO;
     }
     return client->status;
 }
 
-long phipia_tls_client_cancel(struct phipia_tls_client *client)
+long trait_tls_client_cancel(struct trait_tls_client *client)
 {
     long result;
 
-    if (client == NULL || client->stream == PHIPIA_HANDLE_INVALID) {
-        return -(long)PHIPIA_EINVAL;
+    if (client == NULL || client->stream == TRAIT_HANDLE_INVALID) {
+        return -(long)TRAIT_EINVAL;
     }
     __atomic_store_n(&client->canceled, true, __ATOMIC_RELEASE);
-    result = phipia_network_cancel(client->stream);
+    result = trait_network_cancel(client->stream);
     return result;
 }
 
-static enum phipia_tls_status close_client(
-    struct phipia_tls_client *client, uint64_t deadline_ns,
-    struct phipia_tls_diagnostics *diagnostics)
+static enum trait_tls_status close_client(
+    struct trait_tls_client *client, uint64_t deadline_ns,
+    struct trait_tls_diagnostics *diagnostics)
 {
-    enum phipia_tls_status status;
+    enum trait_tls_status status;
 
     diagnostics_clear(diagnostics);
     if (client == NULL) {
-        return PHIPIA_TLS_ARGUMENT;
+        return TRAIT_TLS_ARGUMENT;
     }
     status = client->status;
     if (client->tls_ready &&
         !__atomic_load_n(&client->canceled, __ATOMIC_ACQUIRE)) {
         if (!set_operation_deadline(client, deadline_ns)) {
-            status = PHIPIA_TLS_IO;
+            status = TRAIT_TLS_IO;
         } else if (br_sslio_close(&client->io) == 0 &&
-                status == PHIPIA_TLS_OK) {
-            status = PHIPIA_TLS_CLOSE;
+                status == TRAIT_TLS_OK) {
+            status = TRAIT_TLS_CLOSE;
         }
     }
     diagnostics_capture(client, diagnostics);
@@ -569,29 +569,29 @@ static enum phipia_tls_status close_client(
     return status;
 }
 
-enum phipia_tls_status phipia_tls_client_close(
-    struct phipia_tls_client *client, uint64_t deadline_ns)
+enum trait_tls_status trait_tls_client_close(
+    struct trait_tls_client *client, uint64_t deadline_ns)
 {
     return close_client(client, deadline_ns, NULL);
 }
 
-enum phipia_tls_status phipia_tls_client_status(
-    const struct phipia_tls_client *client)
+enum trait_tls_status trait_tls_client_status(
+    const struct trait_tls_client *client)
 {
-    return client == NULL ? PHIPIA_TLS_ARGUMENT : client->status;
+    return client == NULL ? TRAIT_TLS_ARGUMENT : client->status;
 }
 
-int phipia_tls_client_bearssl_error(const struct phipia_tls_client *client)
+int trait_tls_client_bearssl_error(const struct trait_tls_client *client)
 {
     return client == NULL ? -1 : br_ssl_engine_last_error(&client->ssl.eng);
 }
 
-long phipia_tls_client_transport_error(const struct phipia_tls_client *client)
+long trait_tls_client_transport_error(const struct trait_tls_client *client)
 {
     return client == NULL ? 0 : client->transport_error;
 }
 
-const char *phipia_tls_status_string(enum phipia_tls_status status)
+const char *trait_tls_status_string(enum trait_tls_status status)
 {
     static const char *const names[] = {
         "ok", "invalid TLS argument", "TLS allocation failed",
@@ -605,78 +605,78 @@ const char *phipia_tls_status_string(enum phipia_tls_status status)
         names[status] : "unknown TLS status";
 }
 
-static enum phipia_https_status transport_https_status(long error,
-    enum phipia_https_status fallback)
+static enum trait_https_status transport_https_status(long error,
+    enum trait_https_status fallback)
 {
-    if (error == -(long)PHIPIA_ETIMEDOUT) {
-        return PHIPIA_HTTPS_TIMEOUT;
+    if (error == -(long)TRAIT_ETIMEDOUT) {
+        return TRAIT_HTTPS_TIMEOUT;
     }
-    if (error == -(long)PHIPIA_ECANCELED) {
-        return PHIPIA_HTTPS_CANCELED;
+    if (error == -(long)TRAIT_ECANCELED) {
+        return TRAIT_HTTPS_CANCELED;
     }
-    if (error == -(long)PHIPIA_EIO) {
-        return PHIPIA_HTTPS_RESET;
+    if (error == -(long)TRAIT_EIO) {
+        return TRAIT_HTTPS_RESET;
     }
-    if (error == -(long)PHIPIA_EPIPE) {
-        return PHIPIA_HTTPS_TRUNCATED;
+    if (error == -(long)TRAIT_EPIPE) {
+        return TRAIT_HTTPS_TRUNCATED;
     }
     return fallback;
 }
 
-static enum phipia_https_status handshake_https_status(
-    enum phipia_tls_status status, const struct phipia_tls_diagnostics *details)
+static enum trait_https_status handshake_https_status(
+    enum trait_tls_status status, const struct trait_tls_diagnostics *details)
 {
-    if (status == PHIPIA_TLS_ARGUMENT) {
-        return PHIPIA_HTTPS_ARGUMENT;
+    if (status == TRAIT_TLS_ARGUMENT) {
+        return TRAIT_HTTPS_ARGUMENT;
     }
-    if (status == PHIPIA_TLS_NO_MEMORY) {
-        return PHIPIA_HTTPS_NO_MEMORY;
+    if (status == TRAIT_TLS_NO_MEMORY) {
+        return TRAIT_HTTPS_NO_MEMORY;
     }
-    if (status == PHIPIA_TLS_TRUST) {
-        return PHIPIA_HTTPS_TRUST;
+    if (status == TRAIT_TLS_TRUST) {
+        return TRAIT_HTTPS_TRUST;
     }
-    if (status == PHIPIA_TLS_CLOCK) {
-        return PHIPIA_HTTPS_CLOCK;
+    if (status == TRAIT_TLS_CLOCK) {
+        return TRAIT_HTTPS_CLOCK;
     }
-    if (status == PHIPIA_TLS_ENTROPY) {
-        return PHIPIA_HTTPS_ENTROPY;
+    if (status == TRAIT_TLS_ENTROPY) {
+        return TRAIT_HTTPS_ENTROPY;
     }
-    if (status == PHIPIA_TLS_DNS) {
-        return PHIPIA_HTTPS_DNS;
+    if (status == TRAIT_TLS_DNS) {
+        return TRAIT_HTTPS_DNS;
     }
     if (details->bearssl_error == BR_ERR_X509_BAD_SERVER_NAME ||
         details->bearssl_error == BR_ERR_X509_DN_MISMATCH) {
-        return PHIPIA_HTTPS_HOSTNAME;
+        return TRAIT_HTTPS_HOSTNAME;
     }
     if (details->bearssl_error == BR_ERR_X509_EXPIRED ||
         details->bearssl_error == BR_ERR_X509_BAD_TIME ||
         details->bearssl_error == BR_ERR_X509_TIME_UNKNOWN) {
-        return PHIPIA_HTTPS_CERTIFICATE_TIME;
+        return TRAIT_HTTPS_CERTIFICATE_TIME;
     }
     if (details->bearssl_error == BR_ERR_X509_NOT_TRUSTED ||
         details->bearssl_error == BR_ERR_X509_BAD_SIGNATURE ||
         details->bearssl_error == BR_ERR_X509_NOT_CA) {
-        return PHIPIA_HTTPS_AUTHENTICATION;
+        return TRAIT_HTTPS_AUTHENTICATION;
     }
-    if (status == PHIPIA_TLS_TRANSPORT) {
+    if (status == TRAIT_TLS_TRANSPORT) {
         return transport_https_status(details->transport_error,
-            PHIPIA_HTTPS_TRANSPORT);
+            TRAIT_HTTPS_TRANSPORT);
     }
-    return PHIPIA_HTTPS_HANDSHAKE;
+    return TRAIT_HTTPS_HANDSHAKE;
 }
 
-static enum phipia_https_status client_io_status(
-    struct phipia_tls_client *client, enum phipia_https_status fallback)
+static enum trait_https_status client_io_status(
+    struct trait_tls_client *client, enum trait_https_status fallback)
 {
     return transport_https_status(
-        phipia_tls_client_transport_error(client), fallback);
+        trait_tls_client_transport_error(client), fallback);
 }
 
-static void abort_client(struct phipia_tls_client *client,
+static void abort_client(struct trait_tls_client *client,
     uint64_t deadline_ns)
 {
     if (client != NULL) {
-        (void)phipia_tls_client_cancel(client);
+        (void)trait_tls_client_cancel(client);
         release_client(client, deadline_ns);
     }
 }
@@ -689,7 +689,7 @@ static bool path_valid(const char *path, size_t *length)
         return false;
     }
     used = strlen(path);
-    if (used == 0U || used > PHIPIA_HTTPS_MAX_PATH_BYTES || path[0] != '/') {
+    if (used == 0U || used > TRAIT_HTTPS_MAX_PATH_BYTES || path[0] != '/') {
         return false;
     }
     for (size_t index = 0U; index < used; ++index) {
@@ -740,7 +740,7 @@ static bool append_port(char *output, size_t capacity, size_t *used,
     return true;
 }
 
-static bool make_http_request(const struct phipia_https_stream_request *request,
+static bool make_http_request(const struct trait_https_stream_request *request,
     char *output, size_t capacity, size_t *length)
 {
     size_t path_length;
@@ -807,9 +807,9 @@ static bool decimal_size(const unsigned char *text, size_t length,
     return true;
 }
 
-static enum phipia_https_status parse_http_headers(
+static enum trait_https_status parse_http_headers(
     const unsigned char *header, size_t length, size_t body_capacity,
-    struct phipia_https_response *response)
+    struct trait_https_response *response)
 {
     size_t line_start = 0U;
     size_t line_end = 0U;
@@ -823,7 +823,7 @@ static enum phipia_https_status parse_http_headers(
             (value == '\r' &&
              (index + 1U >= length || header[index + 1U] != '\n')) ||
             (value == '\n' && (index == 0U || header[index - 1U] != '\r'))) {
-            return PHIPIA_HTTPS_HTTP_HEADERS;
+            return TRAIT_HTTPS_HTTP_HEADERS;
         }
     }
     while (line_end + 1U < length &&
@@ -836,12 +836,12 @@ static enum phipia_https_status parse_http_headers(
         header[10] < '0' || header[10] > '9' ||
         header[11] < '0' || header[11] > '9' ||
         (line_end > 12U && header[12] != ' ')) {
-        return PHIPIA_HTTPS_HTTP_VERSION;
+        return TRAIT_HTTPS_HTTP_VERSION;
     }
     response->status_code = (uint16_t)((header[9] - '0') * 100U +
         (header[10] - '0') * 10U + (header[11] - '0'));
     if (response->status_code != 200U) {
-        return PHIPIA_HTTPS_HTTP_STATUS;
+        return TRAIT_HTTPS_HTTP_STATUS;
     }
     line_start = line_end + 2U;
     while (line_start + 1U < length) {
@@ -859,7 +859,7 @@ static enum phipia_https_status parse_http_headers(
         }
         if (line_end + 1U >= length || line_end == line_start ||
             header[line_start] == ' ' || header[line_start] == '\t') {
-            return PHIPIA_HTTPS_HTTP_HEADERS;
+            return TRAIT_HTTPS_HTTP_HEADERS;
         }
         colon = line_start;
         while (colon < line_end && header[colon] != ':') {
@@ -868,12 +868,12 @@ static enum phipia_https_status parse_http_headers(
             if (!((value >= 'a' && value <= 'z') ||
                     (value >= 'A' && value <= 'Z') ||
                     (value >= '0' && value <= '9') || value == '-')) {
-                return PHIPIA_HTTPS_HTTP_HEADERS;
+                return TRAIT_HTTPS_HTTP_HEADERS;
             }
             ++colon;
         }
         if (colon == line_start || colon == line_end) {
-            return PHIPIA_HTTPS_HTTP_HEADERS;
+            return TRAIT_HTTPS_HTTP_HEADERS;
         }
         value_start = colon + 1U;
         while (value_start < line_end &&
@@ -891,102 +891,102 @@ static enum phipia_https_status parse_http_headers(
             if (content_length_seen ||
                 !decimal_size(header + value_start, value_end - value_start,
                     &response->content_length)) {
-                return PHIPIA_HTTPS_HTTP_HEADERS;
+                return TRAIT_HTTPS_HTTP_HEADERS;
             }
             content_length_seen = true;
         } else if (ascii_equal_case(header + line_start,
                 colon - line_start, "transfer-encoding")) {
-            return PHIPIA_HTTPS_HTTP_HEADERS;
+            return TRAIT_HTTPS_HTTP_HEADERS;
         } else if (ascii_equal_case(header + line_start,
                 colon - line_start, "content-encoding") &&
             !ascii_equal_case(header + value_start, value_end - value_start,
                 "identity")) {
-            return PHIPIA_HTTPS_HTTP_HEADERS;
+            return TRAIT_HTTPS_HTTP_HEADERS;
         }
         line_start = line_end + 2U;
     }
     if (!content_length_seen) {
-        return PHIPIA_HTTPS_CONTENT_LENGTH_REQUIRED;
+        return TRAIT_HTTPS_CONTENT_LENGTH_REQUIRED;
     }
     if (response->content_length > body_capacity) {
-        return PHIPIA_HTTPS_CONTENT_TOO_LARGE;
+        return TRAIT_HTTPS_CONTENT_TOO_LARGE;
     }
-    return PHIPIA_HTTPS_OK;
+    return TRAIT_HTTPS_OK;
 }
 
-static void capture_response_diagnostics(struct phipia_tls_client *client,
-    struct phipia_https_response *response)
+static void capture_response_diagnostics(struct trait_tls_client *client,
+    struct trait_https_response *response)
 {
-    response->bearssl_error = phipia_tls_client_bearssl_error(client);
-    response->transport_error = phipia_tls_client_transport_error(client);
+    response->bearssl_error = trait_tls_client_bearssl_error(client);
+    response->transport_error = trait_tls_client_transport_error(client);
 }
 
-enum phipia_https_status phipia_https_get_stream(
-    const struct phipia_https_stream_request *request,
-    struct phipia_https_response *response)
+enum trait_https_status trait_https_get_stream(
+    const struct trait_https_stream_request *request,
+    struct trait_https_response *response)
 {
-    struct phipia_tls_client_config tls_config;
-    struct phipia_tls_diagnostics diagnostics;
-    struct phipia_tls_client *client = NULL;
-    unsigned char header[PHIPIA_HTTPS_MAX_HEADER_BYTES];
-    unsigned char body[PHIPIA_HTTPS_BODY_CHUNK_BYTES];
-    char wire_request[PHIPIA_HTTPS_REQUEST_BYTES];
+    struct trait_tls_client_config tls_config;
+    struct trait_tls_diagnostics diagnostics;
+    struct trait_tls_client *client = NULL;
+    unsigned char header[TRAIT_HTTPS_MAX_HEADER_BYTES];
+    unsigned char body[TRAIT_HTTPS_BODY_CHUNK_BYTES];
+    char wire_request[TRAIT_HTTPS_REQUEST_BYTES];
     size_t request_length;
     size_t sent = 0U;
     size_t header_length = 0U;
     unsigned delimiter = 0U;
-    enum phipia_tls_status tls_status;
-    enum phipia_https_status status;
+    enum trait_tls_status tls_status;
+    enum trait_https_status status;
 
     if (response == NULL) {
-        return PHIPIA_HTTPS_ARGUMENT;
+        return TRAIT_HTTPS_ARGUMENT;
     }
     (void)memset(response, 0, sizeof(*response));
     if (request == NULL || request->reserved != 0U ||
         !hostname_valid(request->hostname) || request->port == 0U ||
         request->trust_anchors == NULL || request->trust_anchor_count == 0U ||
-        request->deadline_ns <= phipia_monotonic_ns() ||
+        request->deadline_ns <= trait_monotonic_ns() ||
         request->write_body == NULL ||
         !make_http_request(request, wire_request, sizeof(wire_request),
             &request_length)) {
-        return PHIPIA_HTTPS_ARGUMENT;
+        return TRAIT_HTTPS_ARGUMENT;
     }
-    tls_config = (struct phipia_tls_client_config){
+    tls_config = (struct trait_tls_client_config){
         request->hostname, request->port, 0U, request->trust_anchors,
         request->trust_anchor_count, request->deadline_ns};
-    tls_status = phipia_tls_client_open_diagnostic(&tls_config, &diagnostics,
+    tls_status = trait_tls_client_open_diagnostic(&tls_config, &diagnostics,
         &client);
-    if (tls_status != PHIPIA_TLS_OK) {
+    if (tls_status != TRAIT_TLS_OK) {
         response->bearssl_error = diagnostics.bearssl_error;
         response->transport_error = diagnostics.transport_error;
         return handshake_https_status(tls_status, &diagnostics);
     }
     while (sent < request_length) {
-        const long count = phipia_tls_client_write(client,
+        const long count = trait_tls_client_write(client,
             wire_request + sent, request_length - sent, request->deadline_ns);
 
         if (count <= 0) {
-            status = client_io_status(client, PHIPIA_HTTPS_IO);
+            status = client_io_status(client, TRAIT_HTTPS_IO);
             capture_response_diagnostics(client, response);
             abort_client(client, request->deadline_ns);
             return status;
         }
         sent += (size_t)count;
     }
-    if (phipia_tls_client_flush(client, request->deadline_ns) !=
-            PHIPIA_TLS_OK) {
-        status = client_io_status(client, PHIPIA_HTTPS_IO);
+    if (trait_tls_client_flush(client, request->deadline_ns) !=
+            TRAIT_TLS_OK) {
+        status = client_io_status(client, TRAIT_HTTPS_IO);
         capture_response_diagnostics(client, response);
         abort_client(client, request->deadline_ns);
         return status;
     }
     while (header_length < sizeof(header) && delimiter != 4U) {
-        long count = phipia_tls_client_read(client, &header[header_length], 1U,
+        long count = trait_tls_client_read(client, &header[header_length], 1U,
             request->deadline_ns);
 
         if (count <= 0) {
-            status = count == 0 ? PHIPIA_HTTPS_TRUNCATED :
-                client_io_status(client, PHIPIA_HTTPS_IO);
+            status = count == 0 ? TRAIT_HTTPS_TRUNCATED :
+                client_io_status(client, TRAIT_HTTPS_IO);
             capture_response_diagnostics(client, response);
             abort_client(client, request->deadline_ns);
             return status;
@@ -1004,11 +1004,11 @@ enum phipia_https_status phipia_https_get_stream(
     }
     if (delimiter != 4U) {
         abort_client(client, request->deadline_ns);
-        return PHIPIA_HTTPS_HTTP_HEADERS;
+        return TRAIT_HTTPS_HTTP_HEADERS;
     }
     status = parse_http_headers(header, header_length,
         request->body_limit, response);
-    if (status != PHIPIA_HTTPS_OK) {
+    if (status != TRAIT_HTTPS_OK) {
         capture_response_diagnostics(client, response);
         abort_client(client, request->deadline_ns);
         return status;
@@ -1016,16 +1016,16 @@ enum phipia_https_status phipia_https_get_stream(
     while (response->body_length < response->content_length) {
         size_t remaining = response->content_length - response->body_length;
         size_t requested = remaining < sizeof(body) ? remaining : sizeof(body);
-        long count = phipia_tls_client_read(client,
+        long count = trait_tls_client_read(client,
             body, requested, request->deadline_ns);
 
         if (count <= 0) {
-            if (count == 0 || phipia_tls_client_transport_error(client) ==
-                    -(long)PHIPIA_EPIPE) {
-                status = PHIPIA_HTTPS_BODY_TRUNCATED;
+            if (count == 0 || trait_tls_client_transport_error(client) ==
+                    -(long)TRAIT_EPIPE) {
+                status = TRAIT_HTTPS_BODY_TRUNCATED;
             } else {
                 status = client_io_status(client,
-                    PHIPIA_HTTPS_BODY_TRUNCATED);
+                    TRAIT_HTTPS_BODY_TRUNCATED);
             }
             capture_response_diagnostics(client, response);
             abort_client(client, request->deadline_ns);
@@ -1035,22 +1035,22 @@ enum phipia_https_status phipia_https_get_stream(
                 (size_t)count) != count) {
             capture_response_diagnostics(client, response);
             abort_client(client, request->deadline_ns);
-            return PHIPIA_HTTPS_BODY_WRITE;
+            return TRAIT_HTTPS_BODY_WRITE;
         }
         response->body_length += (size_t)count;
     }
     {
         unsigned char extra;
-        const long count = phipia_tls_client_read(client, &extra, 1U,
+        const long count = trait_tls_client_read(client, &extra, 1U,
             request->deadline_ns);
 
         if (count > 0) {
             capture_response_diagnostics(client, response);
             abort_client(client, request->deadline_ns);
-            return PHIPIA_HTTPS_BODY_EXTRA;
+            return TRAIT_HTTPS_BODY_EXTRA;
         }
         if (count < 0) {
-            status = client_io_status(client, PHIPIA_HTTPS_TRUNCATED);
+            status = client_io_status(client, TRAIT_HTTPS_TRUNCATED);
             capture_response_diagnostics(client, response);
             abort_client(client, request->deadline_ns);
             return status;
@@ -1059,9 +1059,9 @@ enum phipia_https_status phipia_https_get_stream(
     tls_status = close_client(client, request->deadline_ns, &diagnostics);
     response->bearssl_error = diagnostics.bearssl_error;
     response->transport_error = diagnostics.transport_error;
-    return tls_status == PHIPIA_TLS_OK ? PHIPIA_HTTPS_OK :
+    return tls_status == TRAIT_TLS_OK ? TRAIT_HTTPS_OK :
         transport_https_status(diagnostics.transport_error,
-            PHIPIA_HTTPS_CLOSE);
+            TRAIT_HTTPS_CLOSE);
 }
 
 struct https_buffer_sink {
@@ -1087,32 +1087,32 @@ static long write_buffer_body(
     return (long)byte_count;
 }
 
-enum phipia_https_status phipia_https_get(
-    const struct phipia_https_request *request,
-    struct phipia_https_response *response)
+enum trait_https_status trait_https_get(
+    const struct trait_https_request *request,
+    struct trait_https_response *response)
 {
     struct https_buffer_sink sink;
-    struct phipia_https_stream_request stream;
+    struct trait_https_stream_request stream;
     if (response == NULL) {
-        return PHIPIA_HTTPS_ARGUMENT;
+        return TRAIT_HTTPS_ARGUMENT;
     }
     (void)memset(response, 0, sizeof(*response));
     if (request == NULL ||
         (request->body == NULL && request->body_capacity != 0U)) {
-        return PHIPIA_HTTPS_ARGUMENT;
+        return TRAIT_HTTPS_ARGUMENT;
     }
     sink = (struct https_buffer_sink){
         request->body, request->body_capacity, 0U
     };
-    stream = (struct phipia_https_stream_request){
+    stream = (struct trait_https_stream_request){
         request->hostname, request->port, request->reserved, request->path,
         request->trust_anchors, request->trust_anchor_count,
         request->deadline_ns, request->body_capacity, write_buffer_body, &sink
     };
-    return phipia_https_get_stream(&stream, response);
+    return trait_https_get_stream(&stream, response);
 }
 
-const char *phipia_https_status_string(enum phipia_https_status status)
+const char *trait_https_status_string(enum trait_https_status status)
 {
     static const char *const names[] = {
         "ok", "invalid HTTPS argument", "HTTPS allocation failed",

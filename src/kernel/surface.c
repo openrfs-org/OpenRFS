@@ -3,11 +3,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/framebuffer.h>
-#include <phipia/cpu.h>
-#include <phipia/heap.h>
-#include <phipia/paging.h>
-#include <phipia/surface.h>
+#include <trait/framebuffer.h>
+#include <trait/cpu.h>
+#include <trait/heap.h>
+#include <trait/paging.h>
+#include <trait/surface.h>
 
 /*
  * A cached picture and the one rectangle that changed.

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef PHIPIA_NATIVE_DYNAMIC_PROOF_H
-#define PHIPIA_NATIVE_DYNAMIC_PROOF_H
+#ifndef TRAIT_NATIVE_DYNAMIC_PROOF_H
+#define TRAIT_NATIVE_DYNAMIC_PROOF_H
 
 #include <stddef.h>
 

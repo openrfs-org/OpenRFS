@@ -1,18 +1,18 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#include <phipia/package_control.h>
+#include <trait/package_control.h>
 
-#include <phipia/runtime.h>
+#include <trait/runtime.h>
 #include <string.h>
 
-static void report_clear(struct phipia_package_control_report *report)
+static void report_clear(struct trait_package_control_report *report)
 {
     if (report != NULL) {
         (void)memset(report, 0, sizeof(*report));
     }
 }
 
-static void report_open(struct phipia_package_control_report *report,
-    const struct phipia_package_control_open_request *request)
+static void report_open(struct trait_package_control_report *report,
+    const struct trait_package_control_open_request *request)
 {
     if (report != NULL) {
         report->repository_version = request->repository_version;
@@ -22,104 +22,104 @@ static void report_open(struct phipia_package_control_report *report,
     }
 }
 
-long phipia_package_control_open_install(
-    phipia_handle_t repository_upload,
+long trait_package_control_open_install(
+    trait_handle_t repository_upload,
     const char *identifier,
     size_t identifier_bytes,
-    struct phipia_package_control_report *report
+    struct trait_package_control_report *report
 )
 {
-    struct phipia_package_control_open_request request;
+    struct trait_package_control_open_request request;
 
     report_clear(report);
-    if (repository_upload == PHIPIA_HANDLE_INVALID || identifier == NULL ||
+    if (repository_upload == TRAIT_HANDLE_INVALID || identifier == NULL ||
         identifier_bytes == 0U ||
-        identifier_bytes >= PHIPIA_PACKAGE_CONTROL_TEXT_BYTES ||
+        identifier_bytes >= TRAIT_PACKAGE_CONTROL_TEXT_BYTES ||
         report == NULL) {
-        return -PHIPIA_EINVAL;
+        return -TRAIT_EINVAL;
     }
     (void)memset(&request, 0, sizeof(request));
     request.size = sizeof(request);
-    request.version = PHIPIA_ABI_VERSION;
+    request.version = TRAIT_ABI_VERSION;
     request.repository_upload = repository_upload;
     request.identifier = (uint64_t)(uintptr_t)identifier;
     request.identifier_bytes = (uint32_t)identifier_bytes;
-    long status = phipia_syscall1(PHIPIA_SYS_PACKAGE_CONTROL_OPEN_INSTALL,
+    long status = trait_syscall1(TRAIT_SYS_PACKAGE_CONTROL_OPEN_INSTALL,
         (uint64_t)(uintptr_t)&request);
 
     report_open(report, &request);
     return status;
 }
 
-long phipia_package_control_open_remove(
+long trait_package_control_open_remove(
     const char *identifier,
     size_t identifier_bytes,
-    struct phipia_package_control_report *report
+    struct trait_package_control_report *report
 )
 {
-    struct phipia_package_control_open_request request;
+    struct trait_package_control_open_request request;
 
     report_clear(report);
     if (identifier == NULL || identifier_bytes == 0U ||
-        identifier_bytes >= PHIPIA_PACKAGE_CONTROL_TEXT_BYTES ||
+        identifier_bytes >= TRAIT_PACKAGE_CONTROL_TEXT_BYTES ||
         report == NULL) {
-        return -PHIPIA_EINVAL;
+        return -TRAIT_EINVAL;
     }
     (void)memset(&request, 0, sizeof(request));
     request.size = sizeof(request);
-    request.version = PHIPIA_ABI_VERSION;
+    request.version = TRAIT_ABI_VERSION;
     request.identifier = (uint64_t)(uintptr_t)identifier;
     request.identifier_bytes = (uint32_t)identifier_bytes;
-    request.flags = PHIPIA_PACKAGE_CONTROL_OPEN_REMOVE;
-    long status = phipia_syscall1(PHIPIA_SYS_PACKAGE_CONTROL_OPEN_INSTALL,
+    request.flags = TRAIT_PACKAGE_CONTROL_OPEN_REMOVE;
+    long status = trait_syscall1(TRAIT_SYS_PACKAGE_CONTROL_OPEN_INSTALL,
         (uint64_t)(uintptr_t)&request);
 
     report_open(report, &request);
     return status;
 }
 
-long phipia_package_control_open_repair(
-    phipia_handle_t repository_upload,
-    struct phipia_package_control_report *report
+long trait_package_control_open_repair(
+    trait_handle_t repository_upload,
+    struct trait_package_control_report *report
 )
 {
-    struct phipia_package_control_open_request request;
+    struct trait_package_control_open_request request;
 
     report_clear(report);
-    if (repository_upload == PHIPIA_HANDLE_INVALID || report == NULL) {
-        return -PHIPIA_EINVAL;
+    if (repository_upload == TRAIT_HANDLE_INVALID || report == NULL) {
+        return -TRAIT_EINVAL;
     }
     (void)memset(&request, 0, sizeof(request));
     request.size = sizeof(request);
-    request.version = PHIPIA_ABI_VERSION;
+    request.version = TRAIT_ABI_VERSION;
     request.repository_upload = repository_upload;
-    request.flags = PHIPIA_PACKAGE_CONTROL_OPEN_REPAIR;
-    long status = phipia_syscall1(PHIPIA_SYS_PACKAGE_CONTROL_OPEN_INSTALL,
+    request.flags = TRAIT_PACKAGE_CONTROL_OPEN_REPAIR;
+    long status = trait_syscall1(TRAIT_SYS_PACKAGE_CONTROL_OPEN_INSTALL,
         (uint64_t)(uintptr_t)&request);
 
     report_open(report, &request);
     return status;
 }
 
-long phipia_package_control_item(
-    phipia_handle_t control,
+long trait_package_control_item(
+    trait_handle_t control,
     uint32_t index,
-    struct phipia_package_control_item *item
+    struct trait_package_control_item *item
 )
 {
-    struct phipia_package_control_item_request request;
+    struct trait_package_control_item_request request;
 
-    if (control == PHIPIA_HANDLE_INVALID || item == NULL ||
-        index >= PHIPIA_PACKAGE_CONTROL_PLAN_MAX) {
-        return -PHIPIA_EINVAL;
+    if (control == TRAIT_HANDLE_INVALID || item == NULL ||
+        index >= TRAIT_PACKAGE_CONTROL_PLAN_MAX) {
+        return -TRAIT_EINVAL;
     }
     (void)memset(item, 0, sizeof(*item));
     (void)memset(&request, 0, sizeof(request));
     request.size = sizeof(request);
-    request.version = PHIPIA_ABI_VERSION;
+    request.version = TRAIT_ABI_VERSION;
     request.control = control;
     request.index = index;
-    long status = phipia_syscall1(PHIPIA_SYS_PACKAGE_CONTROL_ITEM,
+    long status = trait_syscall1(TRAIT_SYS_PACKAGE_CONTROL_ITEM,
         (uint64_t)(uintptr_t)&request);
 
     if (status != 0) {
@@ -141,28 +141,28 @@ long phipia_package_control_item(
     return 0;
 }
 
-long phipia_package_control_attach(
-    phipia_handle_t control,
+long trait_package_control_attach(
+    trait_handle_t control,
     uint32_t index,
-    phipia_handle_t package_upload,
-    struct phipia_package_control_report *report
+    trait_handle_t package_upload,
+    struct trait_package_control_report *report
 )
 {
-    struct phipia_package_control_attach_request request;
+    struct trait_package_control_attach_request request;
 
     report_clear(report);
-    if (control == PHIPIA_HANDLE_INVALID ||
-        package_upload == PHIPIA_HANDLE_INVALID ||
-        index >= PHIPIA_PACKAGE_CONTROL_PLAN_MAX || report == NULL) {
-        return -PHIPIA_EINVAL;
+    if (control == TRAIT_HANDLE_INVALID ||
+        package_upload == TRAIT_HANDLE_INVALID ||
+        index >= TRAIT_PACKAGE_CONTROL_PLAN_MAX || report == NULL) {
+        return -TRAIT_EINVAL;
     }
     (void)memset(&request, 0, sizeof(request));
     request.size = sizeof(request);
-    request.version = PHIPIA_ABI_VERSION;
+    request.version = TRAIT_ABI_VERSION;
     request.control = control;
     request.index = index;
     request.package_upload = package_upload;
-    long status = phipia_syscall1(PHIPIA_SYS_PACKAGE_CONTROL_ATTACH,
+    long status = trait_syscall1(TRAIT_SYS_PACKAGE_CONTROL_ATTACH,
         (uint64_t)(uintptr_t)&request);
 
     report->attached_count = request.attached_count;
@@ -170,22 +170,22 @@ long phipia_package_control_attach(
     return status;
 }
 
-long phipia_package_control_commit(
-    phipia_handle_t control,
-    struct phipia_package_control_report *report
+long trait_package_control_commit(
+    trait_handle_t control,
+    struct trait_package_control_report *report
 )
 {
-    struct phipia_package_control_commit_request request;
+    struct trait_package_control_commit_request request;
 
     report_clear(report);
-    if (control == PHIPIA_HANDLE_INVALID || report == NULL) {
-        return -PHIPIA_EINVAL;
+    if (control == TRAIT_HANDLE_INVALID || report == NULL) {
+        return -TRAIT_EINVAL;
     }
     (void)memset(&request, 0, sizeof(request));
     request.size = sizeof(request);
-    request.version = PHIPIA_ABI_VERSION;
+    request.version = TRAIT_ABI_VERSION;
     request.control = control;
-    long status = phipia_syscall1(PHIPIA_SYS_PACKAGE_CONTROL_COMMIT,
+    long status = trait_syscall1(TRAIT_SYS_PACKAGE_CONTROL_COMMIT,
         (uint64_t)(uintptr_t)&request);
 
     report->generation = request.generation;
@@ -195,7 +195,7 @@ long phipia_package_control_commit(
     return status;
 }
 
-long phipia_package_control_close(phipia_handle_t control)
+long trait_package_control_close(trait_handle_t control)
 {
-    return phipia_handle_close(control);
+    return trait_handle_close(control);
 }

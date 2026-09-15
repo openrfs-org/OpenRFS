@@ -3,12 +3,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/cpu.h>
-#include <phipia/interrupts.h>
-#include <phipia/ioapic.h>
-#include <phipia/keyboard.h>
-#include <phipia/pointer.h>
-#include <phipia/ui.h>
+#include <trait/cpu.h>
+#include <trait/interrupts.h>
+#include <trait/ioapic.h>
+#include <trait/keyboard.h>
+#include <trait/pointer.h>
+#include <trait/ui.h>
 
 #define PS2_DATA_PORT UINT16_C(0x0060)
 #define PS2_COMMAND_PORT UINT16_C(0x0064)

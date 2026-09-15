@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Build the deterministic signed repository used by the guest phip proof."""
+"""Build the deterministic signed repository used by the guest trait proof."""
 
 from __future__ import annotations
 
@@ -25,9 +25,9 @@ def load(name: str, path: Path):
     return module
 
 
-PACKAGE = load("phipia_package_lifecycle", ROOT / "tools" / "phipia-package.py")
+PACKAGE = load("trait_package_lifecycle", ROOT / "tools" / "trait-package.py")
 REPOSITORY = load(
-    "phipia_repository_lifecycle", ROOT / "tools" / "phipia-repository.py"
+    "trait_repository_lifecycle", ROOT / "tools" / "trait-repository.py"
 )
 
 ROOT_SEED = bytes(range(32))
@@ -57,7 +57,7 @@ def build(output: Path, executable: Path, manifest_spec: Path) -> dict[str, obje
         "abi_max": 1,
         "identifier": identifier,
         "name": "SDL Chess Board",
-        "publisher": "Phipia Development Publisher",
+        "publisher": "Trait OS Development Publisher",
         "capabilities": capabilities,
         "dependencies": [],
         "conflicts": [],
@@ -88,7 +88,7 @@ def build(output: Path, executable: Path, manifest_spec: Path) -> dict[str, obje
         download_path = f"packages/{identifier}/{version}.spk"
         repository = REPOSITORY.build_repository({
             "format": 1,
-            "repository": "org.phipia.main",
+            "repository": "org.trait.main",
             "repository_version": repository_version,
             "generated_at": GENERATED,
             "expires_at": EXPIRES,

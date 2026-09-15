@@ -1,0 +1,19 @@
+{
+  "name": "Trait OS Package Repair",
+  "identifier": "TRAITREP",
+  "executable": "TRAITR.APP",
+  "data_namespace": "TRAIT",
+  "memory_limit": 67108864,
+  "max_handles": 24,
+  "max_threads": 1,
+  "capabilities": [
+    "console",
+    "data-read",
+    "data-write",
+    "time",
+    "entropy",
+    "network",
+    "packages"
+  ],
+  "arguments": ["repair"]
+}

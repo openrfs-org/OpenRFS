@@ -1,5 +1,5 @@
 /*
- * Keep the exercised uname -s formatting path compatible with Phipia's
+ * Keep the exercised uname -s formatting path compatible with Trait OS's
  * integer-only Linux userspace ABI.  This build-only overlay leaves musl's
  * source archive byte-for-byte unchanged and applies only to vfprintf; the
  * unexercised floating-point formatting helpers retain their normal target.

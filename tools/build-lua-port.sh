@@ -12,8 +12,8 @@ output=$1
 work=$2
 archive="$root/ports/lua/source/lua-5.4.7.tar.gz"
 sdk="$root/build/sdk"
-cc=${PHIPIA_SDK_CC:-clang}
-ld=${PHIPIA_SDK_LD:-ld.lld}
+cc=${TRAIT_SDK_CC:-clang}
+ld=${TRAIT_SDK_LD:-ld.lld}
 
 case "$output" in /*) ;; *) output="$root/$output" ;; esac
 case "$work" in /*) ;; *) work="$root/$work" ;; esac
@@ -49,7 +49,7 @@ for source in "$work/source/lua-5.4.7/src"/l*.c; do
     "$cc" "${cflags[@]}" -c "$source" -o "$object"
     objects+=("$object")
 done
-performance="$work/obj/phipia-performance.o"
+performance="$work/obj/trait-performance.o"
 "$cc" "${cflags[@]}" -c "$root/ports/lua/performance.c" -o "$performance"
 objects+=("$performance")
 
@@ -57,6 +57,6 @@ objects+=("$performance")
     -z max-page-size=0x1000 -z noexecstack --fatal-warnings \
     --orphan-handling=error --wrap=luaL_openlibs -T "$sdk/linker.ld" \
     -Map="$output/LUA.map" -o "$output/LUA.APP" \
-    "$sdk/lib/crt0.o" "${objects[@]}" "$sdk/lib/libphipia.a"
+    "$sdk/lib/crt0.o" "${objects[@]}" "$sdk/lib/libtrait.a"
 
-echo "Lua 5.4.7 Phipia executable: $output/LUA.APP"
+echo "Lua 5.4.7 Trait OS executable: $output/LUA.APP"

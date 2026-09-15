@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Offline DNS/TCP/TLS/HTTPS peer for Phipia's QEMU dgram NIC."""
+"""Offline DNS/TCP/TLS/HTTPS peer for Trait OS's QEMU dgram NIC."""
 
 from __future__ import annotations
 
@@ -18,8 +18,8 @@ import network_fixture as network
 ROOT = Path(__file__).resolve().parent.parent
 CERTIFICATE = ROOT / "tests" / "fixtures" / "tls" / "valid.pem"
 PRIVATE_KEY = ROOT / "tests" / "fixtures" / "tls" / "valid-key.pem"
-HOSTNAME = b"repo.phipia.test"
-BODY = b"hello from the Phipia HTTPS peer\n"
+HOSTNAME = b"repo.trait.test"
+BODY = b"hello from the Trait OS HTTPS peer\n"
 SERVER_ISN = 0x63000000
 TLS_PORT = 443
 MAX_REQUEST = 2048
@@ -74,7 +74,7 @@ class HttpsFixture(network.Fixture):
     def response_body(self, request: bytes) -> bytes:
         lines = request.split(b"\r\n")
         if len(lines) != 7 or lines[1:] != [
-            b"Host: repo.phipia.test",
+            b"Host: repo.trait.test",
             b"Accept: application/octet-stream",
             b"Accept-Encoding: identity",
             b"Connection: close",
@@ -278,7 +278,7 @@ def self_test() -> int:
         server_in, server_out, server_side=True
     )
     client = client_context.wrap_bio(
-        client_in, client_out, server_hostname="repo.phipia.test"
+        client_in, client_out, server_hostname="repo.trait.test"
     )
     server_done = client_done = False
     for _ in range(64):
@@ -304,10 +304,10 @@ def self_test() -> int:
     assert client.version() == "TLSv1.2"
     parsed = network.dns_question(
         b"\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00"
-        b"\x04repo\x06phipia\x04test\x00\x00\x01\x00\x01"
+        b"\x04repo\x05trait\x04test\x00\x00\x01\x00\x01"
     )
     assert parsed is not None and parsed[0] == HOSTNAME
-    assert len(BODY) == 33
+    assert len(BODY) == 35
     assert TCP_SEND_WINDOW >= TCP_CHUNK
     assert sequence_distance(0xFFFFFFF0, 0x00000010) == 0x20
     assert CERTIFICATE.is_file() and PRIVATE_KEY.is_file()
@@ -321,7 +321,7 @@ def self_test() -> int:
         fixture.repository_requests = 0
         request = (
             b"GET /repository.sri HTTP/1.1\r\n"
-            b"Host: repo.phipia.test\r\n"
+            b"Host: repo.trait.test\r\n"
             b"Accept: application/octet-stream\r\n"
             b"Accept-Encoding: identity\r\n"
             b"Connection: close\r\n\r\n"

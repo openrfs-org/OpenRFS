@@ -5,9 +5,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <phipia/fat32_fs.h>
-#include <phipia/package_state.h>
-#include <phipia/package_upload.h>
+#include <trait/fat32_fs.h>
+#include <trait/package_state.h>
+#include <trait/package_upload.h>
 
 #define MOCK_FILE_BYTES (256U * 1024U)
 #define NO_WRITE_FAILURE SIZE_MAX
@@ -54,156 +54,156 @@ static int path_index(const char *path)
     return path[at] - '0';
 }
 
-enum phipfs_status phipfs_mkdir(enum phipfs_volume volume, const char *path)
+enum traitfs_status traitfs_mkdir(enum traitfs_volume volume, const char *path)
 {
-    if (volume != PHIPFS_VOLUME_DATA || path == NULL) {
-        return PHIPFS_STATUS_INVALID_ARGUMENT;
+    if (volume != TRAITFS_VOLUME_DATA || path == NULL) {
+        return TRAITFS_STATUS_INVALID_ARGUMENT;
     }
     if (path[0] != 'p' || path[1] != 'k' || path[2] != 'g') {
-        return PHIPFS_STATUS_PATH;
+        return TRAITFS_STATUS_PATH;
     }
     if (directory_present) {
-        return PHIPFS_STATUS_EXISTS;
+        return TRAITFS_STATUS_EXISTS;
     }
     directory_present = true;
-    return PHIPFS_STATUS_OK;
+    return TRAITFS_STATUS_OK;
 }
 
-enum phipfs_status phipfs_unlink(enum phipfs_volume volume, const char *path)
+enum traitfs_status traitfs_unlink(enum traitfs_volume volume, const char *path)
 {
     int index = path_index(path);
 
-    if (volume != PHIPFS_VOLUME_DATA || index < 0) {
-        return PHIPFS_STATUS_INVALID_ARGUMENT;
+    if (volume != TRAITFS_VOLUME_DATA || index < 0) {
+        return TRAITFS_STATUS_INVALID_ARGUMENT;
     }
     if (!files[index].present) {
-        return PHIPFS_STATUS_NOT_FOUND;
+        return TRAITFS_STATUS_NOT_FOUND;
     }
     if (fail_next_unlink) {
         fail_next_unlink = false;
-        return PHIPFS_STATUS_IO;
+        return TRAITFS_STATUS_IO;
     }
     if (files[index].open) {
-        return PHIPFS_STATUS_BUSY;
+        return TRAITFS_STATUS_BUSY;
     }
     files[index].present = false;
     files[index].size = 0U;
     files[index].offset = 0U;
     ++unlink_count;
-    return PHIPFS_STATUS_OK;
+    return TRAITFS_STATUS_OK;
 }
 
-enum phipfs_status phipfs_stat_path(enum phipfs_volume volume,
-    const char *path, struct phipfs_stat *stat)
+enum traitfs_status traitfs_stat_path(enum traitfs_volume volume,
+    const char *path, struct traitfs_stat *stat)
 {
     int index = path_index(path);
 
-    if (volume != PHIPFS_VOLUME_DATA || index < 0 || stat == NULL) {
-        return PHIPFS_STATUS_INVALID_ARGUMENT;
+    if (volume != TRAITFS_VOLUME_DATA || index < 0 || stat == NULL) {
+        return TRAITFS_STATUS_INVALID_ARGUMENT;
     }
     if (!files[index].present) {
-        return PHIPFS_STATUS_NOT_FOUND;
+        return TRAITFS_STATUS_NOT_FOUND;
     }
-    *stat = (struct phipfs_stat){
+    *stat = (struct traitfs_stat){
         .size = files[index].size,
         .directory = false
     };
-    return PHIPFS_STATUS_OK;
+    return TRAITFS_STATUS_OK;
 }
 
-enum phipfs_status phipfs_truncate(enum phipfs_volume volume,
+enum traitfs_status traitfs_truncate(enum traitfs_volume volume,
     const char *path, uint64_t size)
 {
     int index = path_index(path);
 
-    if (volume != PHIPFS_VOLUME_DATA || index < 0 ||
+    if (volume != TRAITFS_VOLUME_DATA || index < 0 ||
             size > MOCK_FILE_BYTES) {
-        return PHIPFS_STATUS_INVALID_ARGUMENT;
+        return TRAITFS_STATUS_INVALID_ARGUMENT;
     }
     if (!files[index].present) {
-        return PHIPFS_STATUS_NOT_FOUND;
+        return TRAITFS_STATUS_NOT_FOUND;
     }
     if (files[index].open) {
-        return PHIPFS_STATUS_BUSY;
+        return TRAITFS_STATUS_BUSY;
     }
     files[index].size = (size_t)size;
     if (files[index].offset > files[index].size) {
         files[index].offset = files[index].size;
     }
     ++truncate_count;
-    return PHIPFS_STATUS_OK;
+    return TRAITFS_STATUS_OK;
 }
 
-enum phipfs_status phipfs_sync(enum phipfs_volume volume)
+enum traitfs_status traitfs_sync(enum traitfs_volume volume)
 {
-    if (volume != PHIPFS_VOLUME_DATA) {
-        return PHIPFS_STATUS_INVALID_ARGUMENT;
+    if (volume != TRAITFS_VOLUME_DATA) {
+        return TRAITFS_STATUS_INVALID_ARGUMENT;
     }
     ++sync_count;
     if (fail_next_sync) {
         fail_next_sync = false;
-        return PHIPFS_STATUS_IO;
+        return TRAITFS_STATUS_IO;
     }
-    return PHIPFS_STATUS_OK;
+    return TRAITFS_STATUS_OK;
 }
 
-enum phipfs_status phipfs_create(enum phipfs_volume volume, const char *path)
+enum traitfs_status traitfs_create(enum traitfs_volume volume, const char *path)
 {
     int index = path_index(path);
 
-    if (volume != PHIPFS_VOLUME_DATA || index < 0 || !directory_present) {
-        return PHIPFS_STATUS_INVALID_ARGUMENT;
+    if (volume != TRAITFS_VOLUME_DATA || index < 0 || !directory_present) {
+        return TRAITFS_STATUS_INVALID_ARGUMENT;
     }
     if (files[index].present) {
-        return PHIPFS_STATUS_EXISTS;
+        return TRAITFS_STATUS_EXISTS;
     }
     files[index] = (struct mock_file){0};
     files[index].present = true;
-    return PHIPFS_STATUS_OK;
+    return TRAITFS_STATUS_OK;
 }
 
-enum phipfs_status phipfs_open(
-    enum phipfs_volume volume,
+enum traitfs_status traitfs_open(
+    enum traitfs_volume volume,
     const char *path,
-    enum phipfs_access access,
-    phipfs_handle *handle
+    enum traitfs_access access,
+    traitfs_handle *handle
 )
 {
     int index = path_index(path);
 
-    if (volume != PHIPFS_VOLUME_DATA || index < 0 || handle == NULL ||
-        (access != PHIPFS_ACCESS_READ && access != PHIPFS_ACCESS_WRITE)) {
-        return PHIPFS_STATUS_INVALID_ARGUMENT;
+    if (volume != TRAITFS_VOLUME_DATA || index < 0 || handle == NULL ||
+        (access != TRAITFS_ACCESS_READ && access != TRAITFS_ACCESS_WRITE)) {
+        return TRAITFS_STATUS_INVALID_ARGUMENT;
     }
     *handle = 0U;
     if (fail_next_open) {
         fail_next_open = false;
-        return PHIPFS_STATUS_IO;
+        return TRAITFS_STATUS_IO;
     }
     if (!files[index].present) {
-        return PHIPFS_STATUS_NOT_FOUND;
+        return TRAITFS_STATUS_NOT_FOUND;
     }
     if (files[index].open) {
-        return PHIPFS_STATUS_BUSY;
+        return TRAITFS_STATUS_BUSY;
     }
     files[index].open = true;
-    files[index].offset = access == PHIPFS_ACCESS_WRITE ? files[index].size : 0U;
-    *handle = (phipfs_handle)(index + 1);
-    return PHIPFS_STATUS_OK;
+    files[index].offset = access == TRAITFS_ACCESS_WRITE ? files[index].size : 0U;
+    *handle = (traitfs_handle)(index + 1);
+    return TRAITFS_STATUS_OK;
 }
 
-enum phipfs_status phipfs_close(phipfs_handle handle)
+enum traitfs_status traitfs_close(traitfs_handle handle)
 {
     if (handle == 0U || handle > PACKAGE_UPLOAD_SLOT_LIMIT ||
         !files[handle - 1U].open) {
-        return PHIPFS_STATUS_STALE_HANDLE;
+        return TRAITFS_STATUS_STALE_HANDLE;
     }
     files[handle - 1U].open = false;
-    return PHIPFS_STATUS_OK;
+    return TRAITFS_STATUS_OK;
 }
 
-enum phipfs_status phipfs_write(
-    phipfs_handle handle,
+enum traitfs_status traitfs_write(
+    traitfs_handle handle,
     const uint8_t *source,
     size_t source_bytes,
     size_t *written_bytes
@@ -212,20 +212,20 @@ enum phipfs_status phipfs_write(
     if (written_bytes == NULL || handle == 0U ||
         handle > PACKAGE_UPLOAD_SLOT_LIMIT || !files[handle - 1U].open ||
         (source == NULL && source_bytes != 0U)) {
-        return PHIPFS_STATUS_INVALID_ARGUMENT;
+        return TRAITFS_STATUS_INVALID_ARGUMENT;
     }
     struct mock_file *file = &files[handle - 1U];
     size_t allowed = source_bytes;
 
     *written_bytes = 0U;
     if (file->offset >= write_failure_at) {
-        return PHIPFS_STATUS_IO;
+        return TRAITFS_STATUS_IO;
     }
     if (allowed > write_failure_at - file->offset) {
         allowed = write_failure_at - file->offset;
     }
     if (allowed > MOCK_FILE_BYTES - file->offset) {
-        return PHIPFS_STATUS_FULL;
+        return TRAITFS_STATUS_FULL;
     }
     for (size_t index = 0U; index < allowed; ++index) {
         file->bytes[file->offset + index] = source[index];
@@ -235,11 +235,11 @@ enum phipfs_status phipfs_write(
         file->size = file->offset;
     }
     *written_bytes = allowed;
-    return allowed == source_bytes ? PHIPFS_STATUS_OK : PHIPFS_STATUS_IO;
+    return allowed == source_bytes ? TRAITFS_STATUS_OK : TRAITFS_STATUS_IO;
 }
 
-enum phipfs_status phipfs_pread(
-    phipfs_handle handle,
+enum traitfs_status traitfs_pread(
+    traitfs_handle handle,
     uint8_t *destination,
     size_t capacity,
     uint64_t offset,
@@ -249,7 +249,7 @@ enum phipfs_status phipfs_pread(
     if (read_bytes == NULL || handle == 0U ||
         handle > PACKAGE_UPLOAD_SLOT_LIMIT || !files[handle - 1U].open ||
         (destination == NULL && capacity != 0U)) {
-        return PHIPFS_STATUS_INVALID_ARGUMENT;
+        return TRAITFS_STATUS_INVALID_ARGUMENT;
     }
     struct mock_file *file = &files[handle - 1U];
     size_t available = offset < file->size ? file->size - (size_t)offset : 0U;
@@ -261,7 +261,7 @@ enum phipfs_status phipfs_pread(
         destination[index] = file->bytes[(size_t)offset + index];
     }
     *read_bytes = capacity;
-    return PHIPFS_STATUS_OK;
+    return TRAITFS_STATUS_OK;
 }
 
 static int initialize_test(void)

@@ -1,15 +1,18 @@
-## Change
+## What changed
 
-Explain exactly what changed and why it belongs in Phipia.
+Tell us what problem this solves and why the change belongs in Trait OS.
 
-## Evidence
+## What you checked
 
-- [ ] `make verify` passes from a clean tree.
-- [ ] `make smoke` reaches `Phipia: day one passed` in QEMU.
-- [ ] No warning, failed check, or unexplained binary artifact is present.
-- [ ] The commit is atomic, reviewable, and safe to revert.
-- [ ] Boot, memory, ABI, or linker invariants changed here are documented.
+- [ ] I ran the local checks that match this change's risk.
+- [ ] `make verify` passes from a clean tree when code changed.
+- [ ] `make smoke` reaches `Trait OS: day one passed` when boot behavior changed.
+- [ ] I inspected new binary or generated artifacts and recorded their source.
+- [ ] The latest commit has no unexplained warning or failed check.
 
-## Risk
+List the exact commands, CI jobs, and artifact paths here.
 
-Name the failure mode and the rollback plan. "None" is not acceptable for kernel code.
+## Risk and recovery
+
+What is the most likely failure that the tests could miss? How would a
+maintainer undo or contain it? For kernel code, please give a concrete answer.

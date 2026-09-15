@@ -2,10 +2,15 @@
 
 # Changelog
 
-## Phipia
+## Unreleased
 
-- Replaced the former shell presentation with the Phipia desktop and the
-  canonical Phipia identity.
+- Removed the Media Editor, Camera, and Paint/Canvas applications, their assets,
+  package and capture paths, and app-specific acceptance scenarios.
+
+## Trait OS
+
+- Replaced the former shell presentation with the Trait OS desktop and the
+  canonical Trait OS identity.
 - Added the six-application 3D Dock with magnification, reflections, tooltips,
   launch feedback, and light and dark shelf colours.
 - Added overlapping movable windows with focus, stacking, close controls, and

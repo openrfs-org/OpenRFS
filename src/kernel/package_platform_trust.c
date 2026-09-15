@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#include <phipia/package_platform_trust.h>
+#include <trait/package_platform_trust.h>
 
 static struct package_trust_table platform_table;
 static bool platform_ready;
@@ -10,8 +10,8 @@ enum package_trust_status package_platform_trust_initialize(void)
     if (platform_ready) {
         return PACKAGE_TRUST_STATUS_OK;
     }
-    status = package_trust_table_open(phipia_package_trust_asset,
-        phipia_package_trust_asset_bytes, &platform_table);
+    status = package_trust_table_open(trait_package_trust_asset,
+        trait_package_trust_asset_bytes, &platform_table);
     if (status == PACKAGE_TRUST_STATUS_OK) {
         platform_ready = true;
     }

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef PHIPIA_SIGNAL_H
-#define PHIPIA_SIGNAL_H
+#ifndef TRAIT_SIGNAL_H
+#define TRAIT_SIGNAL_H
 
 typedef void (*sighandler_t)(int);
 typedef int sig_atomic_t;

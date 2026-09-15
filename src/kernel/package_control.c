@@ -5,16 +5,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/heap.h>
-#include <phipia/package_builder.h>
-#include <phipia/package_control.h>
-#include <phipia/package_generation.h>
-#include <phipia/package_manager.h>
-#include <phipia/package_platform_trust.h>
-#include <phipia/package_service.h>
-#include <phipia/package_state.h>
-#include <phipia/package_upload.h>
-#include <phipia/wall_clock.h>
+#include <trait/heap.h>
+#include <trait/package_builder.h>
+#include <trait/package_control.h>
+#include <trait/package_generation.h>
+#include <trait/package_manager.h>
+#include <trait/package_platform_trust.h>
+#include <trait/package_service.h>
+#include <trait/package_state.h>
+#include <trait/package_upload.h>
+#include <trait/wall_clock.h>
 
 struct control_session {
     struct package_manager_policy policy;

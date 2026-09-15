@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef PHIPIA_ERRNO_H
-#define PHIPIA_ERRNO_H
+#ifndef TRAIT_ERRNO_H
+#define TRAIT_ERRNO_H
 
 extern _Thread_local int errno;
 

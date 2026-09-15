@@ -1,0 +1,13 @@
+Trait OS wallpaper source receipt
+
+Repository: https://github.com/saudaljuaid/Trait-UI
+Commit: eb6d32f8bee63025508af992656a7815fa3285c1
+Source path: assets/wallpaper/wallpaper.png
+Imported path: assets/trait/wallpaper.png
+Dimensions: 1920x1200
+SHA-256: 32139f348923b74e921c0adcc2f103b8e325e11a8b51b72cc6cfebf9608d9344
+
+The Trait-UI source receipt identifies this wallpaper as original project
+artwork. Trait OS preserves the PNG byte-for-byte; the build performs a
+deterministic centered 4:3 crop and bilinear conversion to the bounded SPW3
+runtime format.

@@ -3,8 +3,8 @@
 .global _start
 .type _start, @function
 .extern main
-.extern phipia_runtime_initialize
-.weak phipia_application_entry_probe
+.extern trait_runtime_initialize
+.weak trait_application_entry_probe
 _start:
     /* Preserve the loader contract across an optional instrumented probe. */
     xorq %rbp, %rbp
@@ -13,7 +13,7 @@ _start:
     pushq %rsi
     pushq %rdx
     subq $8, %rsp
-    movabsq $phipia_application_entry_probe, %rax
+    movabsq $trait_application_entry_probe, %rax
     testq %rax, %rax
     jz .Lruntime_start
     call *%rax
@@ -21,7 +21,7 @@ _start:
     movq 24(%rsp), %rdi
     movq 16(%rsp), %rsi
     movq 8(%rsp), %rdx
-    call phipia_runtime_initialize
+    call trait_runtime_initialize
     movq 24(%rsp), %rdi
     movq 16(%rsp), %rsi
     movq 8(%rsp), %rdx

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#include <phipia/package_manager.h>
+#include <trait/package_manager.h>
 
 #include <limits.h>
 
@@ -44,10 +44,10 @@ static uint32_t install_order[PACKAGE_MANAGER_PLAN_MAX_PACKAGES];
 static bool install_solver_busy;
 
 static const uint8_t repository_magic[8] = {
-    'P', 'H', 'I', 'P', 'I', 'D', 'X', '1'
+    'T', 'R', 'T', 'I', 'D', 'X', '0', '1'
 };
 static const uint8_t package_magic[8] = {
-    'P', 'H', 'I', 'P', 'P', 'K', 'G', '1'
+    'T', 'R', 'T', 'P', 'K', 'G', '0', '1'
 };
 static const uint8_t architecture_x86_64[6] = {
     'x', '8', '6', '_', '6', '4'

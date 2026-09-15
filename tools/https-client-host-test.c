@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #define _POSIX_C_SOURCE 200809L
 
-#include <phipia/abi.h>
-#include <phipia/network.h>
-#include <phipia/runtime.h>
-#include <phipia/tls.h>
+#include <trait/abi.h>
+#include <trait/network.h>
+#include <trait/runtime.h>
+#include <trait/tls.h>
 
 #include <errno.h>
 #include <inttypes.h>
@@ -41,19 +41,19 @@ typedef int host_socket_t;
 
 #include "../apps/native-https/trust_anchor.h"
 
-/* include/phipia/network.h is the kernel-private header and intentionally
+/* include/trait/network.h is the kernel-private header and intentionally
  * shadows the installed SDK header in host admission builds. */
-long phipia_dns_resolve(const char *hostname, uint64_t deadline_ns);
-long phipia_stream_open(void);
-long phipia_stream_connect(phipia_handle_t stream,
-    const struct phipia_ipv4_endpoint *endpoint, uint64_t deadline_ns);
-long phipia_stream_read(phipia_handle_t stream, void *buffer, size_t length,
+long trait_dns_resolve(const char *hostname, uint64_t deadline_ns);
+long trait_stream_open(void);
+long trait_stream_connect(trait_handle_t stream,
+    const struct trait_ipv4_endpoint *endpoint, uint64_t deadline_ns);
+long trait_stream_read(trait_handle_t stream, void *buffer, size_t length,
     uint64_t deadline_ns);
-long phipia_stream_write(phipia_handle_t stream, const void *buffer,
+long trait_stream_write(trait_handle_t stream, const void *buffer,
     size_t length, uint64_t deadline_ns);
-long phipia_stream_shutdown(phipia_handle_t stream, uint32_t flags,
+long trait_stream_shutdown(trait_handle_t stream, uint32_t flags,
     uint64_t deadline_ns);
-long phipia_network_cancel(phipia_handle_t handle);
+long trait_network_cancel(trait_handle_t handle);
 
 static uint16_t peer_port;
 static unsigned live_handles;
@@ -62,7 +62,7 @@ static host_socket_t active_socket = HOST_INVALID_SOCKET;
 static bool stream_read_waiting;
 
 struct cancel_read_task {
-    struct phipia_tls_client *client;
+    struct trait_tls_client *client;
     uint64_t deadline_ns;
     long result;
     long transport_error;
@@ -126,10 +126,10 @@ static void *cancel_reader(void *opaque)
     unsigned char byte;
 
     __atomic_store_n(&task->entered, true, __ATOMIC_RELEASE);
-    task->result = phipia_tls_client_read(task->client, &byte, 1U,
+    task->result = trait_tls_client_read(task->client, &byte, 1U,
         task->deadline_ns);
     task->transport_error =
-        phipia_tls_client_transport_error(task->client);
+        trait_tls_client_transport_error(task->client);
 #if defined(_WIN32)
     return 0;
 #else
@@ -197,53 +197,53 @@ static long socket_error(host_socket_t descriptor)
 {
     if ((uintptr_t)descriptor ==
             __atomic_load_n(&canceled_socket_bits, __ATOMIC_ACQUIRE)) {
-        return -(long)PHIPIA_ECANCELED;
+        return -(long)TRAIT_ECANCELED;
     }
 #if defined(_WIN32)
     switch (WSAGetLastError()) {
     case WSAETIMEDOUT:
     case WSAEWOULDBLOCK:
-        return -(long)PHIPIA_ETIMEDOUT;
+        return -(long)TRAIT_ETIMEDOUT;
     case WSAECONNRESET:
-        return -(long)PHIPIA_EIO;
+        return -(long)TRAIT_EIO;
     default:
-        return -(long)PHIPIA_EPIPE;
+        return -(long)TRAIT_EPIPE;
     }
 #else
     switch (errno) {
     case ETIMEDOUT:
     case EAGAIN:
-        return -(long)PHIPIA_ETIMEDOUT;
+        return -(long)TRAIT_ETIMEDOUT;
     case ECONNRESET:
-        return -(long)PHIPIA_EIO;
+        return -(long)TRAIT_EIO;
     default:
-        return -(long)PHIPIA_EPIPE;
+        return -(long)TRAIT_EPIPE;
     }
 #endif
 }
 
-static host_socket_t host_descriptor(phipia_handle_t handle)
+static host_socket_t host_descriptor(trait_handle_t handle)
 {
     return handle == 1U ? active_socket : HOST_INVALID_SOCKET;
 }
 
-uint64_t phipia_monotonic_ns(void)
+uint64_t trait_monotonic_ns(void)
 {
     return host_now_ns();
 }
 
-long phipia_realtime_seconds(void)
+long trait_realtime_seconds(void)
 {
     return INT64_C(1788177600);
 }
 
-long phipia_random(void *buffer, size_t length)
+long trait_random(void *buffer, size_t length)
 {
     unsigned char *bytes = buffer;
     uint32_t state = UINT32_C(0x8f31a42d);
 
     if (buffer == NULL && length != 0U) {
-        return -(long)PHIPIA_EINVAL;
+        return -(long)TRAIT_EINVAL;
     }
     for (size_t index = 0U; index < length; ++index) {
         state ^= state << 13;
@@ -254,21 +254,21 @@ long phipia_random(void *buffer, size_t length)
     return (long)length;
 }
 
-long phipia_random_strong(void *buffer, size_t length)
+long trait_random_strong(void *buffer, size_t length)
 {
-    return phipia_random(buffer, length);
+    return trait_random(buffer, length);
 }
 
-long phipia_dns_resolve(const char *hostname, uint64_t deadline_ns)
+long trait_dns_resolve(const char *hostname, uint64_t deadline_ns)
 {
     if (hostname == NULL || hostname[0] == '\0' ||
         deadline_ns <= host_now_ns()) {
-        return -(long)PHIPIA_EINVAL;
+        return -(long)TRAIT_EINVAL;
     }
     return INT64_C(0x7f000001);
 }
 
-long phipia_stream_open(void)
+long trait_stream_open(void)
 {
     const host_socket_t descriptor = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -277,22 +277,22 @@ long phipia_stream_open(void)
         if (descriptor != HOST_INVALID_SOCKET) {
             (void)HOST_CLOSE(descriptor);
         }
-        return -(long)PHIPIA_EIO;
+        return -(long)TRAIT_EIO;
     }
     active_socket = descriptor;
     ++live_handles;
     return 1;
 }
 
-long phipia_stream_connect(phipia_handle_t stream,
-    const struct phipia_ipv4_endpoint *endpoint, uint64_t deadline_ns)
+long trait_stream_connect(trait_handle_t stream,
+    const struct trait_ipv4_endpoint *endpoint, uint64_t deadline_ns)
 {
     const host_socket_t descriptor = host_descriptor(stream);
     struct sockaddr_in address;
 
     if (endpoint == NULL || endpoint->port != peer_port ||
         deadline_ns <= host_now_ns()) {
-        return -(long)PHIPIA_EINVAL;
+        return -(long)TRAIT_EINVAL;
     }
     (void)memset(&address, 0, sizeof(address));
     address.sin_family = AF_INET;
@@ -305,7 +305,7 @@ long phipia_stream_connect(phipia_handle_t stream,
     return 0;
 }
 
-long phipia_stream_read(phipia_handle_t stream, void *buffer, size_t length,
+long trait_stream_read(trait_handle_t stream, void *buffer, size_t length,
     uint64_t deadline_ns)
 {
     const host_socket_t descriptor = host_descriptor(stream);
@@ -314,13 +314,13 @@ long phipia_stream_read(phipia_handle_t stream, void *buffer, size_t length,
 
     if ((uintptr_t)descriptor ==
             __atomic_load_n(&canceled_socket_bits, __ATOMIC_ACQUIRE)) {
-        return -(long)PHIPIA_ECANCELED;
+        return -(long)TRAIT_ECANCELED;
     }
     __atomic_store_n(&stream_read_waiting, true, __ATOMIC_RELEASE);
     ready = wait_socket(descriptor, false, deadline_ns);
     __atomic_store_n(&stream_read_waiting, false, __ATOMIC_RELEASE);
     if (ready != 0) {
-        return ready == -1 ? -(long)PHIPIA_ETIMEDOUT :
+        return ready == -1 ? -(long)TRAIT_ETIMEDOUT :
             socket_error(descriptor);
     }
     count = recv(descriptor, (char *)buffer,
@@ -330,12 +330,12 @@ long phipia_stream_read(phipia_handle_t stream, void *buffer, size_t length,
     }
     if ((uintptr_t)descriptor ==
             __atomic_load_n(&canceled_socket_bits, __ATOMIC_ACQUIRE)) {
-        return -(long)PHIPIA_ECANCELED;
+        return -(long)TRAIT_ECANCELED;
     }
-    return count == 0 ? -(long)PHIPIA_EPIPE : socket_error(descriptor);
+    return count == 0 ? -(long)TRAIT_EPIPE : socket_error(descriptor);
 }
 
-long phipia_stream_write(phipia_handle_t stream, const void *buffer,
+long trait_stream_write(trait_handle_t stream, const void *buffer,
     size_t length, uint64_t deadline_ns)
 {
     const host_socket_t descriptor = host_descriptor(stream);
@@ -344,11 +344,11 @@ long phipia_stream_write(phipia_handle_t stream, const void *buffer,
 
     if ((uintptr_t)descriptor ==
             __atomic_load_n(&canceled_socket_bits, __ATOMIC_ACQUIRE)) {
-        return -(long)PHIPIA_ECANCELED;
+        return -(long)TRAIT_ECANCELED;
     }
     ready = wait_socket(descriptor, true, deadline_ns);
     if (ready != 0) {
-        return ready == -1 ? -(long)PHIPIA_ETIMEDOUT :
+        return ready == -1 ? -(long)TRAIT_ETIMEDOUT :
             socket_error(descriptor);
     }
     count = send(descriptor, (const char *)buffer,
@@ -356,7 +356,7 @@ long phipia_stream_write(phipia_handle_t stream, const void *buffer,
     return count > 0 ? count : socket_error(descriptor);
 }
 
-long phipia_stream_shutdown(phipia_handle_t stream, uint32_t flags,
+long trait_stream_shutdown(trait_handle_t stream, uint32_t flags,
     uint64_t deadline_ns)
 {
     const host_socket_t descriptor = host_descriptor(stream);
@@ -372,7 +372,7 @@ long phipia_stream_shutdown(phipia_handle_t stream, uint32_t flags,
 #endif
 }
 
-long phipia_network_cancel(phipia_handle_t handle)
+long trait_network_cancel(trait_handle_t handle)
 {
     const host_socket_t descriptor = host_descriptor(handle);
 
@@ -386,14 +386,14 @@ long phipia_network_cancel(phipia_handle_t handle)
     return 0;
 }
 
-long phipia_handle_close(phipia_handle_t handle)
+long trait_handle_close(trait_handle_t handle)
 {
     const host_socket_t descriptor = host_descriptor(handle);
     int result;
 
     result = HOST_CLOSE(descriptor);
     if (live_handles == 0U) {
-        return -(long)PHIPIA_ESTALE;
+        return -(long)TRAIT_ESTALE;
     }
     --live_handles;
     active_socket = HOST_INVALID_SOCKET;
@@ -402,7 +402,7 @@ long phipia_handle_close(phipia_handle_t handle)
         __atomic_store_n(&canceled_socket_bits,
             (uintptr_t)HOST_INVALID_SOCKET, __ATOMIC_RELEASE);
     }
-    return result == 0 ? 0 : -(long)PHIPIA_EIO;
+    return result == 0 ? 0 : -(long)TRAIT_EIO;
 }
 
 static int parse_unsigned(const char *text, unsigned long maximum,
@@ -436,7 +436,7 @@ static long stream_body_write(
     if (sink == NULL || bytes == NULL || sink->refuse ||
         sink->used > sizeof(sink->body) ||
         byte_count > sizeof(sink->body) - sink->used) {
-        return -(long)PHIPIA_EIO;
+        return -(long)TRAIT_EIO;
     }
     (void)memcpy(sink->body + sink->used, bytes, byte_count);
     sink->used += byte_count;
@@ -445,14 +445,14 @@ static long stream_body_write(
 
 static int run_cancel(const char *hostname, uint64_t deadline_ns)
 {
-    struct phipia_tls_client *client = NULL;
-    const struct phipia_tls_client_config config = {
-        hostname, peer_port, 0U, phipia_https_test_anchors,
-        sizeof(phipia_https_test_anchors) /
-            sizeof(phipia_https_test_anchors[0]), deadline_ns};
+    struct trait_tls_client *client = NULL;
+    const struct trait_tls_client_config config = {
+        hostname, peer_port, 0U, trait_https_test_anchors,
+        sizeof(trait_https_test_anchors) /
+            sizeof(trait_https_test_anchors[0]), deadline_ns};
     struct cancel_read_task task;
     long cancel_result;
-    enum phipia_tls_status close_status;
+    enum trait_tls_status close_status;
     bool joined;
 #if defined(_WIN32)
     HANDLE thread;
@@ -460,7 +460,7 @@ static int run_cancel(const char *hostname, uint64_t deadline_ns)
     pthread_t thread;
 #endif
 
-    if (phipia_tls_client_open(&config, &client) != PHIPIA_TLS_OK ||
+    if (trait_tls_client_open(&config, &client) != TRAIT_TLS_OK ||
         client == NULL) {
         return 1;
     }
@@ -468,12 +468,12 @@ static int run_cancel(const char *hostname, uint64_t deadline_ns)
 #if defined(_WIN32)
     thread = CreateThread(NULL, 0, cancel_reader, &task, 0, NULL);
     if (thread == NULL) {
-        (void)phipia_tls_client_close(client, deadline_ns);
+        (void)trait_tls_client_close(client, deadline_ns);
         return 1;
     }
 #else
     if (pthread_create(&thread, NULL, cancel_reader, &task) != 0) {
-        (void)phipia_tls_client_close(client, deadline_ns);
+        (void)trait_tls_client_close(client, deadline_ns);
         return 1;
     }
 #endif
@@ -482,27 +482,27 @@ static int run_cancel(const char *hostname, uint64_t deadline_ns)
         host_pause_millis(1U);
     }
     if (!__atomic_load_n(&stream_read_waiting, __ATOMIC_ACQUIRE)) {
-        (void)phipia_tls_client_cancel(client);
+        (void)trait_tls_client_cancel(client);
 #if defined(_WIN32)
         (void)WaitForSingleObject(thread, 2000U);
         (void)CloseHandle(thread);
 #else
         (void)pthread_join(thread, NULL);
 #endif
-        (void)phipia_tls_client_close(client, deadline_ns);
+        (void)trait_tls_client_close(client, deadline_ns);
         return 1;
     }
-    cancel_result = phipia_tls_client_cancel(client);
+    cancel_result = trait_tls_client_cancel(client);
 #if defined(_WIN32)
     joined = WaitForSingleObject(thread, 2000U) == WAIT_OBJECT_0;
     (void)CloseHandle(thread);
 #else
     joined = pthread_join(thread, NULL) == 0;
 #endif
-    close_status = phipia_tls_client_close(client, deadline_ns);
+    close_status = trait_tls_client_close(client, deadline_ns);
     if (cancel_result != 0 || !joined || task.result != -1 ||
-        task.transport_error != -(long)PHIPIA_ECANCELED ||
-        close_status != PHIPIA_TLS_IO) {
+        task.transport_error != -(long)TRAIT_ECANCELED ||
+        close_status != TRAIT_TLS_IO) {
         return 1;
     }
     puts("HTTPS REFUSAL blocking TLS operation canceled across threads");
@@ -511,24 +511,24 @@ static int run_cancel(const char *hostname, uint64_t deadline_ns)
 
 static int run_expired_operation(const char *hostname, uint64_t deadline_ns)
 {
-    struct phipia_tls_client *client = NULL;
-    const struct phipia_tls_client_config config = {
-        hostname, peer_port, 0U, phipia_https_test_anchors,
-        sizeof(phipia_https_test_anchors) /
-            sizeof(phipia_https_test_anchors[0]), deadline_ns};
+    struct trait_tls_client *client = NULL;
+    const struct trait_tls_client_config config = {
+        hostname, peer_port, 0U, trait_https_test_anchors,
+        sizeof(trait_https_test_anchors) /
+            sizeof(trait_https_test_anchors[0]), deadline_ns};
     unsigned char byte;
 
-    if (phipia_tls_client_open(&config, &client) != PHIPIA_TLS_OK ||
+    if (trait_tls_client_open(&config, &client) != TRAIT_TLS_OK ||
         client == NULL) {
         return 1;
     }
     while (host_now_ns() <= deadline_ns) {
         host_pause_millis(1U);
     }
-    if (phipia_tls_client_read(client, &byte, 1U, deadline_ns) != -1 ||
-        phipia_tls_client_transport_error(client) !=
-            -(long)PHIPIA_ETIMEDOUT ||
-        phipia_tls_client_close(client, deadline_ns) != PHIPIA_TLS_IO) {
+    if (trait_tls_client_read(client, &byte, 1U, deadline_ns) != -1 ||
+        trait_tls_client_transport_error(client) !=
+            -(long)TRAIT_ETIMEDOUT ||
+        trait_tls_client_close(client, deadline_ns) != TRAIT_TLS_IO) {
         return 1;
     }
     puts("HTTPS REFUSAL expired per-operation deadline classified");
@@ -553,7 +553,7 @@ int main(int argc, char **argv)
 #endif
     if (argc != 5 || parse_unsigned(argv[1], UINT16_MAX, &parsed_port) != 0 ||
         parsed_port == 0U ||
-        parse_unsigned(argv[4], PHIPIA_HTTPS_BODY_WRITE, &expected) != 0) {
+        parse_unsigned(argv[4], TRAIT_HTTPS_BODY_WRITE, &expected) != 0) {
         fprintf(stderr, "usage: %s PORT HOSTNAME MODE EXPECTED_STATUS\n",
             argv[0]);
         result = 2;
@@ -567,59 +567,59 @@ int main(int argc, char **argv)
          strcmp(mode, "expired-operation") == 0 ? UINT64_C(1000000000) :
             UINT64_C(3000000000));
     if (strcmp(mode, "cancel") == 0) {
-        result = expected == PHIPIA_HTTPS_CANCELED ?
+        result = expected == TRAIT_HTTPS_CANCELED ?
             run_cancel(hostname, deadline_ns) : 1;
     } else if (strcmp(mode, "expired-operation") == 0) {
-        result = expected == PHIPIA_HTTPS_TIMEOUT ?
+        result = expected == TRAIT_HTTPS_TIMEOUT ?
             run_expired_operation(hostname, deadline_ns) : 1;
     } else if (strcmp(mode, "stream-success") == 0 ||
             strcmp(mode, "stream-refusal") == 0) {
         struct stream_sink sink = {{0U}, 0U,
             strcmp(mode, "stream-refusal") == 0};
-        struct phipia_https_response response;
-        const struct phipia_https_stream_request request = {
+        struct trait_https_response response;
+        const struct trait_https_stream_request request = {
             hostname, peer_port, 0U, "/artifact.bin",
-            phipia_https_test_anchors,
-            sizeof(phipia_https_test_anchors) /
-                sizeof(phipia_https_test_anchors[0]),
+            trait_https_test_anchors,
+            sizeof(trait_https_test_anchors) /
+                sizeof(trait_https_test_anchors[0]),
             deadline_ns, sizeof(sink.body), stream_body_write, &sink};
-        const enum phipia_https_status status =
-            phipia_https_get_stream(&request, &response);
+        const enum trait_https_status status =
+            trait_https_get_stream(&request, &response);
         static const unsigned char expected_body[] =
-            "hello from the Phipia HTTPS peer\n";
+            "hello from the Trait OS HTTPS peer\n";
 
         printf("HTTPS STREAM RESULT %u %s tls=%d transport=%ld handles=%u\n",
-            (unsigned)status, phipia_https_status_string(status),
+            (unsigned)status, trait_https_status_string(status),
             response.bearssl_error, response.transport_error, live_handles);
         if ((unsigned long)status != expected ||
-            (status == PHIPIA_HTTPS_OK &&
+            (status == TRAIT_HTTPS_OK &&
              (response.status_code != 200U ||
               response.body_length != sizeof(expected_body) - 1U ||
               sink.used != sizeof(expected_body) - 1U ||
               memcmp(sink.body, expected_body,
                   sizeof(expected_body) - 1U) != 0)) ||
-            (status == PHIPIA_HTTPS_BODY_WRITE && sink.used != 0U)) {
+            (status == TRAIT_HTTPS_BODY_WRITE && sink.used != 0U)) {
             result = 1;
         }
     } else {
         unsigned char body[128];
-        struct phipia_https_response response;
-        const struct phipia_https_request request = {
+        struct trait_https_response response;
+        const struct trait_https_request request = {
             hostname, peer_port, 0U, "/artifact.bin",
-            phipia_https_test_anchors,
-            sizeof(phipia_https_test_anchors) /
-                sizeof(phipia_https_test_anchors[0]),
+            trait_https_test_anchors,
+            sizeof(trait_https_test_anchors) /
+                sizeof(trait_https_test_anchors[0]),
             deadline_ns, body, sizeof(body)};
-        const enum phipia_https_status status =
-            phipia_https_get(&request, &response);
+        const enum trait_https_status status =
+            trait_https_get(&request, &response);
         static const unsigned char expected_body[] =
-            "hello from the Phipia HTTPS peer\n";
+            "hello from the Trait OS HTTPS peer\n";
 
         printf("HTTPS RESULT %u %s tls=%d transport=%ld handles=%u\n",
-            (unsigned)status, phipia_https_status_string(status),
+            (unsigned)status, trait_https_status_string(status),
             response.bearssl_error, response.transport_error, live_handles);
         if ((unsigned long)status != expected ||
-            (status == PHIPIA_HTTPS_OK &&
+            (status == TRAIT_HTTPS_OK &&
              (response.status_code != 200U ||
               response.body_length != sizeof(expected_body) - 1U ||
               memcmp(body, expected_body, sizeof(expected_body) - 1U) != 0))) {

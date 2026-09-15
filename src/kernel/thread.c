@@ -3,14 +3,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/clock.h>
-#include <phipia/console.h>
-#include <phipia/cpu.h>
-#include <phipia/heap.h>
-#include <phipia/memory.h>
-#include <phipia/paging.h>
-#include <phipia/thread.h>
-#include <phipia/timer.h>
+#include <trait/clock.h>
+#include <trait/console.h>
+#include <trait/cpu.h>
+#include <trait/heap.h>
+#include <trait/memory.h>
+#include <trait/paging.h>
+#include <trait/thread.h>
+#include <trait/timer.h>
 
 /*
  * Single-core thread scheduler. Scheduling begins cooperatively and becomes

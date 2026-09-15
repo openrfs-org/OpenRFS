@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#include <phipia/package_fetch.h>
-#include <phipia/runtime.h>
+#include <trait/package_fetch.h>
+#include <trait/runtime.h>
 
 #include <stdio.h>
 
@@ -19,7 +19,7 @@ static const uint8_t expected_sha256[32] = {
 
 static uint64_t deadline(void)
 {
-    const uint64_t now = phipia_monotonic_ns();
+    const uint64_t now = trait_monotonic_ns();
 
     return now > UINT64_MAX - HTTPS_DEADLINE_NS ? UINT64_MAX :
         now + HTTPS_DEADLINE_NS;
@@ -27,24 +27,24 @@ static uint64_t deadline(void)
 
 int main(void)
 {
-    struct phipia_package_fetch_report report;
-    const struct phipia_package_fetch_request request = {
-        "repo.phipia.test", HTTPS_PORT, 0U, "/artifact.bin",
-        phipia_https_test_anchors,
-        sizeof(phipia_https_test_anchors) /
-            sizeof(phipia_https_test_anchors[0]),
+    struct trait_package_fetch_report report;
+    const struct trait_package_fetch_request request = {
+        "repo.trait.test", HTTPS_PORT, 0U, "/artifact.bin",
+        trait_https_test_anchors,
+        sizeof(trait_https_test_anchors) /
+            sizeof(trait_https_test_anchors[0]),
         deadline(), 128U, EXPECTED_BODY_BYTES, expected_sha256,
         "HTTPS.NEW", "HTTPS.TXT"
     };
-    enum phipia_package_fetch_status status;
+    enum trait_package_fetch_status status;
 
-    puts("PHIPIA HTTPSAPP PHASE start");
-    status = phipia_package_fetch_stage(&request, &report);
-    if (status != PHIPIA_PACKAGE_FETCH_OK) {
-        printf("PHIPIA HTTPSAPP REFUSED %s https=%s tls=%d transport=%ld "
+    puts("TRAIT HTTPSAPP PHASE start");
+    status = trait_package_fetch_stage(&request, &report);
+    if (status != TRAIT_PACKAGE_FETCH_OK) {
+        printf("TRAIT HTTPSAPP REFUSED %s https=%s tls=%d transport=%ld "
             "storage=%ld cleanup=%ld\n",
-            phipia_package_fetch_status_string(status),
-            phipia_https_status_string(report.https_status),
+            trait_package_fetch_status_string(status),
+            trait_https_status_string(report.https_status),
             report.bearssl_error, report.transport_error,
             report.storage_error, report.cleanup_error);
         return 20;
@@ -53,35 +53,35 @@ int main(void)
         !report.published || !report.durable) {
         return 21;
     }
-    puts("PHIPIA HTTPSAPP PHASE authenticated-download PASS");
-    puts("PHIPIA HTTPSAPP PHASE durable-output PASS");
-    const struct phipia_package_fetch_upload_request upload_request = {
-        "repo.phipia.test", HTTPS_PORT, 0U, "/artifact.bin",
-        phipia_https_test_anchors,
-        sizeof(phipia_https_test_anchors) /
-            sizeof(phipia_https_test_anchors[0]),
+    puts("TRAIT HTTPSAPP PHASE authenticated-download PASS");
+    puts("TRAIT HTTPSAPP PHASE durable-output PASS");
+    const struct trait_package_fetch_upload_request upload_request = {
+        "repo.trait.test", HTTPS_PORT, 0U, "/artifact.bin",
+        trait_https_test_anchors,
+        sizeof(trait_https_test_anchors) /
+            sizeof(trait_https_test_anchors[0]),
         deadline(), EXPECTED_BODY_BYTES, expected_sha256
     };
 
-    status = phipia_package_fetch_upload(&upload_request, &report);
-    if (status != PHIPIA_PACKAGE_FETCH_OK || !report.durable ||
-        report.upload == PHIPIA_HANDLE_INVALID ||
-        report.upload_flags != (PHIPIA_PACKAGE_UPLOAD_SEALED |
-            PHIPIA_PACKAGE_UPLOAD_DURABLE)) {
-        printf("PHIPIA HTTPSAPP UPLOAD REFUSED %s https=%s storage=%ld "
+    status = trait_package_fetch_upload(&upload_request, &report);
+    if (status != TRAIT_PACKAGE_FETCH_OK || !report.durable ||
+        report.upload == TRAIT_HANDLE_INVALID ||
+        report.upload_flags != (TRAIT_PACKAGE_UPLOAD_SEALED |
+            TRAIT_PACKAGE_UPLOAD_DURABLE)) {
+        printf("TRAIT HTTPSAPP UPLOAD REFUSED %s https=%s storage=%ld "
             "cleanup=%ld flags=%u\n",
-            phipia_package_fetch_status_string(status),
-            phipia_https_status_string(report.https_status),
+            trait_package_fetch_status_string(status),
+            trait_https_status_string(report.https_status),
             report.storage_error, report.cleanup_error, report.upload_flags);
-        if (report.upload != PHIPIA_HANDLE_INVALID) {
-            (void)phipia_package_upload_close(report.upload);
+        if (report.upload != TRAIT_HANDLE_INVALID) {
+            (void)trait_package_upload_close(report.upload);
         }
         return 22;
     }
-    if (phipia_package_upload_close(report.upload) < 0) {
+    if (trait_package_upload_close(report.upload) < 0) {
         return 23;
     }
-    puts("PHIPIA HTTPSAPP PHASE kernel-upload PASS");
-    puts("PHIPIA HTTPSAPP PASS hostname time trust length close upload");
+    puts("TRAIT HTTPSAPP PHASE kernel-upload PASS");
+    puts("TRAIT HTTPSAPP PASS hostname time trust length close upload");
     return 0;
 }

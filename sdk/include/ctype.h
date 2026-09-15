@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef PHIPIA_CTYPE_H
-#define PHIPIA_CTYPE_H
+#ifndef TRAIT_CTYPE_H
+#define TRAIT_CTYPE_H
 
 int isalnum(int value);
 int isalpha(int value);

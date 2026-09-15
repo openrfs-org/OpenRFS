@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef PHIPIA_UNISTD_H
-#define PHIPIA_UNISTD_H
+#ifndef TRAIT_UNISTD_H
+#define TRAIT_UNISTD_H
 
 #include <stddef.h>
 #include <stdint.h>

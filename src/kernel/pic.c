@@ -2,8 +2,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include <phipia/cpu.h>
-#include <phipia/pic.h>
+#include <trait/cpu.h>
+#include <trait/pic.h>
 
 #define PIC_MASTER_COMMAND UINT16_C(0x20)
 #define PIC_MASTER_DATA UINT16_C(0x21)
@@ -174,8 +174,8 @@ void pic_send_eoi(uint8_t irq)
 
 /*
  * Mask every line and refuse to unmask one again. The masks are read back from
- * the interrupt mask registers rather than from Phipia's shadow copy, because
- * the point of retirement is what the hardware holds, not what Phipia believes.
+ * the interrupt mask registers rather than from Trait OS's shadow copy, because
+ * the point of retirement is what the hardware holds, not what Trait OS believes.
  */
 enum pic_status pic_retire(void)
 {

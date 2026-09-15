@@ -3,9 +3,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/clock.h>
-#include <phipia/cpu.h>
-#include <phipia/random.h>
+#include <trait/clock.h>
+#include <trait/cpu.h>
+#include <trait/random.h>
 
 #define CPUID_BASIC UINT32_C(0)
 #define CPUID_FEATURES UINT32_C(1)

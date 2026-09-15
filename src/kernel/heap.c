@@ -3,10 +3,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/cpu.h>
-#include <phipia/heap.h>
-#include <phipia/memory.h>
-#include <phipia/paging.h>
+#include <trait/cpu.h>
+#include <trait/heap.h>
+#include <trait/memory.h>
+#include <trait/paging.h>
 
 _Static_assert(HEAP_SIZE % PAGING_PAGE_SIZE == 0U,
                "the heap window is not a whole number of pages");

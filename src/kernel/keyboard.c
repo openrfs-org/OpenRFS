@@ -3,10 +3,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/cpu.h>
-#include <phipia/interrupts.h>
-#include <phipia/ioapic.h>
-#include <phipia/keyboard.h>
+#include <trait/cpu.h>
+#include <trait/interrupts.h>
+#include <trait/ioapic.h>
+#include <trait/keyboard.h>
 
 /*
  * The PS/2 keyboard.
