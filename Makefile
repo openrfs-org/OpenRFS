@@ -2669,7 +2669,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/opengat.iso
 			grep -Fxq 'OpenGAT: ELF64 parser robustness controls 34/34 passed' "$$log" || \
 				diagnostics_ok=false ;; \
 		linux-abi) \
-			grep -Fxq 'ST LINUX ABI busybox echo bytes 6 syscalls 9 stdout valid exit 0 ring 3 address-space private teardown clean robustness 72' "$$log" && \
+			grep -Fxq 'ST LINUX ABI busybox echo bytes 8 syscalls 9 stdout valid exit 0 ring 3 address-space private teardown clean robustness 72' "$$log" && \
 			grep -Fxq 'OpenGAT: Linux SYSCALL CPU foundation controls 10/10 passed' "$$log" && \
 			grep -Fxq 'OpenGAT: BusyBox image and Linux stack controls 32/32 passed' "$$log" && \
 			grep -Fqx 'OPENGAT' "$$log" || \
