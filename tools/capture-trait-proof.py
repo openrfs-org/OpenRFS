@@ -50,11 +50,18 @@ def ppm_to_png(source, destination):
     if tokens[0] != b"P6" or tokens[3] != b"255":
         raise RuntimeError("QEMU screendump is not an 8-bit binary PPM")
     width, height = int(tokens[1]), int(tokens[2])
-    while position < len(data) and data[position] in b" \t\r\n":
+    if position >= len(data) or data[position] not in b" \t\r\n":
+        raise RuntimeError("QEMU screendump header has no pixel separator")
+    separator = data[position]
+    position += 1
+    if separator == ord("\r") and position < len(data) and data[position] == ord("\n"):
         position += 1
     pixels = data[position:]
     if len(pixels) != width * height * 3:
-        raise RuntimeError("QEMU screendump pixel body is truncated")
+        raise RuntimeError(
+            f"QEMU screendump pixel body has {len(pixels)} bytes; "
+            f"expected {width * height * 3}"
+        )
     rows = b"".join(
         b"\x00" + pixels[y * width * 3:(y + 1) * width * 3]
         for y in range(height)
