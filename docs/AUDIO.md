@@ -25,11 +25,11 @@ The only accepted profile is:
 - 48,000 frames per second;
 - stream format `0x0011`;
 - stream tag 1, starting at channel 0;
-- 1,024 frames / 4,096 bytes of payload followed by one zero-filled 4,096-byte
-  drain-guard period;
-- two 4,096-byte BDL periods; the proof marks both for status and native
-  playback marks the payload period so the guard absorbs bounded stop latency
-  without replaying the payload;
+- 1,024 frames / 4,096 bytes of payload followed by a zero-filled
+  48,128-frame / 192,512-byte drain guard, just over one second;
+- two BDL entries: the payload and the silent guard; the proof marks both for
+  status and native playback marks the payload entry so delayed polling stops
+  within silence instead of cycling back into audible bytes;
 - a deterministic 750 Hz square wave at amplitude +/-8192, identical on both
   channels.
 
@@ -49,7 +49,7 @@ Four typed below-4-GiB DMA allocations exist during the proof:
 1. CORB command ring;
 2. RIRB response ring;
 3. BDL page;
-4. immutable two-page PCM payload-and-guard allocation.
+4. immutable 48-page PCM payload-and-guard allocation.
 
 All four are initialized while CPU-owned and named in one bus-master request.
 The first enable attempt, before ownership transfer, must fail with
