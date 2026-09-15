@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
 """Verify the committed Trait OS identity and generated runtime assets."""
 
 from hashlib import sha256
@@ -9,6 +10,14 @@ PINNED = {
         "157f5fdb19788786f7bf9cf859c92564b61b8fbf4dd41e11044235a556c3cef4",
     "assets/trait/wallpaper.png":
         "32139f348923b74e921c0adcc2f103b8e325e11a8b51b72cc6cfebf9608d9344",
+    "assets/trait/logo-SOURCE.txt":
+        "49151749a74377b9b3deb8d7f6664994b7d4e7fa9b4aaa6a79c2f0b616a7e856",
+    "assets/trait/wallpaper-SOURCE.txt":
+        "0cd77b51c084ea2f8af67eaf70d2f7647e5598294324a33ef818df1b5e91e77a",
+    "build/logo.srl":
+        "0e99a2be71354d7a6da5e8d252caaedea86a921607dbbf1a5581347315395428",
+    "build/wallpaper.spw":
+        "cb5826486a806ddfb2a9f1e456da269bc11b0561bcfcbd190535e61f165c35bc",
     "src/kernel/de_trait_files_art.h":
         "a1a98feeb232d62337facad40025a69789c2235e2a449b55bf7580f73c6dd735",
     "src/kernel/de_trait_panel_art.h":
@@ -38,10 +47,10 @@ def main() -> None:
         actual = digest(path)
         if actual != expected:
             raise SystemExit(f"Trait OS asset digest mismatch: {path}: {actual}")
-    for generated in ("build/logo.srl", "build/wallpaper.spw"):
-        if not Path(generated).is_file() or Path(generated).stat().st_size == 0:
-            raise SystemExit(f"missing generated Trait OS asset: {generated}")
-    print("Trait OS asset integrity: canonical artwork and imported generated assets verified")
+    print(
+        f"Trait OS asset integrity: {len(PINNED)} source, receipt, imported, "
+        "and generated digests verified"
+    )
 
 
 if __name__ == "__main__":
