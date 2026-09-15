@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import re
 import ssl
 import struct
 import sys
@@ -18,6 +20,7 @@ import network_fixture as network
 ROOT = Path(__file__).resolve().parent.parent
 CERTIFICATE = ROOT / "tests" / "fixtures" / "tls" / "valid.pem"
 PRIVATE_KEY = ROOT / "tests" / "fixtures" / "tls" / "valid-key.pem"
+NATIVE_HTTPS_SOURCE = ROOT / "apps" / "native-https" / "main.c"
 HOSTNAME = b"repo.trait.test"
 BODY = b"hello from the Trait OS HTTPS peer\n"
 SERVER_ISN = 0x63000000
@@ -265,6 +268,25 @@ class HttpsFixture(network.Fixture):
             self.finish_https(peer)
 
 
+def native_https_body_contract() -> tuple[int, bytes]:
+    source = NATIVE_HTTPS_SOURCE.read_text(encoding="utf-8")
+    length = re.search(r"^#define EXPECTED_BODY_BYTES (\d+)U$", source,
+                       re.MULTILINE)
+    digest = re.search(
+        r"static const uint8_t expected_sha256\[32\] = \{(.*?)\n\};",
+        source, re.DOTALL,
+    )
+    if length is None or digest is None:
+        raise AssertionError("native HTTPS body contract is missing")
+    digest_values = re.findall(
+        r"0x([0-9a-fA-F]{2})U", digest.group(1)
+    )
+    digest_bytes = bytes(int(value, 16) for value in digest_values)
+    if len(digest_bytes) != 32:
+        raise AssertionError("native HTTPS body digest is not 32 bytes")
+    return int(length.group(1)), digest_bytes
+
+
 def self_test() -> int:
     client_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     client_context.minimum_version = ssl.TLSVersion.TLSv1_2
@@ -308,6 +330,9 @@ def self_test() -> int:
     )
     assert parsed is not None and parsed[0] == HOSTNAME
     assert len(BODY) == 35
+    expected_bytes, expected_sha256 = native_https_body_contract()
+    assert expected_bytes == len(BODY)
+    assert expected_sha256 == hashlib.sha256(BODY).digest()
     assert TCP_SEND_WINDOW >= TCP_CHUNK
     assert sequence_distance(0xFFFFFFF0, 0x00000010) == 0x20
     assert CERTIFICATE.is_file() and PRIVATE_KEY.is_file()
