@@ -2535,14 +2535,14 @@ static bool initialize_stack(
     zero_bytes(environment, sizeof(environment));
     copy_bytes(environment[0], "TRAIT_ABI=1", 11U);
     copy_bytes(environment[1], "TRAIT_APP_ID=", 13U);
-    copy_bytes(environment[1] + 14U, process->manifest.identifier,
+    copy_bytes(environment[1] + 13U, process->manifest.identifier,
         identifier_length);
     copy_bytes(environment[2], "TRAIT_DATA=", 11U);
-    copy_bytes(environment[2] + 12U, process->manifest.data_namespace,
+    copy_bytes(environment[2] + 11U, process->manifest.data_namespace,
         namespace_length);
-    environment_lengths[0] = 13U;
-    environment_lengths[1] = 14U + identifier_length + 1U;
-    environment_lengths[2] = 12U + namespace_length + 1U;
+    environment_lengths[0] = 12U;
+    environment_lengths[1] = 13U + identifier_length + 1U;
+    environment_lengths[2] = 11U + namespace_length + 1U;
 
     for (size_t reverse = 3U; reverse > 0U; --reverse) {
         const size_t index = reverse - 1U;
@@ -2703,10 +2703,10 @@ static enum native_process_status load_process(
      * current manifest magic before reading that path so an unrelated 1 KiB
      * file cannot steer the System-volume lookup.
      */
-    if (manifest_bytes[0] != 'P' || manifest_bytes[1] != 'H' ||
-            manifest_bytes[2] != 'I' || manifest_bytes[3] != 'P' ||
-            manifest_bytes[4] != 'I' || manifest_bytes[5] != 'A' ||
-            manifest_bytes[6] != 'A' || manifest_bytes[7] != '1') {
+    if (manifest_bytes[0] != 'T' || manifest_bytes[1] != 'R' ||
+            manifest_bytes[2] != 'A' || manifest_bytes[3] != 'I' ||
+            manifest_bytes[4] != 'T' || manifest_bytes[5] != 'A' ||
+            manifest_bytes[6] != 'P' || manifest_bytes[7] != 'P') {
         return NATIVE_PROCESS_IMAGE_REFUSED;
     }
     executable_length = bounded_length(manifest_bytes + 112U, 16U);
@@ -3607,7 +3607,7 @@ static bool replacement_backup_path(
     }
     zero_bytes(backup, TRAITFS_MAX_PATH);
     if (slash != SIZE_MAX) {
-        if (slash + 1U + 10U >= TRAITFS_MAX_PATH) {
+        if (slash + 1U + 11U >= TRAITFS_MAX_PATH) {
             return false;
         }
         copy_bytes(backup, destination, slash + 1U);

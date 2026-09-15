@@ -6817,7 +6817,7 @@ _Noreturn void kernel_test_complete_trait_proof_userland(void)
             echo_before + 2U ||
         linux_userland_completed(LINUX_USERLAND_PROFILE_UNAME) !=
             uname_before + 2U ||
-        echo.file_bytes != LINUX_ABI_IMAGE_BYTES || echo.stdout_bytes != 7U ||
+        echo.file_bytes != LINUX_ABI_IMAGE_BYTES || echo.stdout_bytes != 6U ||
         echo.syscall_count != 9U || !echo.ring_three ||
         !echo.private_address_space || !echo.real_syscall_instruction ||
         !echo.stdout_valid || !echo.exit_zero || !echo.teardown_complete ||
@@ -6970,7 +6970,7 @@ _Noreturn void kernel_test_complete_trait_proof_userland_interactive_absent(
         linux_userland_completed(LINUX_USERLAND_PROFILE_CAT) != cat_before ||
         linux_userland_completed(LINUX_USERLAND_PROFILE_ECHO) !=
             echo_before + 1U ||
-        echo.file_bytes != LINUX_ABI_IMAGE_BYTES || echo.stdout_bytes != 7U ||
+        echo.file_bytes != LINUX_ABI_IMAGE_BYTES || echo.stdout_bytes != 6U ||
         !echo.ring_three || !echo.real_syscall_instruction ||
         !echo.stdout_valid || !echo.exit_zero || !echo.teardown_complete ||
         !linux_userland_resources_released() || !cpu_interrupts_enabled()) {

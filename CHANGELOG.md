@@ -4,26 +4,17 @@
 
 ## Unreleased
 
-- Removed the Media Editor, Camera, and Paint/Canvas applications, their assets,
-  package and capture paths, and app-specific acceptance scenarios.
-
 ## Trait OS
 
-- Replaced the former shell presentation with the Trait OS desktop and the
-  canonical Trait OS identity.
-- Added the six-application 3D Dock with magnification, reflections, tooltips,
-  launch feedback, and light and dark shelf colours.
-- Added overlapping movable windows with focus, stacking, close controls, and
-  spring opening animation.
-- Added fourteen photographic desktops and a functional Settings application.
-- Added Files and Notes over the writable FAT32 data volume.
-- Added the Camera application and double-buffered frame-provider interface.
-  The default QEMU profile reports that no camera is connected.
-- Added the native Media Editor window with BMP import, timeline editing, project
-  persistence, and BMP export.
-- Updated the vendored Media Editor source to commit
-  `034ba9336f6dee3cd5a524a42b740b41013ca852`.
-- Added high-resolution screenshots and a 25-second QEMU demonstration.
+- Renamed the operating system, kernel interfaces, SDK, tools, packages,
+  workflows, evidence, and documentation to Trait OS.
+- Replaced the previous desktop with the current Trait OS desktop environment:
+  Files, Terminal, Task Manager, Desktop Settings, the Trait OS DE Package
+  Manager, and Privacy Tools.
+- Removed the Media Editor, Camera, and Paint applications together with their
+  source, assets, package paths, capture paths, and acceptance scenarios.
+- Added the canonical onion identity and pinned receipts for the logo, wallpaper,
+  generated desktop assets, fonts, and imported Trait-UI source.
 
 ## 2.2.0
 

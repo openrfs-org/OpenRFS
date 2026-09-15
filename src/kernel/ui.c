@@ -559,8 +559,16 @@ enum ui_status ui_construct(bool pointer_present)
     }
     desktop = (struct trait_surface){ desktop_pixels,
         canvas->width, canvas->height };
-    if (trait_panel_attach(&desktop) != TRAIT_PANEL_STATUS_OK ||
-            trait_panel_initialize() != TRAIT_PANEL_STATUS_OK) {
+    if (trait_panel_attach(&desktop) != TRAIT_PANEL_STATUS_OK) {
+        (void)heap_free(desktop_pixels);
+        desktop_pixels = NULL;
+        desktop = (struct trait_surface){ NULL, 0U, 0U };
+        return UI_STATUS_SURFACE_FAILURE;
+    }
+    if (trait_panel_initialize() != TRAIT_PANEL_STATUS_OK) {
+        (void)heap_free(desktop_pixels);
+        desktop_pixels = NULL;
+        desktop = (struct trait_surface){ NULL, 0U, 0U };
         return UI_STATUS_SURFACE_FAILURE;
     }
     trait_shell_reset(&desktop);
@@ -1038,11 +1046,36 @@ bool ui_self_test(void)
         self_test_failure = "Trait OS desktop layout self-test failed";
         return false;
     }
-    if (!trait_menu_self_test() || !trait_files_self_test() ||
-            !trait_packages_self_test() || !trait_settings_self_test() ||
-            !trait_taskmgr_self_test() || !trait_terminal_self_test() ||
-            !trait_panel_self_test() || !trait_shell_self_test()) {
-        self_test_failure = "Trait-UI module self-test failed";
+    if (!trait_menu_self_test()) {
+        self_test_failure = "Trait OS menu self-test failed";
+        return false;
+    }
+    if (!trait_files_self_test()) {
+        self_test_failure = "Trait OS Files self-test failed";
+        return false;
+    }
+    if (!trait_packages_self_test()) {
+        self_test_failure = "Trait OS package-manager UI self-test failed";
+        return false;
+    }
+    if (!trait_settings_self_test()) {
+        self_test_failure = "Trait OS settings self-test failed";
+        return false;
+    }
+    if (!trait_taskmgr_self_test()) {
+        self_test_failure = "Trait OS task-manager self-test failed";
+        return false;
+    }
+    if (!trait_terminal_self_test()) {
+        self_test_failure = "Trait OS terminal self-test failed";
+        return false;
+    }
+    if (!trait_panel_self_test()) {
+        self_test_failure = "Trait OS panel self-test failed";
+        return false;
+    }
+    if (!trait_shell_self_test()) {
+        self_test_failure = "Trait OS shell self-test failed";
         return false;
     }
     self_test_failure = "Trait OS desktop self-test passed";

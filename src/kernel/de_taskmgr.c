@@ -97,6 +97,8 @@ static int compare(const struct trait_taskmgr_row *a,
 static void resort(void)
 {
     uint32_t at;
+    const bool keep_selection = chosen < row_count;
+    const uint32_t selected_pid = keep_selection ? rows[chosen].pid : 0U;
 
     for (at = 1U; at < row_count; ++at) {
         struct trait_taskmgr_row held = rows[at];
@@ -115,6 +117,16 @@ static void resort(void)
             --back;
         }
         rows[back] = held;
+    }
+    if (!keep_selection) {
+        return;
+    }
+    chosen = TRAIT_TASKMGR_MAX_ROWS;
+    for (at = 0U; at < row_count; ++at) {
+        if (rows[at].pid == selected_pid) {
+            chosen = at;
+            break;
+        }
     }
 }
 
@@ -257,14 +269,21 @@ bool trait_taskmgr_row_bounds(const struct trait_window *window,
     uint32_t at, struct trait_rect *out)
 {
     struct trait_rect client;
+    const uint32_t list_offset = TASKMGR_MENUBAR + TASKMGR_SUMMARY +
+        TASKMGR_HEADER;
+    uint32_t list_height;
 
     if (window == NULL || out == NULL || at >= row_count) {
         return false;
     }
     client = trait_window_client(window);
+    list_height = client.height > list_offset + TASKMGR_FOOTER ?
+        client.height - list_offset - TASKMGR_FOOTER : 0U;
+    if ((at + 1U) * TASKMGR_ROW > list_height) {
+        return false;
+    }
     out->x = client.x;
-    out->y = client.y + TASKMGR_MENUBAR + TASKMGR_SUMMARY +
-        TASKMGR_HEADER + at * TASKMGR_ROW;
+    out->y = client.y + list_offset + at * TASKMGR_ROW;
     out->width = client.width;
     out->height = TASKMGR_ROW;
     return true;
@@ -596,6 +615,7 @@ bool trait_taskmgr_self_test(void)
     if (!trait_taskmgr_add(&row)) {
         return false;
     }
+    trait_taskmgr_select(0U);
     copy(row.command, "awk", TRAIT_TASKMGR_NAME_BYTES);
     row.cpu_tenths = 50U;
     row.rss_kib = 4096U;
@@ -604,16 +624,31 @@ bool trait_taskmgr_self_test(void)
         return false;
     }
     /* Added out of order, sorted by pid: the low pid comes first. */
-    if (rows[0].pid != 2U) {
+    if (rows[0].pid != 2U || trait_taskmgr_selected_pid() != 7U) {
         return false;
     }
+    {
+        struct trait_window window = { 0 };
+        struct trait_rect bounds;
+
+        window.frame.width = 320U;
+        window.frame.height = TRAIT_TITLE_HEIGHT + TRAIT_BORDER * 2U +
+            TASKMGR_MENUBAR + TASKMGR_SUMMARY + TASKMGR_HEADER +
+            TASKMGR_FOOTER + TASKMGR_ROW;
+        if (trait_taskmgr_row_bounds(NULL, 0U, &bounds) ||
+                !trait_taskmgr_row_bounds(&window, 0U, &bounds) ||
+                trait_taskmgr_row_bounds(&window, 1U, &bounds)) {
+            return false;
+        }
+    }
     trait_taskmgr_sort(TRAIT_TASKMGR_COMMAND);
-    if (compare_text(rows[0].command, "awk") != 0) {
+    if (compare_text(rows[0].command, "awk") != 0 ||
+            trait_taskmgr_selected_pid() != 7U) {
         return false;
     }
     trait_taskmgr_sort(TRAIT_TASKMGR_CPU);
     first = rows[0].cpu_tenths;
-    if (first != 10U) {
+    if (first != 10U || trait_taskmgr_selected_pid() != 7U) {
         return false;
     }
     /* The same column again REVERSES it. */
@@ -624,6 +659,10 @@ bool trait_taskmgr_self_test(void)
     if (!trait_taskmgr_sort_descending()) {
         return false;
     }
+    if (trait_taskmgr_selected_pid() != 7U) {
+        return false;
+    }
+    chosen = TRAIT_TASKMGR_MAX_ROWS;
 
     /* End Task. */
     {

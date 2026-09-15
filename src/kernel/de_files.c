@@ -225,7 +225,8 @@ static void append(char *out, const char *text, uint32_t capacity)
 static void human(char *out, uint32_t bytes, uint32_t capacity)
 {
     if (bytes >= 1048576U) {
-        uint32_t tenths = bytes / 104858U;
+        uint32_t tenths = (bytes / 1048576U) * 10U +
+            ((bytes % 1048576U) * 10U) / 1048576U;
 
         (void)number(out, tenths / 10U, capacity);
         append(out, ".", capacity);
@@ -840,12 +841,13 @@ static struct trait_rect view_area(const struct trait_window *window)
 bool trait_files_entry_bounds(const struct trait_window *window,
     uint32_t at, struct trait_rect *out)
 {
-    struct trait_rect box = view_area(window);
+    struct trait_rect box;
     uint32_t columns;
 
     if (window == NULL || out == NULL || at >= child_counts[here]) {
         return false;
     }
+    box = view_area(window);
     if (view_mode == TRAIT_FILES_LIST) {
         out->x = box.x;
         out->y = box.y + FILES_ROW + at * FILES_ROW;
@@ -1153,8 +1155,17 @@ bool trait_files_self_test(void)
     uint32_t home;
     uint32_t docs;
     uint32_t notes;
+    struct trait_rect ignored;
+    char size[24];
 
     trait_files_reset();
+    if (trait_files_entry_bounds(NULL, 0U, &ignored)) {
+        return false;
+    }
+    human(size, 1048576U, sizeof(size));
+    if (!same(size, "1.0 MiB")) {
+        return false;
+    }
     home = trait_files_add(trait_files_root(), "home", true, 0U);
     docs = trait_files_add(home, "Documents", true, 0U);
     notes = trait_files_add(docs, "Notes", true, 0U);

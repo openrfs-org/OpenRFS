@@ -597,10 +597,17 @@ uint32_t trait_shell_at(uint32_t x, uint32_t y)
 
 uint32_t trait_shell_focused(void)
 {
+    uint32_t slot;
+
     if (stack_depth == 0U) {
         return TRAIT_SHELL_MAX_WINDOWS;
     }
-    return stack[stack_depth - 1U];
+    slot = stack[stack_depth - 1U];
+    if (!used[slot] || !windows[slot].active || windows[slot].minimised ||
+            windows[slot].desktop != shell_desktop) {
+        return TRAIT_SHELL_MAX_WINDOWS;
+    }
+    return slot;
 }
 
 void trait_shell_focus(uint32_t slot)
@@ -1153,8 +1160,11 @@ static bool shell_panel_press(struct trait_panel_hit hit)
         trait_shell_focus(hit.index);
         return true;
     case TRAIT_PANEL_HIT_PAGER:
-        return trait_panel_set_desktop(hit.index, 2U) ==
-            TRAIT_PANEL_STATUS_OK;
+        if (hit.index >= 2U) {
+            return false;
+        }
+        trait_shell_set_desktop(hit.index);
+        return true;
     case TRAIT_PANEL_HIT_WINCMD: {
         /* Show the desktop: minimise everything, or put it all back if
          * everything is already down. */
@@ -2151,6 +2161,22 @@ bool trait_shell_self_test(void)
             return false;
         }
         if (windows[opened].minimised) {
+            return false;
+        }
+        /* A pager press changes the shell's visible workspace and focus,
+         * not only the panel's highlighted cell. */
+        hit.kind = TRAIT_PANEL_HIT_PAGER;
+        hit.index = 1U;
+        if (!shell_panel_press(hit) || trait_shell_desktop() != 1U ||
+                trait_shell_focused() != TRAIT_SHELL_MAX_WINDOWS) {
+            return false;
+        }
+        hit.index = 2U;
+        if (shell_panel_press(hit)) {
+            return false;
+        }
+        trait_shell_set_desktop(0U);
+        if (trait_shell_focused() != opened) {
             return false;
         }
         /* Maximise fills the work area and stops at the panel. */

@@ -581,8 +581,13 @@ struct trait_panel_hit trait_panel_hit(struct trait_rect screen,
     if (trait_panel_plugin_bounds(screen, TRAIT_PANEL_PLUGIN_PAGER,
             &box) == TRAIT_PANEL_STATUS_OK &&
             trait_rect_contains(box, x, y)) {
-        uint32_t cell = (x - box.x - TRAIT_PAGER_INSET) / TRAIT_PAGER_CELL;
+        const uint32_t from_left = x - box.x;
+        const uint32_t cell = from_left > TRAIT_PAGER_INSET ?
+            (from_left - TRAIT_PAGER_INSET) / TRAIT_PAGER_CELL : 0U;
 
+        if (panel_desktops == 0U) {
+            return hit;
+        }
         hit.kind = TRAIT_PANEL_HIT_PAGER;
         hit.index = cell < panel_desktops ? cell : panel_desktops - 1U;
         return hit;
@@ -867,6 +872,8 @@ bool trait_panel_self_test(void)
     struct trait_rect screen = { 0U, 0U, 1280U, 800U };
     struct trait_rect clock_empty;
     struct trait_rect clock_busy;
+    struct trait_rect pager;
+    struct trait_panel_hit hit;
     struct trait_panel_task task;
     uint32_t at;
 
@@ -895,6 +902,14 @@ bool trait_panel_self_test(void)
         return false;
     }
     if (string_length(panel_clock) == 0U) {
+        return false;
+    }
+    if (trait_panel_plugin_bounds(screen, TRAIT_PANEL_PLUGIN_PAGER,
+            &pager) != TRAIT_PANEL_STATUS_OK) {
+        return false;
+    }
+    hit = trait_panel_hit(screen, pager.x, pager.y);
+    if (hit.kind != TRAIT_PANEL_HIT_PAGER || hit.index != 0U) {
         return false;
     }
     return true;
