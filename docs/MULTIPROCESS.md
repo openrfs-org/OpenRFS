@@ -2,11 +2,11 @@
 
 # Multiple processes
 
-Trait OS can hold up to four user processes and schedule them cooperatively.
+OpenGAT can hold up to four user processes and schedule them cooperatively.
 
 ## Process state
 
-Trait OS holds up to four user processes at once. Each owns:
+OpenGAT holds up to four user processes at once. Each owns:
 
 - its own four-level hierarchy, built from the installed one and validated the
   same way;
@@ -96,7 +96,7 @@ running on.
 
 ## Where it runs
 
-- `include/trait/multiprocess.h` and `src/kernel/multiprocess.c` hold the
+- `include/opengat/multiprocess.h` and `src/kernel/multiprocess.c` hold the
   process table and the scheduler.
 - `src/arch/x86_64/process.S` gained one function,
   `process_enter_user_context`, which enters CPL3 from a saved register set. It

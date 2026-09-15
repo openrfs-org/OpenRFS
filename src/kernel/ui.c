@@ -3,27 +3,27 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <trait/boot_ledger.h>
-#include <trait/clock.h>
-#include <trait/de/files.h>
-#include <trait/de/menu.h>
-#include <trait/de/packages.h>
-#include <trait/de/panel.h>
-#include <trait/de/settings.h>
-#include <trait/de/shell.h>
-#include <trait/de/surface.h>
-#include <trait/de/taskmgr.h>
-#include <trait/de/terminal.h>
-#include <trait/de/theme.h>
-#include <trait/de/window.h>
-#include <trait/framebuffer.h>
-#include <trait/heap.h>
-#include <trait/pointer.h>
-#include <trait/screen.h>
-#include <trait/surface.h>
-#include <trait/ui.h>
-#include <trait/ui_font.h>
-#include <trait/wallpaper.h>
+#include <opengat/boot_ledger.h>
+#include <opengat/clock.h>
+#include <opengat/de/files.h>
+#include <opengat/de/menu.h>
+#include <opengat/de/packages.h>
+#include <opengat/de/panel.h>
+#include <opengat/de/settings.h>
+#include <opengat/de/shell.h>
+#include <opengat/de/surface.h>
+#include <opengat/de/taskmgr.h>
+#include <opengat/de/terminal.h>
+#include <opengat/de/theme.h>
+#include <opengat/de/window.h>
+#include <opengat/framebuffer.h>
+#include <opengat/heap.h>
+#include <opengat/pointer.h>
+#include <opengat/screen.h>
+#include <opengat/surface.h>
+#include <opengat/ui.h>
+#include <opengat/ui_font.h>
+#include <opengat/wallpaper.h>
 
 #define UI_MIN_WIDTH 800U
 #define UI_MIN_HEIGHT 600U
@@ -38,22 +38,22 @@ struct native_window_record {
     uint32_t width;
     uint32_t height;
     uint32_t stride_bytes;
-    struct trait_window window;
+    struct opengat_window window;
     ui_native_event_fn handler;
     void *context;
 };
 
 static struct ui_state state;
 static struct surface *canvas;
-static struct trait_surface desktop;
+static struct opengat_surface desktop;
 static uint32_t *desktop_pixels;
 static uint32_t converted_row[UI_MAX_WIDTH];
 static struct ui_event queue[UI_EVENT_QUEUE_CAPACITY];
 static size_t queue_read;
 static size_t queue_write;
 static bool redraw_pending;
-static const char *self_test_failure = "Trait OS desktop self-test has not run";
-static const char *installed_failure = "Trait OS desktop proof has not run";
+static const char *self_test_failure = "OpenGAT desktop self-test has not run";
+static const char *installed_failure = "OpenGAT desktop proof has not run";
 static struct native_window_record native_windows[UI_NATIVE_WINDOW_COUNT];
 static int32_t native_focus = -1;
 
@@ -96,7 +96,7 @@ static bool rect_contains(struct ui_rect box, int32_t x, int32_t y)
         (uint32_t)y - box.y < box.height;
 }
 
-static struct ui_rect ui_rect_from_trait(struct trait_rect rectangle)
+static struct ui_rect ui_rect_from_opengat(struct opengat_rect rectangle)
 {
     return (struct ui_rect){ rectangle.x, rectangle.y,
         rectangle.width, rectangle.height };
@@ -107,70 +107,70 @@ static enum ui_element_id focus_for_index(size_t index)
     return (enum ui_element_id)(UI_ELEMENT_DOCK_FILES + index);
 }
 
-static enum ui_panel_id panel_for_app(enum trait_shell_app app)
+static enum ui_panel_id panel_for_app(enum opengat_shell_app app)
 {
     switch (app) {
-    case TRAIT_APP_FILES:
+    case OPENGAT_APP_FILES:
         return UI_PANEL_FILES;
-    case TRAIT_APP_TERMINAL:
+    case OPENGAT_APP_TERMINAL:
         return UI_PANEL_TERMINAL;
-    case TRAIT_APP_TASKMGR:
+    case OPENGAT_APP_TASKMGR:
         return UI_PANEL_TASKMGR;
-    case TRAIT_APP_SETTINGS:
+    case OPENGAT_APP_SETTINGS:
         return UI_PANEL_SETTINGS;
-    case TRAIT_APP_PACKAGES:
+    case OPENGAT_APP_PACKAGES:
         return UI_PANEL_PACKAGES;
     default:
         return UI_PANEL_NONE;
     }
 }
 
-static enum trait_shell_app app_for_focus(enum ui_element_id focus)
+static enum opengat_shell_app app_for_focus(enum ui_element_id focus)
 {
     switch (focus) {
     case UI_ELEMENT_DOCK_FILES:
-        return TRAIT_APP_FILES;
+        return OPENGAT_APP_FILES;
     case UI_ELEMENT_DOCK_TERMINAL:
-        return TRAIT_APP_TERMINAL;
+        return OPENGAT_APP_TERMINAL;
     case UI_ELEMENT_DOCK_TASKMGR:
-        return TRAIT_APP_TASKMGR;
+        return OPENGAT_APP_TASKMGR;
     case UI_ELEMENT_DOCK_PACKAGES:
-        return TRAIT_APP_PACKAGES;
+        return OPENGAT_APP_PACKAGES;
     case UI_ELEMENT_DOCK_SETTINGS:
-        return TRAIT_APP_SETTINGS;
+        return OPENGAT_APP_SETTINGS;
     default:
-        return TRAIT_APP_COUNT;
+        return OPENGAT_APP_COUNT;
     }
 }
 
-static struct trait_rect default_window(enum trait_shell_app app)
+static struct opengat_rect default_window(enum opengat_shell_app app)
 {
     uint32_t width = desktop.width > 700U ? 640U : desktop.width - 80U;
     uint32_t height = desktop.height > 560U ? 480U : desktop.height - 80U;
     uint32_t offset = (uint32_t)app * 22U;
 
-    if (app == TRAIT_APP_SETTINGS || app == TRAIT_APP_PACKAGES) {
+    if (app == OPENGAT_APP_SETTINGS || app == OPENGAT_APP_PACKAGES) {
         width = desktop.width > 760U ? 680U : desktop.width - 60U;
         height = desktop.height > 500U ? 420U : desktop.height - 70U;
     }
-    return (struct trait_rect){ 38U + offset, 34U + offset, width, height };
+    return (struct opengat_rect){ 38U + offset, 34U + offset, width, height };
 }
 
 static void set_theme(void)
 {
     state.theme.white = framebuffer_pack(0xF8U, 0xFAU, 0xF8U);
     state.theme.ink = framebuffer_pack(0x18U, 0x21U, 0x24U);
-    state.theme.desktop_dark = framebuffer_pack(0x12U, 0x18U, 0x16U);
-    state.theme.desktop_light = framebuffer_pack(0x3EU, 0x56U, 0x48U);
-    state.theme.title_active = framebuffer_pack(0x2EU, 0x54U, 0x3CU);
+    state.theme.desktop_dark = framebuffer_pack(0x25U, 0x2AU, 0x2FU);
+    state.theme.desktop_light = framebuffer_pack(0x70U, 0x75U, 0x7AU);
+    state.theme.title_active = framebuffer_pack(0x0EU, 0x49U, 0x76U);
     state.theme.title_inactive = framebuffer_pack(0x86U, 0x91U, 0x89U);
-    state.theme.accent_teal = framebuffer_pack(0x58U, 0x9AU, 0x78U);
-    state.theme.accent_gold = framebuffer_pack(0xD8U, 0xB8U, 0x5CU);
-    state.theme.accent_green = framebuffer_pack(0x79U, 0xA8U, 0x73U);
+    state.theme.accent_teal = framebuffer_pack(0x6FU, 0x87U, 0x9EU);
+    state.theme.accent_gold = framebuffer_pack(0x5CU, 0x7EU, 0x9CU);
+    state.theme.accent_green = framebuffer_pack(0x4FU, 0x88U, 0x72U);
     state.theme.accent_red = framebuffer_pack(0xC9U, 0x55U, 0x4FU);
     state.theme.accent_violet = framebuffer_pack(0x8CU, 0x75U, 0xA8U);
-    state.theme.shadow = framebuffer_pack(0x04U, 0x09U, 0x07U);
-    state.theme.window_face = framebuffer_pack(0xD9U, 0xDFU, 0xDAU);
+    state.theme.shadow = framebuffer_pack(0x12U, 0x18U, 0x1DU);
+    state.theme.window_face = framebuffer_pack(0xE1U, 0xE5U, 0xE8U);
 }
 
 enum ui_status ui_layout_build(uint32_t width, uint32_t height,
@@ -197,15 +197,15 @@ enum ui_status ui_layout_build(uint32_t width, uint32_t height,
     }
     zero_bytes(layout, sizeof(*layout));
     layout->surface = (struct ui_rect){ 0U, 0U, width, height };
-    layout->menu_bar = (struct ui_rect){ 0U, height - TRAIT_PANEL_HEIGHT,
-        width, TRAIT_PANEL_HEIGHT };
+    layout->menu_bar = (struct ui_rect){ 0U, height - OPENGAT_PANEL_HEIGHT,
+        width, OPENGAT_PANEL_HEIGHT };
     layout->workspace_bar = layout->menu_bar;
     layout->dock = layout->menu_bar;
     layout->panel = (struct ui_rect){ 38U, 34U, width - 76U,
         height - 94U };
     layout->panel_client = (struct ui_rect){ layout->panel.x + 1U,
-        layout->panel.y + TRAIT_TITLE_HEIGHT, layout->panel.width - 2U,
-        layout->panel.height - TRAIT_TITLE_HEIGHT - 1U };
+        layout->panel.y + OPENGAT_TITLE_HEIGHT, layout->panel.width - 2U,
+        layout->panel.height - OPENGAT_TITLE_HEIGHT - 1U };
     for (size_t at = 0U; at < UI_DOCK_ITEM_COUNT; ++at) {
         struct ui_dock_item *item = &layout->dock_items[at];
 
@@ -214,7 +214,7 @@ enum ui_status ui_layout_build(uint32_t width, uint32_t height,
         item->action = actions[at];
         item->panel = panels[at];
         item->bounds = (struct ui_rect){ 30U + (uint32_t)at * 24U,
-            height - TRAIT_PANEL_HEIGHT, 24U, TRAIT_PANEL_HEIGHT };
+            height - OPENGAT_PANEL_HEIGHT, 24U, OPENGAT_PANEL_HEIGHT };
         item->icon_bounds = item->bounds;
     }
     return ui_layout_validate(layout);
@@ -270,79 +270,79 @@ static uint32_t populate_files(void)
     uint32_t desktop_folder;
     uint32_t docs;
 
-    trait_files_reset();
-    home = trait_files_add(trait_files_root(), "home", true, 0U);
-    user = trait_files_add(home, "user", true, 0U);
-    desktop_folder = trait_files_add(user, "Desktop", true, 0U);
-    docs = trait_files_add(user, "Documents", true, 0U);
-    (void)trait_files_add(user, "Downloads", true, 0U);
-    (void)trait_files_add(user, "README.txt", false, 1284U);
-    (void)trait_files_add(docs, "privacy-notes.txt", false, 4096U);
-    (void)trait_files_add(desktop_folder, "About Trait OS.txt", false, 1024U);
-    (void)trait_files_open(user);
+    opengat_files_reset();
+    home = opengat_files_add(opengat_files_root(), "home", true, 0U);
+    user = opengat_files_add(home, "user", true, 0U);
+    desktop_folder = opengat_files_add(user, "Desktop", true, 0U);
+    docs = opengat_files_add(user, "Documents", true, 0U);
+    (void)opengat_files_add(user, "Downloads", true, 0U);
+    (void)opengat_files_add(user, "README.txt", false, 1284U);
+    (void)opengat_files_add(docs, "privacy-notes.txt", false, 4096U);
+    (void)opengat_files_add(desktop_folder, "About OpenGAT.txt", false, 1024U);
+    (void)opengat_files_open(user);
     return desktop_folder;
 }
 
 static void populate_menu(void)
 {
-    trait_menu_reset();
-    (void)trait_menu_add("Trait OS", true, false);
-    (void)trait_menu_add("System Tools", true, false);
-    (void)trait_menu_add(NULL, false, true);
-    (void)trait_menu_add("Run...", false, false);
+    opengat_menu_reset();
+    (void)opengat_menu_add("OpenGAT", true, false);
+    (void)opengat_menu_add("System Tools", true, false);
+    (void)opengat_menu_add(NULL, false, true);
+    (void)opengat_menu_add("Run...", false, false);
 }
 
 static void populate_packages(void)
 {
-    trait_packages_reset();
-    (void)trait_packages_add("trait-files", "Trait OS file manager",
+    opengat_packages_reset();
+    (void)opengat_packages_add("opengat-files", "OpenGAT file manager",
         "Files", true);
-    (void)trait_packages_add("trait-terminal", "Trait OS terminal",
+    (void)opengat_packages_add("opengat-terminal", "OpenGAT terminal",
         "Terminal", true);
-    (void)trait_packages_add("trait-task-manager", "Trait OS process viewer",
+    (void)opengat_packages_add("opengat-task-manager", "OpenGAT process viewer",
         "Task Manager", true);
-    (void)trait_packages_add("trait-settings", "Trait OS desktop settings",
+    (void)opengat_packages_add("opengat-settings", "OpenGAT desktop settings",
         "Settings", true);
-    (void)trait_packages_add("trait-privacy-tools", "Privacy tools bundle",
+    (void)opengat_packages_add("opengat-privacy-tools", "Privacy tools bundle",
         "Privacy Tools", false);
 }
 
 static void populate_settings(void)
 {
-    struct trait_settings_row row;
+    struct opengat_settings_row row;
 
-    trait_settings_reset();
-    (void)trait_settings_add_page("Trait OS DE");
-    (void)trait_settings_add_page("Desktop");
-    (void)trait_settings_add_page("Panel");
+    opengat_settings_reset();
+    (void)opengat_settings_add_page("OpenGAT DE");
+    (void)opengat_settings_add_page("Desktop");
+    (void)opengat_settings_add_page("Panel");
     zero_bytes(&row, sizeof(row));
-    row.kind = TRAIT_SETTINGS_NOTE;
-    copy_text(row.label, sizeof(row.label), "Trait OS desktop environment");
-    (void)trait_settings_add_row(0U, &row);
-    row.kind = TRAIT_SETTINGS_CHOICE;
-    row.setting = TRAIT_SET_WIDGET_THEME;
+    row.kind = OPENGAT_SETTINGS_NOTE;
+    copy_text(row.label, sizeof(row.label), "OpenGAT desktop environment");
+    (void)opengat_settings_add_row(0U, &row);
+    row.kind = OPENGAT_SETTINGS_CHOICE;
+    row.setting = OPENGAT_SET_WIDGET_THEME;
     copy_text(row.label, sizeof(row.label), "Widget theme");
-    (void)trait_settings_add_row(0U, &row);
+    (void)opengat_settings_add_row(0U, &row);
     zero_bytes(&row, sizeof(row));
-    row.kind = TRAIT_SETTINGS_SWITCH;
+    row.kind = OPENGAT_SETTINGS_SWITCH;
     row.on = true;
-    row.setting = TRAIT_SET_DESKTOP_ICONS;
+    row.setting = OPENGAT_SET_DESKTOP_ICONS;
     copy_text(row.label, sizeof(row.label), "Show desktop icons");
-    (void)trait_settings_add_row(1U, &row);
+    (void)opengat_settings_add_row(1U, &row);
     zero_bytes(&row, sizeof(row));
-    row.kind = TRAIT_SETTINGS_NOTE;
+    row.kind = OPENGAT_SETTINGS_NOTE;
     copy_text(row.label, sizeof(row.label), "Minimal bottom panel");
-    (void)trait_settings_add_row(2U, &row);
+    (void)opengat_settings_add_row(2U, &row);
 }
 
 static void populate_taskmgr(void)
 {
     static const char *const names[] = {
-        "trait-session", "trait-files", "trait-terminal", "trait-network"
+        "opengat-session", "opengat-files", "opengat-terminal", "opengat-network"
     };
-    struct trait_taskmgr_row row;
+    struct opengat_taskmgr_row row;
 
-    trait_taskmgr_reset();
+    opengat_taskmgr_reset();
     for (size_t at = 0U; at < sizeof(names) / sizeof(names[0]); ++at) {
         zero_bytes(&row, sizeof(row));
         copy_text(row.command, sizeof(row.command), names[at]);
@@ -350,21 +350,21 @@ static void populate_taskmgr(void)
         row.cpu_tenths = (uint32_t)(at + 1U) * 7U;
         row.rss_kib = 1200U + (uint32_t)at * 640U;
         row.pid = (uint32_t)at + 1U;
-        (void)trait_taskmgr_add(&row);
+        (void)opengat_taskmgr_add(&row);
     }
 }
 
-static const char *icon_for_app(enum trait_shell_app app)
+static const char *icon_for_app(enum opengat_shell_app app)
 {
     switch (app) {
-    case TRAIT_APP_FILES:
+    case OPENGAT_APP_FILES:
         return "file-manager";
-    case TRAIT_APP_TERMINAL:
+    case OPENGAT_APP_TERMINAL:
         return "terminal";
-    case TRAIT_APP_TASKMGR:
-    case TRAIT_APP_SETTINGS:
+    case OPENGAT_APP_TASKMGR:
+    case OPENGAT_APP_SETTINGS:
         return "gtk-preferences";
-    case TRAIT_APP_PACKAGES:
+    case OPENGAT_APP_PACKAGES:
         return "gtk-preferences";
     default:
         return "file-manager";
@@ -373,25 +373,25 @@ static const char *icon_for_app(enum trait_shell_app app)
 
 static void sync_panel_tasks(void)
 {
-    const uint32_t focused = trait_shell_focused();
+    const uint32_t focused = opengat_shell_focused();
 
-    for (uint32_t at = 0U; at < TRAIT_PANEL_MAX_TASKS; ++at) {
-        (void)trait_panel_clear_task(at);
+    for (uint32_t at = 0U; at < OPENGAT_PANEL_MAX_TASKS; ++at) {
+        (void)opengat_panel_clear_task(at);
     }
-    for (uint32_t at = 0U; at < TRAIT_SHELL_MAX_WINDOWS; ++at) {
-        const struct trait_window *window = trait_shell_window(at);
-        struct trait_panel_task task;
+    for (uint32_t at = 0U; at < OPENGAT_SHELL_MAX_WINDOWS; ++at) {
+        const struct opengat_window *window = opengat_shell_window(at);
+        struct opengat_panel_task task;
 
         if (window == NULL) {
             continue;
         }
         zero_bytes(&task, sizeof(task));
         copy_text(task.label, sizeof(task.label), window->title);
-        task.icon = icon_for_app(trait_shell_app_of(at));
+        task.icon = icon_for_app(opengat_shell_app_of(at));
         task.active = at == focused;
         task.minimised = window->minimised;
         task.desktop = window->desktop;
-        (void)trait_panel_set_task(at, &task);
+        (void)opengat_panel_set_task(at, &task);
     }
 }
 
@@ -403,10 +403,10 @@ static void sync_state(void)
         state.active_panel = (enum ui_panel_id)(UI_PANEL_NATIVE_0 +
             (uint32_t)native_focus);
     } else {
-        const uint32_t focused = trait_shell_focused();
+        const uint32_t focused = opengat_shell_focused();
 
-        state.active_panel = focused < TRAIT_SHELL_MAX_WINDOWS ?
-            panel_for_app(trait_shell_app_of(focused)) : UI_PANEL_NONE;
+        state.active_panel = focused < OPENGAT_SHELL_MAX_WINDOWS ?
+            panel_for_app(opengat_shell_app_of(focused)) : UI_PANEL_NONE;
     }
     if (previous != state.active_panel) {
         ++state.renders.panel_transitions;
@@ -422,14 +422,14 @@ static void draw_native_windows(void)
 
     for (uint32_t slot = 0U; slot < UI_NATIVE_WINDOW_COUNT; ++slot) {
         struct native_window_record *record = &native_windows[slot];
-        struct trait_rect client;
+        struct opengat_rect client;
 
         if (!record->open) {
             continue;
         }
         record->window.active = native_focus == (int32_t)slot;
-        trait_window_draw(&desktop, &record->window);
-        client = trait_window_client(&record->window);
+        opengat_window_draw(&desktop, &record->window);
+        client = opengat_window_client(&record->window);
         for (uint32_t y = 0U; y < record->height && y < client.height; ++y) {
             for (uint32_t x = 0U; x < record->width && x < client.width; ++x) {
                 const uint32_t packed = record->pixels[
@@ -438,7 +438,7 @@ static void draw_native_windows(void)
                 const uint32_t green = (packed >> green_shift) & 0xFFU;
                 const uint32_t blue = (packed >> blue_shift) & 0xFFU;
 
-                trait_surface_plot(&desktop, client, client.x + x,
+                opengat_surface_plot(&desktop, client, client.x + x,
                     client.y + y, red << 16U | green << 8U | blue);
             }
         }
@@ -449,37 +449,37 @@ static void draw_cursor(void)
 {
     const uint32_t x = state.pointer.x < 0 ? 0U : (uint32_t)state.pointer.x;
     const uint32_t y = state.pointer.y < 0 ? 0U : (uint32_t)state.pointer.y;
-    const struct trait_rect clip = { 0U, 0U, desktop.width, desktop.height };
+    const struct opengat_rect clip = { 0U, 0U, desktop.width, desktop.height };
 
     if (!state.pointer_present) {
         return;
     }
     for (uint32_t at = 0U; at < 9U; ++at) {
-        trait_surface_plot(&desktop, clip, x, y + at, 0x000000U);
-        trait_surface_plot(&desktop, clip, x + 1U, y + at, 0xFFFFFFU);
+        opengat_surface_plot(&desktop, clip, x, y + at, 0x000000U);
+        opengat_surface_plot(&desktop, clip, x + 1U, y + at, 0xFFFFFFU);
     }
     for (uint32_t at = 0U; at < 6U; ++at) {
-        trait_surface_plot(&desktop, clip, x + at, y + at, 0xFFFFFFU);
+        opengat_surface_plot(&desktop, clip, x + at, y + at, 0xFFFFFFU);
     }
 }
 
 static enum ui_status render_desktop(void)
 {
-    const struct trait_rect whole = { 0U, 0U, desktop.width, desktop.height };
+    const struct opengat_rect whole = { 0U, 0U, desktop.width, desktop.height };
 
-    if (trait_wallpaper_decode(0U, desktop.pixels,
+    if (opengat_wallpaper_decode(0U, desktop.pixels,
             (size_t)desktop.width * desktop.height, desktop.width,
             desktop.height, 16U, 8U, 0U) != WALLPAPER_STATUS_OK) {
-        trait_surface_fill(&desktop, whole, whole, 0x1B2A22U);
+        opengat_surface_fill(&desktop, whole, whole, 0x70757AU);
     }
-    trait_shell_draw_desktop();
-    trait_shell_draw();
+    opengat_shell_draw_desktop();
+    opengat_shell_draw();
     sync_panel_tasks();
-    if (trait_panel_draw(whole) != TRAIT_PANEL_STATUS_OK) {
+    if (opengat_panel_draw(whole) != OPENGAT_PANEL_STATUS_OK) {
         return UI_STATUS_SURFACE_FAILURE;
     }
     draw_native_windows();
-    trait_shell_draw_overlays();
+    opengat_shell_draw_overlays();
     draw_cursor();
     for (uint32_t y = 0U; y < desktop.height; ++y) {
         for (uint32_t x = 0U; x < desktop.width; ++x) {
@@ -494,11 +494,11 @@ static enum ui_status render_desktop(void)
         }
     }
     if (state.active_panel == UI_PANEL_TERMINAL) {
-        const uint32_t focused = trait_shell_focused();
-        const struct trait_window *window = trait_shell_window(focused);
+        const uint32_t focused = opengat_shell_focused();
+        const struct opengat_window *window = opengat_shell_window(focused);
 
         if (window != NULL) {
-            const struct trait_rect client = trait_window_client(window);
+            const struct opengat_rect client = opengat_window_client(window);
 
             (void)screen_set_viewport((struct surface_rect){ client.x,
                 client.y, client.width, client.height }, true);
@@ -562,36 +562,36 @@ enum ui_status ui_construct(bool pointer_present)
     if (heap_allocate(bytes, (void **)&desktop_pixels) != HEAP_STATUS_OK) {
         return UI_STATUS_SURFACE_FAILURE;
     }
-    desktop = (struct trait_surface){ desktop_pixels,
+    desktop = (struct opengat_surface){ desktop_pixels,
         canvas->width, canvas->height };
-    if (trait_panel_attach(&desktop) != TRAIT_PANEL_STATUS_OK) {
+    if (opengat_panel_attach(&desktop) != OPENGAT_PANEL_STATUS_OK) {
         (void)heap_free(desktop_pixels);
         desktop_pixels = NULL;
-        desktop = (struct trait_surface){ NULL, 0U, 0U };
+        desktop = (struct opengat_surface){ NULL, 0U, 0U };
         return UI_STATUS_SURFACE_FAILURE;
     }
-    if (trait_panel_initialize() != TRAIT_PANEL_STATUS_OK) {
+    if (opengat_panel_initialize() != OPENGAT_PANEL_STATUS_OK) {
         (void)heap_free(desktop_pixels);
         desktop_pixels = NULL;
-        desktop = (struct trait_surface){ NULL, 0U, 0U };
+        desktop = (struct opengat_surface){ NULL, 0U, 0U };
         return UI_STATUS_SURFACE_FAILURE;
     }
-    trait_shell_reset(&desktop);
-    trait_shell_set_screen((struct trait_rect){ 0U, 0U,
+    opengat_shell_reset(&desktop);
+    opengat_shell_set_screen((struct opengat_rect){ 0U, 0U,
         desktop.width, desktop.height });
-    trait_shell_set_desktop_folder(populate_files());
+    opengat_shell_set_desktop_folder(populate_files());
     populate_menu();
     populate_packages();
     populate_settings();
     populate_taskmgr();
-    trait_terminal_reset();
-    (void)trait_panel_set_clock("09:41");
-    (void)trait_panel_set_volume(65U, false);
-    (void)trait_panel_set_desktop(0U, 2U);
-    (void)trait_panel_push_cpu(8U);
-    (void)trait_panel_push_cpu(14U);
-    (void)trait_panel_push_cpu(9U);
-    (void)trait_shell_open(TRAIT_APP_FILES, default_window(TRAIT_APP_FILES));
+    opengat_terminal_reset();
+    (void)opengat_panel_set_clock("09:41");
+    (void)opengat_panel_set_volume(65U, false);
+    (void)opengat_panel_set_desktop(0U, 2U);
+    (void)opengat_panel_push_cpu(8U);
+    (void)opengat_panel_push_cpu(14U);
+    (void)opengat_panel_push_cpu(9U);
+    (void)opengat_shell_open(OPENGAT_APP_FILES, default_window(OPENGAT_APP_FILES));
     state.initialized = true;
     state.pointer_present = pointer_present;
     state.focus = UI_ELEMENT_DOCK_FILES;
@@ -687,10 +687,10 @@ enum ui_status ui_event_publish(const struct ui_event *event)
 
 static void open_focused_application(void)
 {
-    const enum trait_shell_app app = app_for_focus(state.focus);
+    const enum opengat_shell_app app = app_for_focus(state.focus);
 
-    if (app < TRAIT_APP_COUNT) {
-        (void)trait_shell_open(app, default_window(app));
+    if (app < OPENGAT_APP_COUNT) {
+        (void)opengat_shell_open(app, default_window(app));
         native_focus = -1;
         sync_state();
         redraw_pending = true;
@@ -749,7 +749,7 @@ static int32_t native_at(struct ui_point point)
     for (int32_t slot = (int32_t)UI_NATIVE_WINDOW_COUNT - 1;
             slot >= 0; --slot) {
         if (native_windows[slot].open && rect_contains(
-                ui_rect_from_trait(native_windows[slot].window.frame),
+                ui_rect_from_opengat(native_windows[slot].window.frame),
                 point.x, point.y)) {
             return slot;
         }
@@ -761,7 +761,7 @@ static bool dispatch_native_pointer(const struct ui_event *event)
 {
     int32_t target = -1;
     struct native_window_record *record;
-    struct trait_rect client;
+    struct opengat_rect client;
     struct ui_native_event native;
 
     for (uint32_t slot = 0U; slot < UI_NATIVE_WINDOW_COUNT; ++slot) {
@@ -777,7 +777,7 @@ static bool dispatch_native_pointer(const struct ui_event *event)
         return false;
     }
     record = &native_windows[target];
-    client = trait_window_client(&record->window);
+    client = opengat_window_client(&record->window);
     if (event->type == UI_EVENT_POINTER_BUTTON_PRESS) {
         native_focus = target;
         sync_state();
@@ -800,7 +800,7 @@ static bool dispatch_native_pointer(const struct ui_event *event)
 
 static bool process_one(const struct ui_event *event)
 {
-    struct trait_event translated;
+    struct opengat_event translated;
 
     if (event->type == UI_EVENT_KEYBOARD_FOCUS_NEXT ||
             event->type == UI_EVENT_KEYBOARD_FOCUS_PREVIOUS) {
@@ -822,18 +822,18 @@ static bool process_one(const struct ui_event *event)
         if (native_focus >= 0 && native_windows[native_focus].open) {
             (void)ui_native_window_close((uint32_t)native_focus);
         } else {
-            const uint32_t focused = trait_shell_focused();
+            const uint32_t focused = opengat_shell_focused();
 
-            if (focused < TRAIT_SHELL_MAX_WINDOWS) {
-                (void)trait_shell_close(focused);
+            if (focused < OPENGAT_SHELL_MAX_WINDOWS) {
+                (void)opengat_shell_close(focused);
             }
         }
         sync_state();
         return true;
     }
     if (event->type == UI_EVENT_TASK_MANAGER) {
-        (void)trait_shell_open(TRAIT_APP_TASKMGR,
-            default_window(TRAIT_APP_TASKMGR));
+        (void)opengat_shell_open(OPENGAT_APP_TASKMGR,
+            default_window(OPENGAT_APP_TASKMGR));
         native_focus = -1;
         sync_state();
         return true;
@@ -858,21 +858,21 @@ static bool process_one(const struct ui_event *event)
     zero_bytes(&translated, sizeof(translated));
     translated.x = event->point.x < 0 ? 0U : (uint32_t)event->point.x;
     translated.y = event->point.y < 0 ? 0U : (uint32_t)event->point.y;
-    translated.modifiers = event->control ? TRAIT_MOD_CTRL : 0U;
+    translated.modifiers = event->control ? OPENGAT_MOD_CTRL : 0U;
     translated.key = event->character;
     translated.secondary = event->button == UI_POINTER_BUTTON_RIGHT;
     switch (event->type) {
     case UI_EVENT_POINTER_MOVEMENT:
-        translated.kind = TRAIT_EVENT_POINTER_MOVE;
+        translated.kind = OPENGAT_EVENT_POINTER_MOVE;
         break;
     case UI_EVENT_POINTER_BUTTON_PRESS:
-        translated.kind = TRAIT_EVENT_POINTER_DOWN;
+        translated.kind = OPENGAT_EVENT_POINTER_DOWN;
         break;
     case UI_EVENT_POINTER_BUTTON_RELEASE:
-        translated.kind = TRAIT_EVENT_POINTER_UP;
+        translated.kind = OPENGAT_EVENT_POINTER_UP;
         break;
     case UI_EVENT_TEXT_INPUT:
-        translated.kind = TRAIT_EVENT_KEY;
+        translated.kind = OPENGAT_EVENT_KEY;
         break;
     default:
         return false;
@@ -880,7 +880,7 @@ static bool process_one(const struct ui_event *event)
     if (event->type == UI_EVENT_POINTER_BUTTON_PRESS) {
         native_focus = -1;
     }
-    if (trait_shell_handle(&translated)) {
+    if (opengat_shell_handle(&translated)) {
         sync_state();
         return true;
     }
@@ -950,10 +950,10 @@ enum ui_status ui_native_window_open(uint32_t slot, const char *title,
     if (record->open) {
         return UI_STATUS_ALREADY_INITIALIZED;
     }
-    frame_width = width + TRAIT_BORDER * 2U;
-    frame_height = height + TRAIT_TITLE_HEIGHT + TRAIT_BORDER;
+    frame_width = width + OPENGAT_BORDER * 2U;
+    frame_height = height + OPENGAT_TITLE_HEIGHT + OPENGAT_BORDER;
     if (frame_width > desktop.width ||
-            frame_height > desktop.height - TRAIT_PANEL_HEIGHT) {
+            frame_height > desktop.height - OPENGAT_PANEL_HEIGHT) {
         return UI_STATUS_UNSUPPORTED_GEOMETRY;
     }
     zero_bytes(record, sizeof(*record));
@@ -965,18 +965,18 @@ enum ui_status ui_native_window_open(uint32_t slot, const char *title,
     record->handler = event_handler;
     record->context = context;
     frame_x = (desktop.width - frame_width) / 2U + slot * 18U;
-    frame_y = (desktop.height - TRAIT_PANEL_HEIGHT - frame_height) / 2U +
+    frame_y = (desktop.height - OPENGAT_PANEL_HEIGHT - frame_height) / 2U +
         slot * 18U;
     if (frame_x > desktop.width - frame_width) {
         frame_x = desktop.width - frame_width;
     }
-    if (frame_y > desktop.height - TRAIT_PANEL_HEIGHT - frame_height) {
-        frame_y = desktop.height - TRAIT_PANEL_HEIGHT - frame_height;
+    if (frame_y > desktop.height - OPENGAT_PANEL_HEIGHT - frame_height) {
+        frame_y = desktop.height - OPENGAT_PANEL_HEIGHT - frame_height;
     }
-    record->window.frame = (struct trait_rect){ frame_x, frame_y,
+    record->window.frame = (struct opengat_rect){ frame_x, frame_y,
         frame_width, frame_height };
-    record->window.desktop = trait_shell_desktop();
-    trait_window_set_title(&record->window, title);
+    record->window.desktop = opengat_shell_desktop();
+    opengat_window_set_title(&record->window, title);
     native_focus = (int32_t)slot;
     sync_state();
     redraw_pending = true;
@@ -1048,42 +1048,42 @@ bool ui_self_test(void)
                 (int32_t)layout.dock_items[0].bounds.x,
                 (int32_t)layout.dock_items[0].bounds.y }, &hit) !=
                 UI_STATUS_OK || hit != UI_ELEMENT_DOCK_FILES) {
-        self_test_failure = "Trait OS desktop layout self-test failed";
+        self_test_failure = "OpenGAT desktop layout self-test failed";
         return false;
     }
-    if (!trait_menu_self_test()) {
-        self_test_failure = "Trait OS menu self-test failed";
+    if (!opengat_menu_self_test()) {
+        self_test_failure = "OpenGAT menu self-test failed";
         return false;
     }
-    if (!trait_files_self_test()) {
-        self_test_failure = "Trait OS Files self-test failed";
+    if (!opengat_files_self_test()) {
+        self_test_failure = "OpenGAT Files self-test failed";
         return false;
     }
-    if (!trait_packages_self_test()) {
-        self_test_failure = "Trait OS package-manager UI self-test failed";
+    if (!opengat_packages_self_test()) {
+        self_test_failure = "OpenGAT package-manager UI self-test failed";
         return false;
     }
-    if (!trait_settings_self_test()) {
-        self_test_failure = "Trait OS settings self-test failed";
+    if (!opengat_settings_self_test()) {
+        self_test_failure = "OpenGAT settings self-test failed";
         return false;
     }
-    if (!trait_taskmgr_self_test()) {
-        self_test_failure = "Trait OS task-manager self-test failed";
+    if (!opengat_taskmgr_self_test()) {
+        self_test_failure = "OpenGAT task-manager self-test failed";
         return false;
     }
-    if (!trait_terminal_self_test()) {
-        self_test_failure = "Trait OS terminal self-test failed";
+    if (!opengat_terminal_self_test()) {
+        self_test_failure = "OpenGAT terminal self-test failed";
         return false;
     }
-    if (!trait_panel_self_test()) {
-        self_test_failure = "Trait OS panel self-test failed";
+    if (!opengat_panel_self_test()) {
+        self_test_failure = "OpenGAT panel self-test failed";
         return false;
     }
-    if (!trait_shell_self_test()) {
-        self_test_failure = "Trait OS shell self-test failed";
+    if (!opengat_shell_self_test()) {
+        self_test_failure = "OpenGAT shell self-test failed";
         return false;
     }
-    self_test_failure = "Trait OS desktop self-test passed";
+    self_test_failure = "OpenGAT desktop self-test passed";
     return true;
 }
 
@@ -1101,26 +1101,26 @@ enum ui_status ui_verify_installed(struct ui_proof *proof)
     if (proof == NULL) {
         return UI_STATUS_NULL_ARGUMENT;
     }
-    if (!state.active || canvas == NULL || !trait_panel_is_initialized() ||
+    if (!state.active || canvas == NULL || !opengat_panel_is_initialized() ||
             ui_layout_validate(&state.layout) != UI_STATUS_OK ||
-            trait_shell_window_count() == 0U || !ui_font_is_verified()) {
-        installed_failure = "Trait OS installed desktop state is incomplete";
+            opengat_shell_window_count() == 0U || !ui_font_is_verified()) {
+        installed_failure = "OpenGAT installed desktop state is incomplete";
         return UI_STATUS_INSTALLED_PROOF_FAILURE;
     }
     redraw_pending = true;
     if (render_desktop() != UI_STATUS_OK) {
-        installed_failure = "Trait OS installed desktop redraw failed";
+        installed_failure = "OpenGAT installed desktop redraw failed";
         return UI_STATUS_INSTALLED_PROOF_FAILURE;
     }
     first = surface_hash();
     redraw_pending = true;
     if (render_desktop() != UI_STATUS_OK) {
-        installed_failure = "Trait OS installed desktop second redraw failed";
+        installed_failure = "OpenGAT installed desktop second redraw failed";
         return UI_STATUS_INSTALLED_PROOF_FAILURE;
     }
     second = surface_hash();
     if (first != second || second == 0U) {
-        installed_failure = "Trait OS installed desktop redraw is unstable";
+        installed_failure = "OpenGAT installed desktop redraw is unstable";
         return UI_STATUS_INSTALLED_PROOF_FAILURE;
     }
     state.stable_render_hash = second;
@@ -1138,7 +1138,7 @@ enum ui_status ui_verify_installed(struct ui_proof *proof)
         .ledger_fingerprint = ledger == NULL ? 0U : ledger->fingerprint,
         .render_hash = second
     };
-    installed_failure = "Trait OS installed desktop proof passed";
+    installed_failure = "OpenGAT installed desktop proof passed";
     return UI_STATUS_OK;
 }
 

@@ -3,13 +3,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <trait/apic.h>
-#include <trait/cpu.h>
-#include <trait/interrupt_vector.h>
-#include <trait/interrupts.h>
-#include <trait/msix.h>
-#include <trait/pci.h>
-#include <trait/pci_resource.h>
+#include <opengat/apic.h>
+#include <opengat/cpu.h>
+#include <opengat/interrupt_vector.h>
+#include <opengat/interrupts.h>
+#include <opengat/msix.h>
+#include <opengat/pci.h>
+#include <opengat/pci_resource.h>
 
 #define MSIX_CAPABILITY_LENGTH UINT16_C(12)
 #define MSIX_CONTROL_OFFSET UINT16_C(2)

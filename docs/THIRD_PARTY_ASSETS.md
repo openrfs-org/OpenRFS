@@ -2,20 +2,20 @@
 
 # Third-party sources and visual assets
 
-Trait OS's build is offline and deterministic. The exact third-party source
+OpenGAT's build is offline and deterministic. The exact third-party source
 files used by the runtime and UI are committed and licensed beside the code or
 assets. Runtime sources are pinned to exact upstream Git objects or release
 archives. Visual sources are converted by host tools and then parsed through
 bounded Rust formats before C draws them.
 
-## Trait OS identity artwork
+## OpenGAT identity artwork
 
-The onion logo and default wallpaper are first-party artwork owned by the
-project owner. They are imported byte-for-byte from
-[`saudaljuaid/Trait-UI`](https://github.com/saudaljuaid/Trait-UI) commit
-`eb6d32f8bee63025508af992656a7815fa3285c1`. Their upstream ownership
-statements, import commit, and SHA-256 hashes are committed beside the files as
-`assets/trait/logo-SOURCE.txt` and `assets/trait/wallpaper-SOURCE.txt`.
+The project owner supplied the current G mark directly. The original attachment
+is preserved as `assets/opengat/logo-source.png`; the transparent runtime logo
+and grey wallpaper are derived assets. Their source hashes, derivative hashes,
+dimensions, and transformation requests are recorded in the adjacent receipts.
+No upstream author or license is inferred beyond the provenance the user
+provided.
 
 ## ext4plus
 
@@ -24,18 +24,18 @@ The sole ext4 implementation candidate is the official
 commit `ec7e8443e474376977bb752cde370762226a5a50`, Git tree
 `a4aea888632546b2bbfbefa97b43ca6c8f945fc8`. The exact `no_std` source tree,
 README, MIT license, and Apache-2.0 license are retained under
-`vendor/ext4plus/`. Trait OS selects the MIT terms for GPL-3.0-only distribution;
+`vendor/ext4plus/`. OpenGAT selects the MIT terms for GPL-3.0-only distribution;
 both upstream notices remain available.
 
 The local manifest removes workspace inheritance and development-only inputs;
 the local lock resolves that manifest to the repository's exact offline Cargo
 mirror, matching the kernel lock. The implementation source is otherwise
-pinned to the recorded tree apart from reviewable Trait OS deltas. The accepted
-runtime profile is writable only through Trait OS's retained mutation stage and
+pinned to the recorded tree apart from reviewable OpenGAT deltas. The accepted
+runtime profile is writable only through OpenGAT's retained mutation stage and
 ordered JBD2/NVMe executor. Upstream does not implement journaled writes by
 itself; the local delta supplies the checksummed transaction, recovery,
 checkpoint, revocation, retry, and power-cut-tested durability boundary.
-`vendor/ext4plus/TRAIT-PORT.md` records that boundary and the exact feature
+`vendor/ext4plus/OPENGAT-PORT.md` records that boundary and the exact feature
 configuration.
 
 ## BearSSL
@@ -48,7 +48,7 @@ commit `8ef7680081c61b486622f2d983c0d3d21e83caad`, and Git tree
 trees are byte-for-byte upstream files. BearSSL's MIT license and README are
 preserved under `vendor/bearssl/`.
 
-Trait OS disables BearSSL's hosted entropy and time adapters and its optional
+OpenGAT disables BearSSL's hosted entropy and time adapters and its optional
 SSE2, AES-NI, and POWER8 implementations. The SDK wrapper supplies native
 entropy, validated realtime, trust anchors, a canonical DNS hostname,
 monotonic transport deadlines, and a bounded TLS 1.2 cipher profile. The
@@ -64,14 +64,14 @@ It corresponds to annotated tag object
 `da607da739fa6047df13e66a2af6b8bec7c2a498` in the official repository.
 The zlib license is retained verbatim.
 
-Trait OS carries the byte-exact public headers and nine-source `Z_SOLO` core for
+OpenGAT carries the byte-exact public headers and nine-source `Z_SOLO` core for
 bounded in-memory deflate/inflate and checksums. Hosted gzip-file adapters and
 the allocation-backed `compress*` convenience API are excluded.
 `vendor/zlib/SOURCE-MANIFEST.sha256` pins each retained upstream file, while
-`vendor/zlib/TRAIT-PORT.md` defines the freestanding build and allocator
+`vendor/zlib/OPENGAT-PORT.md` defines the freestanding build and allocator
 contract. The reproducible SDK installs this profile as the static `libz.a`.
-Trait OS's bounded native shared-object loader is separate; zlib itself is not
-shipped as a Trait OS DSO. Authenticated Trait OS DSOs can share immutable RX
+OpenGAT's bounded native shared-object loader is separate; zlib itself is not
+shipped as a OpenGAT DSO. Authenticated OpenGAT DSOs can share immutable RX
 physical pages across processes, but the current zlib SDK artifact remains the
 reproducible static `libz.a` described above.
 
@@ -86,13 +86,13 @@ under `vendor/sdl2/`; exact retained-tree and license hashes are recorded in
 
 The byte-exact upstream `test/testdrawchessboard.c` application used by the
 signed-install proof is retained under `apps/upstream-sdl-chess/`. Its source
-URL, Git blob, SHA-256, license, and bounded Trait OS harness are recorded in the
+URL, Git blob, SHA-256, license, and bounded OpenGAT harness are recorded in the
 adjacent `UPSTREAM.md`.
 
-Trait OS adds an explicitly selected `__TRAIT__` configuration and native
-Trait OS video/input, PCM audio, pthread/futex, timer, and preference-filesystem
+OpenGAT adds an explicitly selected `__OPENGAT__` configuration and native
+OpenGAT video/input, PCM audio, pthread/futex, timer, and preference-filesystem
 backends. Disabled subsystems and the evidence boundary are recorded in
-`vendor/sdl2/TRAIT-PORT.md` and `docs/SDL.md`. No Linux compatibility layer or
+`vendor/sdl2/OPENGAT-PORT.md` and `docs/SDL.md`. No Linux compatibility layer or
 SDL dummy video/audio backend is used.
 
 ## Inter
@@ -108,16 +108,14 @@ not need Pillow and does not parse TrueType: `tools/make-ui-font-asset.py`
 packs those committed intermediates into SUF2, whose exact metrics, length,
 fingerprint, glyph ranges, and alpha data are validated before installation.
 
-## Trait-UI desktop assets
+## OpenGAT UI desktop assets
 
-The active desktop code, generated fonts, panel artwork, onion logo, and
-wallpaper come from the project owner's
-[`Trait-UI`](https://github.com/saudaljuaid/Trait-UI) repository at commit
+The active desktop code and its older generated icon and font tables began at
+the project owner's historical UI source commit
 `eb6d32f8bee63025508af992656a7815fa3285c1`, tree
 `93319863b82f22b23d8415f04b733cebed6d29f1`. The code is GPL-3.0-only.
 
-`docs/TRAIT_UI_PROVENANCE.md` records the integration changes. The adjacent
-logo and wallpaper receipts record exact upstream paths and SHA-256 hashes.
-Debian/LXDE-derived geometry and artwork remain attributed in the imported
-source because renaming the product does not erase the origin or license of an
-input.
+`docs/OPENGAT_UI_PROVENANCE.md` records the integration changes and exact
+generated-header hashes. Debian/LXDE-derived geometry and artwork remain
+attributed because the origin and license of imported data do not change when
+the operating system is renamed.

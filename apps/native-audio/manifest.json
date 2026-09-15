@@ -1,5 +1,5 @@
 {
-  "name": "Trait OS Native Audio Proof",
+  "name": "OpenGAT Native Audio Proof",
   "identifier": "AUDIO",
   "executable": "AUDIO.APP",
   "abi_version": 1,

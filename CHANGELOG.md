@@ -4,17 +4,13 @@
 
 ## Unreleased
 
-## Trait OS
-
-- Renamed the operating system, kernel interfaces, SDK, tools, packages,
-  workflows, evidence, and documentation to Trait OS.
-- Replaced the previous desktop with the current Trait OS desktop environment:
-  Files, Terminal, Task Manager, Desktop Settings, the Trait OS DE Package
-  Manager, and Privacy Tools.
-- Removed the Media Editor, Camera, and Paint applications together with their
-  source, assets, package paths, capture paths, and acceptance scenarios.
-- Added the canonical onion identity and pinned receipts for the logo, wallpaper,
-  generated desktop assets, fonts, and imported Trait-UI source.
+- Renamed the operating system, public interfaces, SDK, tools, packages,
+  workflows, and documentation to OpenGAT.
+- Changed normal boot to clear the display and stop at the bare `opengat$` command prompt.
+- Added persistent first-user creation and authenticated `starty` desktop
+  launch.
+- Replaced the visual identity with the supplied OpenGAT G mark, a restrained
+  grey wallpaper, and a matching desktop palette.
 
 ## 2.2.0
 

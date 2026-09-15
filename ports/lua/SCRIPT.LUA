@@ -1,6 +1,6 @@
-print("TRAIT LUA INPUT READY")
+print("OPENGAT LUA INPUT READY")
 local input = assert(io.read("*l"), "stdin ended before the test input")
-assert(input == "trait", "unexpected stdin value")
+assert(input == "opengat", "unexpected stdin value")
 
 local sum = 0
 for value = 1, 100 do
@@ -15,4 +15,4 @@ assert(output:write(string.format("input=%s\nsum=%d\nmath=ok\n",
   input, sum)))
 assert(output:close())
 
-print("TRAIT LUA PASS input=" .. input .. " sum=" .. sum)
+print("OPENGAT LUA PASS input=" .. input .. " sum=" .. sum)

@@ -3,9 +3,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <trait/cpu.h>
-#include <trait/interrupts.h>
-#include <trait/pic.h>
+#include <opengat/cpu.h>
+#include <opengat/interrupts.h>
+#include <opengat/pic.h>
 
 extern const uint8_t interrupt_breakpoint_after[];
 

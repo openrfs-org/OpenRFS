@@ -1,1 +1,1 @@
-Trait OS immutable resource
+OpenGAT immutable resource

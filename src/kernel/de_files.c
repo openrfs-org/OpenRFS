@@ -1,14 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#include <trait/de/files.h>
+#include <opengat/de/files.h>
 
-#include <trait/de/font.h>
-#include <trait/de/theme.h>
+#include <opengat/de/font.h>
+#include <opengat/de/theme.h>
 
-#include "de_trait_files_art.h"
+#include "de_opengat_files_art.h"
 
 /* ================================================================ METRICS
  *
- * the Trait OS desktop file view.
+ * the OpenGAT desktop file view.
  */
 #define FILES_MENUBAR 20U
 #define FILES_TOOLBAR 28U
@@ -28,20 +28,20 @@
 
 /* ================================================================== STATE */
 
-static struct trait_files_node nodes[TRAIT_FILES_MAX_NODES];
+static struct opengat_files_node nodes[OPENGAT_FILES_MAX_NODES];
 static uint32_t node_count;
-static uint32_t children[TRAIT_FILES_MAX_NODES][TRAIT_FILES_MAX_CHILDREN];
-static uint32_t child_counts[TRAIT_FILES_MAX_NODES];
+static uint32_t children[OPENGAT_FILES_MAX_NODES][OPENGAT_FILES_MAX_CHILDREN];
+static uint32_t child_counts[OPENGAT_FILES_MAX_NODES];
 
 static uint32_t here;
 static uint32_t history[16];
 static uint32_t history_depth;
 
-static uint32_t selected[TRAIT_FILES_MAX_SELECTED];
+static uint32_t selected[OPENGAT_FILES_MAX_SELECTED];
 static uint32_t selected_count;
-static enum trait_files_view view_mode = TRAIT_FILES_ICONS;
+static enum opengat_files_view view_mode = OPENGAT_FILES_ICONS;
 
-static uint32_t clipboard[TRAIT_FILES_MAX_SELECTED];
+static uint32_t clipboard[OPENGAT_FILES_MAX_SELECTED];
 static uint32_t clip_count;
 static bool clip_cut;
 
@@ -90,7 +90,7 @@ static bool ends_with(const char *name, const char *tail)
 
 /* Which mark a name gets, by extension, the way a file manager does it -
  * and the generic sheet when nothing matches, rather than guessing. */
-static const char *mark_for(const struct trait_files_node *node)
+static const char *mark_for(const struct opengat_files_node *node)
 {
     if (node->folder) {
         return "folder";
@@ -110,7 +110,7 @@ static const char *mark_for(const struct trait_files_node *node)
     return "text-x-generic";
 }
 
-static const char *kind_for(const struct trait_files_node *node)
+static const char *kind_for(const struct opengat_files_node *node)
 {
     if (node->folder) {
         return "Folder";
@@ -127,20 +127,20 @@ static const char *kind_for(const struct trait_files_node *node)
     return "File";
 }
 
-static const struct trait_files_art_entry *art_named(const char *name)
+static const struct opengat_files_art_entry *art_named(const char *name)
 {
     uint32_t at;
     uint32_t index;
 
-    for (index = 0U; index < TRAIT_FILES_ART_COUNT; ++index) {
-        const char *candidate = trait_files_art[index].name;
+    for (index = 0U; index < OPENGAT_FILES_ART_COUNT; ++index) {
+        const char *candidate = opengat_files_art[index].name;
 
         for (at = 0U; ; ++at) {
             if (candidate[at] != name[at]) {
                 break;
             }
             if (candidate[at] == '\0') {
-                return &trait_files_art[index];
+                return &opengat_files_art[index];
             }
         }
     }
@@ -151,23 +151,23 @@ static uint32_t art_plane(uint32_t size)
 {
     uint32_t at;
 
-    for (at = 0U; at < TRAIT_FILES_ART_SIZES; ++at) {
-        if (trait_files_art_size[at] == size) {
+    for (at = 0U; at < OPENGAT_FILES_ART_SIZES; ++at) {
+        if (opengat_files_art_size[at] == size) {
             return at;
         }
     }
-    return TRAIT_FILES_ART_SIZES;
+    return OPENGAT_FILES_ART_SIZES;
 }
 
-static void draw_icon(struct trait_surface *surface, struct trait_rect clip,
+static void draw_icon(struct opengat_surface *surface, struct opengat_rect clip,
     const char *name, uint32_t size, uint32_t left, uint32_t top)
 {
-    const struct trait_files_art_entry *art = art_named(name);
+    const struct opengat_files_art_entry *art = art_named(name);
     uint32_t plane = art_plane(size);
     uint32_t x;
     uint32_t y;
 
-    if (art == NULL || plane >= TRAIT_FILES_ART_SIZES) {
+    if (art == NULL || plane >= OPENGAT_FILES_ART_SIZES) {
         return;
     }
     for (y = 0U; y < size; ++y) {
@@ -179,16 +179,16 @@ static void draw_icon(struct trait_surface *surface, struct trait_rect clip,
             if (alpha == 0U) {
                 continue;
             }
-            under = trait_surface_read(surface, left + x, top + y);
-            trait_surface_plot(surface, clip, left + x, top + y,
-                trait_blend(under, art->pixels[plane][at], alpha));
+            under = opengat_surface_read(surface, left + x, top + y);
+            opengat_surface_plot(surface, clip, left + x, top + y,
+                opengat_blend(under, art->pixels[plane][at], alpha));
         }
     }
 }
 
-static uint32_t number(char *out, uint32_t value, uint32_t capacity)
+static uint32_t number(char *out, uint64_t value, uint32_t capacity)
 {
-    char digits[12];
+    char digits[21];
     uint32_t length = 0U;
     uint32_t at = 0U;
 
@@ -222,10 +222,10 @@ static void append(char *out, const char *text, uint32_t capacity)
 
 /* Bytes, in the unit that does not overstate the precision: whole KiB and
  * one decimal of MiB, which is what a file manager shows. */
-static void human(char *out, uint32_t bytes, uint32_t capacity)
+static void human(char *out, uint64_t bytes, uint32_t capacity)
 {
     if (bytes >= 1048576U) {
-        uint32_t tenths = (bytes / 1048576U) * 10U +
+        uint64_t tenths = (bytes / 1048576U) * 10U +
             ((bytes % 1048576U) * 10U) / 1048576U;
 
         (void)number(out, tenths / 10U, capacity);
@@ -251,7 +251,7 @@ static void human(char *out, uint32_t bytes, uint32_t capacity)
 
 /* ================================================================== MODEL */
 
-const char *trait_files_node_name(uint32_t node)
+const char *opengat_files_node_name(uint32_t node)
 {
     if (node >= node_count) {
         return "";
@@ -259,7 +259,7 @@ const char *trait_files_node_name(uint32_t node)
     return nodes[node].name;
 }
 
-const char *trait_files_node_mark(uint32_t node)
+const char *opengat_files_node_mark(uint32_t node)
 {
     if (node >= node_count) {
         return "text-x-generic";
@@ -267,52 +267,52 @@ const char *trait_files_node_mark(uint32_t node)
     return mark_for(&nodes[node]);
 }
 
-void trait_files_draw_icon_at(struct trait_surface *surface,
-    struct trait_rect clip, const char *mark, uint32_t size,
+void opengat_files_draw_icon_at(struct opengat_surface *surface,
+    struct opengat_rect clip, const char *mark, uint32_t size,
     uint32_t left, uint32_t top)
 {
     draw_icon(surface, clip, mark, size, left, top);
 }
 
-void trait_files_reset(void)
+void opengat_files_reset(void)
 {
     uint32_t at;
 
     clip_count = 0U;
     clip_cut = false;
     node_count = 0U;
-    for (at = 0U; at < TRAIT_FILES_MAX_NODES; ++at) {
+    for (at = 0U; at < OPENGAT_FILES_MAX_NODES; ++at) {
         child_counts[at] = 0U;
     }
     selected_count = 0U;
     history_depth = 0U;
-    copy(nodes[0].name, "/", TRAIT_FILES_NAME_BYTES);
+    copy(nodes[0].name, "/", OPENGAT_FILES_NAME_BYTES);
     nodes[0].folder = true;
     nodes[0].bytes = 0U;
-    nodes[0].parent = TRAIT_FILES_MAX_NODES;
+    nodes[0].parent = OPENGAT_FILES_MAX_NODES;
     node_count = 1U;
     here = 0U;
 }
 
-uint32_t trait_files_root(void)
+uint32_t opengat_files_root(void)
 {
     return 0U;
 }
 
-uint32_t trait_files_add(uint32_t parent, const char *name, bool folder,
+uint32_t opengat_files_add(uint32_t parent, const char *name, bool folder,
     uint32_t bytes)
 {
     uint32_t index;
 
-    if (node_count >= TRAIT_FILES_MAX_NODES || name == NULL ||
+    if (node_count >= OPENGAT_FILES_MAX_NODES || name == NULL ||
             parent >= node_count || !nodes[parent].folder) {
-        return TRAIT_FILES_MAX_NODES;
+        return OPENGAT_FILES_MAX_NODES;
     }
-    if (child_counts[parent] >= TRAIT_FILES_MAX_CHILDREN) {
-        return TRAIT_FILES_MAX_NODES;
+    if (child_counts[parent] >= OPENGAT_FILES_MAX_CHILDREN) {
+        return OPENGAT_FILES_MAX_NODES;
     }
     index = node_count++;
-    copy(nodes[index].name, name, TRAIT_FILES_NAME_BYTES);
+    copy(nodes[index].name, name, OPENGAT_FILES_NAME_BYTES);
     nodes[index].folder = folder;
     nodes[index].bytes = folder ? 0U : bytes;
     nodes[index].parent = parent;
@@ -320,7 +320,7 @@ uint32_t trait_files_add(uint32_t parent, const char *name, bool folder,
     return index;
 }
 
-uint32_t trait_files_child_count(uint32_t folder)
+uint32_t opengat_files_child_count(uint32_t folder)
 {
     if (folder >= node_count) {
         return 0U;
@@ -328,10 +328,10 @@ uint32_t trait_files_child_count(uint32_t folder)
     return child_counts[folder];
 }
 
-uint32_t trait_files_child(uint32_t folder, uint32_t at)
+uint32_t opengat_files_child(uint32_t folder, uint32_t at)
 {
     if (folder >= node_count || at >= child_counts[folder]) {
-        return TRAIT_FILES_MAX_NODES;
+        return OPENGAT_FILES_MAX_NODES;
     }
     return children[folder][at];
 }
@@ -341,9 +341,9 @@ uint32_t trait_files_child(uint32_t folder, uint32_t at)
  * now, so it cannot drift from the truth the way a cached number does -
  * and the status bar can stand behind what it prints.
  */
-uint32_t trait_files_folder_bytes(uint32_t folder)
+uint64_t opengat_files_folder_bytes(uint32_t folder)
 {
-    uint32_t total = 0U;
+    uint64_t total = 0U;
     uint32_t at;
 
     if (folder >= node_count) {
@@ -353,12 +353,12 @@ uint32_t trait_files_folder_bytes(uint32_t folder)
         uint32_t child = children[folder][at];
 
         total += nodes[child].folder ?
-            trait_files_folder_bytes(child) : nodes[child].bytes;
+            opengat_files_folder_bytes(child) : nodes[child].bytes;
     }
     return total;
 }
 
-void trait_files_path(uint32_t node, char *out, uint32_t capacity)
+void opengat_files_path(uint32_t node, char *out, uint32_t capacity)
 {
     uint32_t chain[12];
     uint32_t depth = 0U;
@@ -385,7 +385,7 @@ void trait_files_path(uint32_t node, char *out, uint32_t capacity)
     }
 }
 
-bool trait_files_open(uint32_t folder)
+bool opengat_files_open(uint32_t folder)
 {
     if (folder >= node_count || !nodes[folder].folder) {
         return false;
@@ -398,20 +398,20 @@ bool trait_files_open(uint32_t folder)
     return true;
 }
 
-uint32_t trait_files_here(void)
+uint32_t opengat_files_here(void)
 {
     return here;
 }
 
-bool trait_files_up(void)
+bool opengat_files_up(void)
 {
     if (nodes[here].parent >= node_count) {
         return false;
     }
-    return trait_files_open(nodes[here].parent);
+    return opengat_files_open(nodes[here].parent);
 }
 
-bool trait_files_back(void)
+bool opengat_files_back(void)
 {
     if (history_depth == 0U) {
         return false;
@@ -425,7 +425,7 @@ bool trait_files_back(void)
 
 /* ============================================================== SELECTION */
 
-bool trait_files_is_selected(uint32_t node)
+bool opengat_files_is_selected(uint32_t node)
 {
     uint32_t at;
 
@@ -437,7 +437,7 @@ bool trait_files_is_selected(uint32_t node)
     return false;
 }
 
-void trait_files_select(uint32_t node, bool add)
+void opengat_files_select(uint32_t node, bool add)
 {
     uint32_t at;
 
@@ -449,7 +449,7 @@ void trait_files_select(uint32_t node, bool add)
         selected_count = 1U;
         return;
     }
-    if (trait_files_is_selected(node)) {
+    if (opengat_files_is_selected(node)) {
         for (at = 0U; at < selected_count; ++at) {
             if (selected[at] == node) {
                 break;
@@ -461,28 +461,28 @@ void trait_files_select(uint32_t node, bool add)
         --selected_count;
         return;
     }
-    if (selected_count < TRAIT_FILES_MAX_SELECTED) {
+    if (selected_count < OPENGAT_FILES_MAX_SELECTED) {
         selected[selected_count++] = node;
     }
 }
 
-void trait_files_select_all(void)
+void opengat_files_select_all(void)
 {
     uint32_t at;
 
     selected_count = 0U;
     for (at = 0U; at < child_counts[here] &&
-            selected_count < TRAIT_FILES_MAX_SELECTED; ++at) {
+            selected_count < OPENGAT_FILES_MAX_SELECTED; ++at) {
         selected[selected_count++] = children[here][at];
     }
 }
 
-void trait_files_clear_selection(void)
+void opengat_files_clear_selection(void)
 {
     selected_count = 0U;
 }
 
-uint32_t trait_files_selected_count(void)
+uint32_t opengat_files_selected_count(void)
 {
     return selected_count;
 }
@@ -503,10 +503,10 @@ static bool name_is_legal(const char *name)
         }
         ++at;
     }
-    return at + 1U < TRAIT_FILES_NAME_BYTES;
+    return at + 1U < OPENGAT_FILES_NAME_BYTES;
 }
 
-bool trait_files_name_free(uint32_t folder, const char *name)
+bool opengat_files_name_free(uint32_t folder, const char *name)
 {
     uint32_t at;
 
@@ -521,7 +521,7 @@ bool trait_files_name_free(uint32_t folder, const char *name)
     return true;
 }
 
-bool trait_files_copy_selection(bool cut)
+bool opengat_files_copy_selection(bool cut)
 {
     uint32_t at;
 
@@ -536,12 +536,12 @@ bool trait_files_copy_selection(bool cut)
     return true;
 }
 
-bool trait_files_clipboard_has(void)
+bool opengat_files_clipboard_has(void)
 {
     return clip_count != 0U;
 }
 
-bool trait_files_clipboard_is_cut(void)
+bool opengat_files_clipboard_is_cut(void)
 {
     return clip_cut;
 }
@@ -557,8 +557,8 @@ static void unique_name(uint32_t folder, const char *name, char *out)
     uint32_t at = 0U;
     uint32_t nth = 1U;
 
-    copy(out, name, TRAIT_FILES_NAME_BYTES);
-    if (trait_files_name_free(folder, out)) {
+    copy(out, name, OPENGAT_FILES_NAME_BYTES);
+    if (opengat_files_name_free(folder, out)) {
         return;
     }
     while (name[at] != '\0') {
@@ -574,7 +574,7 @@ static void unique_name(uint32_t folder, const char *name, char *out)
         uint32_t put = 0U;
         uint32_t from;
 
-        for (from = 0U; from < dot && put + 1U < TRAIT_FILES_NAME_BYTES;
+        for (from = 0U; from < dot && put + 1U < OPENGAT_FILES_NAME_BYTES;
                 ++from) {
             out[put++] = name[from];
         }
@@ -583,23 +583,23 @@ static void unique_name(uint32_t folder, const char *name, char *out)
             uint32_t tag = 0U;
 
             while (TAG[tag] != '\0' &&
-                    put + 1U < TRAIT_FILES_NAME_BYTES) {
+                    put + 1U < OPENGAT_FILES_NAME_BYTES) {
                 out[put++] = TAG[tag++];
             }
         }
-        if (nth > 1U && put + 3U < TRAIT_FILES_NAME_BYTES) {
+        if (nth > 1U && put + 3U < OPENGAT_FILES_NAME_BYTES) {
             out[put++] = ' ';
             out[put++] = (char)('0' + nth);
         }
-        if (put + 1U < TRAIT_FILES_NAME_BYTES) {
+        if (put + 1U < OPENGAT_FILES_NAME_BYTES) {
             out[put++] = ')';
         }
         for (from = dot; name[from] != '\0' &&
-                put + 1U < TRAIT_FILES_NAME_BYTES; ++from) {
+                put + 1U < OPENGAT_FILES_NAME_BYTES; ++from) {
             out[put++] = name[from];
         }
         out[put] = '\0';
-        if (trait_files_name_free(folder, out)) {
+        if (opengat_files_name_free(folder, out)) {
             return;
         }
         ++nth;
@@ -611,27 +611,27 @@ static void unique_name(uint32_t folder, const char *name, char *out)
 static uint32_t clone_into(uint32_t node, uint32_t folder,
     const char *as_name)
 {
-    uint32_t made = trait_files_add(folder, as_name, nodes[node].folder,
+    uint32_t made = opengat_files_add(folder, as_name, nodes[node].folder,
                                     nodes[node].bytes);
     uint32_t at;
 
-    if (made >= TRAIT_FILES_MAX_NODES) {
-        return TRAIT_FILES_MAX_NODES;
+    if (made >= OPENGAT_FILES_MAX_NODES) {
+        return OPENGAT_FILES_MAX_NODES;
     }
     for (at = 0U; at < child_counts[node]; ++at) {
         uint32_t child = children[node][at];
 
         if (clone_into(child, made, nodes[child].name) >=
-                TRAIT_FILES_MAX_NODES) {
-            return TRAIT_FILES_MAX_NODES;
+                OPENGAT_FILES_MAX_NODES) {
+            return OPENGAT_FILES_MAX_NODES;
         }
     }
     return made;
 }
 
-uint32_t trait_files_paste_into(uint32_t folder)
+uint32_t opengat_files_paste_into(uint32_t folder)
 {
-    char name[TRAIT_FILES_NAME_BYTES];
+    char name[OPENGAT_FILES_NAME_BYTES];
     uint32_t done = 0U;
     uint32_t at;
 
@@ -646,20 +646,20 @@ uint32_t trait_files_paste_into(uint32_t folder)
             continue;
         }
         /* The same refusals a drag has, for the same reasons. */
-        if (node == folder || trait_files_is_inside(folder, node)) {
+        if (node == folder || opengat_files_is_inside(folder, node)) {
             continue;
         }
         if (clip_cut) {
             if (nodes[node].parent == folder) {
                 continue;
             }
-            if (trait_files_move(node, folder)) {
+            if (opengat_files_move(node, folder)) {
                 ++done;
             }
             continue;
         }
         unique_name(folder, nodes[node].name, name);
-        if (clone_into(node, folder, name) < TRAIT_FILES_MAX_NODES) {
+        if (clone_into(node, folder, name) < OPENGAT_FILES_MAX_NODES) {
             ++done;
         }
     }
@@ -673,7 +673,7 @@ uint32_t trait_files_paste_into(uint32_t folder)
     return done;
 }
 
-bool trait_files_rename(uint32_t node, const char *name)
+bool opengat_files_rename(uint32_t node, const char *name)
 {
     if (node == 0U || node >= node_count) {
         return false;
@@ -684,10 +684,10 @@ bool trait_files_rename(uint32_t node, const char *name)
     if (same(nodes[node].name, name)) {
         return false;
     }
-    if (!trait_files_name_free(nodes[node].parent, name)) {
+    if (!opengat_files_name_free(nodes[node].parent, name)) {
         return false;
     }
-    copy(nodes[node].name, name, TRAIT_FILES_NAME_BYTES);
+    copy(nodes[node].name, name, OPENGAT_FILES_NAME_BYTES);
     return true;
 }
 
@@ -722,10 +722,10 @@ static void wipe(uint32_t node)
     }
     nodes[node].name[0] = '\0';
     nodes[node].bytes = 0U;
-    nodes[node].parent = TRAIT_FILES_MAX_NODES;
+    nodes[node].parent = OPENGAT_FILES_MAX_NODES;
 }
 
-bool trait_files_remove(uint32_t node)
+bool opengat_files_remove(uint32_t node)
 {
     uint32_t parent;
 
@@ -734,7 +734,7 @@ bool trait_files_remove(uint32_t node)
     }
     /* Not the folder you are looking at, and not one you are inside:
      * either leaves the window showing something that is gone. */
-    if (trait_files_is_inside(here, node)) {
+    if (opengat_files_is_inside(here, node)) {
         return false;
     }
     parent = nodes[node].parent;
@@ -747,7 +747,7 @@ bool trait_files_remove(uint32_t node)
     return true;
 }
 
-bool trait_files_is_inside(uint32_t node, uint32_t maybe_ancestor)
+bool opengat_files_is_inside(uint32_t node, uint32_t maybe_ancestor)
 {
     uint32_t walk;
 
@@ -764,7 +764,7 @@ bool trait_files_is_inside(uint32_t node, uint32_t maybe_ancestor)
     return false;
 }
 
-bool trait_files_move(uint32_t node, uint32_t into)
+bool opengat_files_move(uint32_t node, uint32_t into)
 {
     uint32_t from;
     uint32_t at;
@@ -784,7 +784,7 @@ bool trait_files_move(uint32_t node, uint32_t into)
      * reach any of them, and the bug shows up later as a folder that
      * vanished rather than as a bad drag.
      */
-    if (trait_files_is_inside(into, node)) {
+    if (opengat_files_is_inside(into, node)) {
         return false;
     }
     from = nodes[node].parent;
@@ -792,7 +792,7 @@ bool trait_files_move(uint32_t node, uint32_t into)
         return false;
     }
     if (from >= node_count ||
-            child_counts[into] >= TRAIT_FILES_MAX_CHILDREN) {
+            child_counts[into] >= OPENGAT_FILES_MAX_CHILDREN) {
         return false;
     }
     for (at = 0U; at < child_counts[from]; ++at) {
@@ -811,22 +811,22 @@ bool trait_files_move(uint32_t node, uint32_t into)
     return true;
 }
 
-void trait_files_set_view(enum trait_files_view view)
+void opengat_files_set_view(enum opengat_files_view view)
 {
     view_mode = view;
 }
 
-enum trait_files_view trait_files_view_mode(void)
+enum opengat_files_view opengat_files_view_mode(void)
 {
     return view_mode;
 }
 
 /* ================================================================= LAYOUT */
 
-static struct trait_rect view_area(const struct trait_window *window)
+static struct opengat_rect view_area(const struct opengat_window *window)
 {
-    struct trait_rect client = trait_window_client(window);
-    struct trait_rect box;
+    struct opengat_rect client = opengat_window_client(window);
+    struct opengat_rect box;
 
     box.x = client.x + FILES_PLACES;
     box.y = client.y + FILES_MENUBAR + FILES_TOOLBAR;
@@ -838,17 +838,17 @@ static struct trait_rect view_area(const struct trait_window *window)
     return box;
 }
 
-bool trait_files_entry_bounds(const struct trait_window *window,
-    uint32_t at, struct trait_rect *out)
+bool opengat_files_entry_bounds(const struct opengat_window *window,
+    uint32_t at, struct opengat_rect *out)
 {
-    struct trait_rect box;
+    struct opengat_rect box;
     uint32_t columns;
 
     if (window == NULL || out == NULL || at >= child_counts[here]) {
         return false;
     }
     box = view_area(window);
-    if (view_mode == TRAIT_FILES_LIST) {
+    if (view_mode == OPENGAT_FILES_LIST) {
         out->x = box.x;
         out->y = box.y + FILES_ROW + at * FILES_ROW;
         out->width = box.width;
@@ -868,19 +868,19 @@ bool trait_files_entry_bounds(const struct trait_window *window,
 
 /* ================================================================ DRAWING */
 
-static void frame_line(struct trait_surface *surface, struct trait_rect clip,
+static void frame_line(struct opengat_surface *surface, struct opengat_rect clip,
     uint32_t x, uint32_t y, uint32_t length, bool vertical, uint32_t ink)
 {
     uint32_t at;
 
     for (at = 0U; at < length; ++at) {
-        trait_surface_plot(surface, clip, vertical ? x : x + at,
+        opengat_surface_plot(surface, clip, vertical ? x : x + at,
                            vertical ? y + at : y, ink);
     }
 }
 
-static void draw_places(struct trait_surface *surface,
-    struct trait_rect client)
+static void draw_places(struct opengat_surface *surface,
+    struct opengat_rect client)
 {
     static const char *const PLACES[4] = {
         "user", "Desktop", "Trash", "Filesystem"
@@ -888,7 +888,7 @@ static void draw_places(struct trait_surface *surface,
     static const char *const MARKS[4] = {
         "user-home", "user-desktop", "user-trash", "drive-harddisk"
     };
-    struct trait_rect pane;
+    struct opengat_rect pane;
     uint32_t at;
 
     pane.x = client.x;
@@ -897,33 +897,33 @@ static void draw_places(struct trait_surface *surface,
     pane.height = client.height > FILES_MENUBAR + FILES_TOOLBAR +
         FILES_STATUS ?
         client.height - FILES_MENUBAR - FILES_TOOLBAR - FILES_STATUS : 0U;
-    trait_surface_fill(surface, client, pane, TRAIT_BG);
+    opengat_surface_fill(surface, client, pane, OPENGAT_BG);
     frame_line(surface, client, pane.x + pane.width - 1U, pane.y,
-               pane.height, true, TRAIT_LINE);
+               pane.height, true, OPENGAT_LINE);
     for (at = 0U; at < 4U; ++at) {
         uint32_t top = pane.y + 4U + at * 22U;
 
         draw_icon(surface, pane, MARKS[at], FILES_SMALL,
                   pane.x + 8U, top + 2U);
-        trait_font_draw(surface, pane, pane.x + 30U, top + 14U,
-                        PLACES[at], TRAIT_FG);
+        opengat_font_draw(surface, pane, pane.x + 30U, top + 14U,
+                        PLACES[at], OPENGAT_FG);
     }
 }
 
-static void draw_toolbar(struct trait_surface *surface,
-    struct trait_rect client)
+static void draw_toolbar(struct opengat_surface *surface,
+    struct opengat_rect client)
 {
-    struct trait_rect strip;
-    char path[TRAIT_FILES_PATH_BYTES];
-    struct trait_rect field;
+    struct opengat_rect strip;
+    char path[OPENGAT_FILES_PATH_BYTES];
+    struct opengat_rect field;
     uint32_t at;
 
     strip = client;
     strip.y = client.y + FILES_MENUBAR;
     strip.height = FILES_TOOLBAR;
-    trait_surface_fill(surface, client, strip, TRAIT_BG);
+    opengat_surface_fill(surface, client, strip, OPENGAT_BG);
     frame_line(surface, client, strip.x, strip.y + strip.height - 1U,
-               strip.width, false, TRAIT_LINE);
+               strip.width, false, OPENGAT_LINE);
 
     /* The location bar, which is a sunken entry rather than a label: it
      * is where the path is READ from, and a flat label would be saying
@@ -933,25 +933,25 @@ static void draw_toolbar(struct trait_surface *surface,
     field.width = strip.width > FILES_PAD * 2U ?
         strip.width - FILES_PAD * 2U : 0U;
     field.height = 19U;
-    trait_surface_fill(surface, client, field, TRAIT_BASE);
+    opengat_surface_fill(surface, client, field, OPENGAT_BASE);
     frame_line(surface, client, field.x, field.y, field.width, false,
-               TRAIT_LINE);
+               OPENGAT_LINE);
     frame_line(surface, client, field.x, field.y, field.height, true,
-               TRAIT_LINE);
+               OPENGAT_LINE);
     frame_line(surface, client, field.x, field.y + field.height - 1U,
-               field.width, false, TRAIT_LINE_LIGHT);
+               field.width, false, OPENGAT_LINE_LIGHT);
     frame_line(surface, client, field.x + field.width - 1U, field.y,
-               field.height, true, TRAIT_LINE_LIGHT);
-    trait_files_path(here, path, sizeof(path));
-    trait_font_draw(surface, field, field.x + 5U, field.y + 13U,
-                    path, TRAIT_TEXT);
+               field.height, true, OPENGAT_LINE_LIGHT);
+    opengat_files_path(here, path, sizeof(path));
+    opengat_font_draw(surface, field, field.x + 5U, field.y + 13U,
+                    path, OPENGAT_TEXT);
     (void)at;
 }
 
-static void draw_status(struct trait_surface *surface,
-    struct trait_rect client)
+static void draw_status(struct opengat_surface *surface,
+    struct opengat_rect client)
 {
-    struct trait_rect strip;
+    struct opengat_rect strip;
     char left[48];
     char right[48];
     uint32_t width;
@@ -960,18 +960,18 @@ static void draw_status(struct trait_surface *surface,
     strip.y = client.y + client.height - FILES_STATUS;
     strip.width = client.width;
     strip.height = FILES_STATUS;
-    trait_surface_fill(surface, client, strip, TRAIT_BG);
+    opengat_surface_fill(surface, client, strip, OPENGAT_BG);
     frame_line(surface, client, strip.x, strip.y, strip.width, false,
-               TRAIT_LINE);
+               OPENGAT_LINE);
 
     left[0] = '\0';
     if (selected_count > 1U) {
-        uint32_t bytes = 0U;
+        uint64_t bytes = 0U;
         uint32_t at;
 
         for (at = 0U; at < selected_count; ++at) {
             bytes += nodes[selected[at]].folder ?
-                trait_files_folder_bytes(selected[at]) :
+                opengat_files_folder_bytes(selected[at]) :
                 nodes[selected[at]].bytes;
         }
         (void)number(left, selected_count, sizeof(left));
@@ -990,7 +990,7 @@ static void draw_status(struct trait_surface *surface,
         append(left, nodes[selected[0]].name, sizeof(left));
         append(left, "\" (", sizeof(left));
         human(size, nodes[selected[0]].folder ?
-              trait_files_folder_bytes(selected[0]) :
+              opengat_files_folder_bytes(selected[0]) :
               nodes[selected[0]].bytes, sizeof(size));
         append(left, size, sizeof(left));
         append(left, ") selected", sizeof(left));
@@ -999,8 +999,8 @@ static void draw_status(struct trait_surface *surface,
         append(left, child_counts[here] == 1U ? " item" : " items",
                sizeof(left));
     }
-    trait_font_draw(surface, strip, strip.x + FILES_PAD,
-                    strip.y + 14U, left, TRAIT_TEXT);
+    opengat_font_draw(surface, strip, strip.x + FILES_PAD,
+                    strip.y + 14U, left, OPENGAT_TEXT);
 
     /*
      * The right-hand field is what is IN THIS FOLDER, counted.  pcmanfm
@@ -1009,23 +1009,23 @@ static void draw_status(struct trait_surface *surface,
      * leaves the field out.
      */
     right[0] = '\0';
-    human(right, trait_files_folder_bytes(here), sizeof(right));
+    human(right, opengat_files_folder_bytes(here), sizeof(right));
     append(right, " in this folder", sizeof(right));
-    width = trait_font_width(right);
+    width = opengat_font_width(right);
     if (strip.width > width + FILES_PAD) {
-        trait_font_draw(surface, strip,
+        opengat_font_draw(surface, strip,
             strip.x + strip.width - width - FILES_PAD, strip.y + 14U,
-            right, TRAIT_TEXT);
+            right, OPENGAT_TEXT);
     }
 }
 
-static void draw_entries(struct trait_surface *surface,
-    const struct trait_window *window, struct trait_rect box)
+static void draw_entries(struct opengat_surface *surface,
+    const struct opengat_window *window, struct opengat_rect box)
 {
-    struct trait_rect cell;
+    struct opengat_rect cell;
     uint32_t at;
 
-    if (view_mode == TRAIT_FILES_LIST) {
+    if (view_mode == OPENGAT_FILES_LIST) {
         static const char *const HEADS[3] = { "Name", "Description",
                                               "Size" };
         static const uint32_t WIDTHS[3] = {
@@ -1034,112 +1034,112 @@ static void draw_entries(struct trait_surface *surface,
         uint32_t left = box.x;
 
         for (at = 0U; at < 3U; ++at) {
-            struct trait_rect head;
+            struct opengat_rect head;
 
             head.x = left;
             head.y = box.y;
             head.width = WIDTHS[at];
             head.height = FILES_ROW;
-            trait_surface_fill(surface, box, head, TRAIT_BG_ACTIVE);
+            opengat_surface_fill(surface, box, head, OPENGAT_BG_ACTIVE);
             frame_line(surface, box, head.x + head.width - 1U, head.y,
-                       head.height, true, TRAIT_LINE);
+                       head.height, true, OPENGAT_LINE);
             frame_line(surface, box, head.x, head.y + head.height - 1U,
-                       head.width, false, TRAIT_LINE);
-            trait_font_draw(surface, head, head.x + 5U, head.y + 13U,
-                            HEADS[at], TRAIT_FG);
+                       head.width, false, OPENGAT_LINE);
+            opengat_font_draw(surface, head, head.x + 5U, head.y + 13U,
+                            HEADS[at], OPENGAT_FG);
             left += WIDTHS[at];
         }
     }
 
     for (at = 0U; at < child_counts[here]; ++at) {
         uint32_t node = children[here][at];
-        bool lit = trait_files_is_selected(node);
+        bool lit = opengat_files_is_selected(node);
 
-        if (!trait_files_entry_bounds(window, at, &cell)) {
+        if (!opengat_files_entry_bounds(window, at, &cell)) {
             continue;
         }
         if (cell.y + cell.height > box.y + box.height) {
             break;
         }
-        if (view_mode == TRAIT_FILES_LIST) {
+        if (view_mode == OPENGAT_FILES_LIST) {
             char size[24];
 
             if (lit) {
-                trait_surface_fill(surface, box, cell, TRAIT_SEL_BG);
+                opengat_surface_fill(surface, box, cell, OPENGAT_SEL_BG);
             } else if ((at & 1U) != 0U) {
-                trait_surface_fill(surface, box, cell,
-                                   TRAIT_BASE_PRELIGHT);
+                opengat_surface_fill(surface, box, cell,
+                                   OPENGAT_BASE_PRELIGHT);
             }
             draw_icon(surface, box, mark_for(&nodes[node]), FILES_SMALL,
                       cell.x + 4U, cell.y + 1U);
-            trait_font_draw(surface, box, cell.x + 24U, cell.y + 13U,
-                nodes[node].name, lit ? TRAIT_SEL_FG : TRAIT_TEXT);
-            trait_font_draw(surface, box,
+            opengat_font_draw(surface, box, cell.x + 24U, cell.y + 13U,
+                nodes[node].name, lit ? OPENGAT_SEL_FG : OPENGAT_TEXT);
+            opengat_font_draw(surface, box,
                 cell.x + FILES_NAME_COLUMN + 5U, cell.y + 13U,
-                kind_for(&nodes[node]), lit ? TRAIT_SEL_FG : TRAIT_TEXT);
+                kind_for(&nodes[node]), lit ? OPENGAT_SEL_FG : OPENGAT_TEXT);
             /* A FOLDER HAS NO SIZE in this column, and an empty cell says
              * so better than a nought does. */
             if (!nodes[node].folder) {
                 human(size, nodes[node].bytes, sizeof(size));
-                trait_font_draw(surface, box,
+                opengat_font_draw(surface, box,
                     cell.x + FILES_NAME_COLUMN + FILES_KIND_COLUMN + 5U,
                     cell.y + 13U, size,
-                    lit ? TRAIT_SEL_FG : TRAIT_TEXT);
+                    lit ? OPENGAT_SEL_FG : OPENGAT_TEXT);
             }
             continue;
         }
 
         if (lit) {
-            struct trait_rect wash = cell;
+            struct opengat_rect wash = cell;
 
             wash.x += 2U;
             wash.width -= 4U;
-            trait_surface_fill(surface, box, wash, TRAIT_SEL_BG);
+            opengat_surface_fill(surface, box, wash, OPENGAT_SEL_BG);
         }
         draw_icon(surface, box, mark_for(&nodes[node]), FILES_ICON,
                   cell.x + (cell.width - FILES_ICON) / 2U, cell.y + 4U);
         {
-            uint32_t width = trait_font_width(nodes[node].name);
+            uint32_t width = opengat_font_width(nodes[node].name);
             uint32_t pen = cell.x + (cell.width > width ?
                 (cell.width - width) / 2U : 0U);
 
-            trait_font_draw(surface, box, pen, cell.y + FILES_ICON + 18U,
-                nodes[node].name, lit ? TRAIT_SEL_FG : TRAIT_FG);
+            opengat_font_draw(surface, box, pen, cell.y + FILES_ICON + 18U,
+                nodes[node].name, lit ? OPENGAT_SEL_FG : OPENGAT_FG);
         }
     }
 }
 
-void trait_files_draw(struct trait_surface *surface,
-    const struct trait_window *window)
+void opengat_files_draw(struct opengat_surface *surface,
+    const struct opengat_window *window)
 {
     static const char *const MENUS[6] = {
         "File", "Edit", "View", "Bookmarks", "Tools", "Help"
     };
-    struct trait_rect client;
-    struct trait_rect box;
+    struct opengat_rect client;
+    struct opengat_rect box;
     uint32_t pen;
     uint32_t at;
 
-    if (window == NULL || !trait_surface_valid(surface)) {
+    if (window == NULL || !opengat_surface_valid(surface)) {
         return;
     }
-    client = trait_window_client(window);
-    trait_surface_fill(surface, client, client, TRAIT_BG);
+    client = opengat_window_client(window);
+    opengat_surface_fill(surface, client, client, OPENGAT_BG);
 
     pen = client.x + FILES_PAD;
     for (at = 0U; at < 6U; ++at) {
-        trait_font_draw(surface, client, pen, client.y + 14U,
-                        MENUS[at], TRAIT_FG);
-        pen += trait_font_width(MENUS[at]) + 14U;
+        opengat_font_draw(surface, client, pen, client.y + 14U,
+                        MENUS[at], OPENGAT_FG);
+        pen += opengat_font_width(MENUS[at]) + 14U;
     }
     frame_line(surface, client, client.x, client.y + FILES_MENUBAR - 1U,
-               client.width, false, TRAIT_LINE);
+               client.width, false, OPENGAT_LINE);
 
     draw_toolbar(surface, client);
     draw_places(surface, client);
 
     box = view_area(window);
-    trait_surface_fill(surface, client, box, TRAIT_BASE);
+    opengat_surface_fill(surface, client, box, OPENGAT_BASE);
     draw_entries(surface, window, box);
     draw_status(surface, client);
 }
@@ -1150,135 +1150,135 @@ void trait_files_draw(struct trait_surface *surface,
  * turning into a toggle, and is a folder's size the sum of what is under
  * it rather than a number somebody typed?
  */
-bool trait_files_self_test(void)
+bool opengat_files_self_test(void)
 {
     uint32_t home;
     uint32_t docs;
     uint32_t notes;
-    struct trait_rect ignored;
+    struct opengat_rect ignored;
     char size[24];
 
-    trait_files_reset();
-    if (trait_files_entry_bounds(NULL, 0U, &ignored)) {
+    opengat_files_reset();
+    if (opengat_files_entry_bounds(NULL, 0U, &ignored)) {
         return false;
     }
     human(size, 1048576U, sizeof(size));
     if (!same(size, "1.0 MiB")) {
         return false;
     }
-    home = trait_files_add(trait_files_root(), "home", true, 0U);
-    docs = trait_files_add(home, "Documents", true, 0U);
-    notes = trait_files_add(docs, "Notes", true, 0U);
-    if (home >= TRAIT_FILES_MAX_NODES || docs >= TRAIT_FILES_MAX_NODES ||
-            notes >= TRAIT_FILES_MAX_NODES) {
+    home = opengat_files_add(opengat_files_root(), "home", true, 0U);
+    docs = opengat_files_add(home, "Documents", true, 0U);
+    notes = opengat_files_add(docs, "Notes", true, 0U);
+    if (home >= OPENGAT_FILES_MAX_NODES || docs >= OPENGAT_FILES_MAX_NODES ||
+            notes >= OPENGAT_FILES_MAX_NODES) {
         return false;
     }
-    if (trait_files_add(docs, "report.txt", false, 2000U) >=
-            TRAIT_FILES_MAX_NODES) {
+    if (opengat_files_add(docs, "report.txt", false, 2000U) >=
+            OPENGAT_FILES_MAX_NODES) {
         return false;
     }
-    if (trait_files_add(notes, "todo.txt", false, 300U) >=
-            TRAIT_FILES_MAX_NODES) {
+    if (opengat_files_add(notes, "todo.txt", false, 300U) >=
+            OPENGAT_FILES_MAX_NODES) {
         return false;
     }
     /* Counted, not stored: Documents holds 2000 plus the 300 under
      * Notes. */
-    if (trait_files_folder_bytes(docs) != 2300U) {
+    if (opengat_files_folder_bytes(docs) != 2300U) {
         return false;
     }
-    if (!trait_files_open(home) || trait_files_here() != home) {
+    if (!opengat_files_open(home) || opengat_files_here() != home) {
         return false;
     }
-    if (!trait_files_open(docs) || trait_files_here() != docs) {
+    if (!opengat_files_open(docs) || opengat_files_here() != docs) {
         return false;
     }
-    if (!trait_files_back() || trait_files_here() != home) {
+    if (!opengat_files_back() || opengat_files_here() != home) {
         return false;
     }
     /* Back again goes to where we started, NOT back to Documents: a Back
      * that pushes as it pops is a switch between two folders. */
-    if (!trait_files_back() || trait_files_here() != trait_files_root()) {
+    if (!opengat_files_back() || opengat_files_here() != opengat_files_root()) {
         return false;
     }
-    if (!trait_files_open(home)) {
+    if (!opengat_files_open(home)) {
         return false;
     }
-    if (!trait_files_up() || trait_files_here() != trait_files_root()) {
+    if (!opengat_files_up() || opengat_files_here() != opengat_files_root()) {
         return false;
     }
     /* The root has no parent, so Up refuses rather than walking off. */
-    if (trait_files_up()) {
+    if (opengat_files_up()) {
         return false;
     }
-    trait_files_open(docs);
-    trait_files_select_all();
-    if (trait_files_selected_count() != trait_files_child_count(docs)) {
+    opengat_files_open(docs);
+    opengat_files_select_all();
+    if (opengat_files_selected_count() != opengat_files_child_count(docs)) {
         return false;
     }
-    trait_files_select(notes, true);
-    if (trait_files_is_selected(notes)) {
+    opengat_files_select(notes, true);
+    if (opengat_files_is_selected(notes)) {
         return false;      /* ctrl on a selected item REMOVES it */
     }
-    trait_files_clear_selection();
+    opengat_files_clear_selection();
 
     /* Dragging: report.txt out of Documents and into Notes. */
     {
-        uint32_t report = trait_files_child(docs, 1U);
+        uint32_t report = opengat_files_child(docs, 1U);
 
-        if (report >= TRAIT_FILES_MAX_NODES) {
+        if (report >= OPENGAT_FILES_MAX_NODES) {
             return false;
         }
-        if (!trait_files_move(report, notes)) {
+        if (!opengat_files_move(report, notes)) {
             return false;
         }
-        if (trait_files_child_count(notes) != 2U) {
+        if (opengat_files_child_count(notes) != 2U) {
             return false;
         }
         /* And it is gone from where it was, not copied. */
-        if (trait_files_child_count(docs) != 1U) {
+        if (opengat_files_child_count(docs) != 1U) {
             return false;
         }
         /* The sizes follow, because they are counted: Notes now holds
          * both files and Documents holds only what is under Notes. */
-        if (trait_files_folder_bytes(notes) != 2300U) {
+        if (opengat_files_folder_bytes(notes) != 2300U) {
             return false;
         }
         /* Moving a folder INTO ITSELF is refused - the case that would
          * detach the subtree from the root. */
-        if (trait_files_move(docs, notes)) {
+        if (opengat_files_move(docs, notes)) {
             return false;
         }
         /* And into its own current parent is refused, because it changes
          * nothing and would still cost a remove and an add. */
-        if (trait_files_move(notes, docs)) {
+        if (opengat_files_move(notes, docs)) {
             return false;
         }
         /* A file is not a folder, so nothing can be moved into one. */
-        if (trait_files_move(notes, report)) {
+        if (opengat_files_move(notes, report)) {
             return false;
         }
 
         /* Rename, and what it refuses. */
-        if (!trait_files_rename(report, "summary.txt")) {
+        if (!opengat_files_rename(report, "summary.txt")) {
             return false;
         }
-        if (!same(trait_files_node_name(report), "summary.txt")) {
+        if (!same(opengat_files_node_name(report), "summary.txt")) {
             return false;
         }
         /* Its own name is not a rename. */
-        if (trait_files_rename(report, "summary.txt")) {
+        if (opengat_files_rename(report, "summary.txt")) {
             return false;
         }
         /* A name already in the folder is refused rather than making two
          * things with one name. */
-        if (trait_files_rename(report, "todo.txt")) {
+        if (opengat_files_rename(report, "todo.txt")) {
             return false;
         }
         /* A path is not a name. */
-        if (trait_files_rename(report, "a/b")) {
+        if (opengat_files_rename(report, "a/b")) {
             return false;
         }
-        if (trait_files_rename(report, "")) {
+        if (opengat_files_rename(report, "")) {
             return false;
         }
 
@@ -1288,116 +1288,132 @@ bool trait_files_self_test(void)
          * confusing "the folder you are looking at" with "anything under
          * it", and the self-test failed on its own bad expectation.
          */
-        (void)trait_files_open(docs);
-        if (!trait_files_remove(notes)) {
+        (void)opengat_files_open(docs);
+        if (!opengat_files_remove(notes)) {
             return false;
         }
-        if (trait_files_here() != docs) {
+        if (opengat_files_here() != docs) {
             return false;
         }
     }
     {
         /* Deleting the folder you are LOOKING AT is refused. */
-        uint32_t where = trait_files_here();
+        uint32_t where = opengat_files_here();
 
-        if (trait_files_remove(where)) {
+        if (opengat_files_remove(where)) {
             return false;
         }
     }
     {
         /* And a real delete removes it and everything under it. */
-        uint32_t root = trait_files_root();
-        uint32_t spare = trait_files_add(root, "spare", true, 0U);
-        uint32_t inside = trait_files_add(spare, "deep.txt", false, 10U);
-        uint32_t was = trait_files_child_count(root);
+        uint32_t root = opengat_files_root();
+        uint32_t spare = opengat_files_add(root, "spare", true, 0U);
+        uint32_t inside = opengat_files_add(spare, "deep.txt", false, 10U);
+        uint32_t was = opengat_files_child_count(root);
 
-        if (spare >= TRAIT_FILES_MAX_NODES ||
-                inside >= TRAIT_FILES_MAX_NODES) {
+        if (spare >= OPENGAT_FILES_MAX_NODES ||
+                inside >= OPENGAT_FILES_MAX_NODES) {
             return false;
         }
-        if (!trait_files_remove(spare)) {
+        if (!opengat_files_remove(spare)) {
             return false;
         }
-        if (trait_files_child_count(root) != was - 1U) {
+        if (opengat_files_child_count(root) != was - 1U) {
             return false;
         }
         /* The child went with it rather than being left unreachable. */
-        if (trait_files_child_count(spare) != 0U) {
+        if (opengat_files_child_count(spare) != 0U) {
             return false;
         }
     }
 
     /* The clipboard. */
     {
-        uint32_t root = trait_files_root();
-        uint32_t box = trait_files_add(root, "box", true, 0U);
-        uint32_t leaf = trait_files_add(box, "leaf.txt", false, 40U);
-        uint32_t away = trait_files_add(root, "away", true, 0U);
+        uint32_t root = opengat_files_root();
+        uint32_t box = opengat_files_add(root, "box", true, 0U);
+        uint32_t leaf = opengat_files_add(box, "leaf.txt", false, 40U);
+        uint32_t away = opengat_files_add(root, "away", true, 0U);
         uint32_t copied;
 
-        if (box >= TRAIT_FILES_MAX_NODES ||
-                leaf >= TRAIT_FILES_MAX_NODES ||
-                away >= TRAIT_FILES_MAX_NODES) {
+        if (box >= OPENGAT_FILES_MAX_NODES ||
+                leaf >= OPENGAT_FILES_MAX_NODES ||
+                away >= OPENGAT_FILES_MAX_NODES) {
             return false;
         }
-        (void)trait_files_open(root);
+        (void)opengat_files_open(root);
         /* Nothing selected: nothing to copy. */
-        trait_files_clear_selection();
-        if (trait_files_copy_selection(false)) {
+        opengat_files_clear_selection();
+        if (opengat_files_copy_selection(false)) {
             return false;
         }
-        trait_files_select(box, false);
-        if (!trait_files_copy_selection(false)) {
+        opengat_files_select(box, false);
+        if (!opengat_files_copy_selection(false)) {
             return false;
         }
-        if (!trait_files_clipboard_has()) {
+        if (!opengat_files_clipboard_has()) {
             return false;
         }
-        if (trait_files_paste_into(away) != 1U) {
+        if (opengat_files_paste_into(away) != 1U) {
             return false;
         }
         /* The CHILD came with it, as a new node rather than a shared
          * one - so emptying the copy must not empty the original. */
-        copied = trait_files_child(away, 0U);
-        if (copied >= TRAIT_FILES_MAX_NODES) {
+        copied = opengat_files_child(away, 0U);
+        if (copied >= OPENGAT_FILES_MAX_NODES) {
             return false;
         }
-        if (trait_files_child_count(copied) != 1U) {
+        if (opengat_files_child_count(copied) != 1U) {
             return false;
         }
-        if (trait_files_child(copied, 0U) == leaf) {
+        if (opengat_files_child(copied, 0U) == leaf) {
             return false;       /* shared, not cloned */
         }
-        if (!trait_files_remove(trait_files_child(copied, 0U))) {
+        if (!opengat_files_remove(opengat_files_child(copied, 0U))) {
             return false;
         }
-        if (trait_files_child_count(box) != 1U) {
+        if (opengat_files_child_count(box) != 1U) {
             return false;       /* the original lost its child */
         }
         /* A COPY is not spent: pasting again gives a "(copy)". */
-        if (trait_files_paste_into(away) != 1U) {
+        if (opengat_files_paste_into(away) != 1U) {
             return false;
         }
-        if (trait_files_child_count(away) != 2U) {
+        if (opengat_files_child_count(away) != 2U) {
             return false;
         }
         /* A CUT is spent, and moves rather than duplicates. */
-        trait_files_select(box, false);
-        if (!trait_files_copy_selection(true)) {
+        opengat_files_select(box, false);
+        if (!opengat_files_copy_selection(true)) {
             return false;
         }
-        if (trait_files_paste_into(away) != 1U) {
+        if (opengat_files_paste_into(away) != 1U) {
             return false;
         }
-        if (trait_files_clipboard_has()) {
+        if (opengat_files_clipboard_has()) {
             return false;
         }
         /* Pasting a folder INTO ITSELF is refused. */
-        trait_files_select(away, false);
-        if (!trait_files_copy_selection(false)) {
+        opengat_files_select(away, false);
+        if (!opengat_files_copy_selection(false)) {
             return false;
         }
-        if (trait_files_paste_into(away) != 0U) {
+        if (opengat_files_paste_into(away) != 0U) {
+            return false;
+        }
+    }
+    {
+        uint32_t root;
+        uint32_t large;
+
+        opengat_files_reset();
+        root = opengat_files_root();
+        large = opengat_files_add(root, "large", true, 0U);
+        if (large >= OPENGAT_FILES_MAX_NODES ||
+                opengat_files_add(large, "one.bin", false, UINT32_MAX) >=
+                    OPENGAT_FILES_MAX_NODES ||
+                opengat_files_add(large, "two.bin", false, UINT32_MAX) >=
+                    OPENGAT_FILES_MAX_NODES ||
+                opengat_files_folder_bytes(large) != UINT64_C(8589934590)) {
             return false;
         }
     }

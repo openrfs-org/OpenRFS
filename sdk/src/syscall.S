@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 .section .text, "ax", @progbits
-.macro TRAIT_STUB name, count
+.macro OPENGAT_STUB name, count
 .global \name
 .type \name, @function
 \name:
@@ -27,11 +27,11 @@
     ret
 .size \name, . - \name
 .endm
-TRAIT_STUB trait_syscall0, 0
-TRAIT_STUB trait_syscall1, 1
-TRAIT_STUB trait_syscall2, 2
-TRAIT_STUB trait_syscall3, 3
-TRAIT_STUB trait_syscall4, 4
-TRAIT_STUB trait_syscall5, 5
-TRAIT_STUB trait_syscall6, 6
+OPENGAT_STUB opengat_syscall0, 0
+OPENGAT_STUB opengat_syscall1, 1
+OPENGAT_STUB opengat_syscall2, 2
+OPENGAT_STUB opengat_syscall3, 3
+OPENGAT_STUB opengat_syscall4, 4
+OPENGAT_STUB opengat_syscall5, 5
+OPENGAT_STUB opengat_syscall6, 6
 .section .note.GNU-stack, "", @progbits

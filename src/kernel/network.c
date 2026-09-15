@@ -3,14 +3,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <trait/clock.h>
-#include <trait/console.h>
-#include <trait/cpu.h>
-#include <trait/fat32_fs.h>
-#include <trait/network.h>
-#include <trait/random.h>
-#include <trait/timer.h>
-#include <trait/virtio_net.h>
+#include <opengat/clock.h>
+#include <opengat/console.h>
+#include <opengat/cpu.h>
+#include <opengat/fat32_fs.h>
+#include <opengat/network.h>
+#include <opengat/random.h>
+#include <opengat/timer.h>
+#include <opengat/virtio_net.h>
 
 #define ETHERNET_HEADER_BYTES 14U
 #define ETHERNET_TYPE_ARP UINT16_C(0x0806)
@@ -401,7 +401,7 @@ static bool deadline_valid(uint64_t timeout_ns)
 
 /*
  * Synchronous protocol operations are permitted to block their caller, but
- * must not burn Trait OS's single core while waiting for a packet or deadline.
+ * must not burn OpenGAT's single core while waiting for a packet or deadline.
  * Every caller invokes this only after pumping the device and rechecking its
  * completion state. A device interrupt returns immediately. A short deadline
  * timer closes the already-delivered-interrupt race and guarantees another
@@ -1374,7 +1374,7 @@ enum network_status network_initialize(void)
     }
     if (status != VIRTIO_NET_STATUS_OK &&
         status != VIRTIO_NET_STATUS_LINK_DOWN) {
-        console_write("Trait OS: virtio-net initialization failed: ");
+        console_write("OpenGAT: virtio-net initialization failed: ");
         console_write(virtio_net_status_string(status));
         console_putc('\n');
         return NETWORK_STATUS_UNAVAILABLE;
@@ -3478,7 +3478,7 @@ struct http_response {
 struct http_sink {
     uint8_t *memory;
     size_t capacity;
-    traitfs_handle file;
+    opengatfs_handle file;
     uint32_t total;
     bool file_backed;
 };
@@ -3827,10 +3827,10 @@ static enum network_status http_parse_headers(
 
 static bool destination_valid(const char *path)
 {
-    const size_t length = string_length_bounded(path, TRAITFS_MAX_PATH);
+    const size_t length = string_length_bounded(path, OPENGATFS_MAX_PATH);
     size_t component = 0U;
 
-    if (length == 0U || length > TRAITFS_MAX_PATH || path[0] == '/') {
+    if (length == 0U || length > OPENGATFS_MAX_PATH || path[0] == '/') {
         return false;
     }
     for (size_t index = 0U; index <= length; ++index) {
@@ -3851,15 +3851,15 @@ static bool destination_valid(const char *path)
 
 static bool download_sibling_paths(
     const char *destination,
-    char temporary[TRAITFS_MAX_PATH + 1U],
-    char backup[TRAITFS_MAX_PATH + 1U]
+    char temporary[OPENGATFS_MAX_PATH + 1U],
+    char backup[OPENGATFS_MAX_PATH + 1U]
 )
 {
-    const size_t length = string_length_bounded(destination, TRAITFS_MAX_PATH);
+    const size_t length = string_length_bounded(destination, OPENGATFS_MAX_PATH);
     size_t slash = SIZE_MAX;
     size_t prefix;
-    static const char temp_name[] = "TRAITDL.TMP";
-    static const char backup_name[] = "TRAITDL.BAK";
+    static const char temp_name[] = "OPENGATDL.TMP";
+    static const char backup_name[] = "OPENGATDL.BAK";
 
     for (size_t index = 0U; index < length; ++index) {
         if (destination[index] == '/') {
@@ -3867,8 +3867,8 @@ static bool download_sibling_paths(
         }
     }
     prefix = slash == SIZE_MAX ? 0U : slash + 1U;
-    if (prefix + sizeof(temp_name) - 1U > TRAITFS_MAX_PATH ||
-        prefix + sizeof(backup_name) - 1U > TRAITFS_MAX_PATH) {
+    if (prefix + sizeof(temp_name) - 1U > OPENGATFS_MAX_PATH ||
+        prefix + sizeof(backup_name) - 1U > OPENGATFS_MAX_PATH) {
         return false;
     }
     for (size_t index = 0U; index < prefix; ++index) {
@@ -3881,9 +3881,9 @@ static bool download_sibling_paths(
         !string_equal(destination, backup);
 }
 
-static enum network_status filesystem_status(enum traitfs_status status)
+static enum network_status filesystem_status(enum opengatfs_status status)
 {
-    return status == TRAITFS_STATUS_FULL ? NETWORK_STATUS_TOO_LARGE :
+    return status == OPENGATFS_STATUS_FULL ? NETWORK_STATUS_TOO_LARGE :
         NETWORK_STATUS_FILESYSTEM;
 }
 
@@ -3894,15 +3894,15 @@ static enum network_status http_write_bytes(
 )
 {
     size_t written = 0U;
-    enum traitfs_status status;
+    enum opengatfs_status status;
 
     if (sink == NULL || bytes == NULL ||
         length > NETWORK_HTTP_MAX_DOWNLOAD_BYTES - sink->total) {
         return NETWORK_STATUS_TOO_LARGE;
     }
     if (sink->file_backed) {
-        status = traitfs_write(sink->file, bytes, length, &written);
-        if (status != TRAITFS_STATUS_OK || written != length) {
+        status = opengatfs_write(sink->file, bytes, length, &written);
+        if (status != OPENGATFS_STATUS_OK || written != length) {
             return filesystem_status(status);
         }
     } else {
@@ -4075,7 +4075,7 @@ static enum network_status http_open_request(
     const char *method = head_only ? "HEAD " : "GET ";
     static const char version[] = " HTTP/1.1\r\nHost: ";
     static const char tail[] =
-        "\r\nUser-Agent: Trait OS/2.1\r\nConnection: close\r\n\r\n";
+        "\r\nUser-Agent: OpenGAT/2.1\r\nConnection: close\r\n\r\n";
 
     if (!url->numeric) {
         uint64_t now = clock_monotonic_ns();
@@ -4161,40 +4161,40 @@ static enum network_status finalize_download(
     const char *backup
 )
 {
-    struct traitfs_stat existing;
-    enum traitfs_status status = traitfs_stat_path(TRAITFS_VOLUME_DATA,
+    struct opengatfs_stat existing;
+    enum opengatfs_status status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA,
         destination, &existing);
-    bool had_existing = status == TRAITFS_STATUS_OK;
+    bool had_existing = status == OPENGATFS_STATUS_OK;
 
     if (had_existing && existing.directory) {
         return NETWORK_STATUS_FILESYSTEM;
     }
-    if (status != TRAITFS_STATUS_OK && status != TRAITFS_STATUS_NOT_FOUND) {
+    if (status != OPENGATFS_STATUS_OK && status != OPENGATFS_STATUS_NOT_FOUND) {
         return filesystem_status(status);
     }
-    (void)traitfs_unlink(TRAITFS_VOLUME_DATA, backup);
-    if (had_existing && traitfs_rename(TRAITFS_VOLUME_DATA, destination,
-            backup) != TRAITFS_STATUS_OK) {
+    (void)opengatfs_unlink(OPENGATFS_VOLUME_DATA, backup);
+    if (had_existing && opengatfs_rename(OPENGATFS_VOLUME_DATA, destination,
+            backup) != OPENGATFS_STATUS_OK) {
         return NETWORK_STATUS_FILESYSTEM;
     }
-    if (traitfs_rename(TRAITFS_VOLUME_DATA, temporary, destination) !=
-            TRAITFS_STATUS_OK) {
+    if (opengatfs_rename(OPENGATFS_VOLUME_DATA, temporary, destination) !=
+            OPENGATFS_STATUS_OK) {
         if (had_existing) {
-            (void)traitfs_rename(TRAITFS_VOLUME_DATA, backup, destination);
+            (void)opengatfs_rename(OPENGATFS_VOLUME_DATA, backup, destination);
         }
         return NETWORK_STATUS_FILESYSTEM;
     }
-    if (traitfs_sync(TRAITFS_VOLUME_DATA) != TRAITFS_STATUS_OK) {
+    if (opengatfs_sync(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK) {
         if (had_existing) {
-            (void)traitfs_rename(TRAITFS_VOLUME_DATA, destination, temporary);
-            (void)traitfs_rename(TRAITFS_VOLUME_DATA, backup, destination);
-            (void)traitfs_sync(TRAITFS_VOLUME_DATA);
+            (void)opengatfs_rename(OPENGATFS_VOLUME_DATA, destination, temporary);
+            (void)opengatfs_rename(OPENGATFS_VOLUME_DATA, backup, destination);
+            (void)opengatfs_sync(OPENGATFS_VOLUME_DATA);
         }
         return NETWORK_STATUS_FILESYSTEM;
     }
     if (had_existing) {
-        if (traitfs_unlink(TRAITFS_VOLUME_DATA, backup) != TRAITFS_STATUS_OK ||
-            traitfs_sync(TRAITFS_VOLUME_DATA) != TRAITFS_STATUS_OK) {
+        if (opengatfs_unlink(OPENGATFS_VOLUME_DATA, backup) != OPENGATFS_STATUS_OK ||
+            opengatfs_sync(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK) {
             return NETWORK_STATUS_FILESYSTEM;
         }
     }
@@ -4212,8 +4212,8 @@ enum network_status network_http_download(
 {
     char current[768];
     char seen[NETWORK_HTTP_MAX_REDIRECTS + 1U][768];
-    char temporary[TRAITFS_MAX_PATH + 1U];
-    char backup[TRAITFS_MAX_PATH + 1U];
+    char temporary[OPENGATFS_MAX_PATH + 1U];
+    char backup[OPENGATFS_MAX_PATH + 1U];
     uint64_t deadline;
     uint64_t request_started;
     size_t url_length;
@@ -4282,19 +4282,19 @@ enum network_status network_http_download(
                 response.status < 400U ? NETWORK_STATUS_OK :
                 NETWORK_STATUS_HTTP_FAILURE;
         }
-        (void)traitfs_unlink(TRAITFS_VOLUME_DATA, temporary);
-        if (traitfs_create(TRAITFS_VOLUME_DATA, temporary) != TRAITFS_STATUS_OK) {
+        (void)opengatfs_unlink(OPENGATFS_VOLUME_DATA, temporary);
+        if (opengatfs_create(OPENGATFS_VOLUME_DATA, temporary) != OPENGATFS_STATUS_OK) {
             (void)network_close(owner, stream.handle);
             return NETWORK_STATUS_FILESYSTEM;
         }
-        traitfs_handle file;
-        enum traitfs_status fs_status = traitfs_open(TRAITFS_VOLUME_DATA, temporary,
-            TRAITFS_ACCESS_WRITE, &file);
+        opengatfs_handle file;
+        enum opengatfs_status fs_status = opengatfs_open(OPENGATFS_VOLUME_DATA, temporary,
+            OPENGATFS_ACCESS_WRITE, &file);
         struct http_sink sink = {
             NULL, 0U, file, 0U, true
         };
-        if (fs_status != TRAITFS_STATUS_OK) {
-            (void)traitfs_unlink(TRAITFS_VOLUME_DATA, temporary);
+        if (fs_status != OPENGATFS_STATUS_OK) {
+            (void)opengatfs_unlink(OPENGATFS_VOLUME_DATA, temporary);
             (void)network_close(owner, stream.handle);
             return filesystem_status(fs_status);
         }
@@ -4308,26 +4308,26 @@ enum network_status network_http_download(
             status = http_connection_body(&stream, &sink);
         }
         result->body_bytes = sink.total;
-        fs_status = traitfs_close(file);
+        fs_status = opengatfs_close(file);
         (void)network_tcp_shutdown(owner, stream.handle,
             NETWORK_DEFAULT_READ_TIMEOUT_NS);
         (void)network_close(owner, stream.handle);
-        if (status != NETWORK_STATUS_OK || fs_status != TRAITFS_STATUS_OK ||
+        if (status != NETWORK_STATUS_OK || fs_status != OPENGATFS_STATUS_OK ||
             (response.content_length_present &&
                 result->body_bytes != response.content_length)) {
-            (void)traitfs_unlink(TRAITFS_VOLUME_DATA, temporary);
+            (void)opengatfs_unlink(OPENGATFS_VOLUME_DATA, temporary);
             return status != NETWORK_STATUS_OK ? status :
                 NETWORK_STATUS_FILESYSTEM;
         }
         const uint64_t synchronize_started = clock_monotonic_ns();
 
-        if (traitfs_sync(TRAITFS_VOLUME_DATA) != TRAITFS_STATUS_OK) {
-            (void)traitfs_unlink(TRAITFS_VOLUME_DATA, temporary);
+        if (opengatfs_sync(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK) {
+            (void)opengatfs_unlink(OPENGATFS_VOLUME_DATA, temporary);
             return NETWORK_STATUS_FILESYSTEM;
         }
         status = finalize_download(destination, temporary, backup);
         if (status != NETWORK_STATUS_OK) {
-            (void)traitfs_unlink(TRAITFS_VOLUME_DATA, temporary);
+            (void)opengatfs_unlink(OPENGATFS_VOLUME_DATA, temporary);
             return status;
         }
         result->synchronize_ns = clock_monotonic_ns() - synchronize_started;
@@ -4576,8 +4576,8 @@ bool network_self_test(size_t *completed_tests)
     network_format_ipv4(UINT32_C(0x0A00020F), formatted);
     if (!string_equal(formatted, "10.0.2.15")) { return false; }
     ++completed;
-    if (!hostname_valid("trait.test") || hostname_valid("-trait.test") ||
-        hostname_valid("trait..test")) { return false; }
+    if (!hostname_valid("opengat.test") || hostname_valid("-opengat.test") ||
+        hostname_valid("opengat..test")) { return false; }
     completed += 3U;
     if (!parse_u64_decimal("16777216", 8U, &value) ||
         value != NETWORK_HTTP_MAX_DOWNLOAD_BYTES ||
@@ -4590,10 +4590,10 @@ bool network_self_test(size_t *completed_tests)
         destination_valid("/absolute.txt")) { return false; }
     completed += 3U;
     struct parsed_http_url url;
-    if (!parse_http_url("http://trait.test/welcome.txt", &url) ||
-        url.port != 80U || !string_equal(url.host, "trait.test") ||
-        parse_http_url("https://trait.test/", &url) ||
-        parse_http_url("http://user@trait.test/", &url)) { return false; }
+    if (!parse_http_url("http://opengat.test/welcome.txt", &url) ||
+        url.port != 80U || !string_equal(url.host, "opengat.test") ||
+        parse_http_url("https://opengat.test/", &url) ||
+        parse_http_url("http://user@opengat.test/", &url)) { return false; }
     completed += 3U;
     if (!sequence_before(UINT32_MAX - 1U, 1U) ||
         sequence_before(1U, UINT32_MAX - 1U)) { return false; }

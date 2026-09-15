@@ -9,16 +9,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <trait/clock.h>
-#include <trait/cpu.h>
-#include <trait/dma.h>
-#include <trait/driver.h>
-#include <trait/interrupt_vector.h>
-#include <trait/memory.h>
-#include <trait/msix.h>
-#include <trait/paging.h>
-#include <trait/pci.h>
-#include <trait/pci_resource.h>
+#include <opengat/clock.h>
+#include <opengat/cpu.h>
+#include <opengat/dma.h>
+#include <opengat/driver.h>
+#include <opengat/interrupt_vector.h>
+#include <opengat/memory.h>
+#include <opengat/msix.h>
+#include <opengat/paging.h>
+#include <opengat/pci.h>
+#include <opengat/pci_resource.h>
 
 /* PCI Code and ID Assignment Specification 1.19 section 1. */
 #define DRIVER_CLASS_MASS_STORAGE UINT8_C(0x01)
@@ -944,7 +944,7 @@ static enum driver_status probe_bochs_display(
 }
 
 /*
- * Intel 82441FX, the host bridge of the machine Trait OS is tested on. Its
+ * Intel 82441FX, the host bridge of the machine OpenGAT is tested on. Its
  * programmable attribute map is what decides whether the legacy BIOS regions
  * read from ROM or from DRAM, and that is the first thing a memory
  * initialisation driver has to know. Nothing here writes: changing the
@@ -994,7 +994,7 @@ static enum driver_status probe_intel_82441fx(
 /*
  * Intel 82371SB PIIX3, the ISA bridge. Its four route-control registers say
  * which ISA interrupt each PCI interrupt pin lands on, or that the pin is not
- * routed at all. Trait OS retired the 8259 pair and routes through the I/O APIC,
+ * routed at all. OpenGAT retired the 8259 pair and routes through the I/O APIC,
  * so this driver reports the legacy routing rather than using it - and reports
  * it without touching it, because a bridge that is decoding the machine's
  * legacy I/O is not somewhere to write experimentally.

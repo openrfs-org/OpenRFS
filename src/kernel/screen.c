@@ -3,10 +3,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <trait/font.h>
-#include <trait/framebuffer.h>
-#include <trait/screen.h>
-#include <trait/surface.h>
+#include <opengat/font.h>
+#include <opengat/framebuffer.h>
+#include <opengat/screen.h>
+#include <opengat/surface.h>
 
 /*
  * Bitmap text rendered through a cached surface. Scrolling stays in write-back
@@ -18,16 +18,16 @@
 #define REPLACEMENT_CHARACTER '?'
 
 /*
- * Black on white is the deliberate classic Trait OS console contract. It keeps
- * the shell legible while matching Trait OS's one-bit computer-era chrome.
+ * The boot console is white text on black, matching the conventional Unix
+ * system console that users see before `starty` launches the desktop.
  */
-#define SCREEN_BACKGROUND_RED UINT8_C(0xFF)
-#define SCREEN_BACKGROUND_GREEN UINT8_C(0xFF)
-#define SCREEN_BACKGROUND_BLUE UINT8_C(0xFF)
+#define SCREEN_BACKGROUND_RED UINT8_C(0x00)
+#define SCREEN_BACKGROUND_GREEN UINT8_C(0x00)
+#define SCREEN_BACKGROUND_BLUE UINT8_C(0x00)
 
-#define SCREEN_FOREGROUND_RED UINT8_C(0x00)
-#define SCREEN_FOREGROUND_GREEN UINT8_C(0x00)
-#define SCREEN_FOREGROUND_BLUE UINT8_C(0x00)
+#define SCREEN_FOREGROUND_RED UINT8_C(0xFF)
+#define SCREEN_FOREGROUND_GREEN UINT8_C(0xFF)
+#define SCREEN_FOREGROUND_BLUE UINT8_C(0xFF)
 
 static struct screen_state state;
 static uint32_t background_pixel;
@@ -97,7 +97,7 @@ static enum screen_status paint_cell(
         code = (uint32_t)REPLACEMENT_CHARACTER;
     }
 
-    if (trait_font_glyph(code, glyph_rows, sizeof(glyph_rows)) !=
+    if (opengat_font_glyph(code, glyph_rows, sizeof(glyph_rows)) !=
         FONT_STATUS_OK) {
         return SCREEN_STATUS_DRAW_FAILURE;
     }
@@ -294,7 +294,7 @@ enum screen_status screen_initialize(void)
         return SCREEN_STATUS_NO_FRAMEBUFFER;
     }
 
-    if (trait_font_geometry(&width, &height, &first, &count) !=
+    if (opengat_font_geometry(&width, &height, &first, &count) !=
         FONT_STATUS_OK) {
         return SCREEN_STATUS_BAD_FONT;
     }
@@ -866,7 +866,7 @@ enum screen_status screen_verify_cell(
         code = (uint32_t)REPLACEMENT_CHARACTER;
     }
 
-    if (trait_font_glyph(code, glyph_rows, sizeof(glyph_rows)) !=
+    if (opengat_font_glyph(code, glyph_rows, sizeof(glyph_rows)) !=
         FONT_STATUS_OK) {
         return SCREEN_STATUS_DRAW_FAILURE;
     }

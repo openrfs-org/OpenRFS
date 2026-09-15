@@ -209,8 +209,8 @@ extern AudioBootStrap VITAAUD_bootstrap;
 extern AudioBootStrap N3DSAUDIO_bootstrap;
 extern AudioBootStrap EMSCRIPTENAUDIO_bootstrap;
 extern AudioBootStrap OS2AUDIO_bootstrap;
-#ifdef SDL_AUDIO_DRIVER_TRAIT
-extern AudioBootStrap TRAITAUDIO_bootstrap;
+#ifdef SDL_AUDIO_DRIVER_OPENGAT
+extern AudioBootStrap OPENGATAUDIO_bootstrap;
 #endif
 
 #endif /* SDL_sysaudio_h_ */

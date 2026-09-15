@@ -3,13 +3,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <trait/apic.h>
-#include <trait/cpu.h>
-#include <trait/interrupts.h>
-#include <trait/ioapic.h>
-#include <trait/pic.h>
-#include <trait/pit.h>
-#include <trait/pm_timer.h>
+#include <opengat/apic.h>
+#include <opengat/cpu.h>
+#include <opengat/interrupts.h>
+#include <opengat/ioapic.h>
+#include <opengat/pic.h>
+#include <opengat/pit.h>
+#include <opengat/pm_timer.h>
 
 #define PIT_INPUT_FREQUENCY UINT32_C(1193182)
 #define PIT_CHANNEL_ZERO UINT16_C(0x40)

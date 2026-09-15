@@ -3,12 +3,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <trait/cpu.h>
-#include <trait/interrupts.h>
-#include <trait/ioapic.h>
-#include <trait/keyboard.h>
-#include <trait/pointer.h>
-#include <trait/ui.h>
+#include <opengat/cpu.h>
+#include <opengat/interrupts.h>
+#include <opengat/ioapic.h>
+#include <opengat/keyboard.h>
+#include <opengat/pointer.h>
+#include <opengat/ui.h>
 
 #define PS2_DATA_PORT UINT16_C(0x0060)
 #define PS2_COMMAND_PORT UINT16_C(0x0064)

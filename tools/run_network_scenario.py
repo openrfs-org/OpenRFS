@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Run one deterministic Trait OS networking scenario under QEMU."""
+"""Run one deterministic OpenGAT networking scenario under QEMU."""
 
 from __future__ import annotations
 
@@ -38,12 +38,12 @@ STORAGE = {
     "network-persistence",
     "network-native",
     "native-https",
-    "native-trait",
+    "native-opengat",
 }
 
 FIXTURE_MODE = {
     "native-https": "https",
-    "native-trait": "packages-lifecycle",
+    "native-opengat": "packages-lifecycle",
     "network-dhcp-timeout": "dhcp-timeout",
     "network-icmp-timeout": "silent",
     "network-dns-cname": "dns-cname",
@@ -151,10 +151,10 @@ def storage_arguments(args: argparse.Namespace, output: Path) -> list[str]:
         "-boot", "order=d",
         "-blockdev", f"driver=file,filename={args.system},node-name=system-file,read-only=on,auto-read-only=off",
         "-blockdev", "driver=raw,file=system-file,node-name=system-raw,read-only=on",
-        "-device", "nvme,serial=trait-system-fat32,drive=system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1",
+        "-device", "nvme,serial=opengat-system-fat32,drive=system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1",
         "-blockdev", f"driver=file,filename={data},node-name=data-file,read-only=off,auto-read-only=off",
         "-blockdev", "driver=raw,file=data-file,node-name=data-raw,read-only=off",
-        "-device", f"nvme,serial=trait-data-{args.data_filesystem},drive=data-raw,logical_block_size={data_block_size},physical_block_size={data_block_size},max_ioqpairs=1,msix_qsize=1",
+        "-device", f"nvme,serial=opengat-data-{args.data_filesystem},drive=data-raw,logical_block_size={data_block_size},physical_block_size={data_block_size},max_ioqpairs=1,msix_qsize=1",
     ]
 
 
@@ -184,12 +184,12 @@ def boot_arguments(args: argparse.Namespace, output: Path) -> list[str]:
     if root.exists():
         shutil.rmtree(root)
     shutil.copytree(args.efi_root, root)
-    shutil.copyfile(args.kernel, root / "boot" / "trait.elf")
+    shutil.copyfile(args.kernel, root / "boot" / "opengat.elf")
     configuration = (
         "set default=0\n"
         "set timeout=0\n\n"
-        'menuentry "Trait OS test" {\n'
-        f"    multiboot2 /boot/trait.elf trait.test={args.scenario}\n"
+        'menuentry "OpenGAT test" {\n'
+        f"    multiboot2 /boot/opengat.elf opengat.test={args.scenario}\n"
         "    boot\n"
         "}\n"
     )
@@ -229,11 +229,11 @@ def run(args: argparse.Namespace) -> int:
         "-monitor", "none", "-serial", "stdio", "-device",
         "isa-debug-exit,iobase=0xf4,iosize=0x04",
     ]
-    if args.scenario in ("native-https", "native-trait"):
+    if args.scenario in ("native-https", "native-opengat"):
         qemu.extend([
             "-cpu", "max",
             "-rtc", "base=" + (
-                "2027-01-15T08:01:00" if args.scenario == "native-trait"
+                "2027-01-15T08:01:00" if args.scenario == "native-opengat"
                 else "2026-08-31T00:00:00"
             ) + ",clock=vm",
         ])
@@ -256,9 +256,9 @@ def run(args: argparse.Namespace) -> int:
         )
         wait_ready(ready, fixture)
         qemu.extend([
-            "-netdev", "dgram,id=traitnet,local.type=inet,local.host=127.0.0.1,local.port="
+            "-netdev", "dgram,id=opengatnet,local.type=inet,local.host=127.0.0.1,local.port="
             f"{guest_port},remote.type=inet,remote.host=127.0.0.1,remote.port={peer_port}",
-            "-device", "virtio-net-pci,id=virtio-net0,netdev=traitnet,mac=52:54:00:12:34:56,disable-legacy=on,mrg_rxbuf=off",
+            "-device", "virtio-net-pci,id=virtio-net0,netdev=opengatnet,mac=52:54:00:12:34:56,disable-legacy=on,mrg_rxbuf=off",
         ])
     if args.scenario == "network-link-down":
         if hasattr(socket, "AF_UNIX"):
@@ -268,10 +268,10 @@ def run(args: argparse.Namespace) -> int:
             qemu.extend([
                 "-qmp", f"tcp:{qmp_endpoint[0]}:{qmp_endpoint[1]},server=on,wait=off"
             ])
-    if args.scenario not in ("network-persistence", "native-trait"):
+    if args.scenario not in ("network-persistence", "native-opengat"):
         qemu.append("-no-reboot")
 
-    expected_begins = 3 if args.scenario == "native-trait" else (
+    expected_begins = 3 if args.scenario == "native-opengat" else (
         2 if args.scenario == "network-persistence" else 1
     )
     try:
@@ -299,28 +299,28 @@ def run(args: argparse.Namespace) -> int:
     passed = transcript.count(f"ST PASS {args.scenario}\n")
     healthy = (result == args.expected and begin == expected_begins and
                passed == 1 and "ST FAIL" not in transcript and
-               "Trait OS PANIC" not in transcript and
+               "OpenGAT PANIC" not in transcript and
                "ST NETWORK production path bounded and recoverable" in transcript)
     if args.scenario == "network-native" and healthy:
         healthy = (
             transcript.count(
-                "TRAIT NETAPP PASS dns=10.0.2.20 http=32 udp=echo "
+                "OPENGAT NETAPP PASS dns=10.0.2.20 http=32 udp=echo "
                 "timeout reset cancel malformed-dns\n"
             ) == 1
             and transcript.count(
-                "Trait OS: native DNS, TCP, UDP, timeout, reset and "
+                "OpenGAT: native DNS, TCP, UDP, timeout, reset and "
                 "cancellation passed\n"
             ) == 1
         )
     if args.scenario == "native-https" and healthy:
         required = (
-            "TRAIT HTTPSAPP PHASE start\n",
-            "TRAIT HTTPSAPP PHASE authenticated-download PASS\n",
-            "TRAIT HTTPSAPP PHASE durable-output PASS\n",
-            "TRAIT HTTPSAPP PHASE kernel-upload PASS\n",
-            "TRAIT HTTPSAPP PASS hostname time trust length close upload\n",
-            "Trait OS: HTTPS strong hardware entropy passed\n",
-            "Trait OS: HTTPS TLS 1.2 hostname time trust framing close and "
+            "OPENGAT HTTPSAPP PHASE start\n",
+            "OPENGAT HTTPSAPP PHASE authenticated-download PASS\n",
+            "OPENGAT HTTPSAPP PHASE durable-output PASS\n",
+            "OPENGAT HTTPSAPP PHASE kernel-upload PASS\n",
+            "OPENGAT HTTPSAPP PASS hostname time trust length close upload\n",
+            "OpenGAT: HTTPS strong hardware entropy passed\n",
+            "OpenGAT: HTTPS TLS 1.2 hostname time trust framing close and "
             "teardown passed\n",
         )
         healthy = all(transcript.count(marker) == 1 for marker in required)
@@ -330,30 +330,30 @@ def run(args: argparse.Namespace) -> int:
                 "--https", "--json", str(audit),
             ], check=False)
             healthy = audited.returncode == 0
-    if args.scenario == "native-trait" and healthy:
+    if args.scenario == "native-opengat" and healthy:
         required = (
-            "TRAIT TRAIT PHASE signed-plan-refused PASS\n",
-            "TRAIT TRAIT PHASE committed generation=1 PASS\n",
-            "TRAIT TRAIT PHASE committed generation=2 PASS\n",
-            "TRAIT TRAIT PHASE repair-plan PASS\n",
-            "TRAIT TRAIT PHASE repaired generation=3 PASS\n",
-            "TRAIT TRAIT REPAIR PASS trust payload transaction cleanup\n",
-            "Trait OS: signed HTTPS package install synchronized reboot phase\n",
-            "Trait OS: signed HTTPS package update synchronized reboot phase\n",
-            "Trait OS: damaged package generation quarantined before repair "
+            "OPENGAT PACKAGE PHASE signed-plan-refused PASS\n",
+            "OPENGAT PACKAGE PHASE committed generation=1 PASS\n",
+            "OPENGAT PACKAGE PHASE committed generation=2 PASS\n",
+            "OPENGAT PACKAGE PHASE repair-plan PASS\n",
+            "OPENGAT PACKAGE PHASE repaired generation=3 PASS\n",
+            "OPENGAT PACKAGE REPAIR PASS trust payload transaction cleanup\n",
+            "OpenGAT: signed HTTPS package install synchronized reboot phase\n",
+            "OpenGAT: signed HTTPS package update synchronized reboot phase\n",
+            "OpenGAT: damaged package generation quarantined before repair "
             "passed\n",
-            "TRAIT SDL CHESS PASS upstream=release-2.32.10 "
+            "OPENGAT SDL CHESS PASS upstream=release-2.32.10 "
             "frames=8 persistent=yes\n",
-            "Trait OS: damaged SDL package repaired authenticated and launched "
+            "OpenGAT: damaged SDL package repaired authenticated and launched "
             "from writable ext4 passed\n",
         )
         healthy = all(transcript.count(marker) == 1 for marker in required)
         healthy = healthy and all(
             transcript.count(marker) == count for marker, count in (
-                ("TRAIT TRAIT PHASE start\n", 4),
-                ("TRAIT TRAIT PHASE signed-plan PASS\n", 2),
-                ("TRAIT TRAIT PHASE payloads-authenticated PASS\n", 3),
-                ("TRAIT TRAIT PASS https trust plan payload transaction "
+                ("OPENGAT PACKAGE PHASE start\n", 4),
+                ("OPENGAT PACKAGE PHASE signed-plan PASS\n", 2),
+                ("OPENGAT PACKAGE PHASE payloads-authenticated PASS\n", 3),
+                ("OPENGAT PACKAGE PASS https trust plan payload transaction "
                  "cleanup\n", 2),
             )
         )

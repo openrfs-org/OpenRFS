@@ -24,7 +24,7 @@ def text_field(value: str, size: int, field: str) -> bytes:
     if not encoded or len(encoded) >= size or any(
             not (character.isalnum() or character in "._-/ ")
             for character in value):
-        raise ValueError(f"{field} does not fit the Trait OS text profile")
+        raise ValueError(f"{field} does not fit the OpenGAT text profile")
     return encoded + bytes(size - len(encoded))
 
 
@@ -39,7 +39,7 @@ def bounded_file(path: Path, field: str) -> bytes:
 
 def make_catalog(library: bytes) -> bytes:
     catalog = bytearray(CATALOG_BYTES)
-    catalog[:8] = b"TRTDYN01"
+    catalog[:8] = b"OGTDYN01"
     struct.pack_into("<HHIHH", catalog, 8, 1, 64, CATALOG_BYTES, 1,
                      CATALOG_ENTRY_BYTES)
     catalog[64:128] = text_field(LIBRARY_NAME, 64, "library SONAME")

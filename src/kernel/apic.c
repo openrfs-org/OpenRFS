@@ -3,12 +3,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <trait/acpi.h>
-#include <trait/acpi_util.h>
-#include <trait/apic.h>
-#include <trait/boot.h>
-#include <trait/cpu.h>
-#include <trait/interrupts.h>
+#include <opengat/acpi.h>
+#include <opengat/acpi_util.h>
+#include <opengat/apic.h>
+#include <opengat/boot.h>
+#include <opengat/cpu.h>
+#include <opengat/interrupts.h>
 
 /* Intel SDM volume 3A table 11-1 fixes these register offsets. */
 #define APIC_REGISTER_ID UINT32_C(0x0020)
@@ -101,7 +101,7 @@ static uint32_t apic_lvt_offset(uint32_t index)
 /*
  * Decode IA32_APIC_BASE and hold the firmware description to it. A disagreement
  * between the MSR and the MADT means one of the two is describing a machine
- * Trait OS is not running on, and neither is safe to program from.
+ * OpenGAT is not running on, and neither is safe to program from.
  */
 static enum apic_status decode_base(
     uint64_t msr_value,
@@ -194,7 +194,7 @@ static void spurious_handler(struct interrupt_frame *frame, void *context)
 }
 
 /*
- * Leave every local vector table entry Trait OS does not use in a known masked
+ * Leave every local vector table entry OpenGAT does not use in a known masked
  * state rather than inheriting whatever the firmware left behind. A masked
  * entry still carries a legal vector so an accidental unmask cannot raise an
  * illegal-vector error.
@@ -256,7 +256,7 @@ static enum apic_status verify_programming(bool legacy_pic_present)
 
     /*
      * Delivery status and remote IRR are read-only status bits the processor
-     * owns, so only the fields Trait OS wrote are compared.
+     * owns, so only the fields OpenGAT wrote are compared.
      */
     if ((lint0 & UINT32_C(0x1F7FF)) != expected_lint0 ||
         (lint1 & UINT32_C(0x1F7FF)) != APIC_LVT_DELIVERY_NMI) {
@@ -406,7 +406,7 @@ enum apic_status apic_suppress_eoi_broadcasts(void)
 
 /*
  * Virtual wire mode exists only to carry the 8259 pair's output. Once the pair
- * is retired, an ExtINT LINT0 is a path for interrupts Trait OS has decided not
+ * is retired, an ExtINT LINT0 is a path for interrupts OpenGAT has decided not
  * to accept, so it is masked like every other unused entry.
  */
 enum apic_status apic_retire_legacy_routing(void)
@@ -476,7 +476,7 @@ uint64_t apic_spurious_count(void)
 
 /*
  * The decoders above are the part of bring-up that can be proved without
- * hardware, and they are the part that rejects a machine Trait OS must not
+ * hardware, and they are the part that rejects a machine OpenGAT must not
  * program. Every rejection below is driven by a synthetic register value.
  */
 bool apic_self_test(void)
@@ -529,9 +529,9 @@ bool apic_self_test(void)
     }
 
     if (decode_base(
-            TRAIT_EARLY_PHYSICAL_LIMIT | APIC_BASE_GLOBAL_ENABLE |
+            OPENGAT_EARLY_PHYSICAL_LIMIT | APIC_BASE_GLOBAL_ENABLE |
                 APIC_BASE_BOOTSTRAP,
-            TRAIT_EARLY_PHYSICAL_LIMIT,
+            OPENGAT_EARLY_PHYSICAL_LIMIT,
             &base
         ) != APIC_STATUS_BASE_OUTSIDE_EARLY_MAP) {
         return false;

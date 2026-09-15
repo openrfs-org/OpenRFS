@@ -2,18 +2,18 @@ SHELL := /bin/sh
 
 BUILD_DIR := build
 ISO_ROOT := $(BUILD_DIR)/iso-root
-KERNEL := $(BUILD_DIR)/trait.elf
-ISO := $(BUILD_DIR)/trait.iso
+KERNEL := $(BUILD_DIR)/opengat.elf
+ISO := $(BUILD_DIR)/opengat.iso
 SERIAL_LOG := $(BUILD_DIR)/serial.log
 TEST_BUILD_DIR := $(BUILD_DIR)/tests
 TEST_SCENARIOS := normal breakpoint invalid-opcode page-fault ist pit unexpected \
 	double-fault apic ioapic ioapic-level retired apic-timer tsc pm-timer \
 	pit-retired timers paging heap pci pci-ecam threads thread-guard framebuffer \
 	screen keyboard shell surface write-combining device-windows \
-	boot-ledger trait-proof device-substrate xhci nvme filesystem process \
-	linux-abi linux-abi-uname trait-proof-userland \
-	trait-proof-userland-absent trait-proof-userland-interactive \
-	trait-proof-userland-interactive-absent \
+	boot-ledger opengat-proof device-substrate xhci nvme filesystem process \
+	linux-abi linux-abi-uname opengat-proof-userland \
+	opengat-proof-userland-absent opengat-proof-userland-interactive \
+	opengat-proof-userland-interactive-absent \
 	fat32-system fat32-data fat32-nested fat32-growth fat32-random \
 	fat32-truncate fat32-rename fat32-delete fat32-full fat32-corrupt \
 	fat32-missing fat32-persistence fat32-cache fat32-immutable fat32-handles \
@@ -32,7 +32,7 @@ TEST_SCENARIOS := normal breakpoint invalid-opcode page-fault ist pit unexpected
 	nvidia nvidia-builtin native native-lua native-sqlite \
 	native-rust native-crash native-elf-refusal native-digest-refusal \
 	native-abi-refusal native-relaunch native-audio native-sdl native-dynamic \
-	native-https native-trait
+	native-https native-opengat
 TEST_TARGETS := $(addprefix qemu-test-,$(TEST_SCENARIOS))
 EXPECTED_TEST_SCENARIO_COUNT := 115
 EXPECTED_SHELL_ASSERTION_COUNT := 458
@@ -60,7 +60,7 @@ GRUB_MKRESCUE_FLAGS := $(if $(GRUB_MODULE_DIR),-d $(GRUB_MODULE_DIR),)
 # The one target Rust is built for. It matches the C flags exactly - no MMX, no
 # SSE, soft float, no red zone - which is why the two halves can share a stack.
 RUST_TARGET := x86_64-unknown-none
-RUST_LIB := $(BUILD_DIR)/libtrait.a
+RUST_LIB := $(BUILD_DIR)/libopengat.a
 RUST_FAT16_TEST := $(BUILD_DIR)/fat16-tests
 RUST_FAT32_TEST := $(BUILD_DIR)/fat32-tests
 RUST_LINUX_FAT16_TEST := $(BUILD_DIR)/linux-fat16-tests
@@ -88,18 +88,18 @@ TLS_HOST_WRAPPER_OBJECT := $(TEST_BUILD_DIR)/tls-wrapper.o
 HTTPS_HOST_TEST := $(TEST_BUILD_DIR)/https-client-host-test$(HOST_EXEEXT)
 HTTPS_HOST_OBJECT := $(TEST_BUILD_DIR)/https-client-host.o
 ZLIB_HOST_TEST := $(TEST_BUILD_DIR)/zlib-host-test
-EXT4_FIXTURE := $(TEST_BUILD_DIR)/ext4/trait-ext4.raw
+EXT4_FIXTURE := $(TEST_BUILD_DIR)/ext4/opengat-ext4.raw
 EXT4_RECOVERY_FIXTURE := $(TEST_BUILD_DIR)/ext4-recovery/data.raw
 RUST_SOURCES := $(wildcard src/rust/*.rs)
 RUST_MANIFEST := src/rust/Cargo.toml
 RUST_LOCKFILE := src/rust/Cargo.lock
 RUST_VENDOR_SOURCES := $(shell find vendor/ext4plus vendor/rust-crates \
 	-type f -print 2>/dev/null)
-LOGO_CANONICAL_SOURCE := assets/trait/logo.png
-LOGO_SOURCE := assets/trait/logo.png
+LOGO_CANONICAL_SOURCE := assets/opengat/logo.png
+LOGO_SOURCE := assets/opengat/logo.png
 LOGO_BLOB := $(BUILD_DIR)/logo.srl
 LOGO_MAX_DIMENSION := 280
-WALLPAPER_SOURCES := assets/trait/wallpaper.png
+WALLPAPER_SOURCES := assets/opengat/wallpaper.png
 WALLPAPER_BLOB := $(BUILD_DIR)/wallpaper.spw
 FONT_SOURCE := tools/font8x16.txt
 FONT_BLOB := $(BUILD_DIR)/font.snf
@@ -112,16 +112,16 @@ PACKAGE_TRUST_SPEC ?= platform/package-trust.json
 PACKAGE_TRUST_BLOB := $(BUILD_DIR)/package-trust.skt
 PACKAGE_TRUST_ASSET_C := $(BUILD_DIR)/package-trust-asset.c
 PACKAGE_TRUST_ASSET_OBJECT := $(BUILD_DIR)/package-trust-asset.o
-TRAIT_PROOF_IMAGE := assets/trait/proof.png
-TRAIT_PROOF_FOCUS_IMAGE := assets/trait/proof-focus.png
-TRAIT_PROOF_TERMINAL_IMAGE := assets/trait/proof-terminal.png
-TRAIT_PROOF_CAPTURE_DIR := $(BUILD_DIR)/trait-proof-captures
-TRAIT_PROOF_BOOT_VIDEO := assets/trait-proof-boot-20s.mp4
-TRAIT_CAPTURE_DIR := $(BUILD_DIR)/trait-captures
+OPENGAT_PROOF_IMAGE := assets/opengat/proof.png
+OPENGAT_PROOF_FOCUS_IMAGE := assets/opengat/proof-focus.png
+OPENGAT_PROOF_TERMINAL_IMAGE := assets/opengat/proof-terminal.png
+OPENGAT_PROOF_CAPTURE_DIR := $(BUILD_DIR)/opengat-proof-captures
+OPENGAT_PROOF_BOOT_VIDEO := assets/opengat-proof-boot-20s.mp4
+OPENGAT_CAPTURE_DIR := $(BUILD_DIR)/opengat-captures
 NETWORK_CAPTURE_DIR := $(BUILD_DIR)/networking-capture
 NVME_FIXTURE := $(TEST_BUILD_DIR)/nvme/nvme-fixture.raw
 FILESYSTEM_FIXTURE := $(TEST_BUILD_DIR)/filesystem/fat16-fixture.raw
-PROCESS_ELF := $(TEST_BUILD_DIR)/process/TRAIT.BIN
+PROCESS_ELF := $(TEST_BUILD_DIR)/process/OPENGAT.BIN
 PROCESS_FIXTURE := $(TEST_BUILD_DIR)/process/process-fixture.raw
 BUSYBOX_OUTPUT_DIR := $(BUILD_DIR)/busybox-contract
 BUSYBOX_WORK_DIR := $(BUILD_DIR)/busybox-work
@@ -134,18 +134,18 @@ LINUX_UNAME_FIXTURE := $(BUILD_DIR)/fixtures/linux-uname-fat16.raw
 BUSYBOX_CAT_OUTPUT_DIR := $(BUILD_DIR)/busybox-cat-contract
 BUSYBOX_CAT_WORK_DIR := $(BUILD_DIR)/busybox-cat-work
 BUSYBOX_CAT_BINARY := $(BUSYBOX_CAT_OUTPUT_DIR)/busybox
-TRAIT_PROOF_USERLAND_IMAGE := $(BUILD_DIR)/userspace/trait-userland-fat16.raw
-TRAIT_PROOF_USERLAND_NO_CAT_IMAGE := \
-	$(BUILD_DIR)/userspace/trait-userland-no-cat-fat16.raw
-FAT32_SYSTEM_IMAGE := $(BUILD_DIR)/userspace/trait-system-fat32.raw
-DESKTOP_SYSTEM_IMAGE := $(BUILD_DIR)/userspace/trait-desktop-system-fat32.raw
-FAT32_DATA_IMAGE := $(BUILD_DIR)/userspace/trait-data-fat32.raw
+OPENGAT_PROOF_USERLAND_IMAGE := $(BUILD_DIR)/userspace/opengat-userland-fat16.raw
+OPENGAT_PROOF_USERLAND_NO_CAT_IMAGE := \
+	$(BUILD_DIR)/userspace/opengat-userland-no-cat-fat16.raw
+FAT32_SYSTEM_IMAGE := $(BUILD_DIR)/userspace/opengat-system-fat32.raw
+DESKTOP_SYSTEM_IMAGE := $(BUILD_DIR)/userspace/opengat-desktop-system-fat32.raw
+FAT32_DATA_IMAGE := $(BUILD_DIR)/userspace/opengat-data-fat32.raw
 FAT32_RUN_DATA_IMAGE := $(BUILD_DIR)/run-data-fat32.raw
-FAT32_FULL_IMAGE := $(BUILD_DIR)/userspace/trait-data-full-fat32.raw
-FAT32_CORRUPT_IMAGE := $(BUILD_DIR)/userspace/trait-data-corrupt-fat32.raw
+FAT32_FULL_IMAGE := $(BUILD_DIR)/userspace/opengat-data-full-fat32.raw
+FAT32_CORRUPT_IMAGE := $(BUILD_DIR)/userspace/opengat-data-corrupt-fat32.raw
 SDK_BUILD_DIR ?= $(BUILD_DIR)/sdk
 SDK_OBJECT_DIR := $(SDK_BUILD_DIR)/obj
-SDK_LIB := $(SDK_BUILD_DIR)/lib/libtrait.a
+SDK_LIB := $(SDK_BUILD_DIR)/lib/libopengat.a
 SDK_CRT := $(SDK_BUILD_DIR)/lib/crt0.o
 SDK_C_SOURCES := $(wildcard sdk/src/*.c)
 SDK_ASM_SOURCES := $(wildcard sdk/src/*.S)
@@ -201,7 +201,7 @@ SDL2_OBJECTS := $(patsubst vendor/sdl2/src/%.c,\
 	$(SDL2_OBJECT_DIR)/%.o,$(SDL2_SOURCES))
 SDL2_LIB := $(SDK_BUILD_DIR)/lib/libSDL2.a
 SDL2_PUBLIC_HEADERS := $(wildcard vendor/sdl2/include/*.h)
-SDL2_CFLAGS := --target=x86_64-unknown-none-elf -D__TRAIT__=1 \
+SDL2_CFLAGS := --target=x86_64-unknown-none-elf -D__OPENGAT__=1 \
 	-Ivendor/sdl2/include -Isdk/include -Iinclude -std=c11 -O2 -g \
 	-ffreestanding -fno-pie -fno-stack-protector -mcmodel=large \
 	-mno-red-zone -fno-builtin -ffunction-sections -fdata-sections \
@@ -239,13 +239,13 @@ HTTPSAPP_APP := $(HTTPSAPP_DIR)/HTTPS.APP
 HTTPSAPP_PACKAGE := $(HTTPSAPP_DIR)/HTTPSAPP.SPK
 HTTPSAPP_SYSTEM_IMAGE := $(HTTPSAPP_DIR)/system.raw
 HTTPSAPP_DATA_IMAGE := $(HTTPSAPP_DIR)/data.raw
-TRAITAPP_DIR := $(BUILD_DIR)/native-trait
-TRAITAPP_APP := $(TRAITAPP_DIR)/TRAIT.APP
-TRAITAPP_PACKAGE := $(TRAITAPP_DIR)/TRAIT.SPK
-TRAITAPP_REPAIR_PACKAGE := $(TRAITAPP_DIR)/TRAITREP.SPK
-TRAITAPP_SYSTEM_IMAGE := $(TRAITAPP_DIR)/system.raw
-TRAITAPP_DATA_IMAGE := $(TRAITAPP_DIR)/data.raw
-TRAITAPP_REPOSITORY := $(TRAITAPP_DIR)/repository/repository.sri
+OPENGATAPP_DIR := $(BUILD_DIR)/native-opengat
+OPENGATAPP_APP := $(OPENGATAPP_DIR)/OPENGAT.APP
+OPENGATAPP_PACKAGE := $(OPENGATAPP_DIR)/OPENGAT.SPK
+OPENGATAPP_REPAIR_PACKAGE := $(OPENGATAPP_DIR)/OPENGATREP.SPK
+OPENGATAPP_SYSTEM_IMAGE := $(OPENGATAPP_DIR)/system.raw
+OPENGATAPP_DATA_IMAGE := $(OPENGATAPP_DIR)/data.raw
+OPENGATAPP_REPOSITORY := $(OPENGATAPP_DIR)/repository/repository.sri
 AUDIO_APP_DIR := $(BUILD_DIR)/native-audio
 AUDIO_APP := $(AUDIO_APP_DIR)/AUDIO.APP
 AUDIO_PACKAGE := $(AUDIO_APP_DIR)/AUDIO.SPK
@@ -271,7 +271,7 @@ DYNAMIC_SYSTEM_IMAGE := $(DYNAMIC_APP_DIR)/system.raw
 DYNAMIC_DATA_IMAGE := $(DYNAMIC_APP_DIR)/data.raw
 RUST_APP_DIR := $(BUILD_DIR)/native-rust
 RUST_APP_CARGO_TARGET := $(RUST_APP_DIR)/cargo
-RUST_APP_SOURCE := $(RUST_APP_CARGO_TARGET)/x86_64-unknown-none/release/trait-native-rust-proof
+RUST_APP_SOURCE := $(RUST_APP_CARGO_TARGET)/x86_64-unknown-none/release/opengat-native-rust-proof
 RUST_APP := $(RUST_APP_DIR)/RUST.APP
 RUST_APP_PACKAGE := $(RUST_APP_DIR)/RUSTAPP.SPK
 RUST_APP_SYSTEM_IMAGE := $(RUST_APP_DIR)/system.raw
@@ -305,7 +305,7 @@ ASFLAGS := $(COMMON_FLAGS) -Wa,--fatal-warnings
 # the first time one was linked in. Now an unnamed section is a link error.
 LDFLAGS := -nostdlib -z max-page-size=0x1000 -z noexecstack --fatal-warnings \
 	--orphan-handling=error --build-id=none -T linker.ld \
-	-Map=$(BUILD_DIR)/trait.map
+	-Map=$(BUILD_DIR)/opengat.map
 
 C_SOURCES := $(wildcard src/kernel/*.c)
 C_OBJECTS := $(patsubst src/kernel/%.c,$(BUILD_DIR)/%.o,$(C_SOURCES))
@@ -342,8 +342,8 @@ DEPENDENCIES := $(C_OBJECTS:.o=.d) $(MONOCYPHER_OBJECTS:.o=.d) \
 # implicit and pattern rule search for a phony target, so declaring them phony
 # makes every scenario resolve to "nothing to be done" and pass without booting.
 # They never create a file of their own name, so they rerun regardless.
-.PHONY: all audio-wav-tests capture-boot-video capture-trait capture-trait-proof capture-networking clean contract-counts contract-scenarios dynamic-elf-tests ext4-images ext4-tests fat32-images force-package-trust hooks https-tests \
-	iso kernel lint native-apps native-audio-proof native-dynamic-proof native-https-proof native-trait-proof native-sdl-proof port-tests qemu-port-tests reproducible-sdk run \
+.PHONY: all audio-wav-tests capture-boot-video capture-opengat capture-opengat-proof capture-networking clean contract-counts contract-scenarios dynamic-elf-tests ext4-images ext4-tests fat32-images force-package-trust hooks https-tests \
+	iso kernel lint native-apps native-audio-proof native-dynamic-proof native-https-proof native-opengat-proof native-sdl-proof sdl-preference-tests port-tests qemu-port-tests reproducible-sdk run \
 	package-control-tests package-fetch-tests package-manager-tests package-repository-tests package-service-tests package-state-tests package-transaction-tests package-trust-asset-tests package-trust-tests package-upload-tests qemu-test-ext4-powercuts screenshot-proof sdk sdk-once smoke tls-tests toolchain verify wall-clock-tests zlib-tests
 
 all: kernel
@@ -370,7 +370,7 @@ $(ZLIB_OBJECT_DIR)/%.o: vendor/zlib/src/%.c $(ZLIB_HEADERS)
 	$(SDK_CC) $(ZLIB_CFLAGS) -c $< -o $@
 
 $(SDL2_OBJECT_DIR)/%.o: vendor/sdl2/src/%.c $(SDL2_PUBLIC_HEADERS) \
-		vendor/sdl2/include/SDL_config_trait.h
+		vendor/sdl2/include/SDL_config_opengat.h
 	mkdir -p $(dir $@)
 	$(SDK_CC) $(SDL2_VENDOR_CFLAGS) -MMD -MP -MT sdl2/$*.o -c $< -o $@
 
@@ -404,25 +404,25 @@ $(SDL2_LIB): $(SDL2_OBJECTS) | $(SDK_BUILD_DIR)/lib
 $(SDK_BUILD_DIR)/.installed: Makefile $(SDK_LIB) $(BEARSSL_LIB) $(ZLIB_LIB) \
 		$(SDL2_LIB) $(SDK_CRT) \
 		sdk/linker.ld \
-		sdk/bin/trait-cc $(wildcard sdk/include/*.h) \
-		$(wildcard sdk/include/trait/*.h) $(wildcard sdk/include/sys/*.h) \
+		sdk/bin/opengat-cc $(wildcard sdk/include/*.h) \
+		$(wildcard sdk/include/opengat/*.h) $(wildcard sdk/include/sys/*.h) \
 		$(wildcard vendor/bearssl/inc/*.h) \
 		$(wildcard vendor/zlib/include/*.h) \
 		$(SDL2_PUBLIC_HEADERS) \
-		$(wildcard include/trait/abi/*.h) \
-		include/trait/abi.h | $(SDK_BUILD_DIR)/include $(SDK_BUILD_DIR)/bin
-	mkdir -p $(SDK_BUILD_DIR)/include/trait/abi $(SDK_BUILD_DIR)/include/sys \
+		$(wildcard include/opengat/abi/*.h) \
+		include/opengat/abi.h | $(SDK_BUILD_DIR)/include $(SDK_BUILD_DIR)/bin
+	mkdir -p $(SDK_BUILD_DIR)/include/opengat/abi $(SDK_BUILD_DIR)/include/sys \
 		$(SDK_BUILD_DIR)/include/SDL2
 	cp sdk/include/*.h $(SDK_BUILD_DIR)/include/
-	cp sdk/include/trait/*.h $(SDK_BUILD_DIR)/include/trait/
+	cp sdk/include/opengat/*.h $(SDK_BUILD_DIR)/include/opengat/
 	cp sdk/include/sys/*.h $(SDK_BUILD_DIR)/include/sys/
-	cp include/trait/abi.h $(SDK_BUILD_DIR)/include/trait/
-	cp include/trait/abi/*.h $(SDK_BUILD_DIR)/include/trait/abi/
+	cp include/opengat/abi.h $(SDK_BUILD_DIR)/include/opengat/
+	cp include/opengat/abi/*.h $(SDK_BUILD_DIR)/include/opengat/abi/
 	cp vendor/bearssl/inc/*.h $(SDK_BUILD_DIR)/include/
 	cp vendor/zlib/include/*.h $(SDK_BUILD_DIR)/include/
 	cp vendor/sdl2/include/*.h $(SDK_BUILD_DIR)/include/SDL2/
 	cp sdk/linker.ld $(SDK_BUILD_DIR)/linker.ld
-	cp sdk/bin/trait-cc $(SDK_BUILD_DIR)/bin/trait-cc
+	cp sdk/bin/opengat-cc $(SDK_BUILD_DIR)/bin/opengat-cc
 	touch $@
 
 sdk-once: $(SDK_BUILD_DIR)/.installed
@@ -451,7 +451,7 @@ $(NETAPP_DIR):
 $(HTTPSAPP_DIR):
 	mkdir -p $@
 
-$(TRAITAPP_DIR):
+$(OPENGATAPP_DIR):
 	mkdir -p $@
 
 $(AUDIO_APP_DIR):
@@ -491,7 +491,7 @@ $(NATIVE_TEST_APP): $(NATIVE_APP_DIR)/native-test.o \
 
 $(NATIVE_TEST_PACKAGE): $(NATIVE_TEST_APP) apps/native-test/manifest.json \
 		apps/native-test/RESOURCE.TXT
-	$(PYTHON) tools/trait-package.py build \
+	$(PYTHON) tools/opengat-package.py build \
 		--spec apps/native-test/manifest.json --executable $< --output $@
 
 $(CRASH_APP_DIR)/main.o: apps/native-crash/main.c \
@@ -503,21 +503,21 @@ $(CRASH_APP): $(CRASH_APP_DIR)/main.o $(SDK_BUILD_DIR)/.installed
 		-o $@ $(SDK_CRT) $< $(SDK_LIB)
 
 $(CRASH_PACKAGE): $(CRASH_APP) apps/native-crash/manifest.json
-	$(PYTHON) tools/trait-package.py build \
+	$(PYTHON) tools/opengat-package.py build \
 		--spec apps/native-crash/manifest.json --executable $< --output $@
 
 $(LUA_APP): tools/build-lua-port.sh ports/lua/source/SHA256SUMS \
 		ports/lua/source/lua-5.4.7.tar.gz $(SDK_BUILD_DIR)/.installed
-	TRAIT_SDK_CC='$(SDK_CC)' TRAIT_SDK_LD='$(SDK_LD)' \
+	OPENGAT_SDK_CC='$(SDK_CC)' OPENGAT_SDK_LD='$(SDK_LD)' \
 		bash tools/build-lua-port.sh $(LUA_PORT_DIR) $(LUA_PORT_WORK_DIR)
 
 $(LUA_PACKAGE): $(LUA_APP) ports/lua/manifest.json
-	$(PYTHON) tools/trait-package.py build \
+	$(PYTHON) tools/opengat-package.py build \
 		--spec ports/lua/manifest.json --executable $< --output $@
 
-$(LUA_SYSTEM_IMAGE): $(LUA_PACKAGE) tools/trait-package.py \
+$(LUA_SYSTEM_IMAGE): $(LUA_PACKAGE) tools/opengat-package.py \
 		tools/fat32_image.py
-	$(PYTHON) tools/trait-package.py install-system \
+	$(PYTHON) tools/opengat-package.py install-system \
 		--output $@ $(LUA_PACKAGE)
 
 $(LUA_EMPTY_DATA_IMAGE): tools/fat32_image.py | $(LUA_PORT_DIR)
@@ -529,20 +529,20 @@ $(LUA_DATA_IMAGE): $(LUA_EMPTY_DATA_IMAGE) ports/lua/SCRIPT.LUA \
 		--file LUA/SCRIPT.LUA=ports/lua/SCRIPT.LUA
 
 $(SQLITE_APP): tools/build-sqlite-port.sh ports/sqlite/main.c \
-		ports/sqlite/trait_vfs.c ports/sqlite/source/SHA256SUMS \
+		ports/sqlite/opengat_vfs.c ports/sqlite/source/SHA256SUMS \
 		ports/sqlite/source/sqlite-amalgamation-3460000.zip \
 		$(SDK_BUILD_DIR)/.installed
-	TRAIT_SDK_CC='$(SDK_CC)' TRAIT_SDK_LD='$(SDK_LD)' \
+	OPENGAT_SDK_CC='$(SDK_CC)' OPENGAT_SDK_LD='$(SDK_LD)' \
 		PYTHON='$(PYTHON)' bash tools/build-sqlite-port.sh \
 		$(SQLITE_PORT_DIR) $(SQLITE_PORT_WORK_DIR)
 
 $(SQLITE_PACKAGE): $(SQLITE_APP) ports/sqlite/manifest.json
-	$(PYTHON) tools/trait-package.py build \
+	$(PYTHON) tools/opengat-package.py build \
 		--spec ports/sqlite/manifest.json --executable $< --output $@
 
-$(SQLITE_SYSTEM_IMAGE): $(SQLITE_PACKAGE) tools/trait-package.py \
+$(SQLITE_SYSTEM_IMAGE): $(SQLITE_PACKAGE) tools/opengat-package.py \
 		tools/fat32_image.py
-	$(PYTHON) tools/trait-package.py install-system \
+	$(PYTHON) tools/opengat-package.py install-system \
 		--output $@ $(SQLITE_PACKAGE)
 
 $(SQLITE_DATA_IMAGE): tools/fat32_image.py | $(SQLITE_PORT_DIR)
@@ -557,12 +557,12 @@ $(NETAPP_APP): $(NETAPP_DIR)/main.o $(SDK_BUILD_DIR)/.installed
 		-o $@ $(SDK_CRT) $< $(SDK_LIB)
 
 $(NETAPP_PACKAGE): $(NETAPP_APP) apps/native-network/manifest.json
-	$(PYTHON) tools/trait-package.py build \
+	$(PYTHON) tools/opengat-package.py build \
 		--spec apps/native-network/manifest.json --executable $< --output $@
 
-$(NETAPP_SYSTEM_IMAGE): $(NETAPP_PACKAGE) tools/trait-package.py \
+$(NETAPP_SYSTEM_IMAGE): $(NETAPP_PACKAGE) tools/opengat-package.py \
 		tools/fat32_image.py
-	$(PYTHON) tools/trait-package.py install-system \
+	$(PYTHON) tools/opengat-package.py install-system \
 		--output $@ $(NETAPP_PACKAGE)
 
 $(NETAPP_DATA_IMAGE): tools/fat32_image.py | $(NETAPP_DIR)
@@ -578,50 +578,50 @@ $(HTTPSAPP_APP): $(HTTPSAPP_DIR)/main.o $(SDK_BUILD_DIR)/.installed
 		-o $@ $(SDK_CRT) $< $(SDK_LIB) $(BEARSSL_LIB)
 
 $(HTTPSAPP_PACKAGE): $(HTTPSAPP_APP) apps/native-https/manifest.json
-	$(PYTHON) tools/trait-package.py build \
+	$(PYTHON) tools/opengat-package.py build \
 		--spec apps/native-https/manifest.json --executable $< --output $@
 
-$(HTTPSAPP_SYSTEM_IMAGE): $(HTTPSAPP_PACKAGE) tools/trait-package.py \
+$(HTTPSAPP_SYSTEM_IMAGE): $(HTTPSAPP_PACKAGE) tools/opengat-package.py \
 		tools/fat32_image.py
-	$(PYTHON) tools/trait-package.py install-system \
+	$(PYTHON) tools/opengat-package.py install-system \
 		--output $@ $(HTTPSAPP_PACKAGE)
 
 $(HTTPSAPP_DATA_IMAGE): tools/fat32_image.py | $(HTTPSAPP_DIR)
 	$(PYTHON) tools/fat32_image.py format data $@
 
-$(TRAITAPP_DIR)/main.o: apps/trait/main.c \
+$(OPENGATAPP_DIR)/main.o: apps/opengat/main.c \
 		apps/native-https/trust_anchor.h $(SDK_BUILD_DIR)/.installed | \
-		$(TRAITAPP_DIR)
+		$(OPENGATAPP_DIR)
 	$(SDK_CC) $(SDK_CFLAGS) -c $< -o $@
 
-$(TRAITAPP_APP): $(TRAITAPP_DIR)/main.o $(SDK_BUILD_DIR)/.installed
-	$(SDK_LD) $(SDK_LDFLAGS) -Map=$(TRAITAPP_DIR)/TRAIT.map \
+$(OPENGATAPP_APP): $(OPENGATAPP_DIR)/main.o $(SDK_BUILD_DIR)/.installed
+	$(SDK_LD) $(SDK_LDFLAGS) -Map=$(OPENGATAPP_DIR)/OPENGAT.map \
 		-o $@ $(SDK_CRT) $< $(SDK_LIB) $(BEARSSL_LIB)
 
-$(TRAITAPP_PACKAGE): $(TRAITAPP_APP) apps/trait/manifest.json
-	$(PYTHON) tools/trait-package.py build \
-		--spec apps/trait/manifest.json --executable $< --output $@
+$(OPENGATAPP_PACKAGE): $(OPENGATAPP_APP) apps/opengat/manifest.json
+	$(PYTHON) tools/opengat-package.py build \
+		--spec apps/opengat/manifest.json --executable $< --output $@
 
-$(TRAITAPP_REPAIR_PACKAGE): $(TRAITAPP_APP) apps/trait/repair-manifest.json
-	$(PYTHON) tools/trait-package.py build \
-		--spec apps/trait/repair-manifest.json --executable $< --output $@
+$(OPENGATAPP_REPAIR_PACKAGE): $(OPENGATAPP_APP) apps/opengat/repair-manifest.json
+	$(PYTHON) tools/opengat-package.py build \
+		--spec apps/opengat/repair-manifest.json --executable $< --output $@
 
-$(TRAITAPP_SYSTEM_IMAGE): $(TRAITAPP_PACKAGE) $(TRAITAPP_REPAIR_PACKAGE) \
-		tools/trait-package.py \
+$(OPENGATAPP_SYSTEM_IMAGE): $(OPENGATAPP_PACKAGE) $(OPENGATAPP_REPAIR_PACKAGE) \
+		tools/opengat-package.py \
 		tools/fat32_image.py
-	$(PYTHON) tools/trait-package.py install-system \
-		--output $@ $(TRAITAPP_PACKAGE) $(TRAITAPP_REPAIR_PACKAGE)
+	$(PYTHON) tools/opengat-package.py install-system \
+		--output $@ $(OPENGATAPP_PACKAGE) $(OPENGATAPP_REPAIR_PACKAGE)
 
-$(TRAITAPP_DATA_IMAGE): $(EXT4_FIXTURE) | $(TRAITAPP_DIR)
+$(OPENGATAPP_DATA_IMAGE): $(EXT4_FIXTURE) | $(OPENGATAPP_DIR)
 	cp $< $@
 
-$(TRAITAPP_REPOSITORY): $(SDL_CHESS_RELEASE_APP) \
+$(OPENGATAPP_REPOSITORY): $(SDL_CHESS_RELEASE_APP) \
 		apps/upstream-sdl-chess/manifest.json \
 		tools/package_lifecycle_fixture.py \
-		tools/trait-package.py tools/trait-repository.py \
+		tools/opengat-package.py tools/opengat-repository.py \
 		platform/package-trust.json
 	$(PYTHON) tools/package_lifecycle_fixture.py \
-		--output $(TRAITAPP_DIR)/repository \
+		--output $(OPENGATAPP_DIR)/repository \
 		--executable $(SDL_CHESS_RELEASE_APP) \
 		--manifest-spec apps/upstream-sdl-chess/manifest.json
 
@@ -634,18 +634,18 @@ $(AUDIO_APP): $(AUDIO_APP_DIR)/main.o $(SDK_BUILD_DIR)/.installed
 		-o $@ $(SDK_CRT) $< $(SDK_LIB)
 
 $(AUDIO_PACKAGE): $(AUDIO_APP) apps/native-audio/manifest.json
-	$(PYTHON) tools/trait-package.py build \
+	$(PYTHON) tools/opengat-package.py build \
 		--spec apps/native-audio/manifest.json --executable $< --output $@
 
 $(AUDIO_REFUSAL_PACKAGE): $(AUDIO_APP) \
 		apps/native-audio/manifest-refusal.json
-	$(PYTHON) tools/trait-package.py build \
+	$(PYTHON) tools/opengat-package.py build \
 		--spec apps/native-audio/manifest-refusal.json \
 		--executable $< --output $@
 
 $(AUDIO_SYSTEM_IMAGE): $(AUDIO_PACKAGE) $(AUDIO_REFUSAL_PACKAGE) \
-		tools/trait-package.py tools/fat32_image.py
-	$(PYTHON) tools/trait-package.py install-system \
+		tools/opengat-package.py tools/fat32_image.py
+	$(PYTHON) tools/opengat-package.py install-system \
 		--output $@ $(AUDIO_PACKAGE) $(AUDIO_REFUSAL_PACKAGE)
 
 $(AUDIO_DATA_IMAGE): tools/fat32_image.py | $(AUDIO_APP_DIR)
@@ -661,12 +661,12 @@ $(SDL_PROOF_APP): $(SDL_PROOF_DIR)/main.o $(SDK_BUILD_DIR)/.installed
 		-o $@ $(SDK_CRT) $< $(SDL2_LIB) $(SDK_LIB)
 
 $(SDL_PROOF_PACKAGE): $(SDL_PROOF_APP) apps/native-sdl/manifest.json
-	$(PYTHON) tools/trait-package.py build \
+	$(PYTHON) tools/opengat-package.py build \
 		--spec apps/native-sdl/manifest.json --executable $< --output $@
 
-$(SDL_PROOF_SYSTEM_IMAGE): $(SDL_PROOF_PACKAGE) tools/trait-package.py \
+$(SDL_PROOF_SYSTEM_IMAGE): $(SDL_PROOF_PACKAGE) tools/opengat-package.py \
 		tools/fat32_image.py
-	$(PYTHON) tools/trait-package.py install-system \
+	$(PYTHON) tools/opengat-package.py install-system \
 		--output $@ $(SDL_PROOF_PACKAGE)
 
 $(SDL_PROOF_DATA_IMAGE): tools/fat32_image.py | $(SDL_PROOF_DIR)
@@ -690,7 +690,7 @@ $(SDL_CHESS_RELEASE_APP): $(SDL_CHESS_DIR)/main.o \
 
 $(SDL_CHESS_PACKAGE): $(SDL_CHESS_APP) \
 		apps/upstream-sdl-chess/manifest.json
-	$(PYTHON) tools/trait-package.py build \
+	$(PYTHON) tools/opengat-package.py build \
 		--spec apps/upstream-sdl-chess/manifest.json \
 		--executable $< --output $@
 
@@ -700,19 +700,19 @@ $(DYNAMIC_ROOT_APP) $(DYNAMIC_LIBRARY) $(DYNAMIC_CATALOG) \
 		apps/native-dynamic/proof.h apps/native-dynamic/manifest.json \
 		tools/build-native-dynamic-proof.sh \
 		tools/make-native-dynamic-proof.py | $(DYNAMIC_APP_DIR)
-	TRAIT_SDK_CC='$(SDK_CC)' TRAIT_SDK_LD='$(SDK_LD)' \
+	OPENGAT_SDK_CC='$(SDK_CC)' OPENGAT_SDK_LD='$(SDK_LD)' \
 		PYTHON='$(PYTHON)' READELF='$(READELF)' \
 		bash tools/build-native-dynamic-proof.sh $(DYNAMIC_APP_DIR)
 
 $(DYNAMIC_PACKAGE): $(DYNAMIC_ROOT_APP) $(DYNAMIC_LIBRARY) \
-		$(DYNAMIC_CATALOG) $(DYNAMIC_PACKAGE_SPEC) tools/trait-package.py
-	$(PYTHON) tools/trait-package.py build \
+		$(DYNAMIC_CATALOG) $(DYNAMIC_PACKAGE_SPEC) tools/opengat-package.py
+	$(PYTHON) tools/opengat-package.py build \
 		--spec $(DYNAMIC_PACKAGE_SPEC) --executable $(DYNAMIC_ROOT_APP) \
 		--output $@
 
-$(DYNAMIC_SYSTEM_IMAGE): $(DYNAMIC_PACKAGE) tools/trait-package.py \
+$(DYNAMIC_SYSTEM_IMAGE): $(DYNAMIC_PACKAGE) tools/opengat-package.py \
 		tools/fat32_image.py
-	$(PYTHON) tools/trait-package.py install-system \
+	$(PYTHON) tools/opengat-package.py install-system \
 		--output $@ $(DYNAMIC_PACKAGE)
 
 $(DYNAMIC_DATA_IMAGE): tools/fat32_image.py | $(DYNAMIC_APP_DIR)
@@ -720,7 +720,7 @@ $(DYNAMIC_DATA_IMAGE): tools/fat32_image.py | $(DYNAMIC_APP_DIR)
 
 $(RUST_APP): apps/native-rust/Cargo.toml apps/native-rust/Cargo.lock \
 		apps/native-rust/manifest.json apps/native-rust/src/main.rs \
-		rust/trait/Cargo.toml rust/trait/src/lib.rs sdk/linker.ld | $(RUST_APP_DIR)
+		rust/opengat/Cargo.toml rust/opengat/src/lib.rs sdk/linker.ld | $(RUST_APP_DIR)
 	CARGO_TARGET_DIR='$(CURDIR)/$(RUST_APP_CARGO_TARGET)' \
 		RUSTFLAGS='$(RUST_APP_FLAGS)' $(CARGO) build \
 		--manifest-path apps/native-rust/Cargo.toml --release \
@@ -728,35 +728,35 @@ $(RUST_APP): apps/native-rust/Cargo.toml apps/native-rust/Cargo.lock \
 	cp '$(RUST_APP_SOURCE)' $@
 
 $(RUST_APP_PACKAGE): $(RUST_APP) apps/native-rust/manifest.json
-	$(PYTHON) tools/trait-package.py build \
+	$(PYTHON) tools/opengat-package.py build \
 		--spec apps/native-rust/manifest.json --executable $< --output $@
 
-$(RUST_APP_SYSTEM_IMAGE): $(RUST_APP_PACKAGE) tools/trait-package.py \
+$(RUST_APP_SYSTEM_IMAGE): $(RUST_APP_PACKAGE) tools/opengat-package.py \
 		tools/fat32_image.py
-	$(PYTHON) tools/trait-package.py install-system \
+	$(PYTHON) tools/opengat-package.py install-system \
 		--output $@ $(RUST_APP_PACKAGE)
 
 $(RUST_APP_DATA_IMAGE): tools/fat32_image.py | $(RUST_APP_DIR)
 	$(PYTHON) tools/fat32_image.py format data $@
 
-$(NATIVE_SYSTEM_IMAGE): $(NATIVE_TEST_PACKAGE) tools/trait-package.py \
+$(NATIVE_SYSTEM_IMAGE): $(NATIVE_TEST_PACKAGE) tools/opengat-package.py \
 		tools/fat32_image.py
-	$(PYTHON) tools/trait-package.py install-system \
+	$(PYTHON) tools/opengat-package.py install-system \
 		--output $@ $(NATIVE_TEST_PACKAGE)
 
 $(NATIVE_DATA_IMAGE): tools/fat32_image.py | $(NATIVE_APP_DIR)
 	$(PYTHON) tools/fat32_image.py format data $@
 
 $(CRASH_SYSTEM_IMAGE): $(CRASH_PACKAGE) $(NATIVE_TEST_PACKAGE) \
-		tools/trait-package.py tools/fat32_image.py
-	$(PYTHON) tools/trait-package.py install-system \
+		tools/opengat-package.py tools/fat32_image.py
+	$(PYTHON) tools/opengat-package.py install-system \
 		--output $@ $(CRASH_PACKAGE) $(NATIVE_TEST_PACKAGE)
 
 $(CRASH_DATA_IMAGE): tools/fat32_image.py | $(CRASH_APP_DIR)
 	$(PYTHON) tools/fat32_image.py format data $@
 
 $(ADMISSION_SYSTEM_IMAGE): $(NATIVE_TEST_PACKAGE) \
-		tools/make-native-admission-fixture.py tools/trait-package.py \
+		tools/make-native-admission-fixture.py tools/opengat-package.py \
 		tools/fat32_image.py | $(ADMISSION_DIR)
 	$(PYTHON) tools/make-native-admission-fixture.py \
 		$(NATIVE_TEST_PACKAGE) $@
@@ -766,7 +766,7 @@ $(ADMISSION_DATA_IMAGE): tools/fat32_image.py | $(ADMISSION_DIR)
 
 native-apps: $(NATIVE_TEST_PACKAGE) $(LUA_PACKAGE) $(SQLITE_PACKAGE) \
 	$(NETAPP_PACKAGE) \
-	$(HTTPSAPP_PACKAGE) $(TRAITAPP_PACKAGE) $(TRAITAPP_REPAIR_PACKAGE) \
+	$(HTTPSAPP_PACKAGE) $(OPENGATAPP_PACKAGE) $(OPENGATAPP_REPAIR_PACKAGE) \
 	$(AUDIO_PACKAGE) $(AUDIO_REFUSAL_PACKAGE) $(RUST_APP_PACKAGE) \
 	$(CRASH_PACKAGE) $(SDL_PROOF_PACKAGE) $(SDL_CHESS_PACKAGE) \
 	$(DYNAMIC_PACKAGE)
@@ -780,6 +780,11 @@ native-audio-proof: $(AUDIO_SYSTEM_IMAGE) $(AUDIO_DATA_IMAGE) audio-wav-tests
 native-sdl-proof: $(SDL_PROOF_SYSTEM_IMAGE) $(SDL_PROOF_DATA_IMAGE)
 	@echo 'native SDL proof package and images built'
 
+sdl-preference-tests: tools/check-sdl-preference-paths.py \
+		apps/native-sdl/main.c apps/upstream-sdl-chess/main.c \
+		src/kernel/test.c vendor/sdl2/src/filesystem/opengat/SDL_sysfilesystem.c
+	$(PYTHON) tools/check-sdl-preference-paths.py
+
 native-dynamic-proof: $(DYNAMIC_SYSTEM_IMAGE) $(DYNAMIC_DATA_IMAGE) \
 		dynamic-elf-tests
 	@echo 'native dynamic ELF package and images built'
@@ -788,56 +793,56 @@ native-https-proof: $(HTTPSAPP_SYSTEM_IMAGE) $(HTTPSAPP_DATA_IMAGE) \
 		https-tests
 	@echo 'native authenticated HTTPS package and images built'
 
-native-trait-proof: $(TRAITAPP_SYSTEM_IMAGE) $(TRAITAPP_DATA_IMAGE) \
-		$(TRAITAPP_REPOSITORY) https-tests
+native-opengat-proof: $(OPENGATAPP_SYSTEM_IMAGE) $(OPENGATAPP_DATA_IMAGE) \
+		$(OPENGATAPP_REPOSITORY) https-tests
 	@echo 'native signed HTTPS package lifecycle proof built'
 
-port-tests: native-apps audio-wav-tests
-	TRAIT_NATIVE_TEST_ELF='$(CURDIR)/$(NATIVE_TEST_APP)' \
+port-tests: native-apps audio-wav-tests sdl-preference-tests
+	OPENGAT_NATIVE_TEST_ELF='$(CURDIR)/$(NATIVE_TEST_APP)' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/native-image-host-test.rs -o $(RUST_NATIVE_IMAGE_TEST)
 	$(RUST_NATIVE_IMAGE_TEST)
-	TRAIT_NATIVE_TEST_ELF='$(CURDIR)/$(LUA_APP)' \
+	OPENGAT_NATIVE_TEST_ELF='$(CURDIR)/$(LUA_APP)' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	TRAIT_NATIVE_TEST_ELF='$(CURDIR)/$(SQLITE_APP)' \
+	OPENGAT_NATIVE_TEST_ELF='$(CURDIR)/$(SQLITE_APP)' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	TRAIT_NATIVE_TEST_ELF='$(CURDIR)/$(NETAPP_APP)' \
+	OPENGAT_NATIVE_TEST_ELF='$(CURDIR)/$(NETAPP_APP)' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	TRAIT_NATIVE_TEST_ELF='$(CURDIR)/$(HTTPSAPP_APP)' \
+	OPENGAT_NATIVE_TEST_ELF='$(CURDIR)/$(HTTPSAPP_APP)' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	TRAIT_NATIVE_TEST_ELF='$(CURDIR)/$(TRAITAPP_APP)' \
+	OPENGAT_NATIVE_TEST_ELF='$(CURDIR)/$(OPENGATAPP_APP)' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	TRAIT_NATIVE_TEST_ELF='$(CURDIR)/$(AUDIO_APP)' \
+	OPENGAT_NATIVE_TEST_ELF='$(CURDIR)/$(AUDIO_APP)' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	TRAIT_NATIVE_TEST_ELF='$(CURDIR)/$(SDL_PROOF_APP)' \
+	OPENGAT_NATIVE_TEST_ELF='$(CURDIR)/$(SDL_PROOF_APP)' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	TRAIT_NATIVE_TEST_ELF='$(CURDIR)/$(SDL_CHESS_APP)' \
+	OPENGAT_NATIVE_TEST_ELF='$(CURDIR)/$(SDL_CHESS_APP)' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	TRAIT_NATIVE_TEST_ELF='$(CURDIR)/$(RUST_APP)' \
+	OPENGAT_NATIVE_TEST_ELF='$(CURDIR)/$(RUST_APP)' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	TRAIT_NATIVE_TEST_ELF='$(CURDIR)/$(CRASH_APP)' \
+	OPENGAT_NATIVE_TEST_ELF='$(CURDIR)/$(CRASH_APP)' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	TRAIT_REQUIRE_ED25519=1 $(PYTHON) -u tools/trait_package_host_test.py
-	$(PYTHON) tools/trait-package.py inspect $(NATIVE_TEST_PACKAGE)
-	$(PYTHON) tools/trait-package.py inspect $(LUA_PACKAGE)
-	$(PYTHON) tools/trait-package.py inspect $(SQLITE_PACKAGE)
-	$(PYTHON) tools/trait-package.py inspect $(NETAPP_PACKAGE)
-	$(PYTHON) tools/trait-package.py inspect $(HTTPSAPP_PACKAGE)
-	$(PYTHON) tools/trait-package.py inspect $(TRAITAPP_PACKAGE)
-	$(PYTHON) tools/trait-package.py inspect $(AUDIO_PACKAGE)
-	$(PYTHON) tools/trait-package.py inspect $(AUDIO_REFUSAL_PACKAGE)
-	$(PYTHON) tools/trait-package.py inspect $(SDL_PROOF_PACKAGE)
-	$(PYTHON) tools/trait-package.py inspect $(SDL_CHESS_PACKAGE)
-	$(PYTHON) tools/trait-package.py inspect $(DYNAMIC_PACKAGE)
-	$(PYTHON) tools/trait-package.py inspect $(RUST_APP_PACKAGE)
-	$(PYTHON) tools/trait-package.py inspect $(CRASH_PACKAGE)
+	OPENGAT_REQUIRE_ED25519=1 $(PYTHON) -u tools/opengat_package_host_test.py
+	$(PYTHON) tools/opengat-package.py inspect $(NATIVE_TEST_PACKAGE)
+	$(PYTHON) tools/opengat-package.py inspect $(LUA_PACKAGE)
+	$(PYTHON) tools/opengat-package.py inspect $(SQLITE_PACKAGE)
+	$(PYTHON) tools/opengat-package.py inspect $(NETAPP_PACKAGE)
+	$(PYTHON) tools/opengat-package.py inspect $(HTTPSAPP_PACKAGE)
+	$(PYTHON) tools/opengat-package.py inspect $(OPENGATAPP_PACKAGE)
+	$(PYTHON) tools/opengat-package.py inspect $(AUDIO_PACKAGE)
+	$(PYTHON) tools/opengat-package.py inspect $(AUDIO_REFUSAL_PACKAGE)
+	$(PYTHON) tools/opengat-package.py inspect $(SDL_PROOF_PACKAGE)
+	$(PYTHON) tools/opengat-package.py inspect $(SDL_CHESS_PACKAGE)
+	$(PYTHON) tools/opengat-package.py inspect $(DYNAMIC_PACKAGE)
+	$(PYTHON) tools/opengat-package.py inspect $(RUST_APP_PACKAGE)
+	$(PYTHON) tools/opengat-package.py inspect $(CRASH_PACKAGE)
 
 qemu-port-tests: qemu-test-native qemu-test-native-lua qemu-test-native-sqlite \
 	qemu-test-network-native qemu-test-native-rust \
 	qemu-test-native-crash qemu-test-native-elf-refusal \
 	qemu-test-native-digest-refusal qemu-test-native-abi-refusal \
 	qemu-test-native-relaunch qemu-test-native-audio qemu-test-native-sdl \
-	qemu-test-native-dynamic qemu-test-native-https qemu-test-native-trait
+	qemu-test-native-dynamic qemu-test-native-https qemu-test-native-opengat
 	@echo 'native userspace, Lua, SQLite, network, HTTPS, signed package lifecycle, audio, SDL, dynamic ELF and Rust QEMU scenarios passed'
 
 contract-counts:
@@ -913,22 +918,22 @@ $(RUST_LIB): $(RUST_SOURCES) $(RUST_MANIFEST) $(RUST_LOCKFILE) \
 		.cargo/config.toml $(RUST_VENDOR_SOURCES) \
 		$(LOGO_BLOB) \
 		$(WALLPAPER_BLOB) $(FONT_BLOB) $(UI_FONT_BLOB) | $(BUILD_DIR)
-	TRAIT_LOGO_BLOB='$(CURDIR)/$(LOGO_BLOB)' \
-	TRAIT_WALLPAPER_BLOB='$(CURDIR)/$(WALLPAPER_BLOB)' \
-	TRAIT_FONT_BLOB='$(CURDIR)/$(FONT_BLOB)' \
-	TRAIT_UI_FONT_BLOB='$(CURDIR)/$(UI_FONT_BLOB)' \
+	OPENGAT_LOGO_BLOB='$(CURDIR)/$(LOGO_BLOB)' \
+	OPENGAT_WALLPAPER_BLOB='$(CURDIR)/$(WALLPAPER_BLOB)' \
+	OPENGAT_FONT_BLOB='$(CURDIR)/$(FONT_BLOB)' \
+	OPENGAT_UI_FONT_BLOB='$(CURDIR)/$(UI_FONT_BLOB)' \
 	CARGO_TARGET_DIR='$(CURDIR)/$(BUILD_DIR)/rust-target' \
 	RUSTFLAGS='$(RUSTFLAGS)' \
 		$(CARGO) build --manifest-path $(RUST_MANIFEST) \
 			--target $(RUST_TARGET) --release --locked --offline
-	cp $(BUILD_DIR)/rust-target/$(RUST_TARGET)/release/libtrait.a $@
+	cp $(BUILD_DIR)/rust-target/$(RUST_TARGET)/release/libopengat.a $@
 
 $(BUSYBOX_BINARY): tools/build-busybox-proof.sh \
 		tools/check-exercised-instructions.py \
 		userspace/busybox/busybox.config \
 		userspace/busybox/source/busybox-1.38.0.tar.bz2 \
 		userspace/busybox/source/musl-1.2.6.tar.gz
-	TRAIT_BUSYBOX_BUILD_ONLY=1 bash tools/build-busybox-proof.sh \
+	OPENGAT_BUSYBOX_BUILD_ONLY=1 bash tools/build-busybox-proof.sh \
 		$(BUSYBOX_OUTPUT_DIR) $(BUSYBOX_WORK_DIR)
 
 $(LINUX_ABI_FIXTURE): $(BUSYBOX_BINARY) tools/make-linux-abi-fixture.py
@@ -941,7 +946,7 @@ $(BUSYBOX_UNAME_BINARY): tools/build-busybox-uname-proof.sh \
 		userspace/busybox/musl-vfprintf-scalar.h \
 		userspace/busybox/source/busybox-1.38.0.tar.bz2 \
 		userspace/busybox/source/musl-1.2.6.tar.gz
-	TRAIT_BUSYBOX_BUILD_ONLY=1 bash tools/build-busybox-uname-proof.sh \
+	OPENGAT_BUSYBOX_BUILD_ONLY=1 bash tools/build-busybox-uname-proof.sh \
 		$(BUSYBOX_UNAME_OUTPUT_DIR) $(BUSYBOX_UNAME_WORK_DIR)
 
 $(LINUX_UNAME_FIXTURE): $(BUSYBOX_UNAME_BINARY) \
@@ -954,20 +959,20 @@ $(BUSYBOX_CAT_BINARY): tools/build-busybox-cat-proof.sh \
 		userspace/busybox/busybox-cat.config \
 		userspace/busybox/source/busybox-1.38.0.tar.bz2 \
 		userspace/busybox/source/musl-1.2.6.tar.gz
-	TRAIT_BUSYBOX_BUILD_ONLY=1 bash tools/build-busybox-cat-proof.sh \
+	OPENGAT_BUSYBOX_BUILD_ONLY=1 bash tools/build-busybox-cat-proof.sh \
 		$(BUSYBOX_CAT_OUTPUT_DIR) $(BUSYBOX_CAT_WORK_DIR)
 
-$(TRAIT_PROOF_USERLAND_IMAGE): $(BUSYBOX_BINARY) $(BUSYBOX_UNAME_BINARY) \
+$(OPENGAT_PROOF_USERLAND_IMAGE): $(BUSYBOX_BINARY) $(BUSYBOX_UNAME_BINARY) \
 		$(BUSYBOX_CAT_BINARY) \
-		tools/make-trait-proof-userland.py
+		tools/make-opengat-proof-userland.py
 	mkdir -p $(dir $@)
-	$(PYTHON) tools/make-trait-proof-userland.py \
+	$(PYTHON) tools/make-opengat-proof-userland.py \
 		$(BUSYBOX_BINARY) $(BUSYBOX_UNAME_BINARY) $(BUSYBOX_CAT_BINARY) $@
 
-$(TRAIT_PROOF_USERLAND_NO_CAT_IMAGE): $(BUSYBOX_BINARY) \
-		$(BUSYBOX_UNAME_BINARY) tools/make-trait-proof-userland.py
+$(OPENGAT_PROOF_USERLAND_NO_CAT_IMAGE): $(BUSYBOX_BINARY) \
+		$(BUSYBOX_UNAME_BINARY) tools/make-opengat-proof-userland.py
 	mkdir -p $(dir $@)
-	$(PYTHON) tools/make-trait-proof-userland.py \
+	$(PYTHON) tools/make-opengat-proof-userland.py \
 		$(BUSYBOX_BINARY) $(BUSYBOX_UNAME_BINARY) --without-cat $@
 
 $(FAT32_SYSTEM_IMAGE): $(BUSYBOX_BINARY) $(BUSYBOX_UNAME_BINARY) \
@@ -978,10 +983,10 @@ $(FAT32_SYSTEM_IMAGE): $(BUSYBOX_BINARY) $(BUSYBOX_UNAME_BINARY) \
 		--cat $(BUSYBOX_CAT_BINARY)
 
 $(DESKTOP_SYSTEM_IMAGE): $(BUSYBOX_BINARY) $(BUSYBOX_UNAME_BINARY) \
-		$(BUSYBOX_CAT_BINARY) tools/trait-package.py \
+		$(BUSYBOX_CAT_BINARY) tools/opengat-package.py \
 		tools/fat32_image.py
 	mkdir -p $(dir $@)
-	$(PYTHON) tools/trait-package.py install-system \
+	$(PYTHON) tools/opengat-package.py install-system \
 		--echo $(BUSYBOX_BINARY) --uname $(BUSYBOX_UNAME_BINARY) \
 		--cat $(BUSYBOX_CAT_BINARY) --output $@
 
@@ -1003,15 +1008,15 @@ fat32-images: $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 $(KERNEL): $(OBJECTS) $(RUST_LIB) linker.ld
 	$(LD) $(LDFLAGS) -o $@ $(OBJECTS) $(RUST_LIB) || { \
 		rm -f $@; \
-		sed -n '/__got_start/,/__got_end/p' $(BUILD_DIR)/trait.map; \
+		sed -n '/__got_start/,/__got_end/p' $(BUILD_DIR)/opengat.map; \
 		sed 's/ASSERT(__got_end - __got_start <= 0x400,/ASSERT(1,/' \
 			linker.ld >$(BUILD_DIR)/linker-got-diagnostic.ld; \
 		$(LD) -nostdlib -z max-page-size=0x1000 -z noexecstack \
 			--orphan-handling=error --build-id=none --emit-relocs \
 			-T $(BUILD_DIR)/linker-got-diagnostic.ld \
-			-o $(BUILD_DIR)/trait-got-diagnostic.elf \
+			-o $(BUILD_DIR)/opengat-got-diagnostic.elf \
 			$(OBJECTS) $(RUST_LIB) || true; \
-		readelf -W -r $(BUILD_DIR)/trait-got-diagnostic.elf \
+		readelf -W -r $(BUILD_DIR)/opengat-got-diagnostic.elf \
 			| grep 'GOT' || true; \
 		$(OBJDUMP) -dr $(RUST_LIB) \
 			| grep -B 8 -A 2 'R_X86_64_GOTPCREL' || true; \
@@ -1040,14 +1045,14 @@ lint:
 	fi
 
 $(WALL_CLOCK_HOST_TEST): tools/wall-clock-host-test.c \
-		src/kernel/wall_clock.c include/trait/wall_clock.h
+		src/kernel/wall_clock.c include/opengat/wall_clock.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
 		-Wundef -Wstrict-prototypes -Wmissing-prototypes -Iinclude \
 		tools/wall-clock-host-test.c src/kernel/wall_clock.c -o $@
 
 $(SDK_TIME_HOST_TEST): tools/sdk-time-host-test.c sdk/src/time.c \
-		sdk/include/time.h sdk/include/trait/runtime.h
+		sdk/include/time.h sdk/include/opengat/runtime.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
 		-Wundef -Wstrict-prototypes -Wmissing-prototypes \
@@ -1059,25 +1064,25 @@ wall-clock-tests: $(WALL_CLOCK_HOST_TEST) $(SDK_TIME_HOST_TEST)
 	$(SDK_TIME_HOST_TEST)
 
 ext4-tests: tools/ext4_image.py tools/ext4_host_test.py
-	TRAIT_EXT4_RUST_FIXTURE='$(CURDIR)/$(BUILD_DIR)/ext4-rust-fixture.img' \
+	OPENGAT_EXT4_RUST_FIXTURE='$(CURDIR)/$(BUILD_DIR)/ext4-rust-fixture.img' \
 		$(PYTHON) -u tools/ext4_host_test.py
-	TRAIT_EXT4_RUST_FIXTURE='$(CURDIR)/$(BUILD_DIR)/ext4-rust-fixture.img' \
+	OPENGAT_EXT4_RUST_FIXTURE='$(CURDIR)/$(BUILD_DIR)/ext4-rust-fixture.img' \
 		CARGO_TARGET_DIR='$(CURDIR)/$(BUILD_DIR)/ext4-transaction-target' \
 		$(CARGO) test \
 		--manifest-path tools/ext4-transaction-tests/Cargo.toml \
 		--locked --offline
 
-package-repository-tests: tools/trait-repository.py \
-		tools/trait_repository_host_test.py tools/trait-package.py
-	TRAIT_REQUIRE_ED25519=1 $(PYTHON) -u tools/trait_repository_host_test.py
+package-repository-tests: tools/opengat-repository.py \
+		tools/opengat_repository_host_test.py tools/opengat-package.py
+	OPENGAT_REQUIRE_ED25519=1 $(PYTHON) -u tools/opengat_repository_host_test.py
 
-package-transaction-tests: tools/trait-transaction.py \
-		tools/trait_transaction_host_test.py tools/trait-package.py
-	$(PYTHON) -u tools/trait_transaction_host_test.py
+package-transaction-tests: tools/opengat-transaction.py \
+		tools/opengat_transaction_host_test.py tools/opengat-package.py
+	$(PYTHON) -u tools/opengat_transaction_host_test.py
 
 $(PACKAGE_STATE_HOST_TEST): tools/package-state-host-test.c \
 		src/kernel/package_generation.c src/kernel/package_state.c \
-		include/trait/package_generation.h include/trait/package_state.h
+		include/opengat/package_generation.h include/opengat/package_state.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
 		-Wundef -Wstrict-prototypes -Wmissing-prototypes -Iinclude \
@@ -1090,9 +1095,9 @@ package-state-tests: $(PACKAGE_STATE_HOST_TEST)
 $(PACKAGE_SERVICE_HOST_TEST): tools/package-service-host-test.c \
 		tools/package-state-host-test.c src/kernel/package_service.c \
 		src/kernel/package_generation.c src/kernel/package_state.c \
-		include/trait/package_builder.h include/trait/package_generation.h \
-		include/trait/package_manager.h include/trait/package_service.h \
-		include/trait/package_state.h include/trait/fat32_fs.h include/trait/heap.h
+		include/opengat/package_builder.h include/opengat/package_generation.h \
+		include/opengat/package_manager.h include/opengat/package_service.h \
+		include/opengat/package_state.h include/opengat/fat32_fs.h include/opengat/heap.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
 		-Wundef -Wstrict-prototypes -Wmissing-prototypes -Iinclude \
@@ -1104,8 +1109,8 @@ package-service-tests: $(PACKAGE_SERVICE_HOST_TEST)
 
 $(PACKAGE_UPLOAD_HOST_TEST): tools/package-upload-host-test.c \
 		src/kernel/package_upload.c src/kernel/package_state.c \
-		include/trait/package_upload.h include/trait/package_state.h \
-		include/trait/fat32_fs.h
+		include/opengat/package_upload.h include/opengat/package_state.h \
+		include/opengat/fat32_fs.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
 		-Wundef -Wstrict-prototypes -Wmissing-prototypes -Iinclude \
@@ -1133,9 +1138,9 @@ $(TEST_BUILD_DIR)/monocypher/monocypher-ed25519.o: \
 $(PACKAGE_TRUST_HOST_TEST): tools/package-trust-host-test.c \
 		src/kernel/package_platform_trust.c src/kernel/package_trust.c \
 		src/kernel/package_state.c $(PACKAGE_TRUST_ASSET_C) \
-		include/trait/package_platform_trust.h \
-		include/trait/package_trust.h include/trait/package_manager.h \
-		include/trait/package_state.h $(MONOCYPHER_HOST_OBJECTS)
+		include/opengat/package_platform_trust.h \
+		include/opengat/package_trust.h include/opengat/package_manager.h \
+		include/opengat/package_state.h $(MONOCYPHER_HOST_OBJECTS)
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
 		-Wundef -Wstrict-prototypes -Wmissing-prototypes -Iinclude \
@@ -1151,9 +1156,9 @@ package-trust-tests: $(PACKAGE_TRUST_HOST_TEST)
 $(PACKAGE_MANAGER_HOST_TEST): tools/package-manager-host-test.c \
 		src/kernel/package_builder.c src/kernel/package_generation.c \
 		src/kernel/package_manager.c src/kernel/package_trust.c \
-		src/kernel/package_state.c include/trait/package_builder.h \
-		include/trait/package_generation.h include/trait/package_manager.h \
-		include/trait/package_trust.h include/trait/package_state.h \
+		src/kernel/package_state.c include/opengat/package_builder.h \
+		include/opengat/package_generation.h include/opengat/package_manager.h \
+		include/opengat/package_trust.h include/opengat/package_state.h \
 		$(MONOCYPHER_HOST_OBJECTS)
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
@@ -1168,9 +1173,9 @@ $(PACKAGE_CONTROL_HOST_TEST): tools/package-control-host-test.c \
 		src/kernel/package_control.c src/kernel/package_builder.c \
 		src/kernel/package_generation.c src/kernel/package_manager.c \
 		src/kernel/package_trust.c src/kernel/package_state.c \
-		include/trait/package_control.h include/trait/package_builder.h \
-		include/trait/package_generation.h include/trait/package_manager.h \
-		include/trait/package_trust.h include/trait/package_state.h \
+		include/opengat/package_control.h include/opengat/package_builder.h \
+		include/opengat/package_generation.h include/opengat/package_manager.h \
+		include/opengat/package_trust.h include/opengat/package_state.h \
 		$(MONOCYPHER_HOST_OBJECTS)
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
@@ -1182,16 +1187,16 @@ $(PACKAGE_CONTROL_HOST_TEST): tools/package-control-host-test.c \
 		src/kernel/package_state.c $(MONOCYPHER_HOST_OBJECTS) -o $@
 
 package-control-tests: $(PACKAGE_MANAGER_HOST_TEST) $(PACKAGE_CONTROL_HOST_TEST) \
-		tools/package_manager_host_test.py tools/trait-repository.py \
-		tools/trait-package.py
-	TRAIT_REQUIRE_ED25519=1 $(PYTHON) -u \
+		tools/package_manager_host_test.py tools/opengat-repository.py \
+		tools/opengat-package.py
+	OPENGAT_REQUIRE_ED25519=1 $(PYTHON) -u \
 		tools/package_manager_host_test.py $(PACKAGE_MANAGER_HOST_TEST) \
 			$(PACKAGE_CONTROL_HOST_TEST)
 
 package-manager-tests: package-control-tests
 
 $(ZLIB_HOST_TEST): tools/zlib-host-test.c sdk/src/zlib.c \
-		sdk/include/trait/zlib.h $(ZLIB_SOURCE) $(ZLIB_HEADERS)
+		sdk/include/opengat/zlib.h $(ZLIB_SOURCE) $(ZLIB_HEADERS)
 	mkdir -p $(dir $@)
 	$(CC) -Ivendor/zlib/include -Ivendor/zlib/src -idirafter sdk/include \
 		$(ZLIB_DEFINES) -std=c11 -O2 -Wall -Wextra -Werror \
@@ -1208,14 +1213,14 @@ dynamic-elf-tests: src/rust/elf64_dynamic.rs \
 		tools/elf64-dynamic-host-test.rs -o $(RUST_DYNAMIC_ELF64_TEST)
 	$(RUST_DYNAMIC_ELF64_TEST)
 
-$(TLS_HOST_WRAPPER_OBJECT): sdk/src/tls.c sdk/include/trait/tls.h
+$(TLS_HOST_WRAPPER_OBJECT): sdk/src/tls.c sdk/include/opengat/tls.h
 	mkdir -p $(dir $@)
 	$(CC) -Isdk/include -Iinclude -Ivendor/bearssl/inc -std=c11 -O2 \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wundef \
 		-Wstrict-prototypes -Wmissing-prototypes -c $< -o $@
 
 $(TLS_HOST_OBJECT): tools/tls-client-host-test.c \
-		sdk/include/trait/tls.h
+		sdk/include/opengat/tls.h
 	mkdir -p $(dir $@)
 	$(CC) -Iinclude -Ivendor/bearssl/inc -idirafter sdk/include \
 		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
@@ -1235,7 +1240,7 @@ tls-tests: $(TLS_HOST_TEST) tools/tls_host_test.py \
 	$(PYTHON) -u tools/tls_host_test.py $(TLS_HOST_TEST)
 
 $(HTTPS_HOST_OBJECT): tools/https-client-host-test.c \
-		apps/native-https/trust_anchor.h sdk/include/trait/tls.h
+		apps/native-https/trust_anchor.h sdk/include/opengat/tls.h
 	mkdir -p $(dir $@)
 	$(CC) -Iinclude -Ivendor/bearssl/inc -idirafter sdk/include \
 		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
@@ -1258,9 +1263,9 @@ https-tests: $(HTTPS_HOST_TEST) tools/https_host_test.py \
 	$(PYTHON) -u tools/https_host_test.py $(HTTPS_HOST_TEST)
 
 $(PACKAGE_FETCH_HOST_TEST): tools/package-fetch-host-test.c \
-		sdk/src/package_fetch.c sdk/include/trait/package_fetch.h \
-		sdk/include/trait/package_upload.h \
-		sdk/include/trait/tls.h include/trait/abi.h \
+		sdk/src/package_fetch.c sdk/include/opengat/package_fetch.h \
+		sdk/include/opengat/package_upload.h \
+		sdk/include/opengat/tls.h include/opengat/abi.h \
 		$(TLS_HOST_BEARSSL_LIB)
 	mkdir -p $(dir $@)
 	$(CC) -Iinclude -Ivendor/bearssl/inc -idirafter sdk/include \
@@ -1286,18 +1291,18 @@ verify: toolchain lint
 		package-trust-asset-tests package-trust-tests package-control-tests \
 		package-fetch-tests package-upload-tests \
 		dynamic-elf-tests \
-		https-tests tls-tests zlib-tests
+		https-tests tls-tests zlib-tests sdl-preference-tests
 	$(PYTHON) tools/verify-ui-assets.py
 	@test '$(LOGO_MAX_DIMENSION)' -eq 280
 	$(PYTHON) tools/make-fat16-fixture.py $(FILESYSTEM_FIXTURE)
 	@test "$$(sha256sum $(FILESYSTEM_FIXTURE) | awk '{ print toupper($$1) }')" = \
-		'EEA4EB747AFCA172E1252A58FEC80583BA5F105437114173386E4FA3602FD5B6'
+		'A34664FB5A9A4D125E3AEF5AB655046C88937F88D8159BD773AD225D8B4617CA'
 	$(PYTHON) tools/make-elf64-fixture.py $(PROCESS_ELF)
 	@test "$$(sha256sum $(PROCESS_ELF) | awk '{ print toupper($$1) }')" = \
 		'C923A94F08DF64523D3DB701E4F9FC5FF5B51DFC21447E1DC57586D40D42B8A9'
 	$(PYTHON) tools/make-process-fixture.py $(PROCESS_FIXTURE)
 	@test "$$(sha256sum $(PROCESS_FIXTURE) | awk '{ print toupper($$1) }')" = \
-		'C7D8294F85376E23A099FDC4B362917EACB1EAB8440AA73C1339BF249B89598F'
+		'3DD00932416E7CBF816C187DBEFD8467BA90B35ACB064F916BE3297BBA066FD7'
 	$(RUSTC) --edition 2024 --test -D warnings src/rust/fat16.rs \
 		-o $(RUST_FAT16_TEST)
 	$(RUST_FAT16_TEST)
@@ -1308,27 +1313,27 @@ verify: toolchain lint
 	$(RUSTC) --edition 2024 --test -D warnings \
 		tools/native-image-host-test.rs -o $(RUST_NATIVE_IMAGE_TEST)
 	$(RUST_NATIVE_IMAGE_TEST)
-	TRAIT_REQUIRE_ED25519=1 $(PYTHON) -u tools/trait_package_host_test.py
+	OPENGAT_REQUIRE_ED25519=1 $(PYTHON) -u tools/opengat_package_host_test.py
 	$(MAKE) $(LINUX_ABI_FIXTURE)
 	@test "$$(sha256sum $(LINUX_ABI_FIXTURE) | awk '{ print toupper($$1) }')" = \
-		'347BCE222578CCDC047E2027A8FF12BB710A97323683D0E139E3B13F80AB177E'
-	TRAIT_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_BINARY)' \
+		'09A0441215828248321DD1F73B6BA13F319E40FEFD97F45B6831FB8107D1D2E4'
+	OPENGAT_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_BINARY)' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-fat16-host-test.rs -o $(RUST_LINUX_FAT16_TEST)
 	$(RUST_LINUX_FAT16_TEST)
-	TRAIT_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_BINARY)' \
+	OPENGAT_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_BINARY)' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-elf64-host-test.rs -o $(RUST_LINUX_ELF64_TEST)
 	$(RUST_LINUX_ELF64_TEST)
 	$(MAKE) $(LINUX_UNAME_FIXTURE)
 	@test "$$(sha256sum $(LINUX_UNAME_FIXTURE) | awk '{ print toupper($$1) }')" = \
-		'331FF9B1C565E2B6B255FC6B7460A2308528EAF7254C698E3A44C09BEEE255ED'
-	TRAIT_UNAME_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_UNAME_BINARY)' \
+		'4A1A3DFA5A649FD7CBFF700CB51693AEDE274147CD39794AD2158CFC937736E9'
+	OPENGAT_UNAME_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_UNAME_BINARY)' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-uname-fat16-host-test.rs \
 		-o $(RUST_LINUX_UNAME_FAT16_TEST)
 	$(RUST_LINUX_UNAME_FAT16_TEST)
-	TRAIT_UNAME_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_UNAME_BINARY)' \
+	OPENGAT_UNAME_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_UNAME_BINARY)' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-uname-elf64-host-test.rs \
 		-o $(RUST_LINUX_UNAME_ELF64_TEST)
@@ -1336,32 +1341,32 @@ verify: toolchain lint
 	$(MAKE) $(BUSYBOX_CAT_BINARY)
 	@test "$$(sha256sum $(BUSYBOX_CAT_BINARY) | awk '{ print toupper($$1) }')" = \
 		'8191596A22778B575942895071A2E50CCEEE0F82F4D88B6D986584CE0914FC3E'
-	TRAIT_CAT_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_CAT_BINARY)' \
+	OPENGAT_CAT_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_CAT_BINARY)' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-cat-fat16-host-test.rs \
 		-o $(RUST_LINUX_CAT_FAT16_TEST)
 	$(RUST_LINUX_CAT_FAT16_TEST)
-	TRAIT_CAT_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_CAT_BINARY)' \
+	OPENGAT_CAT_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_CAT_BINARY)' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-cat-elf64-host-test.rs \
 		-o $(RUST_LINUX_CAT_ELF64_TEST)
 	$(RUST_LINUX_CAT_ELF64_TEST)
-	$(MAKE) $(TRAIT_PROOF_USERLAND_IMAGE)
-	@test "$$(sha256sum $(TRAIT_PROOF_USERLAND_IMAGE) | awk '{ print toupper($$1) }')" = \
-		'ACA66204CEA82B1BBF11CE51A31F934C5F2486ED14F6B613F0A1DE07BFCFB475'
-	$(MAKE) $(TRAIT_PROOF_USERLAND_NO_CAT_IMAGE)
-	@test "$$(sha256sum $(TRAIT_PROOF_USERLAND_NO_CAT_IMAGE) | awk '{ print toupper($$1) }')" = \
-		'9E19035320ACC718FB9AC1AC1C14EA211E71A8E71662A35FF38DA543365A5D17'
+	$(MAKE) $(OPENGAT_PROOF_USERLAND_IMAGE)
+	@test "$$(sha256sum $(OPENGAT_PROOF_USERLAND_IMAGE) | awk '{ print toupper($$1) }')" = \
+		'234289FCC58E498AA18A68B5BFF00E9F81940211CAAF2507B81CB65155EBE975'
+	$(MAKE) $(OPENGAT_PROOF_USERLAND_NO_CAT_IMAGE)
+	@test "$$(sha256sum $(OPENGAT_PROOF_USERLAND_NO_CAT_IMAGE) | awk '{ print toupper($$1) }')" = \
+		'CE3BD25E1776291D18D0CC75F044DD040243A5DB2CD50C902F747F35E76C5F3D'
 	$(MAKE) $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE) \
 		$(FAT32_FULL_IMAGE) $(FAT32_CORRUPT_IMAGE)
 	@test "$$(sha256sum $(FAT32_SYSTEM_IMAGE) | awk '{ print toupper($$1) }')" = \
-		'5B1DFECE4BF0C5A14769B95FDEFB3B06E55D0C2FF64BE4875B296239BA1181ED'
+		'F15C4CAA26BE72874063EB797375B199560F97C255A0CF3B5F73DD40A61D6DB2'
 	@test "$$(sha256sum $(FAT32_DATA_IMAGE) | awk '{ print toupper($$1) }')" = \
-		'220C07C1EA86EE0FC21EDED6E7B37DD6E93CB01241D5E6786023DF9FD4A458B3'
+		'CBC4FAEC09537C4CB85E822F55F8B8786EDCCFC4DC1A2EC6ABFF41AEA5B4C327'
 	@test "$$(sha256sum $(FAT32_FULL_IMAGE) | awk '{ print toupper($$1) }')" = \
-		'069A6DD8CDEB00A2F481FBB566B085FCE46CB0EA2A3D50C9FC0BD87BA0ED6007'
+		'2354E22B312EF6B5AB71691929E7273AD406D1DBE4653D7398BC066BEFCE16AF'
 	@test "$$(sha256sum $(FAT32_CORRUPT_IMAGE) | awk '{ print toupper($$1) }')" = \
-		'2C9DA262E0793B10B7B730BB52813F1309BE68DA5C43107B48284F9EE3F0C878'
+		'912AD1474318C90430EDA7566442307E75F68F7B9AAF3E2D80C97DDA72122352'
 	rm -rf $(BUILD_DIR)/fat32-reconstruction
 	mkdir -p $(BUILD_DIR)/fat32-reconstruction
 	$(PYTHON) tools/fat32_image.py format system \
@@ -1397,7 +1402,7 @@ verify: toolchain lint
 	$(PYTHON) tools/check-multiprocess-image.py
 	@test "$(words $(TEST_SCENARIOS))" -eq \
 		'$(EXPECTED_TEST_SCENARIO_COUNT)'
-	@grep -Fq '#define SHELL_PROMPT "trait> "' src/kernel/shell.c
+	@grep -Fq '#define SHELL_PROMPT "opengat$$ "' src/kernel/shell.c
 	grub-file --is-x86-multiboot2 $(KERNEL)
 	readelf -h $(KERNEL) | grep -Eq 'Class:[[:space:]]+ELF64'
 	readelf -h $(KERNEL) | grep -Eq 'Machine:[[:space:]]+Advanced Micro Devices X86-64'
@@ -1411,7 +1416,7 @@ verify: toolchain lint
 	@$(OBJDUMP) -d $(KERNEL) | grep -Fq 'ltr'
 	@$(OBJDUMP) -d $(KERNEL) | grep -Fq 'lidt'
 	# This inspects the ELF file, and for a long time it was the only thing
-	# behind Trait OS's W^X claim - while the kernel ran on boot.S's huge pages
+	# behind OpenGAT's W^X claim - while the kernel ran on boot.S's huge pages
 	# with no NX bit enabled at all. It is kept because it catches a bad link
 	# before anything boots, but the guarantee now rests on paging.c walking
 	# the installed tables at runtime.
@@ -1439,55 +1444,55 @@ verify: toolchain lint
 	@$(NM) $(KERNEL) | grep -Eq ' [ABDRTt] __data_start$$'
 	# The Rust half has to actually be in the image, and has to have been
 	# linked as ordinary code rather than as something with its own runtime.
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_logo_decode$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_logo_self_test$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_font_glyph$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_font_self_test$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_ui_font_glyph$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_ui_font_self_test$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_fat16_parse_bpb$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_fat16_find_root$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_fat16_parse_fat$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_fat16_validate_extent$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_fat16_validate_payload$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_fat32_parse_bpb$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_fat32_parse_fsinfo$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_fat32_validate_fat_pair$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_fat32_parse_directory_entry$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_linux_fat16_find_root$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_linux_fat16_build_chain$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_linux_fat16_validate_payload$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_linux_elf64_parse$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_linux_elf64_self_test$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_linux_uname_fat16_find_root$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_linux_uname_fat16_build_chain$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_linux_uname_fat16_validate_payload$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_linux_uname_elf64_parse$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_linux_uname_elf64_self_test$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_linux_cat_fat16_find_root$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_linux_cat_fat16_build_chain$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_linux_cat_fat16_validate_payload$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_linux_cat_elf64_parse$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_linux_cat_elf64_self_test$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_elf64_parse$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_elf64_self_test$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_native_image_validate$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_native_image_self_test$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_multiprocess_elf64_parse$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T trait_multiprocess_elf64_self_test$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_logo_decode$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_logo_self_test$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_font_glyph$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_font_self_test$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_ui_font_glyph$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_ui_font_self_test$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_fat16_parse_bpb$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_fat16_find_root$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_fat16_parse_fat$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_fat16_validate_extent$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_fat16_validate_payload$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_fat32_parse_bpb$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_fat32_parse_fsinfo$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_fat32_validate_fat_pair$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_fat32_parse_directory_entry$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_linux_fat16_find_root$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_linux_fat16_build_chain$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_linux_fat16_validate_payload$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_linux_elf64_parse$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_linux_elf64_self_test$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_linux_uname_fat16_find_root$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_linux_uname_fat16_build_chain$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_linux_uname_fat16_validate_payload$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_linux_uname_elf64_parse$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_linux_uname_elf64_self_test$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_linux_cat_fat16_find_root$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_linux_cat_fat16_build_chain$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_linux_cat_fat16_validate_payload$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_linux_cat_elf64_parse$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_linux_cat_elf64_self_test$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_elf64_parse$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_elf64_self_test$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_native_image_validate$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_native_image_self_test$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_multiprocess_elf64_parse$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T opengat_multiprocess_elf64_self_test$$'
 	# Hostile ext4 metadata is parsed by safe Rust and may retain compiler-
 	# inserted bounds traps. Those traps are a corruption backstop, not an
-	# unwinding runtime: require every one to terminate through Trait OS's panic
+	# unwinding runtime: require every one to terminate through OpenGAT's panic
 	# handler and reject any linked exception personality or unwinder.
 	@if $(NM) $(KERNEL) | grep -Eq 'panic_bounds_check'; then \
 		$(NM) $(KERNEL) | grep -Eq ' [tT] .*rust_begin_unwind' && \
 		$(OBJDUMP) -d $(KERNEL) | \
 			awk '/^[[:space:]]*[0-9a-f]+ <[^>]*rust_begin_unwind>:/ { inside = 1; next } \
 				inside && /^[[:space:]]*[0-9a-f]+ <[^>]+>:/ { inside = 0 } \
-				inside && /[[:space:]]call.*<[^>]*trait3abi5panic[^>]*>/ { found = 1 } \
+				inside && /[[:space:]]call.*<[^>]*opengat3abi5panic[^>]*>/ { found = 1 } \
 				END { exit !found }' && \
 		$(OBJDUMP) -d $(KERNEL) | \
-			awk '/^[[:space:]]*[0-9a-f]+ <[^>]*trait3abi5panic[^>]*>:/ { inside = 1; next } \
+			awk '/^[[:space:]]*[0-9a-f]+ <[^>]*opengat3abi5panic[^>]*>:/ { inside = 1; next } \
 				inside && /^[[:space:]]*[0-9a-f]+ <[^>]+>:/ { inside = 0 } \
 				inside && /[[:space:]]call.*<console_panic>/ { found = 1 } \
 				END { exit !found }'; \
@@ -1500,11 +1505,11 @@ verify: toolchain lint
 	# Paging and the scenario runner must stay coupled to one typed aggregate,
 	# never grow hardware-specific parameters or hidden firmware reads again.
 	@grep -Fq 'paging_initialize(const struct paging_device_windows *windows);' \
-		include/trait/paging.h
+		include/opengat/paging.h
 	@! grep -Eq 'struct (acpi_topology|acpi_mcfg|boot_framebuffer)' \
 		src/kernel/paging.c
 	@grep -Fq 'const struct kernel_test_context *context' \
-		include/trait/test.h
+		include/opengat/test.h
 	# Migrated boot operations are reachable only from typed ledger descriptors.
 	@if grep -ERn \
 		'\b(prove_frame_lifecycle|install_page_tables|prove_paging_lifecycle|prove_write_combining|bring_up_heap|prove_heap_lifecycle|prove_timer_route|retire_legacy_interrupt_path|prove_level_route|prove_pm_timer|prove_apic_timer|prove_tsc|retire_pit|prove_clocks_without_pit|prove_monotonic_time|bring_up_pci|prove_threads|prove_preemption|prove_framebuffer|prove_surface|draw_logo|prove_screen_console|prove_keyboard|prove_shell)[[:space:]]*[(]' \
@@ -1515,7 +1520,7 @@ verify: toolchain lint
 		'\b(ui_font_initialize|pointer_initialize|ui_construct|ui_activate)[[:space:]]*[(]' \
 		src/kernel --include='*.c' --exclude=boot_plan.c \
 		--exclude=ui.c --exclude=ui_font.c --exclude=pointer.c; then \
-		echo 'Trait OS boot stage bypasses the Boot Ledger'; exit 1; \
+		echo 'OpenGAT boot stage bypasses the Boot Ledger'; exit 1; \
 	fi
 	@if grep -ERn \
 		'\b(pci_resource_initialize|interrupt_vector_initialize|dma_initialize|device_substrate_prove)[[:space:]]*[(]' \
@@ -1558,7 +1563,7 @@ verify: toolchain lint
 		echo 'HD Audio proof bypasses the Boot Ledger'; exit 1; \
 	fi
 	# The one driver that lets a device write kernel memory has to withdraw
-	# that permission before it reclaims the memory. Trait OS has no IOMMU, so
+	# that permission before it reclaims the memory. OpenGAT has no IOMMU, so
 	# the order is the whole guarantee: engines stopped, controller reset, bus
 	# mastering disabled, and only then the rings released.
 	@grep -Fq 'PCI_RESOURCE_STATUS_DMA_NOT_PREPARED' src/kernel/audio.c || \
@@ -1589,7 +1594,7 @@ verify: toolchain lint
 	# Fifteen drivers, and exactly one of them may write a register: the video
 	# BIOS window needs the ROM shadow bit cleared, and nothing else here has
 	# any business changing a live graphics part.
-	@grep -Fq '#define NVIDIA_DRIVER_COUNT 15U' include/trait/nvidia.h
+	@grep -Fq '#define NVIDIA_DRIVER_COUNT 15U' include/opengat/nvidia.h
 	@test "$$(grep -Ec '^        \.name = "NVIDIA ' src/kernel/nvidia.c)" \
 		-eq 15 || \
 		{ echo 'the NVIDIA table does not declare fifteen drivers'; exit 1; }
@@ -1620,7 +1625,7 @@ verify: toolchain lint
 		test -n "$$save" && test -n "$$restore" && test -n "$$verify" && \
 		test "$$save" -lt "$$restore" && test "$$restore" -lt "$$verify" || \
 		{ echo 'the NVIDIA ROM shadow bit is not proved restored'; exit 1; }
-	# No driver here may reach memory: Trait OS has no IOMMU.
+	# No driver here may reach memory: OpenGAT has no IOMMU.
 	@if grep -En \
 		'pci_claim_enable_bus_master|dma_(allocate|mark_initialized|transfer_to_device|transfer_to_cpu|release)' \
 		src/kernel/nvidia.c; then \
@@ -1630,16 +1635,16 @@ verify: toolchain lint
 		echo 'an NVIDIA driver wrote configuration space'; exit 1; \
 	fi
 	# C never parses a VBIOS byte; the freestanding Rust validator does.
-	@grep -Fq 'trait_nvbios_parse(' src/kernel/nvidia.c || \
+	@grep -Fq 'opengat_nvbios_parse(' src/kernel/nvidia.c || \
 		{ echo 'the NVIDIA driver stopped using the Rust VBIOS boundary'; \
 		exit 1; }
 	@grep -Fq 'NOTHING HERE HAS BEEN RUN AGAINST NVIDIA SILICON' \
-		include/trait/nvidia.h || \
+		include/opengat/nvidia.h || \
 		{ echo 'the NVIDIA hardware-testing limit was dropped'; exit 1; }
 	# Five drivers read what an earlier driver established, and the table's
 	# order is those dependencies. The control that states them pair by pair is
 	# what keeps a reordered table from silently producing a weaker result.
-	@grep -Fq '#define NVIDIA_CONTROLLED_CONTROLS 21U' include/trait/nvidia.h
+	@grep -Fq '#define NVIDIA_CONTROLLED_CONTROLS 21U' include/opengat/nvidia.h
 	@test "$$(grep -Ec '^            \{ probe_[a-z_]+, probe_[a-z_]+ \}' \
 		src/kernel/nvidia.c)" -eq 5 || \
 		{ echo 'the NVIDIA driver ordering control changed shape'; exit 1; }
@@ -1660,7 +1665,7 @@ verify: toolchain lint
 			exit 1; }; \
 	done
 	@grep -Fq '#define CPU_RFLAGS_PROCESSOR_BOOKKEEPING UINT64_C(0x00010000)' \
-		include/trait/cpu.h || \
+		include/opengat/cpu.h || \
 		{ echo 'the processor-bookkeeping flag set moved'; exit 1; }
 	# The saved context is normalised, not merely checked: nothing hands the
 	# bit back to a process through an IRETQ.
@@ -1701,7 +1706,7 @@ verify: toolchain lint
 		{ echo 'the TCP refusal gained an unreviewed call site'; exit 1; }
 	# A passive open is bounded twice: by the listener's declared backlog and
 	# by the same connection table an active open draws from.
-	@grep -Fq '#define NETWORK_TCP_MAX_BACKLOG 4U' include/trait/network.h
+	@grep -Fq '#define NETWORK_TCP_MAX_BACKLOG 4U' include/opengat/network.h
 	@grep -Fq 'if (tcp_pending_count(listener) >= listener->backlog) {' \
 		src/kernel/network.c || \
 		{ echo 'a passive open stopped honouring its backlog'; exit 1; }
@@ -1729,9 +1734,9 @@ verify: toolchain lint
 		src/kernel/multiprocess.c || \
 		{ echo 'multiprocess trap handler has an unexpected call site'; \
 		exit 1; }
-	# Thirteen drivers, and no driver may enable bus mastering: Trait OS has no
+	# Thirteen drivers, and no driver may enable bus mastering: OpenGAT has no
 	# IOMMU, so a register-only driver is one that cannot reach memory at all.
-	@grep -Fq '#define DRIVER_MATRIX_CAPACITY 13U' include/trait/driver.h
+	@grep -Fq '#define DRIVER_MATRIX_CAPACITY 13U' include/opengat/driver.h
 	@test "$$(grep -Ec '^        \.name = ' src/kernel/driver.c)" -eq 13 || \
 		{ echo 'the driver matrix does not declare thirteen drivers'; \
 		exit 1; }
@@ -1753,7 +1758,7 @@ verify: toolchain lint
 	@if grep -En 'pci_config_write_(port|ecam)' src/kernel/driver.c; then \
 		echo 'a bounded driver wrote configuration space'; exit 1; \
 	fi
-	@grep -Fq '#define PAGING_PROCESS_SPACE_SLOTS 4U' include/trait/paging.h
+	@grep -Fq '#define PAGING_PROCESS_SPACE_SLOTS 4U' include/opengat/paging.h
 	@grep -Fq 'newest_owned_alias_order()' src/kernel/paging.c || \
 		{ echo 'private alias restores lost their ordering guard'; exit 1; }
 	@if grep -ERn '\blinux_abi_installed_prove[[:space:]]*[(]' \
@@ -1773,9 +1778,9 @@ verify: toolchain lint
 		test "$$(grep -ERh '\blinux_cat_abi_launch[[:space:]]*[(]' \
 		src/kernel --include='*.c' --exclude=linux_cat.c | wc -l)" -eq 1 || \
 		{ echo 'measured launch entry escaped its userspace owner'; exit 1; }
-	@! grep -Eq 'console_(write|putc)[[:space:]]*\([[:space:]]*"(TRAIT|Linux)' \
+	@! grep -Eq 'console_(write|putc)[[:space:]]*\([[:space:]]*"(OPENGAT|Linux)' \
 		src/kernel/shell.c || \
-		{ echo 'Trait OS shell contains prerecorded userspace output'; exit 1; }
+		{ echo 'OpenGAT shell contains prerecorded userspace output'; exit 1; }
 	@if grep -ERn '\bfilesystem_private_read_(open|close)[[:space:]]*[(]' \
 		src/kernel --include='*.c' --exclude=filesystem.c \
 		--exclude=process.c; then \
@@ -1836,7 +1841,7 @@ verify: toolchain lint
 	@$(OBJDUMP) -d --no-show-raw-insn $(BUSYBOX_CAT_BINARY) \
 		| grep -Eq '[[:space:]]syscall[[:space:]]*$$' || \
 		{ echo 'pinned cat BusyBox has no x86-64 syscall instruction'; exit 1; }
-	@if grep -ERn '(^|[^[:alnum:]_])unsafe[[:space:]]*(\{|fn|extern|trait|impl)|#\[unsafe' \
+	@if grep -ERn '(^|[^[:alnum:]_])unsafe[[:space:]]*(\{|fn|extern|opengat|impl)|#\[unsafe' \
 		src/rust --include='*.rs' --exclude=abi.rs; then \
 		echo 'unsafe Rust escaped the reviewed FFI boundary'; exit 1; \
 	fi
@@ -1939,53 +1944,53 @@ verify: toolchain lint
 		test "$$((guest_exit * 2 + 1))" -eq "$$host_exit" && \
 		test "$$((0x36 * 2 + 1))" -ne "$$host_exit" || \
 		{ echo 'Linux uname ABI guest and host exit contracts disagree'; exit 1; }
-	@grep -Fq 'case KERNEL_TEST_TRAIT_PROOF_USERLAND:' src/kernel/test.c
+	@grep -Fq 'case KERNEL_TEST_OPENGAT_PROOF_USERLAND:' src/kernel/test.c
 	@grep -Fq '        return UINT8_C(0x38);' src/kernel/test.c
 	@guest_exit=$$(sed -n \
-		'/case KERNEL_TEST_TRAIT_PROOF_USERLAND:/{n;s/.*UINT8_C(\(0x[0-9A-Fa-f]*\)).*/\1/p;}' \
+		'/case KERNEL_TEST_OPENGAT_PROOF_USERLAND:/{n;s/.*UINT8_C(\(0x[0-9A-Fa-f]*\)).*/\1/p;}' \
 		src/kernel/test.c); \
 		host_exit=$$(sed -n \
-		's/^[[:space:]]*trait-proof-userland) expected=\([0-9][0-9]*\) ;;.*/\1/p' \
+		's/^[[:space:]]*opengat-proof-userland) expected=\([0-9][0-9]*\) ;;.*/\1/p' \
 		Makefile | head -n 1); \
 		test -n "$$guest_exit" && test -n "$$host_exit" && \
 		test "$$((guest_exit * 2 + 1))" -eq "$$host_exit" || \
-		{ echo 'Trait OS userland guest and host exits disagree'; exit 1; }
-	@grep -Fq 'case KERNEL_TEST_TRAIT_PROOF_USERLAND_ABSENT:' src/kernel/test.c
+		{ echo 'OpenGAT userland guest and host exits disagree'; exit 1; }
+	@grep -Fq 'case KERNEL_TEST_OPENGAT_PROOF_USERLAND_ABSENT:' src/kernel/test.c
 	@grep -Fq '        return UINT8_C(0x39);' src/kernel/test.c
 	@guest_exit=$$(sed -n \
-		'/case KERNEL_TEST_TRAIT_PROOF_USERLAND_ABSENT:/{n;s/.*UINT8_C(\(0x[0-9A-Fa-f]*\)).*/\1/p;}' \
+		'/case KERNEL_TEST_OPENGAT_PROOF_USERLAND_ABSENT:/{n;s/.*UINT8_C(\(0x[0-9A-Fa-f]*\)).*/\1/p;}' \
 		src/kernel/test.c); \
 		host_exit=$$(sed -n \
-		's/^[[:space:]]*trait-proof-userland-absent) expected=\([0-9][0-9]*\) ;;.*/\1/p' \
+		's/^[[:space:]]*opengat-proof-userland-absent) expected=\([0-9][0-9]*\) ;;.*/\1/p' \
 		Makefile | head -n 1); \
 		test -n "$$guest_exit" && test -n "$$host_exit" && \
 		test "$$((guest_exit * 2 + 1))" -eq "$$host_exit" || \
-		{ echo 'Trait OS absent-volume guest and host exits disagree'; exit 1; }
-	@grep -Fq 'case KERNEL_TEST_TRAIT_PROOF_USERLAND_INTERACTIVE:' src/kernel/test.c
+		{ echo 'OpenGAT absent-volume guest and host exits disagree'; exit 1; }
+	@grep -Fq 'case KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE:' src/kernel/test.c
 	@grep -Fq '        return UINT8_C(0x3A);' src/kernel/test.c
 	@guest_exit=$$(sed -n \
-		'/case KERNEL_TEST_TRAIT_PROOF_USERLAND_INTERACTIVE:/{n;s/.*UINT8_C(\(0x[0-9A-Fa-f]*\)).*/\1/p;}' \
+		'/case KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE:/{n;s/.*UINT8_C(\(0x[0-9A-Fa-f]*\)).*/\1/p;}' \
 		src/kernel/test.c); \
 		host_exit=$$(sed -n \
-		's/^[[:space:]]*trait-proof-userland-interactive) expected=\([0-9][0-9]*\) ;;.*/\1/p' \
+		's/^[[:space:]]*opengat-proof-userland-interactive) expected=\([0-9][0-9]*\) ;;.*/\1/p' \
 		Makefile | head -n 1); \
 		test -n "$$guest_exit" && test -n "$$host_exit" && \
 		test "$$((guest_exit * 2 + 1))" -eq "$$host_exit" || \
-		{ echo 'Interactive Trait OS guest and host exits disagree'; exit 1; }
-	@grep -Fq 'case KERNEL_TEST_TRAIT_PROOF_USERLAND_INTERACTIVE_ABSENT:' src/kernel/test.c
+		{ echo 'Interactive OpenGAT guest and host exits disagree'; exit 1; }
+	@grep -Fq 'case KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE_ABSENT:' src/kernel/test.c
 	@grep -Fq '        return UINT8_C(0x3B);' src/kernel/test.c
 	@guest_exit=$$(sed -n \
-		'/case KERNEL_TEST_TRAIT_PROOF_USERLAND_INTERACTIVE_ABSENT:/{n;s/.*UINT8_C(\(0x[0-9A-Fa-f]*\)).*/\1/p;}' \
+		'/case KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE_ABSENT:/{n;s/.*UINT8_C(\(0x[0-9A-Fa-f]*\)).*/\1/p;}' \
 		src/kernel/test.c); \
 		host_exit=$$(sed -n \
-		's/^[[:space:]]*trait-proof-userland-interactive-absent) expected=\([0-9][0-9]*\) ;;.*/\1/p' \
+		's/^[[:space:]]*opengat-proof-userland-interactive-absent) expected=\([0-9][0-9]*\) ;;.*/\1/p' \
 		Makefile | head -n 1); \
 		test -n "$$guest_exit" && test -n "$$host_exit" && \
 		test "$$((guest_exit * 2 + 1))" -eq "$$host_exit" || \
 		{ echo 'Interactive absent-profile guest and host exits disagree'; exit 1; }
 	@if grep -En '\bframebuffer_(write_pixel|fill|scroll_up)[[:space:]]*[(]' \
 		src/kernel/ui.c src/kernel/ui_font.c src/kernel/pointer.c; then \
-		echo 'Trait OS bypasses the cached surface'; exit 1; \
+		echo 'OpenGAT bypasses the cached surface'; exit 1; \
 	fi
 	@if grep -En \
 		'\b(ui_process_events|ui_flush|surface_present)[[:space:]]*[(]' \
@@ -1994,37 +1999,37 @@ verify: toolchain lint
 	fi
 	@grep -Fq '    cpu_store_fence();' src/kernel/surface.c || \
 		{ echo 'cached-surface WC present lost its sfence'; exit 1; }
-	@grep -Fq 'Trait OS: installed proof passed' \
+	@grep -Fq 'OpenGAT: installed proof passed' \
 		src/kernel/boot_plan.c
 	$(MAKE) screenshot-proof
 
 screenshot-proof:
-	$(PYTHON) tools/compare-trait-proof-screenshot.py --mode clean \
-		--self-test $(TRAIT_PROOF_IMAGE)
-	$(PYTHON) tools/compare-trait-proof-screenshot.py --mode focus \
-		--self-test $(TRAIT_PROOF_FOCUS_IMAGE)
-	$(PYTHON) tools/compare-trait-proof-screenshot.py --mode terminal \
-		--self-test $(TRAIT_PROOF_TERMINAL_IMAGE)
+	$(PYTHON) tools/compare-opengat-proof-screenshot.py --mode clean \
+		--self-test $(OPENGAT_PROOF_IMAGE)
+	$(PYTHON) tools/compare-opengat-proof-screenshot.py --mode focus \
+		--self-test $(OPENGAT_PROOF_FOCUS_IMAGE)
+	$(PYTHON) tools/compare-opengat-proof-screenshot.py --mode terminal \
+		--self-test $(OPENGAT_PROOF_TERMINAL_IMAGE)
 
-capture-trait-proof: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
-	rm -rf $(TRAIT_PROOF_CAPTURE_DIR)
-	$(PYTHON) tools/capture-trait-proof.py --iso $(ISO) \
+capture-opengat-proof: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
+	rm -rf $(OPENGAT_PROOF_CAPTURE_DIR)
+	$(PYTHON) tools/capture-opengat-proof.py --iso $(ISO) \
 		--system $(FAT32_SYSTEM_IMAGE) --data $(FAT32_DATA_IMAGE) \
-		--output $(TRAIT_PROOF_CAPTURE_DIR)
-	$(PYTHON) tools/compare-trait-proof-screenshot.py --mode clean \
-		$(TRAIT_PROOF_IMAGE) $(TRAIT_PROOF_CAPTURE_DIR)/trait-proof.png
-	$(PYTHON) tools/compare-trait-proof-screenshot.py --mode focus \
-		$(TRAIT_PROOF_FOCUS_IMAGE) \
-		$(TRAIT_PROOF_CAPTURE_DIR)/trait-proof-focus.png
-	$(PYTHON) tools/compare-trait-proof-screenshot.py --mode terminal \
-		$(TRAIT_PROOF_TERMINAL_IMAGE) \
-		$(TRAIT_PROOF_CAPTURE_DIR)/trait-proof-terminal.png
+		--output $(OPENGAT_PROOF_CAPTURE_DIR)
+	$(PYTHON) tools/compare-opengat-proof-screenshot.py --mode clean \
+		$(OPENGAT_PROOF_IMAGE) $(OPENGAT_PROOF_CAPTURE_DIR)/opengat-proof.png
+	$(PYTHON) tools/compare-opengat-proof-screenshot.py --mode focus \
+		$(OPENGAT_PROOF_FOCUS_IMAGE) \
+		$(OPENGAT_PROOF_CAPTURE_DIR)/opengat-proof-focus.png
+	$(PYTHON) tools/compare-opengat-proof-screenshot.py --mode terminal \
+		$(OPENGAT_PROOF_TERMINAL_IMAGE) \
+		$(OPENGAT_PROOF_CAPTURE_DIR)/opengat-proof-terminal.png
 
-capture-trait: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
-	rm -rf $(TRAIT_CAPTURE_DIR)
-	$(PYTHON) tools/capture-trait.py --iso $(ISO) \
+capture-opengat: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
+	rm -rf $(OPENGAT_CAPTURE_DIR)
+	$(PYTHON) tools/capture-opengat.py --iso $(ISO) \
 		--system $(FAT32_SYSTEM_IMAGE) --data $(FAT32_DATA_IMAGE) \
-		--output $(TRAIT_CAPTURE_DIR) --ffmpeg $(FFMPEG)
+		--output $(OPENGAT_CAPTURE_DIR)
 
 capture-networking: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 	rm -rf $(NETWORK_CAPTURE_DIR)
@@ -2038,32 +2043,32 @@ capture-boot-video: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 		--system $(FAT32_SYSTEM_IMAGE) \
 		--data $(BUILD_DIR)/capture-video-data-fat32.raw \
 		--screenshot $(BUILD_DIR)/fat32-persistence.png \
-		--video $(TRAIT_PROOF_BOOT_VIDEO) \
+		--video $(OPENGAT_PROOF_BOOT_VIDEO) \
 		--transcript $(BUILD_DIR)/fat32-persistence.log \
 		--ffmpeg $(FFMPEG)
 
 $(ISO): $(KERNEL) grub/grub.cfg
 	mkdir -p $(ISO_ROOT)/boot/grub
-	cp $(KERNEL) $(ISO_ROOT)/boot/trait.elf
+	cp $(KERNEL) $(ISO_ROOT)/boot/opengat.elf
 	cp grub/grub.cfg $(ISO_ROOT)/boot/grub/grub.cfg
 	$(GRUB_MKRESCUE) $(GRUB_MKRESCUE_FLAGS) -o $@ $(ISO_ROOT)
 
 iso: $(ISO)
 
-$(TEST_BUILD_DIR)/%/trait.iso: $(KERNEL) Makefile
+$(TEST_BUILD_DIR)/%/opengat.iso: $(KERNEL) Makefile
 	rm -rf $(TEST_BUILD_DIR)/$*
 	mkdir -p $(TEST_BUILD_DIR)/$*/iso-root/boot/grub
-	cp $(KERNEL) $(TEST_BUILD_DIR)/$*/iso-root/boot/trait.elf
+	cp $(KERNEL) $(TEST_BUILD_DIR)/$*/iso-root/boot/opengat.elf
 	printf '%s\n' 'set default=0' 'set timeout=0' '' \
-		'menuentry "Trait OS test" {' \
-		'    multiboot2 /boot/trait.elf trait.test=$*' \
+		'menuentry "OpenGAT test" {' \
+		'    multiboot2 /boot/opengat.elf opengat.test=$*' \
 		'    boot' '}' >$(TEST_BUILD_DIR)/$*/iso-root/boot/grub/grub.cfg
 	$(GRUB_MKRESCUE) $(GRUB_MKRESCUE_FLAGS) -o $@ $(TEST_BUILD_DIR)/$*/iso-root
 
 # Networking scenarios have an isolated Ethernet peer and packet capture rather
 # than a host-network dependency.  This more-specific pattern is selected ahead
 # of qemu-test-% and keeps the existing 58 scenario recipe unchanged.
-qemu-test-network-%: $(TEST_BUILD_DIR)/network-%/trait.iso
+qemu-test-network-%: $(TEST_BUILD_DIR)/network-%/opengat.iso
 	@for tool in qemu-system-x86_64 $(PYTHON); do \
 		command -v $$tool >/dev/null 2>&1 || { echo "missing tool: $$tool"; exit 1; }; \
 	done
@@ -2132,7 +2137,7 @@ qemu-test-network-%: $(TEST_BUILD_DIR)/network-%/trait.iso
 		--full '$(FAT32_FULL_IMAGE)' --qemu qemu-system-x86_64 \
 		--python '$(PYTHON)' --accel '$(QEMU_ACCEL)' --timeout "$$timeout"
 
-qemu-test-native-https: $(TEST_BUILD_DIR)/native-https/trait.iso
+qemu-test-native-https: $(TEST_BUILD_DIR)/native-https/opengat.iso
 	$(MAKE) '$(HTTPSAPP_SYSTEM_IMAGE)' '$(HTTPSAPP_DATA_IMAGE)'
 	$(PYTHON) tools/run_network_scenario.py \
 		--scenario native-https --expected 11 --iso '$<' \
@@ -2144,17 +2149,17 @@ qemu-test-native-https: $(TEST_BUILD_DIR)/native-https/trait.iso
 		--qemu qemu-system-x86_64 --python '$(PYTHON)' \
 		--accel '$(QEMU_ACCEL)' --timeout 180
 
-qemu-test-native-trait: $(TEST_BUILD_DIR)/native-trait/trait.iso
-	$(MAKE) '$(TRAITAPP_SYSTEM_IMAGE)' '$(TRAITAPP_DATA_IMAGE)' \
-		'$(TRAITAPP_REPOSITORY)'
+qemu-test-native-opengat: $(TEST_BUILD_DIR)/native-opengat/opengat.iso
+	$(MAKE) '$(OPENGATAPP_SYSTEM_IMAGE)' '$(OPENGATAPP_DATA_IMAGE)' \
+		'$(OPENGATAPP_REPOSITORY)'
 	$(PYTHON) tools/run_network_scenario.py \
-		--scenario native-trait --expected 15 --iso '$<' \
-		--output '$(TEST_BUILD_DIR)/native-trait' \
+		--scenario native-opengat --expected 15 --iso '$<' \
+		--output '$(TEST_BUILD_DIR)/native-opengat' \
 		--fixture tools/https_network_fixture.py \
 		--audit tools/network_packet_audit.py \
-		--content-root '$(TRAITAPP_DIR)/repository' \
-		--system '$(TRAITAPP_SYSTEM_IMAGE)' \
-		--data '$(TRAITAPP_DATA_IMAGE)' --data-filesystem ext4 \
+		--content-root '$(OPENGATAPP_DIR)/repository' \
+		--system '$(OPENGATAPP_SYSTEM_IMAGE)' \
+		--data '$(OPENGATAPP_DATA_IMAGE)' --data-filesystem ext4 \
 		--full '$(FAT32_FULL_IMAGE)' \
 		--qemu qemu-system-x86_64 --python '$(PYTHON)' \
 		--accel '$(QEMU_ACCEL)' --timeout 900
@@ -2172,7 +2177,7 @@ qemu-test-ext4-powercuts: $(KERNEL) $(EXT4_FIXTURE) \
 		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
 		--accel '$(QEMU_ACCEL)' --timeout 90
 
-qemu-test-%: $(TEST_BUILD_DIR)/%/trait.iso
+qemu-test-%: $(TEST_BUILD_DIR)/%/opengat.iso
 	@for tool in qemu-system-x86_64 timeout grep; do \
 		command -v $$tool >/dev/null 2>&1 || { echo "missing tool: $$tool"; exit 1; }; \
 	done
@@ -2210,7 +2215,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/trait.iso
 		write-combining) expected=89 ;; \
 		device-windows) expected=91 ;; \
 		boot-ledger) expected=93 ;; \
-		trait-proof) expected=95 ;; \
+		opengat-proof) expected=95 ;; \
 		device-substrate) expected=97 ;; \
 		xhci) expected=99 ;; \
 		nvme) expected=101 ;; \
@@ -2218,10 +2223,10 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/trait.iso
 		process) expected=105 ;; \
 		linux-abi) expected=109 ;; \
 		linux-abi-uname) expected=111 ;; \
-		trait-proof-userland) expected=113 ;; \
-		trait-proof-userland-absent) expected=115 ;; \
-		trait-proof-userland-interactive) expected=117 ;; \
-		trait-proof-userland-interactive-absent) expected=119 ;; \
+		opengat-proof-userland) expected=113 ;; \
+		opengat-proof-userland-absent) expected=115 ;; \
+		opengat-proof-userland-interactive) expected=117 ;; \
+		opengat-proof-userland-interactive-absent) expected=119 ;; \
 		fat32-system) expected=121 ;; \
 		fat32-data) expected=123 ;; \
 		fat32-nested) expected=125 ;; \
@@ -2284,7 +2289,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/trait.iso
 					audio_capture=true; \
 					audio_backend="-audiodev wav,id=wav0,path=$$audio_wav,out.frequency=48000,out.channels=2,out.format=s16"; \
 				else audio_backend='-audiodev none,id=wav0'; fi; \
-				hardware="-boot order=d -blockdev driver=file,filename=$(AUDIO_SYSTEM_IMAGE),node-name=audio-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=audio-system-file,node-name=audio-system-raw,read-only=on -device nvme,serial=trait-system-fat32,drive=audio-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=audio-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=audio-data-file,node-name=audio-data-raw,read-only=off -device nvme,serial=trait-data-fat32,drive=audio-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -device ich9-intel-hda,id=hda -device hda-duplex,bus=hda.0,audiodev=wav0 $$audio_backend" ;; \
+				hardware="-boot order=d -blockdev driver=file,filename=$(AUDIO_SYSTEM_IMAGE),node-name=audio-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=audio-system-file,node-name=audio-system-raw,read-only=on -device nvme,serial=opengat-system-fat32,drive=audio-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=audio-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=audio-data-file,node-name=audio-data-raw,read-only=off -device nvme,serial=opengat-data-fat32,drive=audio-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -device ich9-intel-hda,id=hda -device hda-duplex,bus=hda.0,audiodev=wav0 $$audio_backend" ;; \
 			native-sdl) \
 				$(MAKE) '$(SDL_PROOF_SYSTEM_IMAGE)' '$(SDL_PROOF_DATA_IMAGE)' || exit 1; \
 				cp '$(SDL_PROOF_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
@@ -2293,11 +2298,11 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/trait.iso
 					audio_capture=true; \
 					audio_backend="-audiodev wav,id=wav0,path=$$audio_wav,out.frequency=48000,out.channels=2,out.format=s16"; \
 				else audio_backend='-audiodev none,id=wav0'; fi; \
-			hardware="-boot order=d -blockdev driver=file,filename=$(SDL_PROOF_SYSTEM_IMAGE),node-name=sdl-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=sdl-system-file,node-name=sdl-system-raw,read-only=on -device nvme,serial=trait-system-fat32,drive=sdl-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=sdl-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=sdl-data-file,node-name=sdl-data-raw,read-only=off -device nvme,serial=trait-data-fat32,drive=sdl-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -device ich9-intel-hda,id=hda -device hda-duplex,bus=hda.0,audiodev=wav0 $$audio_backend" ;; \
+			hardware="-boot order=d -blockdev driver=file,filename=$(SDL_PROOF_SYSTEM_IMAGE),node-name=sdl-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=sdl-system-file,node-name=sdl-system-raw,read-only=on -device nvme,serial=opengat-system-fat32,drive=sdl-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=sdl-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=sdl-data-file,node-name=sdl-data-raw,read-only=off -device nvme,serial=opengat-data-fat32,drive=sdl-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -device ich9-intel-hda,id=hda -device hda-duplex,bus=hda.0,audiodev=wav0 $$audio_backend" ;; \
 		native-dynamic) \
 			$(MAKE) '$(DYNAMIC_SYSTEM_IMAGE)' '$(DYNAMIC_DATA_IMAGE)' || exit 1; \
 			cp '$(DYNAMIC_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
-			hardware='-boot order=d -blockdev driver=file,filename=$(DYNAMIC_SYSTEM_IMAGE),node-name=dynamic-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=dynamic-system-file,node-name=dynamic-system-raw,read-only=on -device nvme,serial=trait-system-fat32,drive=dynamic-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=dynamic-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=dynamic-data-file,node-name=dynamic-data-raw,read-only=off -device nvme,serial=trait-data-fat32,drive=dynamic-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+			hardware='-boot order=d -blockdev driver=file,filename=$(DYNAMIC_SYSTEM_IMAGE),node-name=dynamic-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=dynamic-system-file,node-name=dynamic-system-raw,read-only=on -device nvme,serial=opengat-system-fat32,drive=dynamic-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=dynamic-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=dynamic-data-file,node-name=dynamic-data-raw,read-only=off -device nvme,serial=opengat-data-fat32,drive=dynamic-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			# No emulator models an NVIDIA part, so the nvidia scenario \
 			# attaches display and HD Audio functions of exactly the classes \
 			# these drivers match on, from vendors that are not NVIDIA. \
@@ -2309,27 +2314,27 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/trait.iso
 			native|native-relaunch) \
 				$(MAKE) '$(NATIVE_SYSTEM_IMAGE)' '$(NATIVE_DATA_IMAGE)' || exit 1; \
 				cp '$(NATIVE_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(NATIVE_SYSTEM_IMAGE),node-name=native-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=native-system-file,node-name=native-system-raw,read-only=on -device nvme,serial=trait-system-fat32,drive=native-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=native-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=native-data-file,node-name=native-data-raw,read-only=off -device nvme,serial=trait-data-fat32,drive=native-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(NATIVE_SYSTEM_IMAGE),node-name=native-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=native-system-file,node-name=native-system-raw,read-only=on -device nvme,serial=opengat-system-fat32,drive=native-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=native-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=native-data-file,node-name=native-data-raw,read-only=off -device nvme,serial=opengat-data-fat32,drive=native-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			native-lua) \
 				$(MAKE) '$(LUA_SYSTEM_IMAGE)' '$(LUA_DATA_IMAGE)' || exit 1; \
 				cp '$(LUA_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(LUA_SYSTEM_IMAGE),node-name=lua-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=lua-system-file,node-name=lua-system-raw,read-only=on -device nvme,serial=trait-system-fat32,drive=lua-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=lua-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=lua-data-file,node-name=lua-data-raw,read-only=off -device nvme,serial=trait-data-fat32,drive=lua-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(LUA_SYSTEM_IMAGE),node-name=lua-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=lua-system-file,node-name=lua-system-raw,read-only=on -device nvme,serial=opengat-system-fat32,drive=lua-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=lua-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=lua-data-file,node-name=lua-data-raw,read-only=off -device nvme,serial=opengat-data-fat32,drive=lua-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			native-sqlite) \
 				$(MAKE) '$(SQLITE_SYSTEM_IMAGE)' '$(SQLITE_DATA_IMAGE)' || exit 1; \
 				cp '$(SQLITE_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(SQLITE_SYSTEM_IMAGE),node-name=sqlite-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=sqlite-system-file,node-name=sqlite-system-raw,read-only=on -device nvme,serial=trait-system-fat32,drive=sqlite-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=sqlite-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=sqlite-data-file,node-name=sqlite-data-raw,read-only=off -device nvme,serial=trait-data-fat32,drive=sqlite-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(SQLITE_SYSTEM_IMAGE),node-name=sqlite-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=sqlite-system-file,node-name=sqlite-system-raw,read-only=on -device nvme,serial=opengat-system-fat32,drive=sqlite-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=sqlite-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=sqlite-data-file,node-name=sqlite-data-raw,read-only=off -device nvme,serial=opengat-data-fat32,drive=sqlite-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			native-rust) \
 				$(MAKE) '$(RUST_APP_SYSTEM_IMAGE)' '$(RUST_APP_DATA_IMAGE)' || exit 1; \
 				cp '$(RUST_APP_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(RUST_APP_SYSTEM_IMAGE),node-name=rust-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=rust-system-file,node-name=rust-system-raw,read-only=on -device nvme,serial=trait-system-fat32,drive=rust-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=rust-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=rust-data-file,node-name=rust-data-raw,read-only=off -device nvme,serial=trait-data-fat32,drive=rust-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(RUST_APP_SYSTEM_IMAGE),node-name=rust-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=rust-system-file,node-name=rust-system-raw,read-only=on -device nvme,serial=opengat-system-fat32,drive=rust-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=rust-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=rust-data-file,node-name=rust-data-raw,read-only=off -device nvme,serial=opengat-data-fat32,drive=rust-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			native-crash) \
 				$(MAKE) '$(CRASH_SYSTEM_IMAGE)' '$(CRASH_DATA_IMAGE)' || exit 1; \
 				cp '$(CRASH_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(CRASH_SYSTEM_IMAGE),node-name=crash-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=crash-system-file,node-name=crash-system-raw,read-only=on -device nvme,serial=trait-system-fat32,drive=crash-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=crash-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=crash-data-file,node-name=crash-data-raw,read-only=off -device nvme,serial=trait-data-fat32,drive=crash-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(CRASH_SYSTEM_IMAGE),node-name=crash-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=crash-system-file,node-name=crash-system-raw,read-only=on -device nvme,serial=opengat-system-fat32,drive=crash-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=crash-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=crash-data-file,node-name=crash-data-raw,read-only=off -device nvme,serial=opengat-data-fat32,drive=crash-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			native-elf-refusal|native-digest-refusal|native-abi-refusal) \
 				$(MAKE) '$(ADMISSION_SYSTEM_IMAGE)' '$(ADMISSION_DATA_IMAGE)' || exit 1; \
 				cp '$(ADMISSION_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(ADMISSION_SYSTEM_IMAGE),node-name=admission-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=admission-system-file,node-name=admission-system-raw,read-only=on -device nvme,serial=trait-system-fat32,drive=admission-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=admission-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=admission-data-file,node-name=admission-data-raw,read-only=off -device nvme,serial=trait-data-fat32,drive=admission-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(ADMISSION_SYSTEM_IMAGE),node-name=admission-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=admission-system-file,node-name=admission-system-raw,read-only=on -device nvme,serial=opengat-system-fat32,drive=admission-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=admission-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=admission-data-file,node-name=admission-data-raw,read-only=off -device nvme,serial=opengat-data-fat32,drive=admission-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			device-substrate) \
 				hardware='-object rng-builtin,id=rng0 -device virtio-rng-pci,disable-legacy=on,rng=rng0' ;; \
 			xhci) \
@@ -2338,65 +2343,65 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/trait.iso
 				rm -f '$(NVME_FIXTURE)' || exit 1; \
 				$(PYTHON) tools/make-nvme-fixture.py '$(NVME_FIXTURE)' || exit 1; \
 				test -f '$(NVME_FIXTURE)' || exit 1; \
-				hardware='-blockdev driver=file,filename=$(NVME_FIXTURE),node-name=nvme-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=nvme-file,node-name=nvme-raw,read-only=on -device nvme,serial=trait-fixture,drive=nvme-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-blockdev driver=file,filename=$(NVME_FIXTURE),node-name=nvme-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=nvme-file,node-name=nvme-raw,read-only=on -device nvme,serial=opengat-fixture,drive=nvme-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
 			filesystem) \
 				rm -f '$(FILESYSTEM_FIXTURE)' || exit 1; \
 				$(PYTHON) tools/make-fat16-fixture.py '$(FILESYSTEM_FIXTURE)' || exit 1; \
 				test -f '$(FILESYSTEM_FIXTURE)' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(FILESYSTEM_FIXTURE),node-name=filesystem-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=filesystem-file,node-name=filesystem-raw,read-only=on -device nvme,serial=trait-fat16-fixture,drive=filesystem-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(FILESYSTEM_FIXTURE),node-name=filesystem-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=filesystem-file,node-name=filesystem-raw,read-only=on -device nvme,serial=opengat-fat16-fixture,drive=filesystem-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
 			process) \
 				rm -f '$(PROCESS_FIXTURE)' '$(PROCESS_ELF)' || exit 1; \
 				$(PYTHON) tools/make-process-fixture.py '$(PROCESS_FIXTURE)' || exit 1; \
 				test -f '$(PROCESS_FIXTURE)' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(PROCESS_FIXTURE),node-name=process-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=process-file,node-name=process-raw,read-only=on -device nvme,serial=trait-process,drive=process-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(PROCESS_FIXTURE),node-name=process-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=process-file,node-name=process-raw,read-only=on -device nvme,serial=opengat-process,drive=process-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
 			linux-abi) \
 				$(MAKE) '$(LINUX_ABI_FIXTURE)' || exit 1; \
 				test -f '$(LINUX_ABI_FIXTURE)' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(LINUX_ABI_FIXTURE),node-name=linux-abi-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=linux-abi-file,node-name=linux-abi-raw,read-only=on -device nvme,serial=trait-linux-abi,drive=linux-abi-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(LINUX_ABI_FIXTURE),node-name=linux-abi-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=linux-abi-file,node-name=linux-abi-raw,read-only=on -device nvme,serial=opengat-linux-abi,drive=linux-abi-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
 			linux-abi-uname) \
 				$(MAKE) '$(LINUX_UNAME_FIXTURE)' || exit 1; \
 				test -f '$(LINUX_UNAME_FIXTURE)' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(LINUX_UNAME_FIXTURE),node-name=linux-uname-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=linux-uname-file,node-name=linux-uname-raw,read-only=on -device nvme,serial=trait-linux-uname,drive=linux-uname-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(LINUX_UNAME_FIXTURE),node-name=linux-uname-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=linux-uname-file,node-name=linux-uname-raw,read-only=on -device nvme,serial=opengat-linux-uname,drive=linux-uname-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
 			ext4-recovery) \
 				$(MAKE) '$(EXT4_FIXTURE)' || exit 1; \
 				$(PYTHON) tools/ext4_image.py prepare-recovery-marker \
 					'$(EXT4_FIXTURE)' '$(EXT4_RECOVERY_FIXTURE)' \
 					--report '$(EXT4_RECOVERY_FIXTURE).before.json' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(EXT4_RECOVERY_FIXTURE),node-name=ext4-recovery-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=ext4-recovery-file,node-name=ext4-recovery-raw,read-only=off -device nvme,serial=trait-ext4-recovery,drive=ext4-recovery-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
-			trait-proof-userland) \
-				$(MAKE) '$(TRAIT_PROOF_USERLAND_IMAGE)' || exit 1; \
-				test -f '$(TRAIT_PROOF_USERLAND_IMAGE)' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(TRAIT_PROOF_USERLAND_IMAGE),node-name=trait-proof-userland-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=trait-proof-userland-file,node-name=trait-proof-userland-raw,read-only=on -device nvme,serial=trait-userland,drive=trait-proof-userland-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
-			trait-proof-userland-interactive) \
-				$(MAKE) '$(TRAIT_PROOF_USERLAND_IMAGE)' || exit 1; \
-				test -f '$(TRAIT_PROOF_USERLAND_IMAGE)' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(TRAIT_PROOF_USERLAND_IMAGE),node-name=interactive-userland-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=interactive-userland-file,node-name=interactive-userland-raw,read-only=on -device nvme,serial=trait-interactive,drive=interactive-userland-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
-			trait-proof-userland-interactive-absent) \
-				$(MAKE) '$(TRAIT_PROOF_USERLAND_NO_CAT_IMAGE)' || exit 1; \
-				test -f '$(TRAIT_PROOF_USERLAND_NO_CAT_IMAGE)' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(TRAIT_PROOF_USERLAND_NO_CAT_IMAGE),node-name=interactive-absent-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=interactive-absent-file,node-name=interactive-absent-raw,read-only=on -device nvme,serial=trait-interactive-absent,drive=interactive-absent-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(EXT4_RECOVERY_FIXTURE),node-name=ext4-recovery-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=ext4-recovery-file,node-name=ext4-recovery-raw,read-only=off -device nvme,serial=opengat-ext4-recovery,drive=ext4-recovery-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
+			opengat-proof-userland) \
+				$(MAKE) '$(OPENGAT_PROOF_USERLAND_IMAGE)' || exit 1; \
+				test -f '$(OPENGAT_PROOF_USERLAND_IMAGE)' || exit 1; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(OPENGAT_PROOF_USERLAND_IMAGE),node-name=opengat-proof-userland-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=opengat-proof-userland-file,node-name=opengat-proof-userland-raw,read-only=on -device nvme,serial=opengat-userland,drive=opengat-proof-userland-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
+			opengat-proof-userland-interactive) \
+				$(MAKE) '$(OPENGAT_PROOF_USERLAND_IMAGE)' || exit 1; \
+				test -f '$(OPENGAT_PROOF_USERLAND_IMAGE)' || exit 1; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(OPENGAT_PROOF_USERLAND_IMAGE),node-name=interactive-userland-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=interactive-userland-file,node-name=interactive-userland-raw,read-only=on -device nvme,serial=opengat-interactive,drive=interactive-userland-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
+			opengat-proof-userland-interactive-absent) \
+				$(MAKE) '$(OPENGAT_PROOF_USERLAND_NO_CAT_IMAGE)' || exit 1; \
+				test -f '$(OPENGAT_PROOF_USERLAND_NO_CAT_IMAGE)' || exit 1; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(OPENGAT_PROOF_USERLAND_NO_CAT_IMAGE),node-name=interactive-absent-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=interactive-absent-file,node-name=interactive-absent-raw,read-only=on -device nvme,serial=opengat-interactive-absent,drive=interactive-absent-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
 			fat32-missing) \
 				$(MAKE) '$(FAT32_SYSTEM_IMAGE)' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(FAT32_SYSTEM_IMAGE),node-name=fat32-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=fat32-system-file,node-name=fat32-system-raw,read-only=on -device nvme,serial=trait-system-fat32,drive=fat32-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(FAT32_SYSTEM_IMAGE),node-name=fat32-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=fat32-system-file,node-name=fat32-system-raw,read-only=on -device nvme,serial=opengat-system-fat32,drive=fat32-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			fat32-full) \
 				$(MAKE) '$(FAT32_SYSTEM_IMAGE)' '$(FAT32_FULL_IMAGE)' || exit 1; \
 				cp '$(FAT32_FULL_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(FAT32_SYSTEM_IMAGE),node-name=fat32-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=fat32-system-file,node-name=fat32-system-raw,read-only=on -device nvme,serial=trait-system-fat32,drive=fat32-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=fat32-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=fat32-data-file,node-name=fat32-data-raw,read-only=off -device nvme,serial=trait-data-fat32,drive=fat32-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(FAT32_SYSTEM_IMAGE),node-name=fat32-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=fat32-system-file,node-name=fat32-system-raw,read-only=on -device nvme,serial=opengat-system-fat32,drive=fat32-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=fat32-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=fat32-data-file,node-name=fat32-data-raw,read-only=off -device nvme,serial=opengat-data-fat32,drive=fat32-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			fat32-corrupt) \
 				$(MAKE) '$(FAT32_SYSTEM_IMAGE)' '$(FAT32_CORRUPT_IMAGE)' || exit 1; \
 				cp '$(FAT32_CORRUPT_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(FAT32_SYSTEM_IMAGE),node-name=fat32-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=fat32-system-file,node-name=fat32-system-raw,read-only=on -device nvme,serial=trait-system-fat32,drive=fat32-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=fat32-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=fat32-data-file,node-name=fat32-data-raw,read-only=off -device nvme,serial=trait-data-fat32,drive=fat32-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(FAT32_SYSTEM_IMAGE),node-name=fat32-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=fat32-system-file,node-name=fat32-system-raw,read-only=on -device nvme,serial=opengat-system-fat32,drive=fat32-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=fat32-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=fat32-data-file,node-name=fat32-data-raw,read-only=off -device nvme,serial=opengat-data-fat32,drive=fat32-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			fat32-*) \
 				$(MAKE) '$(FAT32_SYSTEM_IMAGE)' '$(FAT32_DATA_IMAGE)' || exit 1; \
 				cp '$(FAT32_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(FAT32_SYSTEM_IMAGE),node-name=fat32-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=fat32-system-file,node-name=fat32-system-raw,read-only=on -device nvme,serial=trait-system-fat32,drive=fat32-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=fat32-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=fat32-data-file,node-name=fat32-data-raw,read-only=off -device nvme,serial=trait-data-fat32,drive=fat32-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(FAT32_SYSTEM_IMAGE),node-name=fat32-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=fat32-system-file,node-name=fat32-system-raw,read-only=on -device nvme,serial=opengat-system-fat32,drive=fat32-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=fat32-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=fat32-data-file,node-name=fat32-data-raw,read-only=off -device nvme,serial=opengat-data-fat32,drive=fat32-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			*) hardware='' ;; \
 	esac; \
 	log='$(TEST_BUILD_DIR)/$*/serial.log'; \
 	rm -f "$$log"; \
 	timeout_seconds=15; reboot_control='-no-reboot'; \
 	case '$*' in \
-		trait-proof) timeout_seconds=60 ;; \
+		opengat-proof) timeout_seconds=60 ;; \
 		fat32-*) timeout_seconds=45 ;; \
 		ext4-recovery) timeout_seconds=90 ;; \
 		native) timeout_seconds=180 ;; \
@@ -2414,14 +2419,14 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/trait.iso
 		rm -f "$$monitor_socket"; \
 		monitor_argument="-monitor unix:$$monitor_socket,server=on,wait=off"; \
 		$(PYTHON) tools/qemu-send-keys.py --monitor "$$monitor_socket" \
-			--serial "$$log" --marker 'TRAIT LUA INPUT READY' \
-			--text trait --enter --timeout 120 & injector=$$!; \
+			--serial "$$log" --marker 'OPENGAT LUA INPUT READY' \
+			--text opengat --enter --timeout 120 & injector=$$!; \
 	elif test '$*' = native-sdl; then \
 		monitor_socket='$(TEST_BUILD_DIR)/$*/monitor.sock'; \
 		rm -f "$$monitor_socket"; \
 		monitor_argument="-monitor unix:$$monitor_socket,server=on,wait=off"; \
 		$(PYTHON) tools/qemu-send-keys.py --monitor "$$monitor_socket" \
-			--serial "$$log" --marker 'TRAIT SDL READY run=1' \
+			--serial "$$log" --marker 'OPENGAT SDL READY run=1' \
 			--text s --hmp 'mouse_move -100 0' \
 			--hmp 'mouse_button 1' \
 			--hmp 'mouse_button 0' \
@@ -2444,119 +2449,125 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/trait.iso
 	expected_begin=1; \
 	if test '$*' = fat32-persistence -o '$*' = native-sqlite; then expected_begin=2; fi; \
 	if test $$result -ne $$expected -o $$injection_result -ne 0 -o "$$begin_count" -ne "$$expected_begin" -o "$$pass_count" -ne 1 || \
-		grep -Fq 'ST FAIL' "$$log" || grep -Fq 'Trait OS PANIC' "$$log"; then \
+		grep -Fq 'ST FAIL' "$$log" || grep -Fq 'OpenGAT PANIC' "$$log"; then \
 		echo 'QEMU scenario $* failed: status='$$result' expected='$$expected; \
 		cat "$$log"; \
 		exit 1; \
 	fi; \
 	if test '$*' = normal && \
-		{ ! grep -Fq 'Trait OS: ACPI root verified' "$$log" || \
-		  ! grep -Fq 'Trait OS: ACPI MADT verified' "$$log" || \
-		  ! grep -Fq 'Trait OS: ACPI topology verified' "$$log" || \
-		  ! grep -Eq '^Trait OS: ACPI I/O APIC id [0-9]+ at 0x' "$$log" || \
-		  ! grep -Fq 'Trait OS: local APIC online' "$$log" || \
-		  ! grep -Fq 'Trait OS: local APIC legacy routing LINT0 ExtINT' "$$log" || \
-		  ! grep -Eq '^Trait OS: local APIC EOI-broadcast suppression (supported|unsupported) active (yes|no)$$' "$$log" || \
-		  ! grep -Fq 'Trait OS: I/O APIC online' "$$log" || \
-		  ! grep -Eq '^Trait OS: I/O APIC id [0-9]+ version 0x[0-9A-F]+ entries [0-9]+ base GSI [0-9]+ directed EOI (yes|no)$$' "$$log" || \
-		  ! grep -Fq 'Trait OS: I/O APIC delivered eight interrupts' "$$log" || \
-		  ! grep -Fq 'Trait OS: legacy 8259 retired' "$$log" || \
-		  ! grep -Fq 'Trait OS: timer survives legacy retirement' "$$log" || \
-		  ! grep -Eq '^Trait OS: I/O APIC level route id [0-9]+ GSI [0-9]+ vector [0-9]+ active (high|low) acknowledgement (directed|broadcast)$$' "$$log" || \
-		  ! grep -Eq '^Trait OS: I/O APIC level deliveries [0-9]+ remote IRR [0-9]+ directed EOI [0-9]+ in [0-9]+ ns$$' "$$log" || \
-		  ! grep -Fq 'Trait OS: I/O APIC delivered eight level-triggered interrupts' "$$log" || \
-		  ! grep -Fq 'Trait OS: level-triggered routing established' "$$log" || \
-		  ! grep -Eq '^Trait OS: local APIC timer calibrated at [0-9]+ counts' "$$log" || \
-		  ! grep -Fq 'Trait OS: local APIC timer delivered eight interrupts' "$$log" || \
-		  ! grep -Eq '^Trait OS: TSC calibrated at [0-9]+ Hz' "$$log" || \
-		  ! grep -Fq 'Trait OS: TSC reference established' "$$log" || \
-		  ! grep -Fq 'Trait OS: ACPI FADT verified' "$$log" || \
-		  ! grep -Fq 'Trait OS: ACPI MCFG absent' "$$log" || \
-		  ! grep -Fq 'Trait OS: ACPI configuration windows verified' "$$log" || \
-		  ! grep -Eq '^Trait OS: ACPI PM timer port 0x[0-9A-F]+ width (24|32) bits address (fixed|extended)$$' "$$log" || \
-		  ! grep -Eq '^Trait OS: PM timer counted [0-9]+ ticks in [0-9]+ ns$$' "$$log" || \
-		  ! grep -Fq 'Trait OS: PM timer independent reference established' "$$log" || \
-		  ! grep -Eq '^Trait OS: clocks agree: PM [0-9]+ ns, APIC timer [0-9]+ ns, TSC [0-9]+ ns$$' "$$log" || \
-		  ! grep -Fq 'Trait OS: PIT retired' "$$log" || \
-		  ! grep -Fq 'Trait OS: clocks survive PIT retirement' "$$log" || \
-		  ! grep -Fq 'Trait OS: monotonic clock on time-stamp counter' "$$log" || \
-		  ! grep -Eq '^Trait OS: slept [0-9]+ ns for a [0-9]+ ns deadline$$' "$$log" || \
-		  ! grep -Fq 'Trait OS: deadline timers online' "$$log" || \
-		  ! grep -Fq 'Trait OS: monotonic time established' "$$log" || \
-		  ! grep -Eq '^Trait OS: paging root 0x[0-9A-F]+ table frames [0-9]+ regions [0-9]+ NX yes write protect yes$$' "$$log" || \
-		  ! grep -Eq '^Trait OS: paging leaves [0-9]+ writable [0-9]+ executable [0-9]+ both 0$$' "$$log" || \
-		  ! grep -Fq 'Trait OS: kernel page tables installed' "$$log" || \
-		  ! grep -Fq 'Trait OS: no writable executable mapping' "$$log" || \
-		  ! grep -Eq '^Trait OS: IA32_PAT before 0x[0-9A-F]{16} after 0x[0-9A-F]{16} entry 1 write-combining$$' "$$log" || \
-		  ! grep -Eq '^Trait OS: framebuffer memory type write-combining pages [1-9][0-9]*$$' "$$log" || \
-		  ! grep -Fq 'Trait OS: write-combining established' "$$log" || \
-		  ! grep -Fq 'Trait OS: virtual memory established' "$$log" || \
-		  ! grep -Eq '^Trait OS: heap window 0x[0-9A-F]+ size [0-9]+ guards 0x[0-9A-F]+ 0x[0-9A-F]+$$' "$$log" || \
-		  ! grep -Eq '^Trait OS: heap committed [0-9]+ bytes in [0-9]+ pages, live 3$$' "$$log" || \
-		  ! grep -Fq 'Trait OS: kernel heap online' "$$log" || \
-		  ! grep -Fq 'Trait OS: heap coalesced to one free block' "$$log" || \
-		  ! grep -Fq 'Trait OS: kernel heap established' "$$log" || \
-		  ! grep -Eq '^Trait OS: deadline table of [0-9]+ entries on the heap$$' "$$log" || \
-		  ! grep -Eq '^Trait OS: PCI mechanism 1 online, no window mapped$$' "$$log" || \
-		  ! grep -Eq '^Trait OS: PCI buses [1-9][0-9]* functions [1-9][0-9]* bridges [0-9]+$$' "$$log" || \
-		  ! grep -Eq '^Trait OS: PCI 0:0\.0 vendor 0x[0-9A-F]+ device 0x[0-9A-F]+ class 0x0*6\.0x0* ' "$$log" || \
-		  ! grep -Fq 'Trait OS: PCI configuration space enumerated' "$$log" || \
-		  ! grep -Fq 'Trait OS: PCI enumeration established' "$$log" || \
-		  ! grep -Fxq 'Trait OS: PCI resource ownership negative controls 4/4 passed' "$$log" || \
-		  ! grep -Fxq 'Trait OS: supervisor NX UC device-MMIO arena established' "$$log" || \
-		  ! grep -Fxq 'Trait OS: dynamic vector negative controls 4/4 passed' "$$log" || \
-		  ! grep -Fxq 'Trait OS: dynamic interrupt vector foundation established' "$$log" || \
-		  ! grep -Fxq 'Trait OS: bounded DMA negative controls 2/2 passed' "$$log" || \
-		  ! grep -Fxq 'Trait OS: contiguous DMA ownership foundation established' "$$log" || \
-		  ! grep -Fxq 'Trait OS: xHCI foundation robustness controls 17/17 passed' "$$log" || \
-		  ! grep -Fxq 'Trait OS: bounded xHCI host-controller foundation established' "$$log" || \
-		  ! grep -Fxq 'Trait OS: xHCI fixture absent' "$$log" || \
-		  ! grep -Fxq 'Trait OS: NVMe foundation robustness controls 20/20 passed' "$$log" || \
-		  ! grep -Fxq 'Trait OS: bounded NVMe block-controller foundation established' "$$log" || \
-		  ! grep -Fxq 'Trait OS: NVMe fixture absent' "$$log" || \
-		  ! grep -Fxq 'Trait OS: FAT16 foundation robustness controls 26/26 passed' "$$log" || \
-		  ! grep -Fxq 'Trait OS: bounded read-only FAT16 foundation established' "$$log" || \
-		  ! grep -Fxq 'Trait OS: FAT16 fixture absent' "$$log" || \
-		  ! grep -Fxq 'Trait OS: process address-space foundation controls 8/8 passed' "$$log" || \
-		  ! grep -Fxq 'Trait OS: ELF64 parser robustness controls 34/34 passed' "$$log" || \
-		  ! grep -Fxq 'Trait OS: process fixture absent' "$$log" || \
-		  ! grep -Fxq 'Trait OS: Linux SYSCALL CPU foundation controls 10/10 passed' "$$log" || \
-		  ! grep -Fxq 'Trait OS: BusyBox image and Linux stack controls 32/32 passed' "$$log" || \
-		  ! grep -Fxq 'Trait OS: Linux ABI fixture absent' "$$log" || \
-		  ! grep -Eq '^Trait OS: threads online, 3 ready of [0-9]+ on 12 stack frames$$' "$$log" || \
-		  ! grep -Fxq 'Trait OS: thread rotation 123123123123' "$$log" || \
-		  ! grep -Eq '^Trait OS: threads switched [1-9][0-9]* times, 3 exited$$' "$$log" || \
-		  ! grep -Fq 'Trait OS: kernel threads established' "$$log" || \
-		  ! grep -Eq '^Trait OS: framebuffer [0-9]+x[0-9]+ at 0x[0-9A-F]+ pitch [0-9]+ RGB [0-9]+/[0-9]+/[0-9]+$$' "$$log" || \
-		  ! grep -Fxq 'Trait OS: framebuffer verified 786432 pixels' "$$log" || \
-		  ! grep -Fq 'Trait OS: framebuffer established' "$$log" || \
-		  ! grep -Eq '^Trait OS: surface [0-9]+x[0-9]+ pitch [0-9]+ buffer [0-9]+ bytes$$' "$$log" || \
-		  ! grep -Eq '^Trait OS: surface cycles full present [0-9]+ one-line update [0-9]+ scroll [0-9]+$$' "$$log" || \
-		  ! grep -Eq '^Trait OS: surface split cycles full draw [0-9]+ push [0-9]+ one-line draw [0-9]+ push [0-9]+ scroll draw [0-9]+ push [0-9]+$$' "$$log" || \
-		  ! grep -Eq '^Trait OS: surface sparse two-corner cycles total [0-9]+ draw [0-9]+ push [0-9]+ union [0-9]+$$' "$$log" || \
-		  ! grep -Eq '^Trait OS: surface copied [0-9]+ full, [0-9]+ line, [0-9]+ scroll pixels$$' "$$log" || \
-		  ! grep -Fq 'Trait OS: cached surface established' "$$log" || \
-		  ! grep -Eq '^Trait OS: screen console [0-9]+x[0-9]+ cells of 8x16, font [0-9]+ bytes$$' "$$log" || \
-		  ! grep -Eq '^Trait OS: screen console drew [0-9]+ characters and scrolled [0-9]+ times$$' "$$log" || \
-		  ! grep -Fq 'Trait OS: screen console established' "$$log" || \
-		  ! grep -Fq 'Trait OS: screen console passed' "$$log" || \
-		  ! grep -Eq '^Trait OS: keyboard 8042 online, IRQ 1 routed, [0-9]+ interrupts for [0-9]+ events$$' "$$log" || \
-		  ! grep -Fxq 'Trait OS: keyboard decoded "hiI" from injected scancodes' "$$log" || \
-		  ! grep -Fq 'Trait OS: keyboard established' "$$log" || \
-		  ! grep -Fq 'Trait OS: keyboard passed' "$$log" || \
-		  ! grep -Fq 'Trait OS: Boot Ledger installed proof passed' "$$log" || \
-		  ! grep -Fq 'Trait OS: font verified' "$$log" || \
-		  ! grep -Eq '^Trait OS: PS/2 pointer (available|unavailable: .+)$$' "$$log" || \
-		  ! grep -Fq 'Trait OS: layout validated' "$$log" || \
-		  ! grep -Fq 'Trait OS: desktop constructed' "$$log" || \
-		  ! grep -Fq 'Trait OS: desktop activated' "$$log" || \
-		  ! grep -Fq 'Trait OS: installed proof passed' "$$log" || \
-		  ! grep -Fxq 'Trait OS: shell ran "echo hi" from 8 injected scancodes' "$$log" || \
-		  ! grep -Fq 'Trait OS: shell output verified on screen' "$$log" || \
-		  ! grep -Fq 'Trait OS: shell established' "$$log" || \
-		  ! grep -Fq 'Trait OS: shell passed' "$$log" || \
-		  ! grep -Fq 'Trait OS: never triple fault milestone passed' "$$log"; }; then \
+		{ ! grep -Fq 'OpenGAT: ACPI root verified' "$$log" || \
+		  ! grep -Fq 'OpenGAT: ACPI MADT verified' "$$log" || \
+		  ! grep -Fq 'OpenGAT: ACPI topology verified' "$$log" || \
+		  ! grep -Eq '^OpenGAT: ACPI I/O APIC id [0-9]+ at 0x' "$$log" || \
+		  ! grep -Fq 'OpenGAT: local APIC online' "$$log" || \
+		  ! grep -Fq 'OpenGAT: local APIC legacy routing LINT0 ExtINT' "$$log" || \
+		  ! grep -Eq '^OpenGAT: local APIC EOI-broadcast suppression (supported|unsupported) active (yes|no)$$' "$$log" || \
+		  ! grep -Fq 'OpenGAT: I/O APIC online' "$$log" || \
+		  ! grep -Eq '^OpenGAT: I/O APIC id [0-9]+ version 0x[0-9A-F]+ entries [0-9]+ base GSI [0-9]+ directed EOI (yes|no)$$' "$$log" || \
+		  ! grep -Fq 'OpenGAT: I/O APIC delivered eight interrupts' "$$log" || \
+		  ! grep -Fq 'OpenGAT: legacy 8259 retired' "$$log" || \
+		  ! grep -Fq 'OpenGAT: timer survives legacy retirement' "$$log" || \
+		  ! grep -Eq '^OpenGAT: I/O APIC level route id [0-9]+ GSI [0-9]+ vector [0-9]+ active (high|low) acknowledgement (directed|broadcast)$$' "$$log" || \
+		  ! grep -Eq '^OpenGAT: I/O APIC level deliveries [0-9]+ remote IRR [0-9]+ directed EOI [0-9]+ in [0-9]+ ns$$' "$$log" || \
+		  ! grep -Fq 'OpenGAT: I/O APIC delivered eight level-triggered interrupts' "$$log" || \
+		  ! grep -Fq 'OpenGAT: level-triggered routing established' "$$log" || \
+		  ! grep -Eq '^OpenGAT: local APIC timer calibrated at [0-9]+ counts' "$$log" || \
+		  ! grep -Fq 'OpenGAT: local APIC timer delivered eight interrupts' "$$log" || \
+		  ! grep -Eq '^OpenGAT: TSC calibrated at [0-9]+ Hz' "$$log" || \
+		  ! grep -Fq 'OpenGAT: TSC reference established' "$$log" || \
+		  ! grep -Fq 'OpenGAT: ACPI FADT verified' "$$log" || \
+		  ! grep -Fq 'OpenGAT: ACPI MCFG absent' "$$log" || \
+		  ! grep -Fq 'OpenGAT: ACPI configuration windows verified' "$$log" || \
+		  ! grep -Eq '^OpenGAT: ACPI PM timer port 0x[0-9A-F]+ width (24|32) bits address (fixed|extended)$$' "$$log" || \
+		  ! grep -Eq '^OpenGAT: PM timer counted [0-9]+ ticks in [0-9]+ ns$$' "$$log" || \
+		  ! grep -Fq 'OpenGAT: PM timer independent reference established' "$$log" || \
+		  ! grep -Eq '^OpenGAT: clocks agree: PM [0-9]+ ns, APIC timer [0-9]+ ns, TSC [0-9]+ ns$$' "$$log" || \
+		  ! grep -Fq 'OpenGAT: PIT retired' "$$log" || \
+		  ! grep -Fq 'OpenGAT: clocks survive PIT retirement' "$$log" || \
+		  ! grep -Fq 'OpenGAT: monotonic clock on time-stamp counter' "$$log" || \
+		  ! grep -Eq '^OpenGAT: slept [0-9]+ ns for a [0-9]+ ns deadline$$' "$$log" || \
+		  ! grep -Fq 'OpenGAT: deadline timers online' "$$log" || \
+		  ! grep -Fq 'OpenGAT: monotonic time established' "$$log" || \
+		  ! grep -Eq '^OpenGAT: paging root 0x[0-9A-F]+ table frames [0-9]+ regions [0-9]+ NX yes write protect yes$$' "$$log" || \
+		  ! grep -Eq '^OpenGAT: paging leaves [0-9]+ writable [0-9]+ executable [0-9]+ both 0$$' "$$log" || \
+		  ! grep -Fq 'OpenGAT: kernel page tables installed' "$$log" || \
+		  ! grep -Fq 'OpenGAT: no writable executable mapping' "$$log" || \
+		  ! grep -Eq '^OpenGAT: IA32_PAT before 0x[0-9A-F]{16} after 0x[0-9A-F]{16} entry 1 write-combining$$' "$$log" || \
+		  ! grep -Eq '^OpenGAT: framebuffer memory type write-combining pages [1-9][0-9]*$$' "$$log" || \
+		  ! grep -Fq 'OpenGAT: write-combining established' "$$log" || \
+		  ! grep -Fq 'OpenGAT: virtual memory established' "$$log" || \
+		  ! grep -Eq '^OpenGAT: heap window 0x[0-9A-F]+ size [0-9]+ guards 0x[0-9A-F]+ 0x[0-9A-F]+$$' "$$log" || \
+		  ! grep -Eq '^OpenGAT: heap committed [0-9]+ bytes in [0-9]+ pages, live 3$$' "$$log" || \
+		  ! grep -Fq 'OpenGAT: kernel heap online' "$$log" || \
+		  ! grep -Fq 'OpenGAT: heap coalesced to one free block' "$$log" || \
+		  ! grep -Fq 'OpenGAT: kernel heap established' "$$log" || \
+		  ! grep -Eq '^OpenGAT: deadline table of [0-9]+ entries on the heap$$' "$$log" || \
+		  ! grep -Eq '^OpenGAT: PCI mechanism 1 online, no window mapped$$' "$$log" || \
+		  ! grep -Eq '^OpenGAT: PCI buses [1-9][0-9]* functions [1-9][0-9]* bridges [0-9]+$$' "$$log" || \
+		  ! grep -Eq '^OpenGAT: PCI 0:0\.0 vendor 0x[0-9A-F]+ device 0x[0-9A-F]+ class 0x0*6\.0x0* ' "$$log" || \
+		  ! grep -Fq 'OpenGAT: PCI configuration space enumerated' "$$log" || \
+		  ! grep -Fq 'OpenGAT: PCI enumeration established' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: PCI resource ownership negative controls 4/4 passed' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: supervisor NX UC device-MMIO arena established' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: dynamic vector negative controls 4/4 passed' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: dynamic interrupt vector foundation established' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: bounded DMA negative controls 2/2 passed' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: contiguous DMA ownership foundation established' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: xHCI foundation robustness controls 17/17 passed' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: bounded xHCI host-controller foundation established' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: xHCI fixture absent' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: NVMe foundation robustness controls 20/20 passed' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: bounded NVMe block-controller foundation established' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: NVMe fixture absent' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: FAT16 foundation robustness controls 26/26 passed' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: bounded read-only FAT16 foundation established' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: FAT16 fixture absent' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: process address-space foundation controls 8/8 passed' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: ELF64 parser robustness controls 34/34 passed' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: process fixture absent' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: Linux SYSCALL CPU foundation controls 10/10 passed' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: BusyBox image and Linux stack controls 32/32 passed' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: Linux ABI fixture absent' "$$log" || \
+		  ! grep -Eq '^OpenGAT: threads online, 3 ready of [0-9]+ on 12 stack frames$$' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: thread rotation 123123123123' "$$log" || \
+		  ! grep -Eq '^OpenGAT: threads switched [1-9][0-9]* times, 3 exited$$' "$$log" || \
+		  ! grep -Fq 'OpenGAT: kernel threads established' "$$log" || \
+		  ! grep -Eq '^OpenGAT: framebuffer [0-9]+x[0-9]+ at 0x[0-9A-F]+ pitch [0-9]+ RGB [0-9]+/[0-9]+/[0-9]+$$' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: framebuffer verified 786432 pixels' "$$log" || \
+		  ! grep -Fq 'OpenGAT: framebuffer established' "$$log" || \
+		  ! grep -Eq '^OpenGAT: surface [0-9]+x[0-9]+ pitch [0-9]+ buffer [0-9]+ bytes$$' "$$log" || \
+		  ! grep -Eq '^OpenGAT: surface cycles full present [0-9]+ one-line update [0-9]+ scroll [0-9]+$$' "$$log" || \
+		  ! grep -Eq '^OpenGAT: surface split cycles full draw [0-9]+ push [0-9]+ one-line draw [0-9]+ push [0-9]+ scroll draw [0-9]+ push [0-9]+$$' "$$log" || \
+		  ! grep -Eq '^OpenGAT: surface sparse two-corner cycles total [0-9]+ draw [0-9]+ push [0-9]+ union [0-9]+$$' "$$log" || \
+		  ! grep -Eq '^OpenGAT: surface copied [0-9]+ full, [0-9]+ line, [0-9]+ scroll pixels$$' "$$log" || \
+		  ! grep -Fq 'OpenGAT: cached surface established' "$$log" || \
+		  ! grep -Eq '^OpenGAT: screen console [0-9]+x[0-9]+ cells of 8x16, font [0-9]+ bytes$$' "$$log" || \
+		  ! grep -Eq '^OpenGAT: screen console drew [0-9]+ characters and scrolled [0-9]+ times$$' "$$log" || \
+		  ! grep -Fq 'OpenGAT: screen console established' "$$log" || \
+		  ! grep -Fq 'OpenGAT: screen console passed' "$$log" || \
+		  ! grep -Eq '^OpenGAT: keyboard 8042 online, IRQ 1 routed, [0-9]+ interrupts for [0-9]+ events$$' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: keyboard decoded "hiI" from injected scancodes' "$$log" || \
+		  ! grep -Fq 'OpenGAT: keyboard established' "$$log" || \
+		  ! grep -Fq 'OpenGAT: keyboard passed' "$$log" || \
+		  ! grep -Fq 'OpenGAT: Boot Ledger installed proof passed' "$$log" || \
+		  ! grep -Fq 'OpenGAT: font verified' "$$log" || \
+		  ! grep -Eq '^OpenGAT: PS/2 pointer (available|unavailable: .+)$$' "$$log" || \
+		  ! grep -Fq 'OpenGAT: layout validated' "$$log" || \
+		  ! grep -Fq 'OpenGAT: command line ready; desktop waits for starty' "$$log" || \
+		  ! grep -Fxq 'OpenGAT: shell ran "echo hi" from 8 injected scancodes' "$$log" || \
+		  ! grep -Fq 'OpenGAT: shell output verified on screen' "$$log" || \
+		  ! grep -Fq 'OpenGAT: shell established' "$$log" || \
+		  ! grep -Fq 'OpenGAT: shell passed' "$$log" || \
+		  ! grep -Fq 'OpenGAT: never triple fault milestone passed' "$$log"; }; then \
 		echo 'normal scenario did not complete the integrated production path'; \
+		cat "$$log"; \
+		exit 1; \
+	fi; \
+	if test '$*' = normal && \
+		{ grep -Fq 'OpenGAT: desktop constructed' "$$log" || \
+		  grep -Fq 'OpenGAT: desktop activated' "$$log" || \
+		  grep -Fq 'OpenGAT: installed proof passed' "$$log"; }; then \
+		echo 'normal scenario entered the desktop before starty authentication'; \
 		cat "$$log"; \
 		exit 1; \
 	fi; \
@@ -2572,7 +2583,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/trait.iso
 		unexpected) \
 			grep -Fq '  vector=128 name=unexpected vector' "$$log" || diagnostics_ok=false ;; \
 		double-fault) \
-			grep -Fq 'Trait OS DOUBLE FAULT - HALTED' "$$log" || diagnostics_ok=false ;; \
+			grep -Fq 'OpenGAT DOUBLE FAULT - HALTED' "$$log" || diagnostics_ok=false ;; \
 		paging) \
 			grep -Fq '  vector=14 name=page fault' "$$log" && \
 			grep -Fq '  cr2=0x0000000200000000' "$$log" && \
@@ -2588,10 +2599,10 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/trait.iso
 				diagnostics_ok=false ;; \
 		pci) \
 			grep -Eq '^ST PCI ports functions [0-9]+ buses [0-9]+$$' "$$log" && \
-			! grep -Fq 'Trait OS: ACPI MCFG at' "$$log" || \
+			! grep -Fq 'OpenGAT: ACPI MCFG at' "$$log" || \
 				diagnostics_ok=false ;; \
 		pci-ecam) \
-			grep -Fq 'Trait OS: ACPI MCFG at' "$$log" && \
+			grep -Fq 'OpenGAT: ACPI MCFG at' "$$log" && \
 			grep -Eq '^ST PCI window agreed on [0-9]+ registers of [0-9]+ functions across [0-9]+ buses, [0-9]+ with MSI-X$$' "$$log" && \
 			! grep -Eq '^ST PCI window agreed on [0-9]+ registers of 0 functions' "$$log" || \
 				diagnostics_ok=false ;; \
@@ -2612,81 +2623,81 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/trait.iso
 				diagnostics_ok=false ;; \
 		boot-ledger) \
 			grep -Eq '^ST LEDGER stages [1-9][0-9]* receipts [1-9][0-9]* capabilities [1-9][0-9]* skips [0-9]+ fingerprint 0x[0-9A-F]{16}$$' "$$log" && \
-			grep -Fxq 'Trait OS: Boot Ledger installed proof passed' "$$log" || \
+			grep -Fxq 'OpenGAT: Boot Ledger installed proof passed' "$$log" || \
 				diagnostics_ok=false ;; \
-		trait-proof) \
-		grep -Eq '^ST TRAIT_PROOF geometry 1024x768 apps 5 events [1-9][0-9]* windows [1-9][0-9]* cursor [1-9][0-9]* damage [1-9][0-9]* fingerprint 0x[0-9A-F]{16}$$' "$$log" && \
-			grep -Fxq 'Trait OS: installed proof passed' "$$log" || \
+		opengat-proof) \
+		grep -Eq '^ST OPENGAT_PROOF geometry 1024x768 apps 5 events [1-9][0-9]* windows [1-9][0-9]* cursor [1-9][0-9]* damage [1-9][0-9]* fingerprint 0x[0-9A-F]{16}$$' "$$log" && \
+			grep -Fxq 'OpenGAT: installed proof passed' "$$log" || \
 				diagnostics_ok=false ;; \
 		device-substrate) \
 			grep -Fxq 'ST DEVICE_SUBSTRATE dma 64 msix 1 used 0->1 ownership CPU-DEVICE-CPU teardown clean negatives 14' "$$log" && \
-			grep -Fxq 'Trait OS: device substrate teardown complete' "$$log" && \
-			grep -Eq '^Trait OS: VirtIO RNG device DMA wrote 64 bytes; nonzero [1-9][0-9]*$$' "$$log" && \
-			grep -Fxq 'Trait OS: MSI-X delivered 1 interrupt; used ring 0 -> 1' "$$log" || \
+			grep -Fxq 'OpenGAT: device substrate teardown complete' "$$log" && \
+			grep -Eq '^OpenGAT: VirtIO RNG device DMA wrote 64 bytes; nonzero [1-9][0-9]*$$' "$$log" && \
+			grep -Fxq 'OpenGAT: MSI-X delivered 1 interrupt; used ring 0 -> 1' "$$log" || \
 				diagnostics_ok=false ;; \
 		xhci) \
 			grep -Fxq 'ST XHCI descriptor 18 msix 1 ownership CPU-CONTROLLER-CPU teardown clean robustness 19' "$$log" && \
-			grep -Fxq 'Trait OS: xHCI controller ready' "$$log" && \
-			grep -Fxq 'Trait OS: USB device descriptor DMA completed: 18 bytes' "$$log" && \
-			grep -Fxq 'Trait OS: xHCI MSI-X descriptor completion count 1' "$$log" && \
-			grep -Fxq 'Trait OS: xHCI DMA ownership CPU-CONTROLLER-CPU complete' "$$log" && \
-			grep -Fxq 'Trait OS: xHCI teardown complete' "$$log" || \
+			grep -Fxq 'OpenGAT: xHCI controller ready' "$$log" && \
+			grep -Fxq 'OpenGAT: USB device descriptor DMA completed: 18 bytes' "$$log" && \
+			grep -Fxq 'OpenGAT: xHCI MSI-X descriptor completion count 1' "$$log" && \
+			grep -Fxq 'OpenGAT: xHCI DMA ownership CPU-CONTROLLER-CPU complete' "$$log" && \
+			grep -Fxq 'OpenGAT: xHCI teardown complete' "$$log" || \
 				diagnostics_ok=false ;; \
 		nvme) \
 			grep -Fxq 'ST NVME read 4096 msix 1 ownership CPU-CONTROLLER-CPU teardown clean robustness 22' "$$log" && \
-			grep -Fxq 'Trait OS: NVMe controller ready' "$$log" && \
-			grep -Fxq 'Trait OS: NVMe namespace ready' "$$log" && \
-			grep -Fxq 'Trait OS: NVMe block read completed: 4096 bytes' "$$log" && \
-			grep -Fxq 'Trait OS: NVMe MSI-X read completion count 1' "$$log" && \
-			grep -Fxq 'Trait OS: NVMe DMA ownership CPU-CONTROLLER-CPU complete' "$$log" && \
-				grep -Fxq 'Trait OS: NVMe teardown complete' "$$log" || \
+			grep -Fxq 'OpenGAT: NVMe controller ready' "$$log" && \
+			grep -Fxq 'OpenGAT: NVMe namespace ready' "$$log" && \
+			grep -Fxq 'OpenGAT: NVMe block read completed: 4096 bytes' "$$log" && \
+			grep -Fxq 'OpenGAT: NVMe MSI-X read completion count 1' "$$log" && \
+			grep -Fxq 'OpenGAT: NVMe DMA ownership CPU-CONTROLLER-CPU complete' "$$log" && \
+				grep -Fxq 'OpenGAT: NVMe teardown complete' "$$log" || \
 				diagnostics_ok=false ;; \
 		filesystem) \
-			grep -Fxq 'ST FAT16 file TRAIT.BIN bytes 128 reads 4 msix 4 ownership CPU-CONTROLLER-CPU teardown clean robustness 28' "$$log" && \
-			grep -Fxq 'Trait OS: NVMe fixture absent' "$$log" && \
-			grep -Fxq 'Trait OS: FAT16 volume ready' "$$log" && \
-			grep -Fxq 'Trait OS: FAT16 file TRAIT.BIN read: 128 bytes' "$$log" && \
-			grep -Fxq 'Trait OS: FAT16 MSI-X completion count 4' "$$log" && \
-			grep -Fxq 'Trait OS: FAT16 DMA ownership CPU-CONTROLLER-CPU complete' "$$log" && \
-			grep -Fxq 'Trait OS: FAT16 teardown complete' "$$log" || \
+			grep -Fxq 'ST FAT16 file OPENGAT.BIN bytes 128 reads 4 msix 4 ownership CPU-CONTROLLER-CPU teardown clean robustness 28' "$$log" && \
+			grep -Fxq 'OpenGAT: NVMe fixture absent' "$$log" && \
+			grep -Fxq 'OpenGAT: FAT16 volume ready' "$$log" && \
+			grep -Fxq 'OpenGAT: FAT16 file OPENGAT.BIN read: 128 bytes' "$$log" && \
+			grep -Fxq 'OpenGAT: FAT16 MSI-X completion count 4' "$$log" && \
+			grep -Fxq 'OpenGAT: FAT16 DMA ownership CPU-CONTROLLER-CPU complete' "$$log" && \
+			grep -Fxq 'OpenGAT: FAT16 teardown complete' "$$log" || \
 				diagnostics_ok=false ;; \
 		process) \
-			grep -Fxq 'ST PROCESS ELF64 TRAIT.BIN bytes 128 segments 1 ring 3 address-space private result valid teardown clean robustness 50' "$$log" && \
-			grep -Fxq 'Trait OS: NVMe fixture absent' "$$log" && \
-			grep -Fxq 'Trait OS: FAT16 fixture absent' "$$log" && \
-			grep -Fxq 'Trait OS: process address-space foundation controls 8/8 passed' "$$log" && \
-			grep -Fxq 'Trait OS: ELF64 parser robustness controls 34/34 passed' "$$log" || \
+			grep -Fxq 'ST PROCESS ELF64 OPENGAT.BIN bytes 128 segments 1 ring 3 address-space private result valid teardown clean robustness 50' "$$log" && \
+			grep -Fxq 'OpenGAT: NVMe fixture absent' "$$log" && \
+			grep -Fxq 'OpenGAT: FAT16 fixture absent' "$$log" && \
+			grep -Fxq 'OpenGAT: process address-space foundation controls 8/8 passed' "$$log" && \
+			grep -Fxq 'OpenGAT: ELF64 parser robustness controls 34/34 passed' "$$log" || \
 				diagnostics_ok=false ;; \
 		linux-abi) \
 			grep -Fxq 'ST LINUX ABI busybox echo bytes 6 syscalls 9 stdout valid exit 0 ring 3 address-space private teardown clean robustness 72' "$$log" && \
-			grep -Fxq 'Trait OS: Linux SYSCALL CPU foundation controls 10/10 passed' "$$log" && \
-			grep -Fxq 'Trait OS: BusyBox image and Linux stack controls 32/32 passed' "$$log" && \
-			grep -Fqx 'TRAIT' "$$log" || \
+			grep -Fxq 'OpenGAT: Linux SYSCALL CPU foundation controls 10/10 passed' "$$log" && \
+			grep -Fxq 'OpenGAT: BusyBox image and Linux stack controls 32/32 passed' "$$log" && \
+			grep -Fqx 'OPENGAT' "$$log" || \
 				diagnostics_ok=false ;; \
 		linux-abi-uname) \
 			grep -Fxq 'ST LINUX ABI busybox uname bytes 6 syscalls 6 output valid exit 0 ring 3 address-space private copy-out valid teardown clean robustness 97' "$$log" && \
-			grep -Fxq 'Trait OS: Linux SYSCALL CPU foundation controls 10/10 passed' "$$log" && \
-			grep -Fxq 'Trait OS: BusyBox uname image and UTS controls 50/50 passed' "$$log" && \
+			grep -Fxq 'OpenGAT: Linux SYSCALL CPU foundation controls 10/10 passed' "$$log" && \
+			grep -Fxq 'OpenGAT: BusyBox uname image and UTS controls 50/50 passed' "$$log" && \
 			grep -Fqx 'Linux' "$$log" || \
 				diagnostics_ok=false ;; \
-		trait-proof-userland) \
-			grep -Fxq 'ST TRAIT_PROOF_USERLAND shell production echo 2 uname 2 invalid-profile recovered CPL3 SYSCALL stdout exact exit 0 teardown clean prompt restored' "$$log" && \
-			test "$$(grep -Fxc 'TRAIT' "$$log")" -eq 2 && \
+		opengat-proof-userland) \
+			grep -Fxq 'ST OPENGAT_PROOF_USERLAND shell production echo 2 uname 2 invalid-profile recovered CPL3 SYSCALL stdout exact exit 0 teardown clean prompt restored' "$$log" && \
+			test "$$(grep -Fxc 'OPENGAT' "$$log")" -eq 2 && \
 			test "$$(grep -Fxc 'Linux' "$$log")" -eq 2 && \
 			grep -Fxq 'RW USERLAND launch completed successfully echo ordinal 2' "$$log" && \
 			grep -Fxq 'RW USERLAND launch completed successfully uname ordinal 2' "$$log" && \
-			grep -Fxq 'RW USERLAND Trait OS prompt restored' "$$log" || \
+			grep -Fxq 'RW USERLAND OpenGAT prompt restored' "$$log" || \
 				diagnostics_ok=false ;; \
-		trait-proof-userland-absent) \
+		opengat-proof-userland-absent) \
 			grep -Fxq 'linux: userspace volume unavailable' "$$log" && \
 			grep -Fxq 'still usable' "$$log" && \
-			grep -Fxq 'ST TRAIT_PROOF_USERLAND_ABSENT concise refusal prompt usable teardown clean' "$$log" && \
+			grep -Fxq 'ST OPENGAT_PROOF_USERLAND_ABSENT concise refusal prompt usable teardown clean' "$$log" && \
 			grep -Fxq 'RW USERLAND launch refused and teardown complete' "$$log" && \
-			grep -Fxq 'RW USERLAND Trait OS prompt restored' "$$log" || \
+			grep -Fxq 'RW USERLAND OpenGAT prompt restored' "$$log" || \
 				diagnostics_ok=false ;; \
-		trait-proof-userland-interactive) \
-			grep -Fxq 'ST TRAIT_PROOF_USERLAND_INTERACTIVE cat 2 keyboard IRQ read SYSCALL copy-out resume write SYSCALL stdout exact EOF exit 0 teardown clean fresh generation prompt restored' "$$log" && \
-			test "$$(grep -Fxc 'RW USERLAND command accepted through Trait OS shell linux cat' "$$log")" -eq 2 && \
+		opengat-proof-userland-interactive) \
+			grep -Fxq 'ST OPENGAT_PROOF_USERLAND_INTERACTIVE cat 2 keyboard IRQ read SYSCALL copy-out resume write SYSCALL stdout exact EOF exit 0 teardown clean fresh generation prompt restored' "$$log" && \
+			test "$$(grep -Fxc 'RW USERLAND command accepted through OpenGAT shell linux cat' "$$log")" -eq 2 && \
 			test "$$(grep -Fxc 'RW USERLAND deterministic read-only NVMe/FAT16 profile selected cat CATBOX' "$$log")" -eq 2 && \
 			test "$$(grep -Fxc 'RW USERLAND Rust FAT16 SHA-256 ELF64 validation passed cat bytes 38632' "$$log")" -eq 2 && \
 			test "$$(grep -Fxc 'RW USERLAND private CPL3 address space entered cat' "$$log")" -eq 2 && \
@@ -2702,20 +2713,20 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/trait.iso
 			test "$$(grep -Fxc 'RW CAT EOF converted to zero-length read result' "$$log")" -eq 2 && \
 			test "$$(grep -Fxc 'RW CAT exit status zero observed' "$$log")" -eq 2 && \
 			test "$$(grep -Fxc 'RW CAT address-space teardown complete' "$$log")" -eq 2 && \
-			test "$$(grep -Fxc 'RW USERLAND Trait OS prompt restored' "$$log")" -eq 2 && \
+			test "$$(grep -Fxc 'RW USERLAND OpenGAT prompt restored' "$$log")" -eq 2 && \
 			test "$$(grep -Fxc 'pebble' "$$log")" -eq 2 && \
 			test "$$(grep -Fxc 'again' "$$log")" -eq 2 && \
 			grep -Fxq 'RW USERLAND launch completed successfully cat ordinal 2' "$$log" || \
 				diagnostics_ok=false ;; \
-		trait-proof-userland-interactive-absent) \
-			grep -Fxq 'ST TRAIT_PROOF_USERLAND_INTERACTIVE_ABSENT cat missing echo valid keyboard IRQ refusal recoverable teardown clean prompt usable' "$$log" && \
+		opengat-proof-userland-interactive-absent) \
+			grep -Fxq 'ST OPENGAT_PROOF_USERLAND_INTERACTIVE_ABSENT cat missing echo valid keyboard IRQ refusal recoverable teardown clean prompt usable' "$$log" && \
 			grep -Fxq 'linux: measured profile refused' "$$log" && \
 			grep -Fxq 'RW USERLAND deterministic read-only NVMe/FAT16 profile selected cat CATBOX' "$$log" && \
 			grep -Fxq 'RW USERLAND launch refused and teardown complete' "$$log" && \
-			grep -Fxq 'RW USERLAND command accepted through Trait OS shell linux echo' "$$log" && \
-			grep -Fqx 'TRAIT' "$$log" && \
+			grep -Fxq 'RW USERLAND command accepted through OpenGAT shell linux echo' "$$log" && \
+			grep -Fqx 'OPENGAT' "$$log" && \
 			grep -Fxq 'RW USERLAND launch completed successfully echo ordinal 1' "$$log" && \
-			test "$$(grep -Fxc 'RW USERLAND Trait OS prompt restored' "$$log")" -eq 2 || \
+			test "$$(grep -Fxc 'RW USERLAND OpenGAT prompt restored' "$$log")" -eq 2 || \
 				diagnostics_ok=false ;; \
 		fat32-system) \
 			grep -Fxq 'ST FAT32 SYSTEM authenticated echo uname FAT32 immutable' "$$log" && \
@@ -2745,11 +2756,11 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/trait.iso
 		fat32-corrupt) \
 			grep -Fxq 'ST FAT32 CORRUPT refused session usable system executable valid' "$$log" && \
 			grep -Fxq 'data    fat32  unavailable' "$$log" && \
-			grep -Fqx 'TRAIT' "$$log" || diagnostics_ok=false ;; \
+			grep -Fqx 'OPENGAT' "$$log" || diagnostics_ok=false ;; \
 		fat32-missing) \
 			grep -Fxq 'ST FAT32 MISSING session usable system executable valid' "$$log" && \
 			grep -Fxq 'data    fat32  absent' "$$log" && \
-			grep -Fqx 'TRAIT' "$$log" || diagnostics_ok=false ;; \
+			grep -Fqx 'OPENGAT' "$$log" || diagnostics_ok=false ;; \
 		fat32-persistence) \
 			grep -Fxq 'ST FAT32 PERSISTENCE synchronized reboot phase' "$$log" && \
 			grep -Fxq 'ST FAT32 PERSISTENCE clean reboot retained exact contents' "$$log" && \
@@ -2759,7 +2770,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/trait.iso
 			grep -Fxq 'ST FAT32 CACHE six clusters eviction sync readback exact' "$$log" || diagnostics_ok=false ;; \
 		fat32-immutable) \
 			grep -Fxq 'ST FAT32 IMMUTABLE write refused below shell executable valid' "$$log" && \
-			grep -Fqx 'TRAIT' "$$log" || diagnostics_ok=false ;; \
+			grep -Fqx 'OPENGAT' "$$log" || diagnostics_ok=false ;; \
 		fat32-handles) \
 			grep -Fxq 'ST FAT32 HANDLES generation stale double-close access bound clean' "$$log" || diagnostics_ok=false ;; \
 		ext4-recovery) \
@@ -2773,73 +2784,73 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/trait.iso
 			grep -Fq '  page-fault bits: P=0 W=1 U=0 RSVD=0 I=0' "$$log" || \
 				diagnostics_ok=false ;; \
 		native) \
-			grep -Eq '^TRAIT PERF syscall iterations=1024 total_ns=[1-9][0-9]* average_ns=[1-9][0-9]*$$' "$$log" && \
-			grep -Eq '^TRAIT PERF file sequential_bytes=65536 write_ns=[1-9][0-9]* read_ns=[1-9][0-9]*$$' "$$log" && \
-			grep -Eq '^TRAIT PERF context-switch transitions=[1-9][0-9]* without_fpu_cycles=[1-9][0-9]* with_fpu_cycles=[1-9][0-9]*$$' "$$log" && \
-			grep -Eq '^TRAIT NATIVE PASS argc=[1-9][0-9]* app=NATIVET.APP$$' "$$log" && \
-			grep -Fxq 'Trait OS: native general loader, SDK, TLS, threads and FPU passed' "$$log" || \
+			grep -Eq '^OPENGAT PERF syscall iterations=1024 total_ns=[1-9][0-9]* average_ns=[1-9][0-9]*$$' "$$log" && \
+			grep -Eq '^OPENGAT PERF file sequential_bytes=65536 write_ns=[1-9][0-9]* read_ns=[1-9][0-9]*$$' "$$log" && \
+			grep -Eq '^OPENGAT PERF context-switch transitions=[1-9][0-9]* without_fpu_cycles=[1-9][0-9]* with_fpu_cycles=[1-9][0-9]*$$' "$$log" && \
+			grep -Eq '^OPENGAT NATIVE PASS argc=[1-9][0-9]* app=NATIVET.APP$$' "$$log" && \
+			grep -Fxq 'OpenGAT: native general loader, SDK, TLS, threads and FPU passed' "$$log" || \
 				diagnostics_ok=false ;; \
 		native-lua) \
-			grep -Eq '^TRAIT PERF lua startup_ns=[1-9][0-9]*$$' "$$log" && \
-			grep -Fxq 'TRAIT LUA INPUT READY' "$$log" && \
-			grep -Fxq 'TRAIT LUA PASS input=trait sum=5050' "$$log" && \
-			grep -Fxq 'Trait OS: upstream Lua used stdin, Data, math and stdout' "$$log" || \
+			grep -Eq '^OPENGAT PERF lua startup_ns=[1-9][0-9]*$$' "$$log" && \
+			grep -Fxq 'OPENGAT LUA INPUT READY' "$$log" && \
+			grep -Fxq 'OPENGAT LUA PASS input=opengat sum=5050' "$$log" && \
+			grep -Fxq 'OpenGAT: upstream Lua used stdin, Data, math and stdout' "$$log" || \
 				diagnostics_ok=false ;; \
 		native-sqlite) \
-			grep -Eq '^TRAIT PERF sqlite transaction_ns=[1-9][0-9]*$$' "$$log" && \
-			grep -Eq '^TRAIT PERF sqlite reopen_query_ns=[1-9][0-9]*$$' "$$log" && \
-			grep -Fxq 'TRAIT SQLITE PHASE1 PASS rows=3 locking=busy' "$$log" && \
-			grep -Fxq 'TRAIT SQLITE PHASE2 PASS rows=3 sum=66 integrity=ok' "$$log" && \
-			grep -Fxq 'Trait OS: upstream SQLite retained and verified three rows after reboot' "$$log" || \
+			grep -Eq '^OPENGAT PERF sqlite transaction_ns=[1-9][0-9]*$$' "$$log" && \
+			grep -Eq '^OPENGAT PERF sqlite reopen_query_ns=[1-9][0-9]*$$' "$$log" && \
+			grep -Fxq 'OPENGAT SQLITE PHASE1 PASS rows=3 locking=busy' "$$log" && \
+			grep -Fxq 'OPENGAT SQLITE PHASE2 PASS rows=3 sum=66 integrity=ok' "$$log" && \
+			grep -Fxq 'OpenGAT: upstream SQLite retained and verified three rows after reboot' "$$log" || \
 				diagnostics_ok=false ;; \
 		native-rust) \
-			grep -Fxq 'TRAIT RUST PASS alloc file time entropy thread' "$$log" && \
-			grep -Fxq 'Trait OS: no_std Rust application used native ABI v1 services' "$$log" || \
+			grep -Fxq 'OPENGAT RUST PASS alloc file time entropy thread' "$$log" && \
+			grep -Fxq 'OpenGAT: no_std Rust application used native ABI v1 services' "$$log" || \
 				diagnostics_ok=false ;; \
 		native-crash) \
-			grep -Fxq 'Trait OS: native crash contained; mappings handles threads windows FS x87 SSE reclaimed' "$$log" || \
+			grep -Fxq 'OpenGAT: native crash contained; mappings handles threads windows FS x87 SSE reclaimed' "$$log" || \
 				diagnostics_ok=false ;; \
 		native-elf-refusal) \
-			grep -Fxq 'Trait OS: native malformed ELF refused; resource census unchanged' "$$log" || diagnostics_ok=false ;; \
+			grep -Fxq 'OpenGAT: native malformed ELF refused; resource census unchanged' "$$log" || diagnostics_ok=false ;; \
 		native-digest-refusal) \
-			grep -Fxq 'Trait OS: native manifest digest mismatch refused; resource census unchanged' "$$log" || diagnostics_ok=false ;; \
+			grep -Fxq 'OpenGAT: native manifest digest mismatch refused; resource census unchanged' "$$log" || diagnostics_ok=false ;; \
 		native-abi-refusal) \
-			grep -Fxq 'Trait OS: native unsupported ABI version refused; resource census unchanged' "$$log" || diagnostics_ok=false ;; \
+			grep -Fxq 'OpenGAT: native unsupported ABI version refused; resource census unchanged' "$$log" || diagnostics_ok=false ;; \
 		native-relaunch) \
-			grep -Fxq 'Trait OS: native relaunch advanced generation; both resource censuses clean' "$$log" || diagnostics_ok=false ;; \
+			grep -Fxq 'OpenGAT: native relaunch advanced generation; both resource censuses clean' "$$log" || diagnostics_ok=false ;; \
 		native-audio) \
-			grep -Fxq 'TRAIT AUDIO REFUSAL PASS capability=EACCES' "$$log" && \
-			grep -Fxq 'TRAIT AUDIO PHASE open-limit-readiness PASS' "$$log" && \
-			grep -Fxq 'TRAIT AUDIO PHASE two-stream-mix-drain PASS' "$$log" && \
-			grep -Fxq 'TRAIT AUDIO PHASE cancel-terminal-readiness PASS' "$$log" && \
-			grep -Fxq 'TRAIT AUDIO PASS frames=1024 format=48000/S16LE/2 close=stale teardown=process' "$$log" && \
-			grep -Fxq 'Trait OS: native audio ABI capability, mixing, cancellation and teardown passed' "$$log" || diagnostics_ok=false; \
+			grep -Fxq 'OPENGAT AUDIO REFUSAL PASS capability=EACCES' "$$log" && \
+			grep -Fxq 'OPENGAT AUDIO PHASE open-limit-readiness PASS' "$$log" && \
+			grep -Fxq 'OPENGAT AUDIO PHASE two-stream-mix-drain PASS' "$$log" && \
+			grep -Fxq 'OPENGAT AUDIO PHASE cancel-terminal-readiness PASS' "$$log" && \
+			grep -Fxq 'OPENGAT AUDIO PASS frames=1024 format=48000/S16LE/2 close=stale teardown=process' "$$log" && \
+			grep -Fxq 'OpenGAT: native audio ABI capability, mixing, cancellation and teardown passed' "$$log" || diagnostics_ok=false; \
 			if test "$$audio_capture" = true; then \
 				$(PYTHON) -S tools/audio-wav-host-test.py "$$audio_wav" || diagnostics_ok=false; \
-			else echo 'TRAIT AUDIO WAV SKIP qemu wav backend unavailable'; fi ;; \
+			else echo 'OPENGAT AUDIO WAV SKIP qemu wav backend unavailable'; fi ;; \
 		native-sdl) \
 			test -s '$(TEST_BUILD_DIR)/$*/sdl.png' && \
 			test -s '$(TEST_BUILD_DIR)/$*/sdl.mp4' && \
-			grep -Fxq 'TRAIT SDL READY run=1 video=trait audio=trait pref=Data:SDL/4D692C47/' "$$log" && \
-			grep -Fxq 'TRAIT SDL PASS run=1 present=partial input=key-pointer audio=non-silent persistent=yes' "$$log" && \
-			grep -Fxq 'TRAIT SDL READY run=2 video=trait audio=trait pref=Data:SDL/4D692C47/' "$$log" && \
-			grep -Fxq 'TRAIT SDL PASS run=2 present=partial input=prior-run audio=non-silent persistent=yes' "$$log" && \
-			grep -Fxq 'Trait OS: SDL 2 window, input, partial damage, PCM and persistence passed' "$$log" || diagnostics_ok=false; \
+			grep -Fxq 'OPENGAT SDL READY run=1 video=opengat audio=opengat pref=Data:SDL/D7BAC15B/' "$$log" && \
+			grep -Fxq 'OPENGAT SDL PASS run=1 present=partial input=key-pointer audio=non-silent persistent=yes' "$$log" && \
+			grep -Fxq 'OPENGAT SDL READY run=2 video=opengat audio=opengat pref=Data:SDL/D7BAC15B/' "$$log" && \
+			grep -Fxq 'OPENGAT SDL PASS run=2 present=partial input=prior-run audio=non-silent persistent=yes' "$$log" && \
+			grep -Fxq 'OpenGAT: SDL 2 window, input, partial damage, PCM and persistence passed' "$$log" || diagnostics_ok=false; \
 			if test "$$audio_capture" = true; then \
 				$(PYTHON) -S tools/audio-wav-host-test.py --profile sdl \
 					"$$audio_wav" || diagnostics_ok=false; \
-			else echo 'TRAIT SDL WAV SKIP qemu wav backend unavailable'; fi ;; \
+			else echo 'OPENGAT SDL WAV SKIP qemu wav backend unavailable'; fi ;; \
 		native-dynamic) \
-			grep -Eq '^Trait OS: dynamic immutable RX shared pages [1-9][0-9]*$$' "$$log" && \
-			test "$$(grep -Fxc 'TRAIT DYNAMIC RING3 PASS' "$$log")" -eq 2 && \
+			grep -Eq '^OpenGAT: dynamic immutable RX shared pages [1-9][0-9]*$$' "$$log" && \
+			test "$$(grep -Fxc 'OPENGAT DYNAMIC RING3 PASS' "$$log")" -eq 2 && \
 			$(PYTHON) -S tools/serial-marker-order.py --count 2 "$$log" \
-				'TRAIT DYNAMIC LIB INIT' \
-				'TRAIT DYNAMIC ROOT INIT' \
-				'TRAIT DYNAMIC RING3 PASS' \
-				'TRAIT DYNAMIC ROOT FINI' \
-				'TRAIT DYNAMIC LIB FINI' && \
+				'OPENGAT DYNAMIC LIB INIT' \
+				'OPENGAT DYNAMIC ROOT INIT' \
+				'OPENGAT DYNAMIC RING3 PASS' \
+				'OPENGAT DYNAMIC ROOT FINI' \
+				'OPENGAT DYNAMIC LIB FINI' && \
 			test "$$(grep -Fxc \
-				'Trait OS: dynamic ELF shared RX, private TLS and lifecycle passed' \
+				'OpenGAT: dynamic ELF shared RX, private TLS and lifecycle passed' \
 				"$$log")" -eq 1 || \
 				diagnostics_ok=false ;; \
 	esac; \
@@ -2861,10 +2872,10 @@ run: iso $(DESKTOP_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 	qemu-system-x86_64 -m 128M -smp 1 -boot order=d -cdrom $(ISO) \
 		-blockdev driver=file,filename=$(DESKTOP_SYSTEM_IMAGE),node-name=system-file,read-only=on,auto-read-only=off \
 		-blockdev driver=raw,file=system-file,node-name=system-raw,read-only=on \
-		-device nvme,serial=trait-system-fat32,drive=system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
+		-device nvme,serial=opengat-system-fat32,drive=system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
 		-blockdev driver=file,filename=$(FAT32_RUN_DATA_IMAGE),node-name=data-file,read-only=off,auto-read-only=off \
 		-blockdev driver=raw,file=data-file,node-name=data-raw,read-only=off \
-		-device nvme,serial=trait-data-fat32,drive=data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
+		-device nvme,serial=opengat-data-fat32,drive=data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
 		-serial stdio -no-reboot -no-shutdown
 
 hooks:

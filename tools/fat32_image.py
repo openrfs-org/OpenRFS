@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic Trait OS FAT32 formatter, inspector, and fixture mutator."""
+"""Deterministic OpenGAT FAT32 formatter, inspector, and fixture mutator."""
 
 from __future__ import annotations
 
@@ -31,9 +31,9 @@ FAT32_EOC = 0x0FFFFFFF
 ENTRY_BYTES = 32
 SYSTEM_VOLUME_ID = 0x2000_0001
 DATA_VOLUME_ID = 0x2000_0002
-SYSTEM_LABEL = b"TRAITSYS   "
-DATA_LABEL = b"TRAITDATA  "
-OEM_NAME = b"TRAITOS2"
+SYSTEM_LABEL = b"OPENGATSYS "
+DATA_LABEL = b"OPENGATDATA"
+OEM_NAME = b"OPENGAT "
 SYSTEM_FILES = (
     ("echo", b"BUSYBOX    ", 33_584,
      "B308F2CAD5B5CD0EEB92A622DEC8D71C1A08F628A22CDC5BCDE2B98B53220746"),

@@ -3,11 +3,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <trait/framebuffer.h>
-#include <trait/cpu.h>
-#include <trait/heap.h>
-#include <trait/paging.h>
-#include <trait/surface.h>
+#include <opengat/framebuffer.h>
+#include <opengat/cpu.h>
+#include <opengat/heap.h>
+#include <opengat/paging.h>
+#include <opengat/surface.h>
 
 /*
  * A cached picture and the one rectangle that changed.

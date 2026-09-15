@@ -311,9 +311,9 @@ interrupt_trigger_unexpected:
 
 .section .rodata, "a"
 double_fault_message:
-    .asciz "Trait OS DOUBLE FAULT - HALTED\n"
+    .asciz "OpenGAT DOUBLE FAULT - HALTED\n"
 double_fault_test_message:
-    .asciz "Trait OS DOUBLE FAULT - HALTED\nST PASS double-fault\n"
+    .asciz "OpenGAT DOUBLE FAULT - HALTED\nST PASS double-fault\n"
 
 .balign 8
 .global interrupt_vector_table

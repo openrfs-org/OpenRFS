@@ -28,9 +28,9 @@
 #ifndef SDL_platform_h_
 #define SDL_platform_h_
 
-#if defined(__trait__) || defined(__TRAIT__)
-#undef __TRAIT__
-#define __TRAIT__ 1
+#if defined(__opengat__) || defined(__OPENGAT__)
+#undef __OPENGAT__
+#define __OPENGAT__ 1
 #endif
 
 #if defined(_AIX)

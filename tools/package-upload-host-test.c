@@ -5,9 +5,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <trait/fat32_fs.h>
-#include <trait/package_state.h>
-#include <trait/package_upload.h>
+#include <opengat/fat32_fs.h>
+#include <opengat/package_state.h>
+#include <opengat/package_upload.h>
 
 #define MOCK_FILE_BYTES (256U * 1024U)
 #define NO_WRITE_FAILURE SIZE_MAX
@@ -54,156 +54,156 @@ static int path_index(const char *path)
     return path[at] - '0';
 }
 
-enum traitfs_status traitfs_mkdir(enum traitfs_volume volume, const char *path)
+enum opengatfs_status opengatfs_mkdir(enum opengatfs_volume volume, const char *path)
 {
-    if (volume != TRAITFS_VOLUME_DATA || path == NULL) {
-        return TRAITFS_STATUS_INVALID_ARGUMENT;
+    if (volume != OPENGATFS_VOLUME_DATA || path == NULL) {
+        return OPENGATFS_STATUS_INVALID_ARGUMENT;
     }
     if (path[0] != 'p' || path[1] != 'k' || path[2] != 'g') {
-        return TRAITFS_STATUS_PATH;
+        return OPENGATFS_STATUS_PATH;
     }
     if (directory_present) {
-        return TRAITFS_STATUS_EXISTS;
+        return OPENGATFS_STATUS_EXISTS;
     }
     directory_present = true;
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum traitfs_status traitfs_unlink(enum traitfs_volume volume, const char *path)
+enum opengatfs_status opengatfs_unlink(enum opengatfs_volume volume, const char *path)
 {
     int index = path_index(path);
 
-    if (volume != TRAITFS_VOLUME_DATA || index < 0) {
-        return TRAITFS_STATUS_INVALID_ARGUMENT;
+    if (volume != OPENGATFS_VOLUME_DATA || index < 0) {
+        return OPENGATFS_STATUS_INVALID_ARGUMENT;
     }
     if (!files[index].present) {
-        return TRAITFS_STATUS_NOT_FOUND;
+        return OPENGATFS_STATUS_NOT_FOUND;
     }
     if (fail_next_unlink) {
         fail_next_unlink = false;
-        return TRAITFS_STATUS_IO;
+        return OPENGATFS_STATUS_IO;
     }
     if (files[index].open) {
-        return TRAITFS_STATUS_BUSY;
+        return OPENGATFS_STATUS_BUSY;
     }
     files[index].present = false;
     files[index].size = 0U;
     files[index].offset = 0U;
     ++unlink_count;
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum traitfs_status traitfs_stat_path(enum traitfs_volume volume,
-    const char *path, struct traitfs_stat *stat)
+enum opengatfs_status opengatfs_stat_path(enum opengatfs_volume volume,
+    const char *path, struct opengatfs_stat *stat)
 {
     int index = path_index(path);
 
-    if (volume != TRAITFS_VOLUME_DATA || index < 0 || stat == NULL) {
-        return TRAITFS_STATUS_INVALID_ARGUMENT;
+    if (volume != OPENGATFS_VOLUME_DATA || index < 0 || stat == NULL) {
+        return OPENGATFS_STATUS_INVALID_ARGUMENT;
     }
     if (!files[index].present) {
-        return TRAITFS_STATUS_NOT_FOUND;
+        return OPENGATFS_STATUS_NOT_FOUND;
     }
-    *stat = (struct traitfs_stat){
+    *stat = (struct opengatfs_stat){
         .size = files[index].size,
         .directory = false
     };
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum traitfs_status traitfs_truncate(enum traitfs_volume volume,
+enum opengatfs_status opengatfs_truncate(enum opengatfs_volume volume,
     const char *path, uint64_t size)
 {
     int index = path_index(path);
 
-    if (volume != TRAITFS_VOLUME_DATA || index < 0 ||
+    if (volume != OPENGATFS_VOLUME_DATA || index < 0 ||
             size > MOCK_FILE_BYTES) {
-        return TRAITFS_STATUS_INVALID_ARGUMENT;
+        return OPENGATFS_STATUS_INVALID_ARGUMENT;
     }
     if (!files[index].present) {
-        return TRAITFS_STATUS_NOT_FOUND;
+        return OPENGATFS_STATUS_NOT_FOUND;
     }
     if (files[index].open) {
-        return TRAITFS_STATUS_BUSY;
+        return OPENGATFS_STATUS_BUSY;
     }
     files[index].size = (size_t)size;
     if (files[index].offset > files[index].size) {
         files[index].offset = files[index].size;
     }
     ++truncate_count;
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum traitfs_status traitfs_sync(enum traitfs_volume volume)
+enum opengatfs_status opengatfs_sync(enum opengatfs_volume volume)
 {
-    if (volume != TRAITFS_VOLUME_DATA) {
-        return TRAITFS_STATUS_INVALID_ARGUMENT;
+    if (volume != OPENGATFS_VOLUME_DATA) {
+        return OPENGATFS_STATUS_INVALID_ARGUMENT;
     }
     ++sync_count;
     if (fail_next_sync) {
         fail_next_sync = false;
-        return TRAITFS_STATUS_IO;
+        return OPENGATFS_STATUS_IO;
     }
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum traitfs_status traitfs_create(enum traitfs_volume volume, const char *path)
+enum opengatfs_status opengatfs_create(enum opengatfs_volume volume, const char *path)
 {
     int index = path_index(path);
 
-    if (volume != TRAITFS_VOLUME_DATA || index < 0 || !directory_present) {
-        return TRAITFS_STATUS_INVALID_ARGUMENT;
+    if (volume != OPENGATFS_VOLUME_DATA || index < 0 || !directory_present) {
+        return OPENGATFS_STATUS_INVALID_ARGUMENT;
     }
     if (files[index].present) {
-        return TRAITFS_STATUS_EXISTS;
+        return OPENGATFS_STATUS_EXISTS;
     }
     files[index] = (struct mock_file){0};
     files[index].present = true;
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum traitfs_status traitfs_open(
-    enum traitfs_volume volume,
+enum opengatfs_status opengatfs_open(
+    enum opengatfs_volume volume,
     const char *path,
-    enum traitfs_access access,
-    traitfs_handle *handle
+    enum opengatfs_access access,
+    opengatfs_handle *handle
 )
 {
     int index = path_index(path);
 
-    if (volume != TRAITFS_VOLUME_DATA || index < 0 || handle == NULL ||
-        (access != TRAITFS_ACCESS_READ && access != TRAITFS_ACCESS_WRITE)) {
-        return TRAITFS_STATUS_INVALID_ARGUMENT;
+    if (volume != OPENGATFS_VOLUME_DATA || index < 0 || handle == NULL ||
+        (access != OPENGATFS_ACCESS_READ && access != OPENGATFS_ACCESS_WRITE)) {
+        return OPENGATFS_STATUS_INVALID_ARGUMENT;
     }
     *handle = 0U;
     if (fail_next_open) {
         fail_next_open = false;
-        return TRAITFS_STATUS_IO;
+        return OPENGATFS_STATUS_IO;
     }
     if (!files[index].present) {
-        return TRAITFS_STATUS_NOT_FOUND;
+        return OPENGATFS_STATUS_NOT_FOUND;
     }
     if (files[index].open) {
-        return TRAITFS_STATUS_BUSY;
+        return OPENGATFS_STATUS_BUSY;
     }
     files[index].open = true;
-    files[index].offset = access == TRAITFS_ACCESS_WRITE ? files[index].size : 0U;
-    *handle = (traitfs_handle)(index + 1);
-    return TRAITFS_STATUS_OK;
+    files[index].offset = access == OPENGATFS_ACCESS_WRITE ? files[index].size : 0U;
+    *handle = (opengatfs_handle)(index + 1);
+    return OPENGATFS_STATUS_OK;
 }
 
-enum traitfs_status traitfs_close(traitfs_handle handle)
+enum opengatfs_status opengatfs_close(opengatfs_handle handle)
 {
     if (handle == 0U || handle > PACKAGE_UPLOAD_SLOT_LIMIT ||
         !files[handle - 1U].open) {
-        return TRAITFS_STATUS_STALE_HANDLE;
+        return OPENGATFS_STATUS_STALE_HANDLE;
     }
     files[handle - 1U].open = false;
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum traitfs_status traitfs_write(
-    traitfs_handle handle,
+enum opengatfs_status opengatfs_write(
+    opengatfs_handle handle,
     const uint8_t *source,
     size_t source_bytes,
     size_t *written_bytes
@@ -212,20 +212,20 @@ enum traitfs_status traitfs_write(
     if (written_bytes == NULL || handle == 0U ||
         handle > PACKAGE_UPLOAD_SLOT_LIMIT || !files[handle - 1U].open ||
         (source == NULL && source_bytes != 0U)) {
-        return TRAITFS_STATUS_INVALID_ARGUMENT;
+        return OPENGATFS_STATUS_INVALID_ARGUMENT;
     }
     struct mock_file *file = &files[handle - 1U];
     size_t allowed = source_bytes;
 
     *written_bytes = 0U;
     if (file->offset >= write_failure_at) {
-        return TRAITFS_STATUS_IO;
+        return OPENGATFS_STATUS_IO;
     }
     if (allowed > write_failure_at - file->offset) {
         allowed = write_failure_at - file->offset;
     }
     if (allowed > MOCK_FILE_BYTES - file->offset) {
-        return TRAITFS_STATUS_FULL;
+        return OPENGATFS_STATUS_FULL;
     }
     for (size_t index = 0U; index < allowed; ++index) {
         file->bytes[file->offset + index] = source[index];
@@ -235,11 +235,11 @@ enum traitfs_status traitfs_write(
         file->size = file->offset;
     }
     *written_bytes = allowed;
-    return allowed == source_bytes ? TRAITFS_STATUS_OK : TRAITFS_STATUS_IO;
+    return allowed == source_bytes ? OPENGATFS_STATUS_OK : OPENGATFS_STATUS_IO;
 }
 
-enum traitfs_status traitfs_pread(
-    traitfs_handle handle,
+enum opengatfs_status opengatfs_pread(
+    opengatfs_handle handle,
     uint8_t *destination,
     size_t capacity,
     uint64_t offset,
@@ -249,7 +249,7 @@ enum traitfs_status traitfs_pread(
     if (read_bytes == NULL || handle == 0U ||
         handle > PACKAGE_UPLOAD_SLOT_LIMIT || !files[handle - 1U].open ||
         (destination == NULL && capacity != 0U)) {
-        return TRAITFS_STATUS_INVALID_ARGUMENT;
+        return OPENGATFS_STATUS_INVALID_ARGUMENT;
     }
     struct mock_file *file = &files[handle - 1U];
     size_t available = offset < file->size ? file->size - (size_t)offset : 0U;
@@ -261,7 +261,7 @@ enum traitfs_status traitfs_pread(
         destination[index] = file->bytes[(size_t)offset + index];
     }
     *read_bytes = capacity;
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
 static int initialize_test(void)

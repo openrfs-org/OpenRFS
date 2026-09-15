@@ -1,5 +1,5 @@
 {
-  "name": "Trait OS Rust no_std proof",
+  "name": "OpenGAT Rust no_std proof",
   "identifier": "RUSTAPP",
   "executable": "RUST.APP",
   "abi_version": 1,

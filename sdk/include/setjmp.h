@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef TRAIT_SETJMP_H
-#define TRAIT_SETJMP_H
+#ifndef OPENGAT_SETJMP_H
+#define OPENGAT_SETJMP_H
 
 typedef unsigned long jmp_buf[8];
 

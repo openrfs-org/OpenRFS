@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <trait/boot.h>
+#include <opengat/boot.h>
 
 #define ACPI_RSDP_V1_SIZE 20U
 #define ACPI_RSDP_V2_SIZE 36U
@@ -230,12 +230,12 @@ static enum boot_status decode_framebuffer(
     size = (uint64_t)pitch * height;
 
     /*
-     * Trait OS maps the framebuffer out of the identity window, so a loader that
+     * OpenGAT maps the framebuffer out of the identity window, so a loader that
      * placed it above 4 GiB has given this kernel something it cannot reach.
      * Refused here rather than discovered as a fault at a plausible address.
      */
-    if (size == 0U || size > TRAIT_EARLY_PHYSICAL_LIMIT ||
-        address > TRAIT_EARLY_PHYSICAL_LIMIT - size) {
+    if (size == 0U || size > OPENGAT_EARLY_PHYSICAL_LIMIT ||
+        address > OPENGAT_EARLY_PHYSICAL_LIMIT - size) {
         return BOOT_STATUS_FRAMEBUFFER_OUTSIDE_EARLY_MAP;
     }
 
@@ -307,7 +307,7 @@ enum boot_status boot_information_parse(
     }
 
     if ((uint64_t)information_address >
-        TRAIT_EARLY_PHYSICAL_LIMIT - sizeof(*information)) {
+        OPENGAT_EARLY_PHYSICAL_LIMIT - sizeof(*information)) {
         return BOOT_STATUS_INFORMATION_TOO_LARGE;
     }
 
@@ -330,7 +330,7 @@ enum boot_status boot_information_parse(
         return BOOT_STATUS_INFORMATION_OVERFLOW;
     }
 
-    if ((uint64_t)information_address + total_size > TRAIT_EARLY_PHYSICAL_LIMIT) {
+    if ((uint64_t)information_address + total_size > OPENGAT_EARLY_PHYSICAL_LIMIT) {
         return BOOT_STATUS_INFORMATION_TOO_LARGE;
     }
 

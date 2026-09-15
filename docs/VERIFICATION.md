@@ -2,7 +2,7 @@
 
 # Verification
 
-Trait OS checks the kernel on the host and in QEMU. Hardware coverage is limited
+OpenGAT checks the kernel on the host and in QEMU. Hardware coverage is limited
 to the documented emulated configurations.
 
 ## Commands
@@ -45,9 +45,9 @@ Its independent PCAP audit requires port-443 TLS records and rejects plaintext
 request, response-line, or body bytes. The scenario uses QEMU's `max` CPU and a
 pinned in-certificate RTC, and it requires the strong-hardware-entropy marker.
 
-The `native-trait` scenario serves a deterministic sequence of root-signed
+The `native-opengat` scenario serves a deterministic sequence of root-signed
 repositories and publisher-signed v3 packages over that same authenticated
-HTTPS path. Across four boots, the Ring 3 `trait` client installs version 1,
+HTTPS path. Across four boots, the Ring 3 `opengat` client installs version 1,
 reopens the persisted authority and updates it to version 2, proves that a
 signed version-1 rollback is refused without changing generation 2, then
 repairs deliberately damaged immutable bytes into generation 3. Each
@@ -74,7 +74,7 @@ evidence.
 The QEMU suite covers:
 
 - boot, exception entry, APIC routing, clocks, paging, heap, and threads;
-- framebuffer, cached surfaces, keyboard, pointer, shell, and Trait OS;
+- framebuffer, cached surfaces, keyboard, pointer, shell, and OpenGAT;
 - PCI, MSI-X, DMA, xHCI, NVMe, FAT32, and filesystem recovery;
 - ext4 recovery and commit power cuts at every named NVMe flush boundary,
   followed by reboot, namespace/data checks, resource census, and `e2fsck`;
@@ -90,7 +90,7 @@ reboot with the same synchronized image.
 ## Focused checks
 
 The repository also contains focused workflows for BusyBox reproduction,
-storage, networking, drivers, and Trait OS capture. BusyBox binaries
+storage, networking, drivers, and OpenGAT capture. BusyBox binaries
 are built twice and compared, then checked against their ELF shape and syscall
 profiles. Network tests use an offline peer and retain packet captures when
 protocol-level inspection is needed.
@@ -105,13 +105,13 @@ reference pixel. These temporary mutations are never committed.
 ## Visual captures
 
 ```sh
-make capture-trait
-make capture-trait-proof
+make capture-opengat
+make capture-opengat-proof
 make screenshot-proof
 make capture-boot-video
-python3 tools/capture-networking.py --iso build/trait.iso \
-    --system build/userspace/trait-system-fat32.raw \
-    --data build/userspace/trait-data-fat32.raw \
+python3 tools/capture-networking.py --iso build/opengat.iso \
+    --system build/userspace/opengat-system-fat32.raw \
+    --data build/userspace/opengat-data-fat32.raw \
     --output build/networking-capture
 ```
 

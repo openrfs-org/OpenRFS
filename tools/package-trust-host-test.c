@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef TRAIT_PACKAGE_TRUST_WASM
+#ifndef OPENGAT_PACKAGE_TRUST_WASM
 #include <stdio.h>
 #endif
 
-#include <trait/package_trust.h>
-#include <trait/package_platform_trust.h>
+#include <opengat/package_trust.h>
+#include <opengat/package_platform_trust.h>
 
 /*
  * Python cryptography Ed25519 key from seed 00..1f, signing
@@ -121,7 +121,7 @@ static bool make_table(uint8_t *table, size_t byte_count)
         return false;
     }
     clear_bytes(table, byte_count);
-    copy_bytes(table, (const uint8_t *)"TRTKEY01", 8U);
+    copy_bytes(table, (const uint8_t *)"OGTKEY01", 8U);
     write_u16(table + 8U, 1U);
     write_u16(table + 10U, PACKAGE_TRUST_TABLE_HEADER_BYTES);
     write_u64(table + 16U, byte_count);
@@ -315,7 +315,7 @@ static int package_trust_test(void)
     return 0;
 }
 
-#ifdef TRAIT_PACKAGE_TRUST_WASM
+#ifdef OPENGAT_PACKAGE_TRUST_WASM
 int package_trust_wasm_test(void);
 
 int package_trust_wasm_test(void)
@@ -330,7 +330,7 @@ int main(void)
         (void)fprintf(stderr, "package trust test failed: %d\n", status);
         return status;
     }
-    (void)puts("Trait OS Ed25519 package trust tests passed");
+    (void)puts("OpenGAT Ed25519 package trust tests passed");
     return 0;
 }
 #endif

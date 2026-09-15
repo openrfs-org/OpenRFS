@@ -3,12 +3,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <trait/acpi.h>
-#include <trait/console.h>
-#include <trait/cpu.h>
-#include <trait/heap.h>
-#include <trait/paging.h>
-#include <trait/pci.h>
+#include <opengat/acpi.h>
+#include <opengat/console.h>
+#include <opengat/cpu.h>
+#include <opengat/heap.h>
+#include <opengat/paging.h>
+#include <opengat/pci.h>
 
 /*
  * Read-only PCI enumeration through configuration ports and ECAM. Port access
@@ -67,7 +67,7 @@ static uint64_t ecam_access_address(
         (uint64_t)offset;
 
     /*
-     * Trait OS maps one 2 MiB region of a window firmware may declare far larger,
+     * OpenGAT maps one 2 MiB region of a window firmware may declare far larger,
      * so the mapped size is the bound that matters rather than the declared
      * one. A register past it is refused, not wrapped.
      */
@@ -764,7 +764,7 @@ enum pci_status pci_initialize(const struct acpi_mcfg *mcfg, bool mcfg_present)
     /*
      * The port pair is two registers used as one, so a read that lands between
      * the address write and the data read answers about a different function.
-     * Nothing in Trait OS reads configuration space from an interrupt handler,
+     * Nothing in OpenGAT reads configuration space from an interrupt handler,
      * and this is the refusal that keeps it that way.
      */
     if (cpu_interrupts_enabled()) {

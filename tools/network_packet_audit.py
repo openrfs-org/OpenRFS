@@ -96,7 +96,7 @@ def audit(path: Path, https: bool = False) -> dict[str, object]:
                     counts["tls_records"] += 1
     plaintext_markers = (
         b"GET /artifact.bin", b"HTTP/1.1",
-        b"hello from the Trait OS HTTPS peer",
+        b"hello from the OpenGAT HTTPS peer",
     )
     counts["https_plaintext"] = sum(
         int(marker in payload)

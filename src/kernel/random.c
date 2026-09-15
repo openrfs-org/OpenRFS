@@ -3,9 +3,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <trait/clock.h>
-#include <trait/cpu.h>
-#include <trait/random.h>
+#include <opengat/clock.h>
+#include <opengat/cpu.h>
+#include <opengat/random.h>
 
 #define CPUID_BASIC UINT32_C(0)
 #define CPUID_FEATURES UINT32_C(1)
@@ -144,7 +144,7 @@ void random_initialize(void)
     state.rdseed = (extended.ebx & CPUID_RDSEED) != 0U;
 
     seed = cpu_read_tsc() ^ clock_monotonic_ns() ^
-        (uint64_t)(uintptr_t)(void *)&state ^ UINT64_C(0x5341504F5445524E);
+        (uint64_t)(uintptr_t)(void *)&state ^ UINT64_C(0x4F50454E47415421);
     if (hardware_rdseed(&hardware) || hardware_rdrand(&hardware)) {
         seed ^= hardware;
         hardware_ok = true;

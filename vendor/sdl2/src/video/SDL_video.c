@@ -72,8 +72,8 @@
 
 /* Available video drivers */
 static VideoBootStrap *bootstrap[] = {
-#ifdef SDL_VIDEO_DRIVER_TRAIT
-    &TRAIT_bootstrap,
+#ifdef SDL_VIDEO_DRIVER_OPENGAT
+    &OPENGAT_bootstrap,
 #endif
 #ifdef SDL_VIDEO_DRIVER_COCOA
     &COCOA_bootstrap,

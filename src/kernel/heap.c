@@ -3,10 +3,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <trait/cpu.h>
-#include <trait/heap.h>
-#include <trait/memory.h>
-#include <trait/paging.h>
+#include <opengat/cpu.h>
+#include <opengat/heap.h>
+#include <opengat/memory.h>
+#include <opengat/paging.h>
 
 _Static_assert(HEAP_SIZE % PAGING_PAGE_SIZE == 0U,
                "the heap window is not a whole number of pages");

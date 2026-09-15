@@ -5,13 +5,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <trait/fat32_fs.h>
-#include <trait/package_state.h>
-#include <trait/package_upload.h>
+#include <opengat/fat32_fs.h>
+#include <opengat/package_state.h>
+#include <opengat/package_upload.h>
 
 struct upload_slot {
     struct package_state_sha256_context sha256;
-    traitfs_handle file;
+    opengatfs_handle file;
     uint64_t owner;
     uint64_t byte_count;
     uint8_t digest[PACKAGE_STATE_SHA256_BYTES];
@@ -47,13 +47,13 @@ static bool equal_bytes(const uint8_t *left, const uint8_t *right, size_t count)
     return difference == 0U;
 }
 
-static void slot_path(size_t index, char path[TRAITFS_MAX_PATH])
+static void slot_path(size_t index, char path[OPENGATFS_MAX_PATH])
 {
     static const char prefix[] = PACKAGE_UPLOAD_DIRECTORY "/u";
     static const char suffix[] = ".spk";
     size_t cursor = 0U;
 
-    zero_bytes(path, TRAITFS_MAX_PATH);
+    zero_bytes(path, OPENGATFS_MAX_PATH);
     for (size_t at = 0U; at < sizeof(prefix) - 1U; ++at) {
         path[cursor++] = prefix[at];
     }
@@ -73,14 +73,14 @@ static void report_clear(struct package_upload_report *report)
     if (report != NULL) {
         zero_bytes(report, sizeof(*report));
         report->status = PACKAGE_UPLOAD_STATUS_STATE;
-        report->filesystem_status = TRAITFS_STATUS_OK;
+        report->filesystem_status = OPENGATFS_STATUS_OK;
     }
 }
 
 static enum package_upload_status finish(
     struct package_upload_report *report,
     enum package_upload_status status,
-    enum traitfs_status filesystem_status,
+    enum opengatfs_status filesystem_status,
     const struct upload_slot *slot,
     size_t index
 )
@@ -104,14 +104,14 @@ static enum package_upload_status finish(
 static enum package_upload_status initialization_failure(
     struct package_upload_report *report,
     enum package_upload_status status,
-    enum traitfs_status filesystem_status,
+    enum opengatfs_status filesystem_status,
     bool changed
 )
 {
     if (changed) {
-        enum traitfs_status sync_status = traitfs_sync(TRAITFS_VOLUME_DATA);
+        enum opengatfs_status sync_status = opengatfs_sync(OPENGATFS_VOLUME_DATA);
 
-        if (sync_status != TRAITFS_STATUS_OK) {
+        if (sync_status != OPENGATFS_STATUS_OK) {
             status = PACKAGE_UPLOAD_STATUS_DURABILITY;
             filesystem_status = sync_status;
         }
@@ -166,39 +166,39 @@ static void release_slot(struct upload_slot *slot)
  * makes cleanup retryable even when a payload spans more blocks than one
  * bounded ext4 journal transaction may revoke. Public unlink remains atomic.
  */
-static enum traitfs_status remove_private_file(
+static enum opengatfs_status remove_private_file(
     const char *path,
     bool *changed
 )
 {
-    struct traitfs_stat stat;
-    enum traitfs_status status = traitfs_stat_path(TRAITFS_VOLUME_DATA, path,
+    struct opengatfs_stat stat;
+    enum opengatfs_status status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA, path,
         &stat);
 
-    if (status == TRAITFS_STATUS_NOT_FOUND) {
-        return TRAITFS_STATUS_OK;
+    if (status == OPENGATFS_STATUS_NOT_FOUND) {
+        return OPENGATFS_STATUS_OK;
     }
-    if (status != TRAITFS_STATUS_OK || stat.directory) {
-        return status == TRAITFS_STATUS_OK ? TRAITFS_STATUS_IS_DIRECTORY :
+    if (status != OPENGATFS_STATUS_OK || stat.directory) {
+        return status == OPENGATFS_STATUS_OK ? OPENGATFS_STATUS_IS_DIRECTORY :
             status;
     }
     while (stat.size != 0U) {
         const uint64_t next = stat.size > PACKAGE_UPLOAD_CLEANUP_CHUNK ?
             stat.size - PACKAGE_UPLOAD_CLEANUP_CHUNK : 0U;
 
-        status = traitfs_truncate(TRAITFS_VOLUME_DATA, path, next);
-        if (status != TRAITFS_STATUS_OK) {
+        status = opengatfs_truncate(OPENGATFS_VOLUME_DATA, path, next);
+        if (status != OPENGATFS_STATUS_OK) {
             return status;
         }
         stat.size = next;
         *changed = true;
     }
-    status = traitfs_unlink(TRAITFS_VOLUME_DATA, path);
-    if (status == TRAITFS_STATUS_OK) {
+    status = opengatfs_unlink(OPENGATFS_VOLUME_DATA, path);
+    if (status == OPENGATFS_STATUS_OK) {
         *changed = true;
-        return TRAITFS_STATUS_OK;
+        return OPENGATFS_STATUS_OK;
     }
-    return status == TRAITFS_STATUS_NOT_FOUND ? TRAITFS_STATUS_OK : status;
+    return status == OPENGATFS_STATUS_NOT_FOUND ? OPENGATFS_STATUS_OK : status;
 }
 
 enum package_upload_status package_upload_initialize(
@@ -212,37 +212,37 @@ enum package_upload_status package_upload_initialize(
         return PACKAGE_UPLOAD_STATUS_NULL_ARGUMENT;
     }
     if (servicing) {
-        return finish(report, PACKAGE_UPLOAD_STATUS_BUSY, TRAITFS_STATUS_OK,
+        return finish(report, PACKAGE_UPLOAD_STATUS_BUSY, OPENGATFS_STATUS_OK,
             NULL, 0U);
     }
     servicing = true;
     if (initialized) {
         servicing = false;
-        return finish(report, PACKAGE_UPLOAD_STATUS_OK, TRAITFS_STATUS_OK,
+        return finish(report, PACKAGE_UPLOAD_STATUS_OK, OPENGATFS_STATUS_OK,
             NULL, 0U);
     }
-    enum traitfs_status fs_status = traitfs_mkdir(TRAITFS_VOLUME_DATA,
+    enum opengatfs_status fs_status = opengatfs_mkdir(OPENGATFS_VOLUME_DATA,
         PACKAGE_UPLOAD_DIRECTORY);
 
-    if (fs_status == TRAITFS_STATUS_OK) {
+    if (fs_status == OPENGATFS_STATUS_OK) {
         changed = true;
-    } else if (fs_status != TRAITFS_STATUS_EXISTS) {
+    } else if (fs_status != OPENGATFS_STATUS_EXISTS) {
         return initialization_failure(report,
             PACKAGE_UPLOAD_STATUS_FILESYSTEM, fs_status, changed);
     }
     for (size_t index = 0U; index < PACKAGE_UPLOAD_SLOT_LIMIT; ++index) {
-        char path[TRAITFS_MAX_PATH];
+        char path[OPENGATFS_MAX_PATH];
 
         slot_path(index, path);
         fs_status = remove_private_file(path, &changed);
-        if (fs_status != TRAITFS_STATUS_OK) {
+        if (fs_status != OPENGATFS_STATUS_OK) {
             return initialization_failure(report,
                 PACKAGE_UPLOAD_STATUS_FILESYSTEM, fs_status, changed);
         }
     }
     if (changed) {
-        fs_status = traitfs_sync(TRAITFS_VOLUME_DATA);
-        if (fs_status != TRAITFS_STATUS_OK) {
+        fs_status = opengatfs_sync(OPENGATFS_VOLUME_DATA);
+        if (fs_status != OPENGATFS_STATUS_OK) {
             servicing = false;
             return finish(report, PACKAGE_UPLOAD_STATUS_DURABILITY, fs_status,
                 NULL, 0U);
@@ -254,7 +254,7 @@ enum package_upload_status package_upload_initialize(
     }
     initialized = true;
     servicing = false;
-    return finish(report, PACKAGE_UPLOAD_STATUS_OK, TRAITFS_STATUS_OK, NULL, 0U);
+    return finish(report, PACKAGE_UPLOAD_STATUS_OK, OPENGATFS_STATUS_OK, NULL, 0U);
 }
 
 enum package_upload_status package_upload_open(
@@ -263,8 +263,8 @@ enum package_upload_status package_upload_open(
 )
 {
     size_t index = PACKAGE_UPLOAD_SLOT_LIMIT;
-    char path[TRAITFS_MAX_PATH];
-    traitfs_handle file;
+    char path[OPENGATFS_MAX_PATH];
+    opengatfs_handle file;
 
     report_clear(report);
     if (report == NULL || owner == 0U) {
@@ -272,10 +272,10 @@ enum package_upload_status package_upload_open(
     }
     if (!initialized) {
         return finish(report, PACKAGE_UPLOAD_STATUS_NOT_INITIALIZED,
-            TRAITFS_STATUS_OK, NULL, 0U);
+            OPENGATFS_STATUS_OK, NULL, 0U);
     }
     if (servicing) {
-        return finish(report, PACKAGE_UPLOAD_STATUS_BUSY, TRAITFS_STATUS_OK,
+        return finish(report, PACKAGE_UPLOAD_STATUS_BUSY, OPENGATFS_STATUS_OK,
             NULL, 0U);
     }
     servicing = true;
@@ -288,27 +288,27 @@ enum package_upload_status package_upload_open(
     }
     if (index == PACKAGE_UPLOAD_SLOT_LIMIT) {
         servicing = false;
-        return finish(report, PACKAGE_UPLOAD_STATUS_NO_SLOT, TRAITFS_STATUS_OK,
+        return finish(report, PACKAGE_UPLOAD_STATUS_NO_SLOT, OPENGATFS_STATUS_OK,
             NULL, 0U);
     }
     slot_path(index, path);
-    enum traitfs_status fs_status = traitfs_create(TRAITFS_VOLUME_DATA, path);
+    enum opengatfs_status fs_status = opengatfs_create(OPENGATFS_VOLUME_DATA, path);
 
-    if (fs_status != TRAITFS_STATUS_OK) {
+    if (fs_status != OPENGATFS_STATUS_OK) {
         servicing = false;
         return finish(report, PACKAGE_UPLOAD_STATUS_FILESYSTEM, fs_status,
             NULL, 0U);
     }
-    fs_status = traitfs_open(TRAITFS_VOLUME_DATA, path, TRAITFS_ACCESS_WRITE, &file);
-    if (fs_status != TRAITFS_STATUS_OK) {
-        enum traitfs_status cleanup_status = traitfs_unlink(TRAITFS_VOLUME_DATA,
+    fs_status = opengatfs_open(OPENGATFS_VOLUME_DATA, path, OPENGATFS_ACCESS_WRITE, &file);
+    if (fs_status != OPENGATFS_STATUS_OK) {
+        enum opengatfs_status cleanup_status = opengatfs_unlink(OPENGATFS_VOLUME_DATA,
             path);
 
-        if (cleanup_status == TRAITFS_STATUS_OK) {
-            cleanup_status = traitfs_sync(TRAITFS_VOLUME_DATA);
+        if (cleanup_status == OPENGATFS_STATUS_OK) {
+            cleanup_status = opengatfs_sync(OPENGATFS_VOLUME_DATA);
         }
-        if (cleanup_status != TRAITFS_STATUS_OK &&
-            cleanup_status != TRAITFS_STATUS_NOT_FOUND) {
+        if (cleanup_status != OPENGATFS_STATUS_OK &&
+            cleanup_status != OPENGATFS_STATUS_NOT_FOUND) {
             initialized = false;
         }
         servicing = false;
@@ -327,16 +327,16 @@ enum package_upload_status package_upload_open(
     slot->file_present = true;
     if (package_state_sha256_initialize(&slot->sha256) !=
             PACKAGE_STATE_STATUS_OK) {
-        (void)traitfs_close(file);
-        (void)traitfs_unlink(TRAITFS_VOLUME_DATA, path);
-        (void)traitfs_sync(TRAITFS_VOLUME_DATA);
+        (void)opengatfs_close(file);
+        (void)opengatfs_unlink(OPENGATFS_VOLUME_DATA, path);
+        (void)opengatfs_sync(OPENGATFS_VOLUME_DATA);
         release_slot(slot);
         servicing = false;
-        return finish(report, PACKAGE_UPLOAD_STATUS_STATE, TRAITFS_STATUS_OK,
+        return finish(report, PACKAGE_UPLOAD_STATUS_STATE, OPENGATFS_STATUS_OK,
             NULL, 0U);
     }
     servicing = false;
-    return finish(report, PACKAGE_UPLOAD_STATUS_OK, TRAITFS_STATUS_OK, slot,
+    return finish(report, PACKAGE_UPLOAD_STATUS_OK, OPENGATFS_STATUS_OK, slot,
         index);
 }
 
@@ -363,29 +363,29 @@ enum package_upload_status package_upload_write(
         &index);
 
     if (status != PACKAGE_UPLOAD_STATUS_OK) {
-        return finish(report, status, TRAITFS_STATUS_OK, NULL, 0U);
+        return finish(report, status, OPENGATFS_STATUS_OK, NULL, 0U);
     }
     if (servicing) {
-        return finish(report, PACKAGE_UPLOAD_STATUS_BUSY, TRAITFS_STATUS_OK,
+        return finish(report, PACKAGE_UPLOAD_STATUS_BUSY, OPENGATFS_STATUS_OK,
             slot, index);
     }
     if (!slot->file_open || slot->sealed || slot->poisoned) {
-        return finish(report, PACKAGE_UPLOAD_STATUS_STATE, TRAITFS_STATUS_OK,
+        return finish(report, PACKAGE_UPLOAD_STATUS_STATE, OPENGATFS_STATUS_OK,
             slot, index);
     }
     if (byte_count > PACKAGE_UPLOAD_WRITE_MAX ||
         byte_count > PACKAGE_UPLOAD_MAX_BYTES - slot->byte_count) {
-        return finish(report, PACKAGE_UPLOAD_STATUS_RANGE, TRAITFS_STATUS_OK,
+        return finish(report, PACKAGE_UPLOAD_STATUS_RANGE, OPENGATFS_STATUS_OK,
             slot, index);
     }
     servicing = true;
     while (total < byte_count) {
         size_t written = 0U;
-        enum traitfs_status fs_status = traitfs_write(slot->file, bytes + total,
+        enum opengatfs_status fs_status = opengatfs_write(slot->file, bytes + total,
             byte_count - total, &written);
 
         if (written > byte_count - total ||
-            (fs_status == TRAITFS_STATUS_OK && written == 0U)) {
+            (fs_status == OPENGATFS_STATUS_OK && written == 0U)) {
             slot->poisoned = true;
             *written_bytes = total;
             servicing = false;
@@ -399,12 +399,12 @@ enum package_upload_status package_upload_write(
                 *written_bytes = total;
                 servicing = false;
                 return finish(report, PACKAGE_UPLOAD_STATUS_STATE,
-                    TRAITFS_STATUS_OK, slot, index);
+                    OPENGATFS_STATUS_OK, slot, index);
             }
             total += written;
             slot->byte_count += written;
         }
-        if (fs_status != TRAITFS_STATUS_OK) {
+        if (fs_status != OPENGATFS_STATUS_OK) {
             slot->poisoned = true;
             *written_bytes = total;
             servicing = false;
@@ -414,7 +414,7 @@ enum package_upload_status package_upload_write(
     }
     *written_bytes = total;
     servicing = false;
-    return finish(report, PACKAGE_UPLOAD_STATUS_OK, TRAITFS_STATUS_OK, slot,
+    return finish(report, PACKAGE_UPLOAD_STATUS_OK, OPENGATFS_STATUS_OK, slot,
         index);
 }
 
@@ -438,22 +438,22 @@ enum package_upload_status package_upload_seal(
         &index);
 
     if (status != PACKAGE_UPLOAD_STATUS_OK) {
-        return finish(report, status, TRAITFS_STATUS_OK, NULL, 0U);
+        return finish(report, status, OPENGATFS_STATUS_OK, NULL, 0U);
     }
     if (servicing) {
-        return finish(report, PACKAGE_UPLOAD_STATUS_BUSY, TRAITFS_STATUS_OK,
+        return finish(report, PACKAGE_UPLOAD_STATUS_BUSY, OPENGATFS_STATUS_OK,
             slot, index);
     }
     if (!slot->file_open || slot->sealed || slot->poisoned) {
-        return finish(report, PACKAGE_UPLOAD_STATUS_STATE, TRAITFS_STATUS_OK,
+        return finish(report, PACKAGE_UPLOAD_STATUS_STATE, OPENGATFS_STATUS_OK,
             slot, index);
     }
     servicing = true;
-    enum traitfs_status fs_status = traitfs_close(slot->file);
+    enum opengatfs_status fs_status = opengatfs_close(slot->file);
 
     slot->file_open = false;
     slot->file = 0U;
-    if (fs_status != TRAITFS_STATUS_OK) {
+    if (fs_status != OPENGATFS_STATUS_OK) {
         slot->poisoned = true;
         servicing = false;
         return finish(report, PACKAGE_UPLOAD_STATUS_FILESYSTEM, fs_status,
@@ -463,7 +463,7 @@ enum package_upload_status package_upload_seal(
             PACKAGE_STATE_STATUS_OK) {
         slot->poisoned = true;
         servicing = false;
-        return finish(report, PACKAGE_UPLOAD_STATUS_STATE, TRAITFS_STATUS_OK,
+        return finish(report, PACKAGE_UPLOAD_STATUS_STATE, OPENGATFS_STATUS_OK,
             slot, index);
     }
     for (size_t at = 0U; at < sizeof(digest); ++at) {
@@ -472,17 +472,17 @@ enum package_upload_status package_upload_seal(
     if (slot->byte_count != expected_bytes) {
         slot->poisoned = true;
         servicing = false;
-        return finish(report, PACKAGE_UPLOAD_STATUS_LENGTH, TRAITFS_STATUS_OK,
+        return finish(report, PACKAGE_UPLOAD_STATUS_LENGTH, OPENGATFS_STATUS_OK,
             slot, index);
     }
     if (!equal_bytes(digest, expected_sha256, sizeof(digest))) {
         slot->poisoned = true;
         servicing = false;
-        return finish(report, PACKAGE_UPLOAD_STATUS_DIGEST, TRAITFS_STATUS_OK,
+        return finish(report, PACKAGE_UPLOAD_STATUS_DIGEST, OPENGATFS_STATUS_OK,
             slot, index);
     }
-    fs_status = traitfs_sync(TRAITFS_VOLUME_DATA);
-    if (fs_status != TRAITFS_STATUS_OK) {
+    fs_status = opengatfs_sync(OPENGATFS_VOLUME_DATA);
+    if (fs_status != OPENGATFS_STATUS_OK) {
         slot->poisoned = true;
         servicing = false;
         return finish(report, PACKAGE_UPLOAD_STATUS_DURABILITY, fs_status,
@@ -491,7 +491,7 @@ enum package_upload_status package_upload_seal(
     slot->sealed = true;
     slot->durable = true;
     servicing = false;
-    return finish(report, PACKAGE_UPLOAD_STATUS_OK, TRAITFS_STATUS_OK, slot,
+    return finish(report, PACKAGE_UPLOAD_STATUS_OK, OPENGATFS_STATUS_OK, slot,
         index);
 }
 
@@ -507,8 +507,8 @@ enum package_upload_status package_upload_read(
 {
     struct upload_slot *slot;
     size_t index;
-    char path[TRAITFS_MAX_PATH];
-    traitfs_handle file;
+    char path[OPENGATFS_MAX_PATH];
+    opengatfs_handle file;
 
     report_clear(report);
     if (report == NULL || read_bytes == NULL ||
@@ -520,35 +520,35 @@ enum package_upload_status package_upload_read(
         &index);
 
     if (status != PACKAGE_UPLOAD_STATUS_OK) {
-        return finish(report, status, TRAITFS_STATUS_OK, NULL, 0U);
+        return finish(report, status, OPENGATFS_STATUS_OK, NULL, 0U);
     }
     if (servicing) {
-        return finish(report, PACKAGE_UPLOAD_STATUS_BUSY, TRAITFS_STATUS_OK,
+        return finish(report, PACKAGE_UPLOAD_STATUS_BUSY, OPENGATFS_STATUS_OK,
             slot, index);
     }
     if (!slot->sealed || !slot->durable || slot->poisoned || slot->file_open) {
-        return finish(report, PACKAGE_UPLOAD_STATUS_STATE, TRAITFS_STATUS_OK,
+        return finish(report, PACKAGE_UPLOAD_STATUS_STATE, OPENGATFS_STATUS_OK,
             slot, index);
     }
     if (capacity > PACKAGE_UPLOAD_WRITE_MAX || offset > slot->byte_count) {
-        return finish(report, PACKAGE_UPLOAD_STATUS_RANGE, TRAITFS_STATUS_OK,
+        return finish(report, PACKAGE_UPLOAD_STATUS_RANGE, OPENGATFS_STATUS_OK,
             slot, index);
     }
     servicing = true;
     slot_path(index, path);
-    enum traitfs_status fs_status = traitfs_open(TRAITFS_VOLUME_DATA, path,
-        TRAITFS_ACCESS_READ, &file);
+    enum opengatfs_status fs_status = opengatfs_open(OPENGATFS_VOLUME_DATA, path,
+        OPENGATFS_ACCESS_READ, &file);
 
-    if (fs_status == TRAITFS_STATUS_OK) {
-        fs_status = traitfs_pread(file, bytes, capacity, offset, read_bytes);
-        enum traitfs_status close_status = traitfs_close(file);
+    if (fs_status == OPENGATFS_STATUS_OK) {
+        fs_status = opengatfs_pread(file, bytes, capacity, offset, read_bytes);
+        enum opengatfs_status close_status = opengatfs_close(file);
 
-        if (fs_status == TRAITFS_STATUS_OK && close_status != TRAITFS_STATUS_OK) {
+        if (fs_status == OPENGATFS_STATUS_OK && close_status != OPENGATFS_STATUS_OK) {
             fs_status = close_status;
         }
     }
     servicing = false;
-    return finish(report, fs_status == TRAITFS_STATUS_OK ?
+    return finish(report, fs_status == OPENGATFS_STATUS_OK ?
         PACKAGE_UPLOAD_STATUS_OK : PACKAGE_UPLOAD_STATUS_FILESYSTEM,
         fs_status, slot, index);
 }
@@ -570,13 +570,13 @@ enum package_upload_status package_upload_inspect(
         &index);
 
     if (status != PACKAGE_UPLOAD_STATUS_OK) {
-        return finish(report, status, TRAITFS_STATUS_OK, NULL, 0U);
+        return finish(report, status, OPENGATFS_STATUS_OK, NULL, 0U);
     }
     if (!slot->sealed || !slot->durable || slot->poisoned || slot->file_open) {
-        return finish(report, PACKAGE_UPLOAD_STATUS_STATE, TRAITFS_STATUS_OK,
+        return finish(report, PACKAGE_UPLOAD_STATUS_STATE, OPENGATFS_STATUS_OK,
             slot, index);
     }
-    return finish(report, PACKAGE_UPLOAD_STATUS_OK, TRAITFS_STATUS_OK, slot,
+    return finish(report, PACKAGE_UPLOAD_STATUS_OK, OPENGATFS_STATUS_OK, slot,
         index);
 }
 
@@ -588,7 +588,7 @@ enum package_upload_status package_upload_close(
 {
     struct upload_slot *slot;
     size_t index;
-    char path[TRAITFS_MAX_PATH];
+    char path[OPENGATFS_MAX_PATH];
 
     report_clear(report);
     if (report == NULL) {
@@ -598,40 +598,40 @@ enum package_upload_status package_upload_close(
         &index);
 
     if (status != PACKAGE_UPLOAD_STATUS_OK) {
-        return finish(report, status, TRAITFS_STATUS_OK, NULL, 0U);
+        return finish(report, status, OPENGATFS_STATUS_OK, NULL, 0U);
     }
     if (servicing) {
-        return finish(report, PACKAGE_UPLOAD_STATUS_BUSY, TRAITFS_STATUS_OK,
+        return finish(report, PACKAGE_UPLOAD_STATUS_BUSY, OPENGATFS_STATUS_OK,
             slot, index);
     }
     servicing = true;
     if (slot->file_open) {
-        (void)traitfs_close(slot->file);
+        (void)opengatfs_close(slot->file);
         slot->file_open = false;
         slot->file = 0U;
     }
     slot_path(index, path);
     if (slot->file_present) {
         bool changed = false;
-        enum traitfs_status fs_status = remove_private_file(path, &changed);
+        enum opengatfs_status fs_status = remove_private_file(path, &changed);
 
-        if (fs_status != TRAITFS_STATUS_OK) {
+        if (fs_status != OPENGATFS_STATUS_OK) {
             servicing = false;
             return finish(report, PACKAGE_UPLOAD_STATUS_FILESYSTEM, fs_status,
                 slot, index);
         }
         slot->file_present = false;
     }
-    enum traitfs_status fs_status = traitfs_sync(TRAITFS_VOLUME_DATA);
+    enum opengatfs_status fs_status = opengatfs_sync(OPENGATFS_VOLUME_DATA);
 
-    if (fs_status != TRAITFS_STATUS_OK) {
+    if (fs_status != OPENGATFS_STATUS_OK) {
         servicing = false;
         return finish(report, PACKAGE_UPLOAD_STATUS_DURABILITY, fs_status,
             slot, index);
     }
     release_slot(slot);
     servicing = false;
-    return finish(report, PACKAGE_UPLOAD_STATUS_OK, TRAITFS_STATUS_OK, NULL, 0U);
+    return finish(report, PACKAGE_UPLOAD_STATUS_OK, OPENGATFS_STATUS_OK, NULL, 0U);
 }
 
 bool package_upload_resources_released(void)

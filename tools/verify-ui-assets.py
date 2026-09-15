@@ -1,55 +1,98 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: GPL-3.0-only
-"""Verify the committed Trait OS identity and generated runtime assets."""
+"""Verify OpenGAT source artwork and deterministic runtime derivatives."""
 
 from hashlib import sha256
 from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
 
 PINNED = {
-    "assets/trait/logo.png":
-        "157f5fdb19788786f7bf9cf859c92564b61b8fbf4dd41e11044235a556c3cef4",
-    "assets/trait/wallpaper.png":
-        "32139f348923b74e921c0adcc2f103b8e325e11a8b51b72cc6cfebf9608d9344",
-    "assets/trait/logo-SOURCE.txt":
-        "49151749a74377b9b3deb8d7f6664994b7d4e7fa9b4aaa6a79c2f0b616a7e856",
-    "assets/trait/wallpaper-SOURCE.txt":
-        "0cd77b51c084ea2f8af67eaf70d2f7647e5598294324a33ef818df1b5e91e77a",
+    "tools/make-app-icons.py":
+        "3818884f8b74c083843d8976ee2948bcd1e05695f2afa2981d8cd964ce11a469",
+    "assets/opengat/panel/SOURCE.md":
+        "958ea4cf64f8da48c5995c207f22954501f1798b445d41c5e80ee9e3a5a100dc",
+    "assets/opengat/panel/browser.png":
+        "2c86dd9869547db452e05de210baae99e84524bbe2ed03884071693bd3e42564",
+    "assets/opengat/panel/file-manager.png":
+        "75755f82e265013fa1aa40a2c218b988522548a5807f60aba051c44a8d7b3c9e",
+    "assets/opengat/panel/gnome-fs-desktop.png":
+        "0110967e5de381c7e9501a484a9fb9a5e1e0eede25b4b25c09aa7514e9a877fe",
+    "assets/opengat/panel/gtk-preferences.png":
+        "206add0bb52a89962fb65f30125c3185a6e9e5709b9d3fe454fb1bf24c723b7a",
+    "assets/opengat/panel/network.png":
+        "db864e6b9f556cf90989e6f88a69493033af2a7799e3a19be2776ce8d0324479",
+    "assets/opengat/panel/system-file-manager.png":
+        "75755f82e265013fa1aa40a2c218b988522548a5807f60aba051c44a8d7b3c9e",
+    "assets/opengat/panel/terminal.png":
+        "3929ae33a05dc43619c248704e3e39752dc8bfb7ed09390ba0a66af5617be5ab",
+    "assets/opengat/panel/volume-muted.png":
+        "5a2d7c9006e7f7e0188dec177d34b9e419e0a13a4777f39e4d29b832e72286aa",
+    "assets/opengat/panel/volume.png":
+        "7674aa24ddb4db1f6452b704039bff766a314d4f88a053becc78857c65be2640",
+    "assets/opengat/panel/wincmd.png":
+        "f1e8d4d5b2696664e57cfac69b86fc53bbe0ba5b6f48edcf8123cdf87d2b062c",    "assets/opengat/logo-source.png":
+        "4290c111fa662f3fe40e11176a492140850fa38c6146ac1cd75a0382163bbd4b",
+    "assets/opengat/logo.png":
+        "84efdbc3aacf01b29875343b6e39fce54e2942a40b00a0a2a3ccc7ad9d7bae71",
+    "assets/opengat/wallpaper.png":
+        "9f403808a1de05a75740e96625e351cac2516f9af6cf42c27b0630390ee5c77c",
+    "assets/opengat/logo-SOURCE.txt":
+        "b4c0e2703ab80f5150c7c84986b0eab074d2e70386c455294fca76218b4ae8ec",
+    "assets/opengat/wallpaper-SOURCE.txt":
+        "ca0098cc67c05c6e6f47349297b2f7cbdf1f9c41b9c5aae722a1777daaab0085",
     "build/logo.srl":
-        "0e99a2be71354d7a6da5e8d252caaedea86a921607dbbf1a5581347315395428",
+        "0fdc83251256e561c95c6ef7bf3f2d1e07e38dd354d8dba33d1c3e7a1689476d",
     "build/wallpaper.spw":
-        "cb5826486a806ddfb2a9f1e456da269bc11b0561bcfcbd190535e61f165c35bc",
-    "src/kernel/de_trait_files_art.h":
-        "a1a98feeb232d62337facad40025a69789c2235e2a449b55bf7580f73c6dd735",
-    "src/kernel/de_trait_panel_art.h":
-        "b454f2600a3801f615f8d62a326c18910414ee99307d1882be5b53dcd8edf707",
-    "src/kernel/de_trait_mark.h":
-        "8ed746e1ec49d5cce4d0955f3cb4a9eb2643544976e2fdcc3c7ae999b1c80660",
-    "src/kernel/de_trait_mono.h":
-        "811d3f4a19fa04c34549f43f62c0dba295080643c16d3b6fb5ddc46925e4f4c8",
-    "src/kernel/de_trait_font_10.h":
-        "ef5421084d624dca26eed98e5138608e87e8e792fde9350ebefa9deb9a990f5c",
-    "src/kernel/de_trait_font_11.h":
-        "9381a71b22afc8ef2e277bc21bc7a0c4b6d487e6dcdaed1fc6ea8cad50c624a7",
-    "src/kernel/de_trait_font_13.h":
-        "9ca3186990bdbdd17ea8858edf871727b9aea7163dd3759f28a2ac52652a886b",
+        "f87d3a97d5b678dd507762b0cb3fe8416caee4cf19c97ce6850b4e434d3c7879",
+    "src/kernel/de_opengat_files_art.h":
+        "c543b59b875b84fba71c7ba92d30f2a4efe402650a6cac6106500f8752237da3",
+    "src/kernel/de_opengat_panel_art.h":
+        "b3f31c7c87205ae0b3c71067921b2b7521bbaa8bc612900f43b35366629abf62",
+    "src/kernel/de_opengat_mark.h":
+        "abd776cbb57552aff9097e37c4c2301f474f56e1bc6ca4ec8898d543ac598ed5",
+    "src/kernel/de_opengat_mono.h":
+        "895019b2324a7d1bde44aac4a027ddf4a092c1321cd0ed0240b86117591a041d",
+    "src/kernel/de_opengat_font_10.h":
+        "ebc103ad79dbe8c5c834cd0347a25566ccb6308587e04c3e69a12d70b7d1d013",
+    "src/kernel/de_opengat_font_11.h":
+        "945a3d0f572c3f57a5b7d100733783a0fcb143591682acae5b3aa35d9e54237a",
+    "src/kernel/de_opengat_font_13.h":
+        "96285cd8b16cd9d47e48917460f43819ab738662000e188a69c174dae52b2069",
 }
 
 
 def digest(path: str) -> str:
     source = Path(path)
     if not source.is_file():
-        raise SystemExit(f"missing Trait OS asset: {path}")
+        raise SystemExit(f"missing OpenGAT asset: {path}")
     return sha256(source.read_bytes()).hexdigest()
+
+
+def verify_generated_mark() -> None:
+    with tempfile.TemporaryDirectory(prefix="opengat-brand-mark-") as directory:
+        output = Path(directory) / "mark.h"
+        subprocess.run(
+            [sys.executable, "tools/make-brand-mark.py",
+             "assets/opengat/logo.png", str(output)],
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+        committed = Path("src/kernel/de_opengat_mark.h").read_bytes()
+        if output.read_bytes() != committed:
+            raise SystemExit("OpenGAT panel mark is not reproducible")
 
 
 def main() -> None:
     for path, expected in PINNED.items():
         actual = digest(path)
         if actual != expected:
-            raise SystemExit(f"Trait OS asset digest mismatch: {path}: {actual}")
+            raise SystemExit(f"OpenGAT asset digest mismatch: {path}: {actual}")
+    verify_generated_mark()
     print(
-        f"Trait OS asset integrity: {len(PINNED)} source, receipt, imported, "
-        "and generated digests verified"
+        f"OpenGAT asset integrity: {len(PINNED)} source, receipt, imported, "
+        "and generated digests verified; panel mark reproduced"
     )
 
 

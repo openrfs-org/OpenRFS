@@ -3,14 +3,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <trait/apic_timer.h>
-#include <trait/clock.h>
-#include <trait/cpu.h>
-#include <trait/heap.h>
-#include <trait/timer.h>
+#include <opengat/apic_timer.h>
+#include <opengat/clock.h>
+#include <opengat/cpu.h>
+#include <opengat/heap.h>
+#include <opengat/timer.h>
 
 /*
- * Trait OS policy bound on the shortest deadline that may be armed. The local APIC
+ * OpenGAT policy bound on the shortest deadline that may be armed. The local APIC
  * timer counts at tens of megahertz, so a deadline closer than this would often
  * have passed by the time the count is written, and rearming from inside the
  * expiry handler would then spin the interrupt rather than make progress.
@@ -18,7 +18,7 @@
 #define TIMER_MINIMUM_INTERVAL_NS UINT64_C(100000)
 
 /*
- * Trait OS policy bound on a sleep. A deadline that has not arrived by twice its
+ * OpenGAT policy bound on a sleep. A deadline that has not arrived by twice its
  * own interval plus this grace has not been delivered, and the sleep gives up
  * with a status instead of halting forever. The grace covers the case of a very
  * short interval where twice it is still shorter than one timer interrupt.

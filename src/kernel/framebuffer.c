@@ -3,9 +3,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <trait/boot.h>
-#include <trait/framebuffer.h>
-#include <trait/paging.h>
+#include <opengat/boot.h>
+#include <opengat/framebuffer.h>
+#include <opengat/paging.h>
 
 /*
  * Every pixel on the screen, addressable, and nothing above that.

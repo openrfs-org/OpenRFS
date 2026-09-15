@@ -8,7 +8,7 @@ xRGB8888 content up to 1280×720. Success returns a window handle, an event-queu
 handle, and a process-local RW/NX surface address with explicit width, height,
 and byte stride.
 
-The application owns only content pixels. Trait OS owns the frame, focus,
+The application owns only content pixels. OpenGAT owns the frame, focus,
 stacking, composition, and input routing. The process surface remains unchanged
 by desktop drawing and is never a mapping of physical framebuffer memory. The
 current lightweight adapter keeps native windows at their assigned geometry;
@@ -27,5 +27,5 @@ Pointer capture is explicit and ends on release, close, fault, or process exit.
 
 Applications use `WAIT_READABLE` on the queue. Waiting parks the native thread,
 so another application continues rendering while input is absent. Closing the
-window or queue invalidates that handle immediately; the surface and Trait OS
+window or queue invalidates that handle immediately; the surface and OpenGAT
 slot disappear when both object references are gone or during process cleanup.

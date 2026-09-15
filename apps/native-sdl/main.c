@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include <SDL.h>
 
-#include <trait/runtime.h>
+#include <opengat/runtime.h>
 
 #include <stdint.h>
 #include <stdio.h>
@@ -18,7 +18,7 @@ static int persistent_run(char **preference_path)
     char state_path[64];
     SDL_RWops *state;
 
-    *preference_path = SDL_GetPrefPath("Trait OS", "SDL proof");
+    *preference_path = SDL_GetPrefPath("OpenGAT", "SDL proof");
     if (*preference_path == NULL ||
         SDL_snprintf(state_path, sizeof(state_path), "%sSTATE.BIN",
             *preference_path) <= 0) {
@@ -43,7 +43,7 @@ static int persistent_run(char **preference_path)
     const int close_status = SDL_RWclose(state);
 
     if (written != 1U || close_status != 0 ||
-        trait_volume_sync(TRAIT_VOLUME_DATA) != 0) {
+        opengat_volume_sync(OPENGAT_VOLUME_DATA) != 0) {
         return -1;
     }
     return (int)run;
@@ -168,27 +168,27 @@ int main(int argc, char **argv, char **environment)
     (void)environment;
     (void)setvbuf(stdout, NULL, _IONBF, 0U);
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER | SDL_INIT_EVENTS) != 0 ||
-        strcmp(SDL_GetPlatform(), "Trait OS") != 0 ||
-        strcmp(SDL_GetCurrentVideoDriver(), "trait") != 0) {
-        printf("TRAIT SDL FAIL init=%s\n", SDL_GetError());
+        strcmp(SDL_GetPlatform(), "OpenGAT") != 0 ||
+        strcmp(SDL_GetCurrentVideoDriver(), "opengat") != 0) {
+        printf("OPENGAT SDL FAIL init=%s\n", SDL_GetError());
         goto cleanup;
     }
     run = persistent_run(&preference_path);
-    window = SDL_CreateWindow("Trait OS SDL 2 proof", SDL_WINDOWPOS_CENTERED,
+    window = SDL_CreateWindow("OpenGAT SDL 2 proof", SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED, 360, 240, SDL_WINDOW_SHOWN);
     if (run <= 0 || window == NULL || draw_window(window, &renderer) != 0 ||
         play_audio(&audio) != 0) {
-        printf("TRAIT SDL FAIL setup=%s\n", SDL_GetError());
+        printf("OPENGAT SDL FAIL setup=%s\n", SDL_GetError());
         goto cleanup;
     }
-    printf("TRAIT SDL READY run=%d video=%s audio=%s pref=%s\n", run,
+    printf("OPENGAT SDL READY run=%d video=%s audio=%s pref=%s\n", run,
         SDL_GetCurrentVideoDriver(), SDL_GetCurrentAudioDriver(),
         preference_path);
     if ((run == 1 && await_input() != 0) || wait_for_audio(audio) != 0) {
-        printf("TRAIT SDL FAIL evidence=%s\n", SDL_GetError());
+        printf("OPENGAT SDL FAIL evidence=%s\n", SDL_GetError());
         goto cleanup;
     }
-    printf("TRAIT SDL PASS run=%d present=partial input=%s audio=non-silent persistent=yes\n",
+    printf("OPENGAT SDL PASS run=%d present=partial input=%s audio=non-silent persistent=yes\n",
         run, run == 1 ? "key-pointer" : "prior-run");
     result = 0;
 

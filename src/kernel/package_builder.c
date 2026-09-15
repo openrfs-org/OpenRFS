@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <trait/package_builder.h>
+#include <opengat/package_builder.h>
 
 #define PACKAGE_SOURCE_INSTALLED UINT8_C(1)
 #define PACKAGE_SOURCE_STAGED UINT8_C(2)

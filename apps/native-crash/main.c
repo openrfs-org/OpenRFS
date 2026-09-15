@@ -1,15 +1,15 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include <pthread.h>
-#include <trait/event.h>
-#include <trait/runtime.h>
-#include <trait/window.h>
+#include <opengat/event.h>
+#include <opengat/runtime.h>
+#include <opengat/window.h>
 #include <stdint.h>
 
 static void *blocked_thread(void *argument)
 {
     (void)argument;
     for (;;) {
-        (void)trait_sleep_until(trait_monotonic_ns() +
+        (void)opengat_sleep_until(opengat_monotonic_ns() +
             UINT64_C(1000000000));
     }
 }
@@ -28,25 +28,25 @@ static _Noreturn void poison_state_and_fault(void)
 
 int main(void)
 {
-    struct trait_memory_map_response mapping = {0U, 0U, 0U, 0U};
-    struct trait_window_create_response window = {0U};
+    struct opengat_memory_map_response mapping = {0U, 0U, 0U, 0U};
+    struct opengat_window_create_response window = {0U};
     pthread_t thread;
     long file;
     long directory;
     long timer;
 
-    if (trait_path_mkdir(TRAIT_VOLUME_DATA, "LIVE") != 0) return 10;
-    file = trait_file_open(TRAIT_VOLUME_DATA, "LIVE/OPEN.TXT",
-        TRAIT_OPEN_WRITE | TRAIT_OPEN_CREATE | TRAIT_OPEN_TRUNCATE);
-    directory = trait_directory_open(TRAIT_VOLUME_DATA, "LIVE");
-    timer = trait_timer_create();
+    if (opengat_path_mkdir(OPENGAT_VOLUME_DATA, "LIVE") != 0) return 10;
+    file = opengat_file_open(OPENGAT_VOLUME_DATA, "LIVE/OPEN.TXT",
+        OPENGAT_OPEN_WRITE | OPENGAT_OPEN_CREATE | OPENGAT_OPEN_TRUNCATE);
+    directory = opengat_directory_open(OPENGAT_VOLUME_DATA, "LIVE");
+    timer = opengat_timer_create();
     if (file < 0 || directory < 0 || timer < 0 ||
-        trait_file_write((trait_handle_t)file, "live", 4U) != 4 ||
-        trait_timer_set((trait_handle_t)timer,
-            trait_monotonic_ns() + UINT64_C(1000000000)) != 0 ||
-        trait_memory_allocate(2U * TRAIT_ABI_PAGE_SIZE,
-            TRAIT_MEMORY_READ | TRAIT_MEMORY_WRITE, &mapping) != 0 ||
-        trait_window_create("Crash containment", 160U, 96U, &window) != 0 ||
+        opengat_file_write((opengat_handle_t)file, "live", 4U) != 4 ||
+        opengat_timer_set((opengat_handle_t)timer,
+            opengat_monotonic_ns() + UINT64_C(1000000000)) != 0 ||
+        opengat_memory_allocate(2U * OPENGAT_ABI_PAGE_SIZE,
+            OPENGAT_MEMORY_READ | OPENGAT_MEMORY_WRITE, &mapping) != 0 ||
+        opengat_window_create("Crash containment", 160U, 96U, &window) != 0 ||
         pthread_create(&thread, NULL, blocked_thread, NULL) != 0) {
         return 11;
     }

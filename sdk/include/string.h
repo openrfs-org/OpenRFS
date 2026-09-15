@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef TRAIT_STRING_H
-#define TRAIT_STRING_H
+#ifndef OPENGAT_STRING_H
+#define OPENGAT_STRING_H
 
 #include <stddef.h>
 

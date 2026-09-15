@@ -455,8 +455,8 @@ typedef struct VideoBootStrap
     int (*ShowMessageBox)(const SDL_MessageBoxData *messageboxdata, int *buttonid);  /* can be done without initializing backend! */
 } VideoBootStrap;
 
-#ifdef SDL_VIDEO_DRIVER_TRAIT
-extern VideoBootStrap TRAIT_bootstrap;
+#ifdef SDL_VIDEO_DRIVER_OPENGAT
+extern VideoBootStrap OPENGAT_bootstrap;
 #endif
 
 /* Not all of these are available in a given build. Use #ifdefs, etc. */

@@ -7,8 +7,8 @@
  * coverage mask.  See src/kernel/cursor.h for what these are and
  * the two Windows names this does not draw.
  */
-#ifndef TRAIT_CURSOR_ART_H
-#define TRAIT_CURSOR_ART_H
+#ifndef OPENGAT_CURSOR_ART_H
+#define OPENGAT_CURSOR_ART_H
 
 #include <stdint.h>
 

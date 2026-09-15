@@ -1,0 +1,17 @@
+OpenGAT logo source receipt
+
+Source: supplied directly by the project owner in the Codex task on 2026-09-15
+Original attachment filename: codex-clipboard-595e95c2-ae58-4ab3-ba6b-d5f732cd31f3.png
+Preserved source path: assets/opengat/logo-source.png
+Source dimensions: 542x428 RGBA
+Source SHA-256: 4290c111fa662f3fe40e11176a492140850fa38c6146ac1cd75a0382163bbd4b
+
+Runtime derivative path: assets/opengat/logo.png
+Runtime derivative dimensions: 1412x1114 RGBA
+Runtime derivative SHA-256: 84efdbc3aacf01b29875343b6e39fce54e2942a40b00a0a2a3ccc7ad9d7bae71
+Transformation: background extraction with the built-in OpenAI image tool;
+the request preserved the G geometry and colours and added alpha transparency.
+
+This receipt records provenance supplied to the repository. It does not infer
+an upstream author, website, vector source, or license that the user did not
+provide.

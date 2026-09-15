@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * Trait OS's bounded VFS object layer. The public traitfs_* names are retained as
+ * OpenGAT's bounded VFS object layer. The public opengatfs_* names are retained as
  * the native ABI v1 compatibility surface, while concrete filesystem handles
  * and path rules remain behind a backend contract.
  */
@@ -8,14 +8,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <trait/fat32_backend.h>
-#include <trait/fat32_fs.h>
-#include <trait/ext4_fs.h>
-#include <trait/vfs_backend.h>
+#include <opengat/fat32_backend.h>
+#include <opengat/fat32_fs.h>
+#include <opengat/ext4_fs.h>
+#include <opengat/vfs_backend.h>
 
 #define VFS_MAX_VNODES 128U
 #define VFS_VNODE_BUCKETS 64U
-#define VFS_MAX_OPEN_FILES TRAITFS_MAX_HANDLES
+#define VFS_MAX_OPEN_FILES OPENGATFS_MAX_HANDLES
 #define VFS_MAX_DIRECTORY_ITERATORS 32U
 #define VFS_NO_INDEX UINT16_MAX
 
@@ -23,18 +23,18 @@ struct vfs_mount_state {
     const struct vfs_backend_ops *backend;
     uint64_t generation;
     size_t references;
-    enum traitfs_volume volume;
+    enum opengatfs_volume volume;
     bool active;
 };
 
 struct vfs_vnode_state {
-    struct traitfs_stat stat;
+    struct opengatfs_stat stat;
     uint64_t generation;
     uint64_t mount_generation;
     size_t references;
     uint16_t next_bucket;
-    enum traitfs_volume volume;
-    char path[TRAITFS_MAX_PATH];
+    enum opengatfs_volume volume;
+    char path[OPENGATFS_MAX_PATH];
     bool active;
 };
 
@@ -42,15 +42,15 @@ struct vfs_open_file_state {
     const struct vfs_backend_ops *backend;
     uint64_t generation;
     uint64_t vnode_generation;
-    traitfs_handle backend_handle;
+    opengatfs_handle backend_handle;
     uint16_t vnode_index;
     bool active;
 };
 
 struct vfs_directory_state {
-    struct traitfs_list_entry entries[TRAITFS_MAX_LIST_ENTRIES];
+    struct opengatfs_list_entry entries[OPENGATFS_MAX_LIST_ENTRIES];
     const struct vfs_backend_ops *backend;
-    traitfs_handle backend_handle;
+    opengatfs_handle backend_handle;
     uint64_t generation;
     uint64_t vnode_generation;
     size_t count;
@@ -60,7 +60,7 @@ struct vfs_directory_state {
     bool active;
 };
 
-static struct vfs_mount_state mounts[TRAITFS_VOLUME_COUNT];
+static struct vfs_mount_state mounts[OPENGATFS_VOLUME_COUNT];
 static struct vfs_vnode_state vnodes[VFS_MAX_VNODES];
 static struct vfs_open_file_state open_files[VFS_MAX_OPEN_FILES];
 static struct vfs_directory_state directories[VFS_MAX_DIRECTORY_ITERATORS];
@@ -124,7 +124,7 @@ static const struct vfs_backend_ops ext4_backend_ops = {
     .case_sensitive = true,
 };
 
-static const struct vfs_backend_ops *volume_backends[TRAITFS_VOLUME_COUNT];
+static const struct vfs_backend_ops *volume_backends[OPENGATFS_VOLUME_COUNT];
 
 _Static_assert(VFS_MAX_OPEN_FILES <= UINT8_MAX,
     "VFS open-file index no longer fits encoded handle");
@@ -153,9 +153,9 @@ static void copy_bytes(void *destination, const void *source, size_t length)
     }
 }
 
-static bool valid_volume(enum traitfs_volume volume)
+static bool valid_volume(enum opengatfs_volume volume)
 {
-    return volume >= TRAITFS_VOLUME_SYSTEM && volume < TRAITFS_VOLUME_COUNT;
+    return volume >= OPENGATFS_VOLUME_SYSTEM && volume < OPENGATFS_VOLUME_COUNT;
 }
 
 static size_t text_length(const char *text)
@@ -163,9 +163,9 @@ static size_t text_length(const char *text)
     size_t length = 0U;
 
     if (text == NULL) {
-        return TRAITFS_MAX_PATH;
+        return OPENGATFS_MAX_PATH;
     }
-    while (length < TRAITFS_MAX_PATH && text[length] != '\0') {
+    while (length < OPENGATFS_MAX_PATH && text[length] != '\0') {
         ++length;
     }
     return length;
@@ -178,7 +178,7 @@ static bool text_equal(const char *left, const char *right)
     if (left == NULL || right == NULL) {
         return false;
     }
-    while (index < TRAITFS_MAX_PATH && left[index] == right[index]) {
+    while (index < OPENGATFS_MAX_PATH && left[index] == right[index]) {
         if (left[index] == '\0') {
             return true;
         }
@@ -199,23 +199,23 @@ static uint64_t next_generation(uint64_t *counter, uint64_t maximum)
     return result;
 }
 
-static enum traitfs_status canonicalize_path(
+static enum opengatfs_status canonicalize_path(
     const char *path,
     bool case_sensitive,
-    char canonical[TRAITFS_MAX_PATH]
+    char canonical[OPENGATFS_MAX_PATH]
 )
 {
-    size_t component_starts[TRAITFS_MAX_DEPTH];
+    size_t component_starts[OPENGATFS_MAX_DEPTH];
     const size_t length = text_length(path);
     size_t component_count = 0U;
     size_t used = 0U;
     size_t index = 0U;
 
-    if (canonical == NULL || length == 0U || length >= TRAITFS_MAX_PATH ||
+    if (canonical == NULL || length == 0U || length >= OPENGATFS_MAX_PATH ||
         path[0] == '/' || path[0] == '\\') {
-        return TRAITFS_STATUS_PATH;
+        return OPENGATFS_STATUS_PATH;
     }
-    zero_bytes(canonical, TRAITFS_MAX_PATH);
+    zero_bytes(canonical, OPENGATFS_MAX_PATH);
     while (index < length) {
         size_t start = index;
         size_t component_length;
@@ -225,20 +225,20 @@ static enum traitfs_status canonicalize_path(
 
             if (byte > UINT8_C(0x7F) || path[index] == '\\' ||
                 path[index] == ':') {
-                return TRAITFS_STATUS_PATH;
+                return OPENGATFS_STATUS_PATH;
             }
             ++index;
         }
         component_length = index - start;
         if (component_length == 0U) {
-            return TRAITFS_STATUS_PATH;
+            return OPENGATFS_STATUS_PATH;
         }
         if (component_length == 1U && path[start] == '.') {
             /* A mount-relative dot is the retained current vnode. */
         } else if (component_length == 2U && path[start] == '.' &&
                 path[start + 1U] == '.') {
             if (component_count == 0U) {
-                return TRAITFS_STATUS_PATH;
+                return OPENGATFS_STATUS_PATH;
             }
             used = component_starts[--component_count];
             if (used != 0U) {
@@ -246,10 +246,10 @@ static enum traitfs_status canonicalize_path(
             }
             canonical[used] = '\0';
         } else {
-            if (component_count >= TRAITFS_MAX_DEPTH ||
+            if (component_count >= OPENGATFS_MAX_DEPTH ||
                 used + component_length + (used == 0U ? 0U : 1U) >=
-                    TRAITFS_MAX_PATH) {
-                return TRAITFS_STATUS_PATH;
+                    OPENGATFS_MAX_PATH) {
+                return OPENGATFS_STATUS_PATH;
             }
             if (used != 0U) {
                 canonical[used++] = '/';
@@ -268,7 +268,7 @@ static enum traitfs_status canonicalize_path(
         if (index < length) {
             ++index;
             if (index == length) {
-                return TRAITFS_STATUS_PATH;
+                return OPENGATFS_STATUS_PATH;
             }
         }
     }
@@ -276,10 +276,10 @@ static enum traitfs_status canonicalize_path(
         canonical[0] = '.';
         canonical[1] = '\0';
     }
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-static size_t vnode_bucket(enum traitfs_volume volume, const char *path,
+static size_t vnode_bucket(enum opengatfs_volume volume, const char *path,
     uint64_t object_id)
 {
     uint64_t hash = UINT64_C(1469598103934665603) ^ (uint64_t)volume;
@@ -313,10 +313,10 @@ static void vnode_remove_from_bucket(size_t vnode_index)
     }
 }
 
-static enum traitfs_status vnode_retain(
-    enum traitfs_volume volume,
+static enum opengatfs_status vnode_retain(
+    enum opengatfs_volume volume,
     const char *canonical,
-    const struct traitfs_stat *stat,
+    const struct opengatfs_stat *stat,
     size_t *vnode_index
 )
 {
@@ -326,7 +326,7 @@ static enum traitfs_status vnode_retain(
 
     if (stat == NULL || vnode_index == NULL || !valid_volume(volume) ||
         !mounts[volume].active) {
-        return TRAITFS_STATUS_NOT_MOUNTED;
+        return OPENGATFS_STATUS_NOT_MOUNTED;
     }
     bucket = vnode_bucket(volume, canonical, stat->object_id);
     current = vnode_buckets[bucket];
@@ -340,12 +340,12 @@ static enum traitfs_status vnode_retain(
                 vnode->stat.object_id == stat->object_id) ||
              (stat->object_id == 0U && text_equal(vnode->path, canonical)))) {
             if (vnode->references == SIZE_MAX) {
-                return TRAITFS_STATUS_BUSY;
+                return OPENGATFS_STATUS_BUSY;
             }
             ++vnode->references;
             vnode->stat = *stat;
             *vnode_index = current;
-            return TRAITFS_STATUS_OK;
+            return OPENGATFS_STATUS_OK;
         }
         current = vnode->next_bucket;
     }
@@ -356,7 +356,7 @@ static enum traitfs_status vnode_retain(
         }
     }
     if (free_index == VFS_MAX_VNODES || mounts[volume].references == SIZE_MAX) {
-        return TRAITFS_STATUS_NO_HANDLES;
+        return OPENGATFS_STATUS_NO_HANDLES;
     }
     zero_bytes(&vnodes[free_index], sizeof(vnodes[free_index]));
     vnodes[free_index].stat = *stat;
@@ -372,7 +372,7 @@ static enum traitfs_status vnode_retain(
     vnode_buckets[bucket] = (uint16_t)free_index;
     ++mounts[volume].references;
     *vnode_index = free_index;
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
 static void vnode_release(size_t vnode_index, uint64_t generation)
@@ -399,30 +399,30 @@ static void vnode_release(size_t vnode_index, uint64_t generation)
     zero_bytes(vnode, sizeof(*vnode));
 }
 
-static enum traitfs_status resolve_path(
-    enum traitfs_volume volume,
+static enum opengatfs_status resolve_path(
+    enum opengatfs_volume volume,
     const char *path,
-    char canonical[TRAITFS_MAX_PATH],
+    char canonical[OPENGATFS_MAX_PATH],
     size_t *vnode_index
 )
 {
-    char partial[TRAITFS_MAX_PATH];
-    struct traitfs_stat stat;
-    enum traitfs_status status;
+    char partial[OPENGATFS_MAX_PATH];
+    struct opengatfs_stat stat;
+    enum opengatfs_status status;
     size_t length;
 
     if (!valid_volume(volume) || canonical == NULL || vnode_index == NULL ||
         !mounts[volume].active) {
-        return TRAITFS_STATUS_NOT_MOUNTED;
+        return OPENGATFS_STATUS_NOT_MOUNTED;
     }
     status = canonicalize_path(path, mounts[volume].backend->case_sensitive,
         canonical);
-    if (status != TRAITFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         return status;
     }
     if (canonical[0] == '.' && canonical[1] == '\0') {
         status = mounts[volume].backend->stat_path(volume, canonical, &stat);
-        return status == TRAITFS_STATUS_OK ?
+        return status == OPENGATFS_STATUS_OK ?
             vnode_retain(volume, canonical, &stat, vnode_index) : status;
     }
     zero_bytes(partial, sizeof(partial));
@@ -434,11 +434,11 @@ static enum traitfs_status resolve_path(
         }
         partial[index] = '\0';
         status = mounts[volume].backend->stat_path(volume, partial, &stat);
-        if (status != TRAITFS_STATUS_OK) {
+        if (status != OPENGATFS_STATUS_OK) {
             return status;
         }
         if (index != length && !stat.directory) {
-            return TRAITFS_STATUS_NOT_DIRECTORY;
+            return OPENGATFS_STATUS_NOT_DIRECTORY;
         }
         if (index != length) {
             partial[index] = '/';
@@ -447,25 +447,25 @@ static enum traitfs_status resolve_path(
     return vnode_retain(volume, canonical, &stat, vnode_index);
 }
 
-static enum traitfs_status resolve_parent(
-    enum traitfs_volume volume,
+static enum opengatfs_status resolve_parent(
+    enum opengatfs_volume volume,
     const char *path,
-    char canonical[TRAITFS_MAX_PATH]
+    char canonical[OPENGATFS_MAX_PATH]
 )
 {
-    char parent[TRAITFS_MAX_PATH];
-    char resolved_parent[TRAITFS_MAX_PATH];
+    char parent[OPENGATFS_MAX_PATH];
+    char resolved_parent[OPENGATFS_MAX_PATH];
     size_t vnode_index;
     size_t split = SIZE_MAX;
-    enum traitfs_status status = valid_volume(volume) && mounts[volume].active ?
+    enum opengatfs_status status = valid_volume(volume) && mounts[volume].active ?
         canonicalize_path(path, mounts[volume].backend->case_sensitive,
-            canonical) : TRAITFS_STATUS_NOT_MOUNTED;
+            canonical) : OPENGATFS_STATUS_NOT_MOUNTED;
 
-    if (status != TRAITFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         return status;
     }
     if (canonical[0] == '.' && canonical[1] == '\0') {
-        return TRAITFS_STATUS_ACCESS;
+        return OPENGATFS_STATUS_ACCESS;
     }
     for (size_t index = 0U; canonical[index] != '\0'; ++index) {
         if (canonical[index] == '/') {
@@ -481,22 +481,22 @@ static enum traitfs_status resolve_parent(
         parent[split] = '\0';
     }
     status = resolve_path(volume, parent, resolved_parent, &vnode_index);
-    if (status != TRAITFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         return status;
     }
     if (!vnodes[vnode_index].stat.directory) {
-        status = TRAITFS_STATUS_NOT_DIRECTORY;
+        status = OPENGATFS_STATUS_NOT_DIRECTORY;
     }
     vnode_release(vnode_index, vnodes[vnode_index].generation);
     return status;
 }
 
 static void install_mount(
-    enum traitfs_volume volume,
+    enum opengatfs_volume volume,
     const struct vfs_backend_ops *backend
 )
 {
-    struct traitfs_drive_info drive;
+    struct opengatfs_drive_info drive;
 
     if (backend == NULL) {
         return;
@@ -512,13 +512,13 @@ static void install_mount(
     mounts[volume].active = true;
 }
 
-static traitfs_handle encode_handle(size_t index, uint64_t generation)
+static opengatfs_handle encode_handle(size_t index, uint64_t generation)
 {
     return generation << 8U | (uint64_t)(index + 1U);
 }
 
-static enum traitfs_status open_file_state(
-    traitfs_handle handle,
+static enum opengatfs_status open_file_state(
+    opengatfs_handle handle,
     struct vfs_open_file_state **state
 )
 {
@@ -528,19 +528,19 @@ static enum traitfs_status open_file_state(
 
     if (state == NULL || encoded_index == 0U ||
         encoded_index > VFS_MAX_OPEN_FILES || generation == 0U) {
-        return TRAITFS_STATUS_STALE_HANDLE;
+        return OPENGATFS_STATUS_STALE_HANDLE;
     }
     index = (size_t)(encoded_index - 1U);
     if (!open_files[index].active ||
         open_files[index].generation != generation) {
-        return TRAITFS_STATUS_STALE_HANDLE;
+        return OPENGATFS_STATUS_STALE_HANDLE;
     }
     *state = &open_files[index];
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-static enum traitfs_status directory_state(
-    traitfs_directory_handle handle,
+static enum opengatfs_status directory_state(
+    opengatfs_directory_handle handle,
     struct vfs_directory_state **state
 )
 {
@@ -550,23 +550,23 @@ static enum traitfs_status directory_state(
 
     if (state == NULL || encoded_index == 0U ||
         encoded_index > VFS_MAX_DIRECTORY_ITERATORS || generation == 0U) {
-        return TRAITFS_STATUS_STALE_HANDLE;
+        return OPENGATFS_STATUS_STALE_HANDLE;
     }
     index = (size_t)(encoded_index - 1U);
     if (!directories[index].active ||
         directories[index].generation != generation) {
-        return TRAITFS_STATUS_STALE_HANDLE;
+        return OPENGATFS_STATUS_STALE_HANDLE;
     }
     *state = &directories[index];
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-bool traitfs_self_test(size_t *completed_tests)
+bool opengatfs_self_test(size_t *completed_tests)
 {
     return fat32_backend_self_test(completed_tests);
 }
 
-void traitfs_initialize(void)
+void opengatfs_initialize(void)
 {
     zero_bytes(mounts, sizeof(mounts));
     zero_bytes(vnodes, sizeof(vnodes));
@@ -577,11 +577,11 @@ void traitfs_initialize(void)
     }
     fat32_backend_initialize();
     ext4_backend_initialize();
-    for (enum traitfs_volume volume = TRAITFS_VOLUME_SYSTEM;
-         volume < TRAITFS_VOLUME_COUNT; ++volume) {
+    for (enum opengatfs_volume volume = OPENGATFS_VOLUME_SYSTEM;
+         volume < OPENGATFS_VOLUME_COUNT; ++volume) {
         if (fat32_backend_drive(volume).mounted) {
             volume_backends[volume] = &fat32_backend_ops;
-        } else if (ext4_backend_mount(volume) == TRAITFS_STATUS_OK) {
+        } else if (ext4_backend_mount(volume) == OPENGATFS_STATUS_OK) {
             volume_backends[volume] = &ext4_backend_ops;
         } else {
             volume_backends[volume] = &fat32_backend_ops;
@@ -590,60 +590,60 @@ void traitfs_initialize(void)
     }
 }
 
-enum traitfs_status traitfs_mount(enum traitfs_volume volume)
+enum opengatfs_status opengatfs_mount(enum opengatfs_volume volume)
 {
     const struct vfs_backend_ops *backend;
-    enum traitfs_status status;
+    enum opengatfs_status status;
 
     if (!valid_volume(volume)) {
-        return TRAITFS_STATUS_INVALID_ARGUMENT;
+        return OPENGATFS_STATUS_INVALID_ARGUMENT;
     }
     if (mounts[volume].active) {
-        return TRAITFS_STATUS_ALREADY_MOUNTED;
+        return OPENGATFS_STATUS_ALREADY_MOUNTED;
     }
     backend = volume_backends[volume];
     if (backend == NULL) {
-        return TRAITFS_STATUS_NOT_MOUNTED;
+        return OPENGATFS_STATUS_NOT_MOUNTED;
     }
     status = backend->mount(volume);
-    if (status == TRAITFS_STATUS_OK) {
+    if (status == OPENGATFS_STATUS_OK) {
         install_mount(volume, backend);
     }
     return status;
 }
 
-enum traitfs_status traitfs_unmount(enum traitfs_volume volume)
+enum opengatfs_status opengatfs_unmount(enum opengatfs_volume volume)
 {
-    enum traitfs_status status;
+    enum opengatfs_status status;
 
     if (!valid_volume(volume)) {
-        return TRAITFS_STATUS_INVALID_ARGUMENT;
+        return OPENGATFS_STATUS_INVALID_ARGUMENT;
     }
     if (!mounts[volume].active) {
-        return TRAITFS_STATUS_NOT_MOUNTED;
+        return OPENGATFS_STATUS_NOT_MOUNTED;
     }
     if (mounts[volume].references != 0U) {
-        return TRAITFS_STATUS_BUSY;
+        return OPENGATFS_STATUS_BUSY;
     }
     status = mounts[volume].backend->unmount(volume);
-    if (status == TRAITFS_STATUS_OK) {
+    if (status == OPENGATFS_STATUS_OK) {
         zero_bytes(&mounts[volume], sizeof(mounts[volume]));
     }
     return status;
 }
 
-enum traitfs_status traitfs_sync(enum traitfs_volume volume)
+enum opengatfs_status opengatfs_sync(enum opengatfs_volume volume)
 {
     if (!valid_volume(volume)) {
-        return TRAITFS_STATUS_INVALID_ARGUMENT;
+        return OPENGATFS_STATUS_INVALID_ARGUMENT;
     }
     return mounts[volume].active ? mounts[volume].backend->sync(volume) :
-        TRAITFS_STATUS_NOT_MOUNTED;
+        OPENGATFS_STATUS_NOT_MOUNTED;
 }
 
-struct traitfs_drive_info traitfs_drive(enum traitfs_volume volume)
+struct opengatfs_drive_info opengatfs_drive(enum opengatfs_volume volume)
 {
-    const struct traitfs_drive_info absent = {0};
+    const struct opengatfs_drive_info absent = {0};
     const struct vfs_backend_ops *backend;
 
     if (!valid_volume(volume)) {
@@ -654,7 +654,7 @@ struct traitfs_drive_info traitfs_drive(enum traitfs_volume volume)
     return backend != NULL ? backend->drive(volume) : absent;
 }
 
-uint64_t traitfs_completion_count(enum traitfs_volume volume)
+uint64_t opengatfs_completion_count(enum opengatfs_volume volume)
 {
     const struct vfs_backend_ops *backend;
 
@@ -666,30 +666,30 @@ uint64_t traitfs_completion_count(enum traitfs_volume volume)
     return backend != NULL ? backend->completion_count(volume) : 0U;
 }
 
-enum traitfs_status traitfs_open(
-    enum traitfs_volume volume,
+enum opengatfs_status opengatfs_open(
+    enum opengatfs_volume volume,
     const char *path,
-    enum traitfs_access access,
-    traitfs_handle *handle
+    enum opengatfs_access access,
+    opengatfs_handle *handle
 )
 {
-    char canonical[TRAITFS_MAX_PATH];
-    traitfs_handle backend_handle = 0U;
+    char canonical[OPENGATFS_MAX_PATH];
+    opengatfs_handle backend_handle = 0U;
     size_t vnode_index;
     size_t slot = VFS_MAX_OPEN_FILES;
-    enum traitfs_status status;
+    enum opengatfs_status status;
 
     if (handle == NULL) {
-        return TRAITFS_STATUS_INVALID_ARGUMENT;
+        return OPENGATFS_STATUS_INVALID_ARGUMENT;
     }
     *handle = 0U;
     status = resolve_path(volume, path, canonical, &vnode_index);
-    if (status != TRAITFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         return status;
     }
     if (vnodes[vnode_index].stat.directory) {
         vnode_release(vnode_index, vnodes[vnode_index].generation);
-        return TRAITFS_STATUS_IS_DIRECTORY;
+        return OPENGATFS_STATUS_IS_DIRECTORY;
     }
     for (size_t index = 0U; index < VFS_MAX_OPEN_FILES; ++index) {
         if (!open_files[index].active) {
@@ -699,11 +699,11 @@ enum traitfs_status traitfs_open(
     }
     if (slot == VFS_MAX_OPEN_FILES) {
         vnode_release(vnode_index, vnodes[vnode_index].generation);
-        return TRAITFS_STATUS_NO_HANDLES;
+        return OPENGATFS_STATUS_NO_HANDLES;
     }
     status = mounts[volume].backend->open(
         volume, canonical, access, &backend_handle);
-    if (status != TRAITFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         vnode_release(vnode_index, vnodes[vnode_index].generation);
         return status;
     }
@@ -716,19 +716,19 @@ enum traitfs_status traitfs_open(
     open_files[slot].vnode_index = (uint16_t)vnode_index;
     open_files[slot].active = true;
     *handle = encode_handle(slot, open_files[slot].generation);
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum traitfs_status traitfs_close(traitfs_handle handle)
+enum opengatfs_status opengatfs_close(opengatfs_handle handle)
 {
     struct vfs_open_file_state *state;
-    traitfs_handle backend_handle;
+    opengatfs_handle backend_handle;
     const struct vfs_backend_ops *backend;
     uint64_t vnode_generation;
     uint16_t vnode_index;
-    enum traitfs_status status = open_file_state(handle, &state);
+    enum opengatfs_status status = open_file_state(handle, &state);
 
-    if (status != TRAITFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         return status;
     }
     backend_handle = state->backend_handle;
@@ -742,22 +742,22 @@ enum traitfs_status traitfs_close(traitfs_handle handle)
     return status;
 }
 
-enum traitfs_status traitfs_read(
-    traitfs_handle handle,
+enum opengatfs_status opengatfs_read(
+    opengatfs_handle handle,
     uint8_t *destination,
     size_t capacity,
     size_t *read_bytes
 )
 {
     struct vfs_open_file_state *state;
-    enum traitfs_status status = open_file_state(handle, &state);
+    enum opengatfs_status status = open_file_state(handle, &state);
 
-    return status == TRAITFS_STATUS_OK ? state->backend->read(
+    return status == OPENGATFS_STATUS_OK ? state->backend->read(
         state->backend_handle, destination, capacity, read_bytes) : status;
 }
 
-enum traitfs_status traitfs_pread(
-    traitfs_handle handle,
+enum opengatfs_status opengatfs_pread(
+    opengatfs_handle handle,
     uint8_t *destination,
     size_t capacity,
     uint64_t offset,
@@ -765,83 +765,83 @@ enum traitfs_status traitfs_pread(
 )
 {
     struct vfs_open_file_state *state;
-    enum traitfs_status status = open_file_state(handle, &state);
+    enum opengatfs_status status = open_file_state(handle, &state);
 
-    return status == TRAITFS_STATUS_OK ? state->backend->pread(
+    return status == OPENGATFS_STATUS_OK ? state->backend->pread(
         state->backend_handle, destination, capacity, offset, read_bytes) :
         status;
 }
 
-enum traitfs_status traitfs_write(
-    traitfs_handle handle,
+enum opengatfs_status opengatfs_write(
+    opengatfs_handle handle,
     const uint8_t *source,
     size_t source_bytes,
     size_t *written_bytes
 )
 {
     struct vfs_open_file_state *state;
-    enum traitfs_status status = open_file_state(handle, &state);
+    enum opengatfs_status status = open_file_state(handle, &state);
 
-    return status == TRAITFS_STATUS_OK ? state->backend->write(
+    return status == OPENGATFS_STATUS_OK ? state->backend->write(
         state->backend_handle, source, source_bytes, written_bytes) : status;
 }
 
-enum traitfs_status traitfs_seek(
-    traitfs_handle handle,
+enum opengatfs_status opengatfs_seek(
+    opengatfs_handle handle,
     int64_t offset,
-    enum traitfs_seek_origin origin,
+    enum opengatfs_seek_origin origin,
     uint64_t *position
 )
 {
     struct vfs_open_file_state *state;
-    enum traitfs_status status = open_file_state(handle, &state);
+    enum opengatfs_status status = open_file_state(handle, &state);
 
-    return status == TRAITFS_STATUS_OK ? state->backend->seek(
+    return status == OPENGATFS_STATUS_OK ? state->backend->seek(
         state->backend_handle, offset, origin, position) : status;
 }
 
-enum traitfs_status traitfs_stat_path(
-    enum traitfs_volume volume,
+enum opengatfs_status opengatfs_stat_path(
+    enum opengatfs_volume volume,
     const char *path,
-    struct traitfs_stat *stat
+    struct opengatfs_stat *stat
 )
 {
-    char canonical[TRAITFS_MAX_PATH];
+    char canonical[OPENGATFS_MAX_PATH];
     size_t vnode_index;
-    enum traitfs_status status;
+    enum opengatfs_status status;
 
     if (stat == NULL) {
-        return TRAITFS_STATUS_INVALID_ARGUMENT;
+        return OPENGATFS_STATUS_INVALID_ARGUMENT;
     }
     zero_bytes(stat, sizeof(*stat));
     status = resolve_path(volume, path, canonical, &vnode_index);
-    if (status != TRAITFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         return status;
     }
     *stat = vnodes[vnode_index].stat;
     vnode_release(vnode_index, vnodes[vnode_index].generation);
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum traitfs_status traitfs_list(
-    enum traitfs_volume volume,
+enum opengatfs_status opengatfs_list(
+    enum opengatfs_volume volume,
     const char *path,
-    struct traitfs_list_entry *entries,
+    struct opengatfs_list_entry *entries,
     size_t capacity,
     size_t *entry_count
 )
 {
-    char canonical[TRAITFS_MAX_PATH];
+    char canonical[OPENGATFS_MAX_PATH];
     size_t vnode_index;
-    enum traitfs_status status = resolve_path(
+    enum opengatfs_status status = resolve_path(
         volume, path, canonical, &vnode_index);
 
-    if (status != TRAITFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         return status;
     }
     if (!vnodes[vnode_index].stat.directory) {
         vnode_release(vnode_index, vnodes[vnode_index].generation);
-        return TRAITFS_STATUS_NOT_DIRECTORY;
+        return OPENGATFS_STATUS_NOT_DIRECTORY;
     }
     status = mounts[volume].backend->list(volume, canonical, entries, capacity,
         entry_count);
@@ -849,28 +849,28 @@ enum traitfs_status traitfs_list(
     return status;
 }
 
-enum traitfs_status traitfs_directory_open(
-    enum traitfs_volume volume,
+enum opengatfs_status opengatfs_directory_open(
+    enum opengatfs_volume volume,
     const char *path,
-    traitfs_directory_handle *handle
+    opengatfs_directory_handle *handle
 )
 {
-    char canonical[TRAITFS_MAX_PATH];
+    char canonical[OPENGATFS_MAX_PATH];
     size_t vnode_index;
     size_t slot = VFS_MAX_DIRECTORY_ITERATORS;
-    enum traitfs_status status;
+    enum opengatfs_status status;
 
     if (handle == NULL) {
-        return TRAITFS_STATUS_INVALID_ARGUMENT;
+        return OPENGATFS_STATUS_INVALID_ARGUMENT;
     }
     *handle = 0U;
     status = resolve_path(volume, path, canonical, &vnode_index);
-    if (status != TRAITFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         return status;
     }
     if (!vnodes[vnode_index].stat.directory) {
         vnode_release(vnode_index, vnodes[vnode_index].generation);
-        return TRAITFS_STATUS_NOT_DIRECTORY;
+        return OPENGATFS_STATUS_NOT_DIRECTORY;
     }
     for (size_t index = 0U; index < VFS_MAX_DIRECTORY_ITERATORS; ++index) {
         if (!directories[index].active) {
@@ -880,7 +880,7 @@ enum traitfs_status traitfs_directory_open(
     }
     if (slot == VFS_MAX_DIRECTORY_ITERATORS) {
         vnode_release(vnode_index, vnodes[vnode_index].generation);
-        return TRAITFS_STATUS_NO_HANDLES;
+        return OPENGATFS_STATUS_NO_HANDLES;
     }
     zero_bytes(&directories[slot], sizeof(directories[slot]));
     directories[slot].backend = mounts[volume].backend;
@@ -893,10 +893,10 @@ enum traitfs_status traitfs_directory_open(
             &directories[slot].backend_handle);
     } else {
         status = mounts[volume].backend->list(volume, canonical,
-            directories[slot].entries, TRAITFS_MAX_LIST_ENTRIES,
+            directories[slot].entries, OPENGATFS_MAX_LIST_ENTRIES,
             &directories[slot].count);
     }
-    if (status != TRAITFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         vnode_release(vnode_index, vnodes[vnode_index].generation);
         return status;
     }
@@ -906,25 +906,25 @@ enum traitfs_status traitfs_directory_open(
     directories[slot].vnode_index = (uint16_t)vnode_index;
     directories[slot].active = true;
     *handle = encode_handle(slot, directories[slot].generation);
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum traitfs_status traitfs_directory_read(
-    traitfs_directory_handle handle,
-    struct traitfs_list_entry *entry,
+enum opengatfs_status opengatfs_directory_read(
+    opengatfs_directory_handle handle,
+    struct opengatfs_list_entry *entry,
     bool *present
 )
 {
     struct vfs_directory_state *state;
-    enum traitfs_status status;
+    enum opengatfs_status status;
 
     if (entry == NULL || present == NULL) {
-        return TRAITFS_STATUS_INVALID_ARGUMENT;
+        return OPENGATFS_STATUS_INVALID_ARGUMENT;
     }
     zero_bytes(entry, sizeof(*entry));
     *present = false;
     status = directory_state(handle, &state);
-    if (status != TRAITFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         return status;
     }
     if (state->streaming) {
@@ -932,24 +932,24 @@ enum traitfs_status traitfs_directory_read(
             present);
     }
     if (state->cursor == state->count) {
-        return TRAITFS_STATUS_OK;
+        return OPENGATFS_STATUS_OK;
     }
     if (state->cursor > state->count) {
-        return TRAITFS_STATUS_CORRUPT;
+        return OPENGATFS_STATUS_CORRUPT;
     }
     *entry = state->entries[state->cursor++];
     *present = true;
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum traitfs_status traitfs_directory_close(traitfs_directory_handle handle)
+enum opengatfs_status opengatfs_directory_close(opengatfs_directory_handle handle)
 {
     struct vfs_directory_state *state;
     uint64_t vnode_generation;
     uint16_t vnode_index;
-    enum traitfs_status status = directory_state(handle, &state);
+    enum opengatfs_status status = directory_state(handle, &state);
 
-    if (status != TRAITFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         return status;
     }
     vnode_generation = state->vnode_generation;
@@ -962,131 +962,131 @@ enum traitfs_status traitfs_directory_close(traitfs_directory_handle handle)
     return status;
 }
 
-enum traitfs_status traitfs_create(enum traitfs_volume volume, const char *path)
+enum opengatfs_status opengatfs_create(enum opengatfs_volume volume, const char *path)
 {
-    return traitfs_create_mode(volume, path, UINT16_C(0644));
+    return opengatfs_create_mode(volume, path, UINT16_C(0644));
 }
 
-enum traitfs_status traitfs_create_mode(enum traitfs_volume volume,
+enum opengatfs_status opengatfs_create_mode(enum opengatfs_volume volume,
     const char *path, uint16_t mode)
 {
-    char canonical[TRAITFS_MAX_PATH];
-    enum traitfs_status status = resolve_parent(volume, path, canonical);
+    char canonical[OPENGATFS_MAX_PATH];
+    enum opengatfs_status status = resolve_parent(volume, path, canonical);
 
     if ((mode & (uint16_t)~UINT16_C(0777)) != 0U) {
-        return TRAITFS_STATUS_INVALID_ARGUMENT;
+        return OPENGATFS_STATUS_INVALID_ARGUMENT;
     }
-    return status == TRAITFS_STATUS_OK ?
+    return status == OPENGATFS_STATUS_OK ?
         mounts[volume].backend->create(volume, canonical, mode) : status;
 }
 
-enum traitfs_status traitfs_truncate(
-    enum traitfs_volume volume,
+enum opengatfs_status opengatfs_truncate(
+    enum opengatfs_volume volume,
     const char *path,
     uint64_t size
 )
 {
-    char canonical[TRAITFS_MAX_PATH];
+    char canonical[OPENGATFS_MAX_PATH];
     size_t vnode_index;
-    enum traitfs_status status = resolve_path(
+    enum opengatfs_status status = resolve_path(
         volume, path, canonical, &vnode_index);
 
-    if (status != TRAITFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         return status;
     }
     if (vnodes[vnode_index].stat.directory) {
-        status = TRAITFS_STATUS_IS_DIRECTORY;
+        status = OPENGATFS_STATUS_IS_DIRECTORY;
     }
     vnode_release(vnode_index, vnodes[vnode_index].generation);
-    return status == TRAITFS_STATUS_OK ?
+    return status == OPENGATFS_STATUS_OK ?
         mounts[volume].backend->truncate(volume, canonical, size) : status;
 }
 
-enum traitfs_status traitfs_mkdir(enum traitfs_volume volume, const char *path)
+enum opengatfs_status opengatfs_mkdir(enum opengatfs_volume volume, const char *path)
 {
-    char canonical[TRAITFS_MAX_PATH];
-    enum traitfs_status status = resolve_parent(volume, path, canonical);
+    char canonical[OPENGATFS_MAX_PATH];
+    enum opengatfs_status status = resolve_parent(volume, path, canonical);
 
-    return status == TRAITFS_STATUS_OK ?
+    return status == OPENGATFS_STATUS_OK ?
         mounts[volume].backend->mkdir(volume, canonical) : status;
 }
 
-enum traitfs_status traitfs_rename(
-    enum traitfs_volume volume,
+enum opengatfs_status opengatfs_rename(
+    enum opengatfs_volume volume,
     const char *source,
     const char *destination
 )
 {
-    char source_canonical[TRAITFS_MAX_PATH];
-    char destination_canonical[TRAITFS_MAX_PATH];
+    char source_canonical[OPENGATFS_MAX_PATH];
+    char destination_canonical[OPENGATFS_MAX_PATH];
     size_t vnode_index;
-    enum traitfs_status status = resolve_path(
+    enum opengatfs_status status = resolve_path(
         volume, source, source_canonical, &vnode_index);
 
-    if (status != TRAITFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         return status;
     }
     status = resolve_parent(volume, destination, destination_canonical);
     vnode_release(vnode_index, vnodes[vnode_index].generation);
-    return status == TRAITFS_STATUS_OK ? mounts[volume].backend->rename(volume,
+    return status == OPENGATFS_STATUS_OK ? mounts[volume].backend->rename(volume,
         source_canonical, destination_canonical) : status;
 }
 
-enum traitfs_status traitfs_unlink(enum traitfs_volume volume, const char *path)
+enum opengatfs_status opengatfs_unlink(enum opengatfs_volume volume, const char *path)
 {
-    char canonical[TRAITFS_MAX_PATH];
+    char canonical[OPENGATFS_MAX_PATH];
     size_t vnode_index;
-    enum traitfs_status status = resolve_path(
+    enum opengatfs_status status = resolve_path(
         volume, path, canonical, &vnode_index);
 
-    if (status != TRAITFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         return status;
     }
     if (vnodes[vnode_index].stat.directory) {
-        status = TRAITFS_STATUS_IS_DIRECTORY;
+        status = OPENGATFS_STATUS_IS_DIRECTORY;
     }
     vnode_release(vnode_index, vnodes[vnode_index].generation);
-    return status == TRAITFS_STATUS_OK ?
+    return status == OPENGATFS_STATUS_OK ?
         mounts[volume].backend->unlink(volume, canonical) : status;
 }
 
-enum traitfs_status traitfs_rmdir(enum traitfs_volume volume, const char *path)
+enum opengatfs_status opengatfs_rmdir(enum opengatfs_volume volume, const char *path)
 {
-    char canonical[TRAITFS_MAX_PATH];
+    char canonical[OPENGATFS_MAX_PATH];
     size_t vnode_index;
-    enum traitfs_status status = resolve_path(
+    enum opengatfs_status status = resolve_path(
         volume, path, canonical, &vnode_index);
 
-    if (status != TRAITFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         return status;
     }
     if (!vnodes[vnode_index].stat.directory) {
-        status = TRAITFS_STATUS_NOT_DIRECTORY;
+        status = OPENGATFS_STATUS_NOT_DIRECTORY;
     } else if (vnodes[vnode_index].references != 1U) {
-        status = TRAITFS_STATUS_BUSY;
+        status = OPENGATFS_STATUS_BUSY;
     }
     vnode_release(vnode_index, vnodes[vnode_index].generation);
-    return status == TRAITFS_STATUS_OK ?
+    return status == OPENGATFS_STATUS_OK ?
         mounts[volume].backend->rmdir(volume, canonical) : status;
 }
 
-enum traitfs_status traitfs_link(
-    enum traitfs_volume volume,
+enum opengatfs_status opengatfs_link(
+    enum opengatfs_volume volume,
     const char *source,
     const char *destination
 )
 {
-    char source_canonical[TRAITFS_MAX_PATH];
-    char destination_canonical[TRAITFS_MAX_PATH];
+    char source_canonical[OPENGATFS_MAX_PATH];
+    char destination_canonical[OPENGATFS_MAX_PATH];
     size_t vnode_index;
-    enum traitfs_status status = resolve_path(
+    enum opengatfs_status status = resolve_path(
         volume, source, source_canonical, &vnode_index);
 
-    if (status != TRAITFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         return status;
     }
     status = resolve_parent(volume, destination, destination_canonical);
     vnode_release(vnode_index, vnodes[vnode_index].generation);
-    return status == TRAITFS_STATUS_OK ? mounts[volume].backend->link(volume,
+    return status == OPENGATFS_STATUS_OK ? mounts[volume].backend->link(volume,
         source_canonical, destination_canonical) : status;
 }

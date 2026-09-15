@@ -23,7 +23,7 @@ checking the package's publisher signature, identity, version, ABI, dependency
 and conflict records, file layout, per-file digest, mode, kind, and SONAME.
 
 `package_trust.c` supplies the guest Ed25519 verifier and immutable key-table
-lookup. Its `TRTKEY01` platform boundary copies a canonical, bounded table into
+lookup. Its `OGTKEY01` platform boundary copies a canonical, bounded table into
 caller-owned storage, checks the exact version, length, record size, reserved
 bytes, and record-table SHA-256, and then admits only sorted unique keys whose
 SHA-256 IDs match. The digest detects corruption; trust comes from the platform
@@ -77,7 +77,7 @@ already-present automatic dependency is promoted by a successful zero-download
 install plan rather than being misreported as explicitly installed.
 
 Planning is serialized. Its roughly 9 KiB graph workspace is static rather than
-placed on Trait OS's 16 KiB syscall stack, reentrant entry is refused, candidate
+placed on OpenGAT's 16 KiB syscall stack, reentrant entry is refused, candidate
 selection uses bounded catalog scans instead of a per-recursion candidate
 array, and topological ordering is iterative. The input byte buffers must remain
 immutable and live while returned views or plans are used because text and
@@ -132,7 +132,7 @@ generation-one bootstrap uses only admitted signed payload sources and a durable
 authority receipt rather than inventing a generation-zero database. A bounded
 repair builder preserves the installed graph and metadata while replacing only
 sorted owned paths whose authenticated bytes match the installed length and
-digest. The SDK's `trait_package_fetch_stage()` supplies bounded HTTPS
+digest. The SDK's `opengat_package_fetch_stage()` supplies bounded HTTPS
 streaming, incremental SHA-256, temporary-file cleanup, and two-barrier atomic
 publication for inert repository/package bytes. Platform trust provisioning is
 also wired at boot. The `packages` native capability and typed upload handle now
@@ -158,6 +158,6 @@ prefix. The privileged native
 ABI exposes this session as a typed control handle with item, attach, commit,
 duplicate, final-close, and process-teardown semantics; repository and package
 upload handles remain independently closeable after the controller copies them.
-The `trait` client and Trait OS DE package manager drive the same controller over HTTPS,
+The `opengat` client and OpenGAT DE package manager drive the same controller over HTTPS,
 and the native QEMU lifecycle persists the resulting generations on writable
 ext4.

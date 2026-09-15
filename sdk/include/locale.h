@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef TRAIT_LOCALE_H
-#define TRAIT_LOCALE_H
+#ifndef OPENGAT_LOCALE_H
+#define OPENGAT_LOCALE_H
 
 #define LC_ALL 0
 #define LC_COLLATE 1

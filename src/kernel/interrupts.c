@@ -3,16 +3,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <trait/apic.h>
-#include <trait/console.h>
-#include <trait/cpu.h>
-#include <trait/interrupts.h>
-#include <trait/ioapic.h>
-#include <trait/interrupt_vector.h>
-#include <trait/native_process.h>
-#include <trait/pic.h>
-#include <trait/thread.h>
-#include <trait/test.h>
+#include <opengat/apic.h>
+#include <opengat/console.h>
+#include <opengat/cpu.h>
+#include <opengat/interrupts.h>
+#include <opengat/ioapic.h>
+#include <opengat/interrupt_vector.h>
+#include <opengat/native_process.h>
+#include <opengat/pic.h>
+#include <opengat/thread.h>
+#include <opengat/test.h>
 
 #define IDT_GATE_PRESENT UINT8_C(0x80)
 #define IDT_GATE_INTERRUPT UINT8_C(0x0E)
@@ -284,7 +284,7 @@ static _Noreturn void fatal_interrupt(struct interrupt_frame *frame)
     }
 
     fatal_depth = 1U;
-    console_write("Trait OS FATAL INTERRUPT\n");
+    console_write("OpenGAT FATAL INTERRUPT\n");
     console_write("  vector=");
     console_write_u64(frame->vector);
     console_write(" name=");

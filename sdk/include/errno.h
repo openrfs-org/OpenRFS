@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef TRAIT_ERRNO_H
-#define TRAIT_ERRNO_H
+#ifndef OPENGAT_ERRNO_H
+#define OPENGAT_ERRNO_H
 
 extern _Thread_local int errno;
 

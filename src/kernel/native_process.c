@@ -1,34 +1,34 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* General native application admission, scheduling, syscalls, and teardown. */
 
-#include <trait/native_process.h>
+#include <opengat/native_process.h>
 
-#include <trait/abi.h>
-#include <trait/audio.h>
-#include <trait/clock.h>
-#include <trait/console.h>
-#include <trait/cpu.h>
-#include <trait/elf64_dynamic.h>
-#include <trait/fat32_fs.h>
-#include <trait/framebuffer.h>
-#include <trait/heap.h>
-#include <trait/interrupts.h>
-#include <trait/memory.h>
-#include <trait/native_fpu.h>
-#include <trait/native_handle.h>
-#include <trait/native_image.h>
-#include <trait/native_syscall.h>
-#include <trait/network.h>
-#include <trait/keyboard.h>
-#include <trait/paging.h>
-#include <trait/package_control.h>
-#include <trait/package_upload.h>
-#include <trait/process.h>
-#include <trait/random.h>
-#include <trait/timer.h>
-#include <trait/tsc.h>
-#include <trait/ui.h>
-#include <trait/wall_clock.h>
+#include <opengat/abi.h>
+#include <opengat/audio.h>
+#include <opengat/clock.h>
+#include <opengat/console.h>
+#include <opengat/cpu.h>
+#include <opengat/elf64_dynamic.h>
+#include <opengat/fat32_fs.h>
+#include <opengat/framebuffer.h>
+#include <opengat/heap.h>
+#include <opengat/interrupts.h>
+#include <opengat/memory.h>
+#include <opengat/native_fpu.h>
+#include <opengat/native_handle.h>
+#include <opengat/native_image.h>
+#include <opengat/native_syscall.h>
+#include <opengat/network.h>
+#include <opengat/keyboard.h>
+#include <opengat/paging.h>
+#include <opengat/package_control.h>
+#include <opengat/package_upload.h>
+#include <opengat/process.h>
+#include <opengat/random.h>
+#include <opengat/timer.h>
+#include <opengat/tsc.h>
+#include <opengat/ui.h>
+#include <opengat/wall_clock.h>
 
 #define IA32_FS_BASE UINT32_C(0xC0000100)
 #define NATIVE_MAIN_STACK_GUARD PAGING_NATIVE_STACK_BASE
@@ -39,7 +39,7 @@
 #define NATIVE_AUX_NULL UINT64_C(0)
 #define NATIVE_AUX_PAGESZ UINT64_C(6)
 #define NATIVE_AUX_ENTRY UINT64_C(9)
-#define NATIVE_AUX_TRAIT_ABI UINT64_C(0x53500001)
+#define NATIVE_AUX_OPENGAT_ABI UINT64_C(0x53500001)
 #define NATIVE_AUX_TLS_IMAGE UINT64_C(0x53500002)
 #define NATIVE_AUX_TLS_SIZE UINT64_C(0x53500003)
 #define NATIVE_AUX_TLS_ALIGN UINT64_C(0x53500004)
@@ -63,7 +63,7 @@
 #define NATIVE_SHARED_CODE_LIVE UINT8_C(1)
 #define NATIVE_SHARED_CODE_TOMBSTONE UINT8_C(2)
 
-_Static_assert(TRAIT_NETWORK_IO_MAX_BYTES <= NATIVE_COPY_CHUNK,
+_Static_assert(OPENGAT_NETWORK_IO_MAX_BYTES <= NATIVE_COPY_CHUNK,
     "native network transfer bound exceeds the syscall copy buffer");
 _Static_assert(
     (NATIVE_SHARED_CODE_CACHE_CAPACITY &
@@ -76,29 +76,29 @@ _Static_assert(
     "shared-code cache must hold the maximum live process-page census"
 );
 
-_Static_assert(TRAIT_AUDIO_SAMPLE_RATE == AUDIO_PCM_SAMPLE_RATE,
+_Static_assert(OPENGAT_AUDIO_SAMPLE_RATE == AUDIO_PCM_SAMPLE_RATE,
     "kernel and public audio sample rates differ");
-_Static_assert(TRAIT_AUDIO_CHANNELS == AUDIO_PCM_CHANNELS,
+_Static_assert(OPENGAT_AUDIO_CHANNELS == AUDIO_PCM_CHANNELS,
     "kernel and public audio channel counts differ");
-_Static_assert(TRAIT_AUDIO_BITS_PER_SAMPLE == AUDIO_PCM_BITS_PER_SAMPLE,
+_Static_assert(OPENGAT_AUDIO_BITS_PER_SAMPLE == AUDIO_PCM_BITS_PER_SAMPLE,
     "kernel and public audio sample widths differ");
-_Static_assert(TRAIT_AUDIO_CHUNK_BYTES == AUDIO_PCM_BYTES,
+_Static_assert(OPENGAT_AUDIO_CHUNK_BYTES == AUDIO_PCM_BYTES,
     "kernel and public audio chunk sizes differ");
-_Static_assert(TRAIT_AUDIO_MAX_STREAMS == AUDIO_NATIVE_STREAMS,
+_Static_assert(OPENGAT_AUDIO_MAX_STREAMS == AUDIO_NATIVE_STREAMS,
     "kernel and public audio stream bounds differ");
-_Static_assert(TRAIT_AUDIO_VOLUME_UNITY == AUDIO_NATIVE_VOLUME_UNITY,
+_Static_assert(OPENGAT_AUDIO_VOLUME_UNITY == AUDIO_NATIVE_VOLUME_UNITY,
     "kernel and public audio gain scales differ");
-_Static_assert(TRAIT_PACKAGE_UPLOAD_WRITE_MAX == PACKAGE_UPLOAD_WRITE_MAX,
+_Static_assert(OPENGAT_PACKAGE_UPLOAD_WRITE_MAX == PACKAGE_UPLOAD_WRITE_MAX,
     "kernel and public package-upload write bounds differ");
-_Static_assert(TRAIT_PACKAGE_UPLOAD_MAX_BYTES == PACKAGE_UPLOAD_MAX_BYTES,
+_Static_assert(OPENGAT_PACKAGE_UPLOAD_MAX_BYTES == PACKAGE_UPLOAD_MAX_BYTES,
     "kernel and public package-upload size bounds differ");
-_Static_assert(TRAIT_PACKAGE_CONTROL_PLAN_MAX ==
+_Static_assert(OPENGAT_PACKAGE_CONTROL_PLAN_MAX ==
     PACKAGE_CONTROL_PLAN_MAX_PACKAGES,
     "kernel and public package-control plan bounds differ");
-_Static_assert(TRAIT_PACKAGE_CONTROL_TEXT_BYTES ==
+_Static_assert(OPENGAT_PACKAGE_CONTROL_TEXT_BYTES ==
     PACKAGE_CONTROL_TEXT_BYTES,
     "kernel and public package-control text bounds differ");
-_Static_assert(TRAIT_PACKAGE_CONTROL_PATH_BYTES ==
+_Static_assert(OPENGAT_PACKAGE_CONTROL_PATH_BYTES ==
     PACKAGE_CONTROL_PATH_BYTES,
     "kernel and public package-control path bounds differ");
 
@@ -140,18 +140,18 @@ struct native_thread {
     uint64_t audio_token;
     size_t console_length;
     size_t wait_item_count;
-    struct trait_wait_item wait_items[TRAIT_WAIT_MAX];
+    struct opengat_wait_item wait_items[OPENGAT_WAIT_MAX];
     int32_t exit_status;
     enum native_thread_state state;
 };
 
 struct native_directory_resource {
-    traitfs_directory_handle iterator;
+    opengatfs_directory_handle iterator;
     bool active;
 };
 
 struct native_window_state {
-    struct trait_event events[NATIVE_EVENT_QUEUE_CAPACITY];
+    struct opengat_event events[NATIVE_EVENT_QUEUE_CAPACITY];
     uint32_t *shadow_pixels;
     uint64_t surface_address;
     uint64_t generation;
@@ -744,19 +744,19 @@ static int64_t handle_error(enum native_handle_status status)
     case NATIVE_HANDLE_OK:
         return 0;
     case NATIVE_HANDLE_FULL:
-        return -TRAIT_ENOMEM;
+        return -OPENGAT_ENOMEM;
     case NATIVE_HANDLE_WRONG_TYPE:
-        return -TRAIT_EBADF;
+        return -OPENGAT_EBADF;
     case NATIVE_HANDLE_STALE:
-        return -TRAIT_ESTALE;
+        return -OPENGAT_ESTALE;
     case NATIVE_HANDLE_CLOSE_FAILED:
-        return -TRAIT_EIO;
+        return -OPENGAT_EIO;
     case NATIVE_HANDLE_NULL_ARGUMENT:
     case NATIVE_HANDLE_BAD_LIMIT:
     case NATIVE_HANDLE_BAD_TYPE:
     case NATIVE_HANDLE_STATUS_COUNT:
     default:
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
 }
 
@@ -766,100 +766,100 @@ static int64_t audio_error(enum audio_native_status status)
     case AUDIO_NATIVE_OK:
         return 0;
     case AUDIO_NATIVE_ABSENT:
-        return -TRAIT_ENOTSUP;
+        return -OPENGAT_ENOTSUP;
     case AUDIO_NATIVE_BUSY:
-        return -TRAIT_EBUSY;
+        return -OPENGAT_EBUSY;
     case AUDIO_NATIVE_STALE:
-        return -TRAIT_ESTALE;
+        return -OPENGAT_ESTALE;
     case AUDIO_NATIVE_CANCELED:
-        return -TRAIT_ECANCELED;
+        return -OPENGAT_ECANCELED;
     case AUDIO_NATIVE_NULL_ARGUMENT:
     case AUDIO_NATIVE_INVALID:
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     case AUDIO_NATIVE_IO:
     case AUDIO_NATIVE_STATUS_COUNT:
     default:
-        return -TRAIT_EIO;
+        return -OPENGAT_EIO;
     }
 }
 
-static int64_t filesystem_error(enum traitfs_status status)
+static int64_t filesystem_error(enum opengatfs_status status)
 {
     switch (status) {
-    case TRAITFS_STATUS_OK:
+    case OPENGATFS_STATUS_OK:
         return 0;
-    case TRAITFS_STATUS_NOT_FOUND:
-        return -TRAIT_ENOENT;
-    case TRAITFS_STATUS_EXISTS:
-        return -TRAIT_EEXIST;
-    case TRAITFS_STATUS_READ_ONLY:
-        return -TRAIT_EROFS;
-    case TRAITFS_STATUS_ACCESS:
-        return -TRAIT_EACCES;
-    case TRAITFS_STATUS_NOT_DIRECTORY:
-        return -TRAIT_ENOTDIR;
-    case TRAITFS_STATUS_IS_DIRECTORY:
-        return -TRAIT_EISDIR;
-    case TRAITFS_STATUS_NOT_EMPTY:
-        return -TRAIT_ENOTEMPTY;
-    case TRAITFS_STATUS_BUSY:
-        return -TRAIT_EBUSY;
-    case TRAITFS_STATUS_NO_HANDLES:
-        return -TRAIT_ENOMEM;
-    case TRAITFS_STATUS_STALE_HANDLE:
-        return -TRAIT_ESTALE;
-    case TRAITFS_STATUS_FULL:
-    case TRAITFS_STATUS_DIRECTORY_FULL:
-        return -TRAIT_ENOSPC;
-    case TRAITFS_STATUS_NAME:
-        return -TRAIT_ENAMETOOLONG;
-    case TRAITFS_STATUS_PATH:
-    case TRAITFS_STATUS_INVALID_ARGUMENT:
-    case TRAITFS_STATUS_RANGE:
-        return -TRAIT_EINVAL;
-    case TRAITFS_STATUS_ABSENT:
-    case TRAITFS_STATUS_NOT_MOUNTED:
-        return -TRAIT_ENOENT;
-    case TRAITFS_STATUS_CORRUPT:
-    case TRAITFS_STATUS_IO:
-    case TRAITFS_STATUS_WRITEBACK:
-    case TRAITFS_STATUS_RESET:
-    case TRAITFS_STATUS_ALREADY_MOUNTED:
-    case TRAITFS_STATUS_COUNT:
+    case OPENGATFS_STATUS_NOT_FOUND:
+        return -OPENGAT_ENOENT;
+    case OPENGATFS_STATUS_EXISTS:
+        return -OPENGAT_EEXIST;
+    case OPENGATFS_STATUS_READ_ONLY:
+        return -OPENGAT_EROFS;
+    case OPENGATFS_STATUS_ACCESS:
+        return -OPENGAT_EACCES;
+    case OPENGATFS_STATUS_NOT_DIRECTORY:
+        return -OPENGAT_ENOTDIR;
+    case OPENGATFS_STATUS_IS_DIRECTORY:
+        return -OPENGAT_EISDIR;
+    case OPENGATFS_STATUS_NOT_EMPTY:
+        return -OPENGAT_ENOTEMPTY;
+    case OPENGATFS_STATUS_BUSY:
+        return -OPENGAT_EBUSY;
+    case OPENGATFS_STATUS_NO_HANDLES:
+        return -OPENGAT_ENOMEM;
+    case OPENGATFS_STATUS_STALE_HANDLE:
+        return -OPENGAT_ESTALE;
+    case OPENGATFS_STATUS_FULL:
+    case OPENGATFS_STATUS_DIRECTORY_FULL:
+        return -OPENGAT_ENOSPC;
+    case OPENGATFS_STATUS_NAME:
+        return -OPENGAT_ENAMETOOLONG;
+    case OPENGATFS_STATUS_PATH:
+    case OPENGATFS_STATUS_INVALID_ARGUMENT:
+    case OPENGATFS_STATUS_RANGE:
+        return -OPENGAT_EINVAL;
+    case OPENGATFS_STATUS_ABSENT:
+    case OPENGATFS_STATUS_NOT_MOUNTED:
+        return -OPENGAT_ENOENT;
+    case OPENGATFS_STATUS_CORRUPT:
+    case OPENGATFS_STATUS_IO:
+    case OPENGATFS_STATUS_WRITEBACK:
+    case OPENGATFS_STATUS_RESET:
+    case OPENGATFS_STATUS_ALREADY_MOUNTED:
+    case OPENGATFS_STATUS_COUNT:
     default:
-        return -TRAIT_EIO;
+        return -OPENGAT_EIO;
     }
 }
 
 static int64_t package_upload_error(
     enum package_upload_status status,
-    enum traitfs_status filesystem_status
+    enum opengatfs_status filesystem_status
 )
 {
     switch (status) {
     case PACKAGE_UPLOAD_STATUS_OK:
         return 0;
     case PACKAGE_UPLOAD_STATUS_NOT_INITIALIZED:
-        return -TRAIT_ENOTSUP;
+        return -OPENGAT_ENOTSUP;
     case PACKAGE_UPLOAD_STATUS_BUSY:
-        return -TRAIT_EBUSY;
+        return -OPENGAT_EBUSY;
     case PACKAGE_UPLOAD_STATUS_NO_SLOT:
-        return -TRAIT_ENOMEM;
+        return -OPENGAT_ENOMEM;
     case PACKAGE_UPLOAD_STATUS_STALE:
-        return -TRAIT_ESTALE;
+        return -OPENGAT_ESTALE;
     case PACKAGE_UPLOAD_STATUS_DIGEST:
-        return -TRAIT_EACCES;
+        return -OPENGAT_EACCES;
     case PACKAGE_UPLOAD_STATUS_FILESYSTEM:
         return filesystem_error(filesystem_status);
     case PACKAGE_UPLOAD_STATUS_DURABILITY:
-        return -TRAIT_EIO;
+        return -OPENGAT_EIO;
     case PACKAGE_UPLOAD_STATUS_NULL_ARGUMENT:
     case PACKAGE_UPLOAD_STATUS_STATE:
     case PACKAGE_UPLOAD_STATUS_RANGE:
     case PACKAGE_UPLOAD_STATUS_LENGTH:
     case PACKAGE_UPLOAD_STATUS_COUNT:
     default:
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
 }
 
@@ -872,42 +872,42 @@ static int64_t package_control_error(
     case PACKAGE_CONTROL_STATUS_OK:
         return 0;
     case PACKAGE_CONTROL_STATUS_BUSY:
-        return -TRAIT_EBUSY;
+        return -OPENGAT_EBUSY;
     case PACKAGE_CONTROL_STATUS_NO_SLOT:
     case PACKAGE_CONTROL_STATUS_RESOURCE:
-        return -TRAIT_ENOMEM;
+        return -OPENGAT_ENOMEM;
     case PACKAGE_CONTROL_STATUS_STALE:
-        return -TRAIT_ESTALE;
+        return -OPENGAT_ESTALE;
     case PACKAGE_CONTROL_STATUS_UPLOAD:
-        return report == NULL ? -TRAIT_EIO : package_upload_error(
-            report->upload_status, TRAITFS_STATUS_IO);
+        return report == NULL ? -OPENGAT_EIO : package_upload_error(
+            report->upload_status, OPENGATFS_STATUS_IO);
     case PACKAGE_CONTROL_STATUS_MANAGER:
         if (report == NULL) {
-            return -TRAIT_EIO;
+            return -OPENGAT_EIO;
         }
         if (report->manager_status == PACKAGE_MANAGER_STATUS_NOT_FOUND) {
-            return -TRAIT_ENOENT;
+            return -OPENGAT_ENOENT;
         }
         if (report->manager_status ==
                 PACKAGE_MANAGER_STATUS_ALREADY_INSTALLED) {
-            return -TRAIT_EEXIST;
+            return -OPENGAT_EEXIST;
         }
         if (report->manager_status ==
                 PACKAGE_MANAGER_STATUS_CRYPTO_UNAVAILABLE) {
-            return -TRAIT_ENOTSUP;
+            return -OPENGAT_ENOTSUP;
         }
-        return -TRAIT_EACCES;
+        return -OPENGAT_EACCES;
     case PACKAGE_CONTROL_STATUS_CLOCK:
     case PACKAGE_CONTROL_STATUS_SERVICE:
-        return -TRAIT_EIO;
+        return -OPENGAT_EIO;
     case PACKAGE_CONTROL_STATUS_TRUST:
-        return -TRAIT_EACCES;
+        return -OPENGAT_EACCES;
     case PACKAGE_CONTROL_STATUS_NULL_ARGUMENT:
     case PACKAGE_CONTROL_STATUS_STATE:
     case PACKAGE_CONTROL_STATUS_RANGE:
     case PACKAGE_CONTROL_STATUS_COUNT:
     default:
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
 }
 
@@ -918,10 +918,10 @@ static uint32_t package_control_result_flags(
     uint32_t result = 0U;
 
     if (report->prepared) {
-        result |= TRAIT_PACKAGE_CONTROL_PREPARED;
+        result |= OPENGAT_PACKAGE_CONTROL_PREPARED;
     }
     if (report->committed) {
-        result |= TRAIT_PACKAGE_CONTROL_COMMITTED;
+        result |= OPENGAT_PACKAGE_CONTROL_COMMITTED;
     }
     return result;
 }
@@ -1006,34 +1006,34 @@ static bool close_resource(
         return false;
     }
     switch (type) {
-    case TRAIT_HANDLE_FILE:
-        return traitfs_close((traitfs_handle)resource->words[0]) == TRAITFS_STATUS_OK;
-    case TRAIT_HANDLE_DIRECTORY:
+    case OPENGAT_HANDLE_FILE:
+        return opengatfs_close((opengatfs_handle)resource->words[0]) == OPENGATFS_STATUS_OK;
+    case OPENGAT_HANDLE_DIRECTORY:
         if (resource->words[0] >= NATIVE_HANDLE_LIMIT) {
             return false;
         }
-        if (traitfs_directory_close(
+        if (opengatfs_directory_close(
                 process->directories[resource->words[0]].iterator) !=
-                TRAITFS_STATUS_OK) {
+                OPENGATFS_STATUS_OK) {
             return false;
         }
         zero_bytes(&process->directories[resource->words[0]],
             sizeof(process->directories[resource->words[0]]));
         return true;
-    case TRAIT_HANDLE_STREAM:
-    case TRAIT_HANDLE_DATAGRAM:
+    case OPENGAT_HANDLE_STREAM:
+    case OPENGAT_HANDLE_DATAGRAM:
         return network_close(process->generation,
             (network_handle)resource->words[0]) == NETWORK_STATUS_OK;
-    case TRAIT_HANDLE_TIMER:
+    case OPENGAT_HANDLE_TIMER:
         return true;
-    case TRAIT_HANDLE_WINDOW:
+    case OPENGAT_HANDLE_WINDOW:
         if (!process->window.allocated ||
             process->window.generation != resource->words[1] ||
             process->window.ui_slot != resource->words[0]) {
             return false;
         }
         return window_release_surface(process);
-    case TRAIT_HANDLE_EVENT_QUEUE:
+    case OPENGAT_HANDLE_EVENT_QUEUE:
         if (!process->window.allocated ||
             process->window.generation != resource->words[1]) {
             return false;
@@ -1043,9 +1043,9 @@ static bool close_resource(
         process->window.overflow_pending = false;
         window_finalize_if_unreferenced(process);
         return true;
-    case TRAIT_HANDLE_THREAD:
+    case OPENGAT_HANDLE_THREAD:
         return true;
-    case TRAIT_HANDLE_AUDIO_OUTPUT: {
+    case OPENGAT_HANDLE_AUDIO_OUTPUT: {
         const bool enabled = cpu_interrupts_enabled();
         enum audio_native_status status;
 
@@ -1057,13 +1057,13 @@ static bool close_resource(
         }
         return status == AUDIO_NATIVE_OK;
     }
-    case TRAIT_HANDLE_PACKAGE_UPLOAD: {
+    case OPENGAT_HANDLE_PACKAGE_UPLOAD: {
         struct package_upload_report report;
 
         return package_upload_close(process->generation, resource->words[0],
             &report) == PACKAGE_UPLOAD_STATUS_OK;
     }
-    case TRAIT_HANDLE_PACKAGE_CONTROL: {
+    case OPENGAT_HANDLE_PACKAGE_CONTROL: {
         struct package_control_report report;
 
         return package_control_close(process->generation, resource->words[0],
@@ -1078,7 +1078,7 @@ static bool safe_relative_path(const char *path, size_t length)
 {
     size_t component_start = 0U;
 
-    if (path == NULL || length == 0U || length >= TRAITFS_MAX_PATH ||
+    if (path == NULL || length == 0U || length >= OPENGATFS_MAX_PATH ||
         path[0] == '/' || path[0] == '\\') {
         return false;
     }
@@ -1111,12 +1111,12 @@ static bool safe_relative_path(const char *path, size_t length)
 
 static bool path_from_user(
     struct native_process *process,
-    const struct trait_path *path,
-    char output[TRAITFS_MAX_PATH],
-    enum traitfs_volume *volume
+    const struct opengat_path *path,
+    char output[OPENGATFS_MAX_PATH],
+    enum opengatfs_volume *volume
 )
 {
-    char relative[TRAITFS_MAX_PATH];
+    char relative[OPENGATFS_MAX_PATH];
     size_t namespace_length;
 
     if (process == NULL || path == NULL || output == NULL || volume == NULL ||
@@ -1127,11 +1127,11 @@ static bool path_from_user(
         return false;
     }
     relative[path->length] = '\0';
-    zero_bytes(output, TRAITFS_MAX_PATH);
-    if (path->volume == TRAIT_VOLUME_SYSTEM) {
+    zero_bytes(output, OPENGATFS_MAX_PATH);
+    if (path->volume == OPENGAT_VOLUME_SYSTEM) {
         size_t resource_length;
 
-        if ((process->manifest.capabilities & TRAIT_CAP_SYSTEM_READ) == 0U) {
+        if ((process->manifest.capabilities & OPENGAT_CAP_SYSTEM_READ) == 0U) {
             return false;
         }
         resource_length = bounded_length(process->manifest.resource_directory,
@@ -1142,7 +1142,7 @@ static bool path_from_user(
             copy_bytes(output, process->manifest.resource_directory,
                 resource_length + 1U);
         } else {
-            if (resource_length + 1U + path->length >= TRAITFS_MAX_PATH) {
+            if (resource_length + 1U + path->length >= OPENGATFS_MAX_PATH) {
                 return false;
             }
             copy_bytes(output, process->manifest.resource_directory,
@@ -1151,18 +1151,18 @@ static bool path_from_user(
             copy_bytes(output + resource_length + 1U, relative,
                 path->length + 1U);
         }
-        *volume = TRAITFS_VOLUME_SYSTEM;
+        *volume = OPENGATFS_VOLUME_SYSTEM;
         return true;
     }
-    if (path->volume != TRAIT_VOLUME_DATA ||
+    if (path->volume != OPENGAT_VOLUME_DATA ||
         (process->manifest.capabilities &
-            (TRAIT_CAP_DATA_READ | TRAIT_CAP_DATA_WRITE)) == 0U) {
+            (OPENGAT_CAP_DATA_READ | OPENGAT_CAP_DATA_WRITE)) == 0U) {
         return false;
     }
     namespace_length = bounded_length(process->manifest.data_namespace,
         sizeof(process->manifest.data_namespace));
     if (namespace_length == 0U ||
-        namespace_length + 1U + path->length >= TRAITFS_MAX_PATH) {
+        namespace_length + 1U + path->length >= OPENGATFS_MAX_PATH) {
         return false;
     }
     copy_bytes(output, process->manifest.data_namespace, namespace_length);
@@ -1173,34 +1173,34 @@ static bool path_from_user(
         copy_bytes(output + namespace_length + 1U, relative,
             path->length + 1U);
     }
-    *volume = TRAITFS_VOLUME_DATA;
+    *volume = OPENGATFS_VOLUME_DATA;
     return true;
 }
 
 static bool read_volume_file(
-    enum traitfs_volume volume,
+    enum opengatfs_volume volume,
     const char *path,
     uint8_t *destination,
     size_t capacity,
     size_t *read_bytes
 )
 {
-    traitfs_handle handle;
+    opengatfs_handle handle;
     size_t total = 0U;
 
     if (path == NULL || destination == NULL || read_bytes == NULL ||
-        (volume != TRAITFS_VOLUME_SYSTEM && volume != TRAITFS_VOLUME_DATA) ||
-        traitfs_open(volume, path, TRAITFS_ACCESS_READ, &handle) !=
-            TRAITFS_STATUS_OK) {
+        (volume != OPENGATFS_VOLUME_SYSTEM && volume != OPENGATFS_VOLUME_DATA) ||
+        opengatfs_open(volume, path, OPENGATFS_ACCESS_READ, &handle) !=
+            OPENGATFS_STATUS_OK) {
         return false;
     }
     while (total < capacity) {
         size_t completed = 0U;
-        enum traitfs_status status = traitfs_read(handle, destination + total,
+        enum opengatfs_status status = opengatfs_read(handle, destination + total,
             capacity - total, &completed);
 
-        if (status != TRAITFS_STATUS_OK) {
-            (void)traitfs_close(handle);
+        if (status != OPENGATFS_STATUS_OK) {
+            (void)opengatfs_close(handle);
             return false;
         }
         total += completed;
@@ -1208,7 +1208,7 @@ static bool read_volume_file(
             break;
         }
     }
-    if (traitfs_close(handle) != TRAITFS_STATUS_OK) {
+    if (opengatfs_close(handle) != OPENGATFS_STATUS_OK) {
         return false;
     }
     *read_bytes = total;
@@ -1222,7 +1222,7 @@ static bool read_system_file(
     size_t *read_bytes
 )
 {
-    return read_volume_file(TRAITFS_VOLUME_SYSTEM, path, destination, capacity,
+    return read_volume_file(OPENGATFS_VOLUME_SYSTEM, path, destination, capacity,
         read_bytes);
 }
 
@@ -1240,8 +1240,8 @@ static bool sibling_image_path(
         return false;
     }
     manifest_length = bounded_length((const uint8_t *)manifest_path,
-        TRAITFS_MAX_PATH);
-    if (manifest_length == 0U || manifest_length >= TRAITFS_MAX_PATH ||
+        OPENGATFS_MAX_PATH);
+    if (manifest_length == 0U || manifest_length >= OPENGATFS_MAX_PATH ||
         name_length == 0U || name_length >= 16U ||
         (name_length == 1U && name[0] == '.') ||
         (name_length == 2U && name[0] == '.' && name[1] == '.')) {
@@ -1258,10 +1258,10 @@ static bool sibling_image_path(
             prefix_length = index + 1U;
         }
     }
-    if (prefix_length + name_length >= TRAITFS_MAX_PATH) {
+    if (prefix_length + name_length >= OPENGATFS_MAX_PATH) {
         return false;
     }
-    zero_bytes(output, TRAITFS_MAX_PATH);
+    zero_bytes(output, OPENGATFS_MAX_PATH);
     copy_bytes(output, manifest_path, prefix_length);
     copy_bytes(output + prefix_length, name, name_length);
     return true;
@@ -1277,9 +1277,9 @@ static bool installed_manifest_path(const char *path)
     if (path == NULL) {
         return false;
     }
-    length = bounded_length((const uint8_t *)path, TRAITFS_MAX_PATH);
+    length = bounded_length((const uint8_t *)path, OPENGATFS_MAX_PATH);
     if (length <= offset + 8U + 1U + 8U + sizeof(root) - 1U ||
-        length >= TRAITFS_MAX_PATH) {
+        length >= OPENGATFS_MAX_PATH) {
         return false;
     }
     for (size_t index = 0U; index < sizeof(prefix) - 1U; ++index) {
@@ -1418,7 +1418,7 @@ static bool dynamic_name_equal(
 static bool dynamic_name_path(
     const struct native_process *process,
     const struct elf64_dynamic_name *name,
-    char path[static TRAITFS_MAX_PATH]
+    char path[static OPENGATFS_MAX_PATH]
 )
 {
     size_t catalog_length;
@@ -1435,10 +1435,10 @@ static bool dynamic_name_path(
             prefix_length = index + 1U;
         }
     }
-    if (prefix_length + name->length >= TRAITFS_MAX_PATH) {
+    if (prefix_length + name->length >= OPENGATFS_MAX_PATH) {
         return false;
     }
-    zero_bytes(path, TRAITFS_MAX_PATH);
+    zero_bytes(path, OPENGATFS_MAX_PATH);
     copy_bytes(path, process->manifest.dynamic_catalog, prefix_length);
     copy_bytes(path + prefix_length, name->bytes, name->length);
     return true;
@@ -1594,7 +1594,7 @@ static enum native_process_status dynamic_read_catalog(
 )
 {
     char path[NATIVE_MANIFEST_PATH_BYTES + 1U];
-    struct traitfs_stat stat;
+    struct opengatfs_stat stat;
     uint8_t *bytes = NULL;
     size_t read_bytes = 0U;
     const size_t length = bounded_length(process->manifest.dynamic_catalog,
@@ -1606,7 +1606,7 @@ static enum native_process_status dynamic_read_catalog(
     }
     zero_bytes(path, sizeof(path));
     copy_bytes(path, process->manifest.dynamic_catalog, length);
-    if (traitfs_stat_path(TRAITFS_VOLUME_SYSTEM, path, &stat) != TRAITFS_STATUS_OK ||
+    if (opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, path, &stat) != OPENGATFS_STATUS_OK ||
         stat.directory || stat.size != ELF64_DYNAMIC_CATALOG_BYTES) {
         return result;
     }
@@ -1615,7 +1615,7 @@ static enum native_process_status dynamic_read_catalog(
     }
     if (read_system_file(path, bytes, ELF64_DYNAMIC_CATALOG_BYTES,
             &read_bytes) && read_bytes == ELF64_DYNAMIC_CATALOG_BYTES &&
-        trait_elf64_dynamic_catalog_authenticate(bytes, read_bytes,
+        opengat_elf64_dynamic_catalog_authenticate(bytes, read_bytes,
             process->manifest.dynamic_catalog_sha256, &load->catalog) ==
                 ELF64_DYNAMIC_OK) {
         result = NATIVE_PROCESS_OK;
@@ -1634,8 +1634,8 @@ static enum native_process_status dynamic_load_library(
 {
     const struct elf64_dynamic_catalog_entry *catalog =
         dynamic_catalog_entry(load, name);
-    char path[TRAITFS_MAX_PATH];
-    struct traitfs_stat stat;
+    char path[OPENGATFS_MAX_PATH];
+    struct opengatfs_stat stat;
     size_t read_bytes = 0U;
     size_t index;
 
@@ -1643,7 +1643,7 @@ static enum native_process_status dynamic_load_library(
         load->library_count + 1U >= ELF64_DYNAMIC_MAX_OBJECTS) {
         return NATIVE_PROCESS_IMAGE_REFUSED;
     }
-    if (traitfs_stat_path(TRAITFS_VOLUME_SYSTEM, path, &stat) != TRAITFS_STATUS_OK ||
+    if (opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, path, &stat) != OPENGATFS_STATUS_OK ||
         stat.directory || stat.size == 0U ||
         stat.size > NATIVE_ELF_MAX_FILE_BYTES) {
         return NATIVE_PROCESS_IMAGE_REFUSED;
@@ -1656,7 +1656,7 @@ static enum native_process_status dynamic_load_library(
     load->file_lengths[index] = (size_t)stat.size;
     if (!read_system_file(path, load->files[index], (size_t)stat.size,
             &read_bytes) || read_bytes != stat.size ||
-        trait_elf64_dynamic_object_authenticate(load->files[index], read_bytes,
+        opengat_elf64_dynamic_object_authenticate(load->files[index], read_bytes,
             catalog->sha256, &load->images[index]) != ELF64_DYNAMIC_OK ||
         !dynamic_name_equal(&load->images[index].soname, name) ||
         !dynamic_object_supported(process, &load->images[index], false)) {
@@ -1727,7 +1727,7 @@ static enum native_process_status dynamic_build_scope(
         }
         ++scan;
     }
-    dynamic_status = trait_elf64_dynamic_dependency_order(&load->images[0],
+    dynamic_status = opengat_elf64_dynamic_dependency_order(&load->images[0],
         &load->images[1], load->library_count, order, sizeof(order),
         &order_count);
     if (dynamic_status != ELF64_DYNAMIC_OK || order_count != load->library_count) {
@@ -1833,18 +1833,18 @@ static enum native_process_status dynamic_build_scope(
         lifecycle_scope[index + 1U] =
             load->prepared[(size_t)order[index] + 1U];
     }
-    dynamic_status = trait_elf64_dynamic_relocate_scope(load->prepared,
+    dynamic_status = opengat_elf64_dynamic_relocate_scope(load->prepared,
         load->object_count);
     if (dynamic_status != ELF64_DYNAMIC_OK) {
-        console_write("Trait OS: dynamic ELF relocation status ");
+        console_write("OpenGAT: dynamic ELF relocation status ");
         console_write_u64((uint64_t)dynamic_status);
         console_putc('\n');
         return NATIVE_PROCESS_IMAGE_REFUSED;
     }
-    dynamic_status = trait_elf64_dynamic_lifecycle(lifecycle_scope,
+    dynamic_status = opengat_elf64_dynamic_lifecycle(lifecycle_scope,
         load->object_count, &load->lifecycle);
     if (dynamic_status != ELF64_DYNAMIC_OK) {
-        console_write("Trait OS: dynamic ELF lifecycle status ");
+        console_write("OpenGAT: dynamic ELF lifecycle status ");
         console_write_u64((uint64_t)dynamic_status);
         console_putc('\n');
         return NATIVE_PROCESS_IMAGE_REFUSED;
@@ -2106,10 +2106,10 @@ static bool dynamic_prepare_trampolines(
     static const uint8_t fini_epilogue[] = {
         /* mov %r12,%rdi; mov $SYS_EXIT,%eax; syscall; ud2. */
         0x4cU, 0x89U, 0xe7U, 0xb8U,
-        (uint8_t)(TRAIT_SYS_EXIT & 0xffU),
-        (uint8_t)((TRAIT_SYS_EXIT >> 8U) & 0xffU),
-        (uint8_t)((TRAIT_SYS_EXIT >> 16U) & 0xffU),
-        (uint8_t)((TRAIT_SYS_EXIT >> 24U) & 0xffU),
+        (uint8_t)(OPENGAT_SYS_EXIT & 0xffU),
+        (uint8_t)((OPENGAT_SYS_EXIT >> 8U) & 0xffU),
+        (uint8_t)((OPENGAT_SYS_EXIT >> 16U) & 0xffU),
+        (uint8_t)((OPENGAT_SYS_EXIT >> 24U) & 0xffU),
         0x0fU, 0x05U, 0x0fU, 0x0bU
     };
     struct dynamic_code_writer start = {
@@ -2532,17 +2532,24 @@ static bool initialize_stack(
     size_t environment_lengths[3];
     const size_t argc = (size_t)process->manifest.argument_count + 1U;
 
+    static const char abi_environment[] = "OPENGAT_ABI=1";
+    static const char identifier_environment[] = "OPENGAT_APP_ID=";
+    static const char data_environment[] = "OPENGAT_DATA=";
+
     zero_bytes(environment, sizeof(environment));
-    copy_bytes(environment[0], "TRAIT_ABI=1", 11U);
-    copy_bytes(environment[1], "TRAIT_APP_ID=", 13U);
-    copy_bytes(environment[1] + 13U, process->manifest.identifier,
-        identifier_length);
-    copy_bytes(environment[2], "TRAIT_DATA=", 11U);
-    copy_bytes(environment[2] + 11U, process->manifest.data_namespace,
-        namespace_length);
-    environment_lengths[0] = 12U;
-    environment_lengths[1] = 13U + identifier_length + 1U;
-    environment_lengths[2] = 11U + namespace_length + 1U;
+    copy_bytes(environment[0], abi_environment, sizeof(abi_environment));
+    copy_bytes(environment[1], identifier_environment,
+        sizeof(identifier_environment) - 1U);
+    copy_bytes(environment[1] + sizeof(identifier_environment) - 1U,
+        process->manifest.identifier, identifier_length);
+    copy_bytes(environment[2], data_environment,
+        sizeof(data_environment) - 1U);
+    copy_bytes(environment[2] + sizeof(data_environment) - 1U,
+        process->manifest.data_namespace, namespace_length);
+    environment_lengths[0] = sizeof(abi_environment);
+    environment_lengths[1] = sizeof(identifier_environment) +
+        identifier_length;
+    environment_lengths[2] = sizeof(data_environment) + namespace_length;
 
     for (size_t reverse = 3U; reverse > 0U; --reverse) {
         const size_t index = reverse - 1U;
@@ -2587,8 +2594,8 @@ static bool initialize_stack(
     vector[vector_count++] = PAGING_PAGE_SIZE;
     vector[vector_count++] = NATIVE_AUX_ENTRY;
     vector[vector_count++] = process->image.entry;
-    vector[vector_count++] = NATIVE_AUX_TRAIT_ABI;
-    vector[vector_count++] = TRAIT_ABI_VERSION;
+    vector[vector_count++] = NATIVE_AUX_OPENGAT_ABI;
+    vector[vector_count++] = OPENGAT_ABI_VERSION;
     vector[vector_count++] = NATIVE_AUX_TLS_IMAGE;
     vector[vector_count++] = process->image.tls.virtual_address;
     vector[vector_count++] = NATIVE_AUX_TLS_SIZE;
@@ -2672,14 +2679,14 @@ static bool process_cleanup(struct native_process *process)
 static enum native_process_status load_process(
     struct native_process *process,
     const char *manifest_path,
-    enum traitfs_volume image_volume
+    enum opengatfs_volume image_volume
 )
 {
     uint8_t manifest_bytes[NATIVE_MANIFEST_BYTES];
-    struct traitfs_stat executable_stat;
+    struct opengatfs_stat executable_stat;
     uint8_t *elf = NULL;
-    char executable[TRAITFS_MAX_PATH];
-    char data_namespace[TRAITFS_MAX_PATH];
+    char executable[OPENGATFS_MAX_PATH];
+    char data_namespace[OPENGATFS_MAX_PATH];
     size_t manifest_read = 0U;
     size_t elf_read = 0U;
     size_t executable_length;
@@ -2703,10 +2710,10 @@ static enum native_process_status load_process(
      * current manifest magic before reading that path so an unrelated 1 KiB
      * file cannot steer the System-volume lookup.
      */
-    if (manifest_bytes[0] != 'T' || manifest_bytes[1] != 'R' ||
-            manifest_bytes[2] != 'A' || manifest_bytes[3] != 'I' ||
-            manifest_bytes[4] != 'T' || manifest_bytes[5] != 'A' ||
-            manifest_bytes[6] != 'P' || manifest_bytes[7] != 'P') {
+    if (manifest_bytes[0] != 'O' || manifest_bytes[1] != 'P' ||
+            manifest_bytes[2] != 'E' || manifest_bytes[3] != 'N' ||
+            manifest_bytes[4] != 'G' || manifest_bytes[5] != 'A' ||
+            manifest_bytes[6] != 'T' || manifest_bytes[7] != '1') {
         return NATIVE_PROCESS_IMAGE_REFUSED;
     }
     executable_length = bounded_length(manifest_bytes + 112U, 16U);
@@ -2715,8 +2722,8 @@ static enum native_process_status load_process(
     }
     if (!sibling_image_path(manifest_path, manifest_bytes + 112U,
             executable_length, executable) ||
-        traitfs_stat_path(image_volume, executable, &executable_stat) !=
-            TRAITFS_STATUS_OK || executable_stat.directory ||
+        opengatfs_stat_path(image_volume, executable, &executable_stat) !=
+            OPENGATFS_STATUS_OK || executable_stat.directory ||
         executable_stat.size == 0U ||
         executable_stat.size > NATIVE_ELF_MAX_FILE_BYTES) {
         return NATIVE_PROCESS_EXECUTABLE_OPEN;
@@ -2733,41 +2740,41 @@ static enum native_process_status load_process(
         result = NATIVE_PROCESS_EXECUTABLE_READ;
         goto finish;
     }
-    admission_status = trait_native_image_validate(manifest_bytes,
+    admission_status = opengat_native_image_validate(manifest_bytes,
         sizeof(manifest_bytes), elf, elf_read, &process->manifest,
         &process->image);
     if (admission_status != NATIVE_IMAGE_OK) {
         enum elf64_dynamic_status dynamic_status;
 
-        if (image_volume != TRAITFS_VOLUME_SYSTEM ||
+        if (image_volume != OPENGATFS_VOLUME_SYSTEM ||
             admission_status != NATIVE_IMAGE_ELF_TYPE ||
-            trait_native_manifest_authenticate(manifest_bytes,
+            opengat_native_manifest_authenticate(manifest_bytes,
                 sizeof(manifest_bytes), elf, elf_read,
                 &process->manifest) != NATIVE_IMAGE_OK) {
-            console_write("Trait OS: native admission status ");
+            console_write("OpenGAT: native admission status ");
             console_write_u64((uint64_t)admission_status);
             console_putc('\n');
             result = NATIVE_PROCESS_IMAGE_REFUSED;
             goto finish;
         }
-        dynamic_status = trait_elf64_dynamic_parse(elf, elf_read,
+        dynamic_status = opengat_elf64_dynamic_parse(elf, elf_read,
             &dynamic_image);
         if (dynamic_status != ELF64_DYNAMIC_OK) {
-            console_write("Trait OS: dynamic ELF admission status ");
+            console_write("OpenGAT: dynamic ELF admission status ");
             console_write_u64((uint64_t)dynamic_status);
             console_putc('\n');
             result = NATIVE_PROCESS_IMAGE_REFUSED;
             goto finish;
         }
         if (!dynamic_object_supported(process, &dynamic_image, true)) {
-            console_write("Trait OS: dynamic ELF root policy refused\n");
+            console_write("OpenGAT: dynamic ELF root policy refused\n");
             result = NATIVE_PROCESS_IMAGE_REFUSED;
             goto finish;
         }
         result = dynamic_load_create(process, &dynamic_image, elf, elf_read,
             &dynamic_load);
         if (result != NATIVE_PROCESS_OK) {
-            console_write("Trait OS: dynamic ELF dependency scope refused\n");
+            console_write("OpenGAT: dynamic ELF dependency scope refused\n");
             goto finish;
         }
         dynamic = true;
@@ -2778,11 +2785,11 @@ static enum native_process_status load_process(
     copy_bytes(data_namespace, process->manifest.data_namespace,
         namespace_length);
     {
-        const enum traitfs_status mkdir_status = traitfs_mkdir(TRAITFS_VOLUME_DATA,
+        const enum opengatfs_status mkdir_status = opengatfs_mkdir(OPENGATFS_VOLUME_DATA,
             data_namespace);
 
-        if (mkdir_status != TRAITFS_STATUS_OK &&
-            mkdir_status != TRAITFS_STATUS_EXISTS) {
+        if (mkdir_status != OPENGATFS_STATUS_OK &&
+            mkdir_status != OPENGATFS_STATUS_EXISTS) {
             result = NATIVE_PROCESS_DATA_NAMESPACE;
             goto finish;
         }
@@ -2833,7 +2840,7 @@ static enum native_process_status load_process(
     }
     process->active = true;
     if (dynamic && process->shared_code_reuses != 0U) {
-        console_write("Trait OS: dynamic immutable RX shared pages ");
+        console_write("OpenGAT: dynamic immutable RX shared pages ");
         console_write_u64(process->shared_code_reuses);
         console_putc('\n');
     }
@@ -2855,7 +2862,7 @@ finish:
 
 static enum native_process_status native_process_spawn_from_volume(
     const char *manifest_path,
-    enum traitfs_volume image_volume,
+    enum opengatfs_volume image_volume,
     uint64_t *generation
 )
 {
@@ -2863,8 +2870,8 @@ static enum native_process_status native_process_spawn_from_volume(
     enum native_process_status status;
 
     if (manifest_path == NULL || generation == NULL ||
-        (image_volume != TRAITFS_VOLUME_SYSTEM &&
-         image_volume != TRAITFS_VOLUME_DATA)) {
+        (image_volume != OPENGATFS_VOLUME_SYSTEM &&
+         image_volume != OPENGATFS_VOLUME_DATA)) {
         return NATIVE_PROCESS_NULL_ARGUMENT;
     }
     *generation = 0U;
@@ -2905,7 +2912,7 @@ enum native_process_status native_process_spawn(
 )
 {
     return native_process_spawn_from_volume(manifest_path,
-        TRAITFS_VOLUME_SYSTEM, generation);
+        OPENGATFS_VOLUME_SYSTEM, generation);
 }
 
 static int64_t syscall_console_write(
@@ -2916,14 +2923,14 @@ static int64_t syscall_console_write(
 {
     size_t completed = 0U;
 
-    if ((process->manifest.capabilities & TRAIT_CAP_CONSOLE) == 0U) {
-        return -TRAIT_EACCES;
+    if ((process->manifest.capabilities & OPENGAT_CAP_CONSOLE) == 0U) {
+        return -OPENGAT_EACCES;
     }
     if (length == 0U) {
         return 0;
     }
     if (!validate_user_range(process, address, length, false)) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     while (completed < length) {
         size_t chunk = length - completed;
@@ -2933,7 +2940,7 @@ static int64_t syscall_console_write(
         }
         if (!copy_from_user(process, process->transfer, address + completed,
                 chunk)) {
-            return completed == 0U ? -TRAIT_EFAULT : (int64_t)completed;
+            return completed == 0U ? -OPENGAT_EFAULT : (int64_t)completed;
         }
         console_write_n((const char *)process->transfer, chunk);
         completed += chunk;
@@ -2979,20 +2986,20 @@ static int64_t syscall_console_read(
     struct native_thread *thread = running_thread(process);
     size_t copied;
 
-    if ((process->manifest.capabilities & TRAIT_CAP_CONSOLE) == 0U) {
-        return -TRAIT_EACCES;
+    if ((process->manifest.capabilities & OPENGAT_CAP_CONSOLE) == 0U) {
+        return -OPENGAT_EACCES;
     }
     if (thread == NULL) {
-        return -TRAIT_EIO;
+        return -OPENGAT_EIO;
     }
     if (length == 0U) {
         return 0;
     }
     if (length > sizeof(process->transfer)) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     if (!validate_user_range(process, address, length, true)) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (process->console_input_count == 0U) {
         thread->console_address = address;
@@ -3002,7 +3009,7 @@ static int64_t syscall_console_read(
     }
     copied = console_input_copy(process, process->transfer, length);
     if (!copy_to_user(process, address, process->transfer, copied)) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     console_input_consume(process, copied);
     return (int64_t)copied;
@@ -3046,9 +3053,9 @@ static int64_t syscall_memory_map(
     uint64_t response_address
 )
 {
-    struct trait_memory_map_request request;
-    struct trait_memory_map_response response = {
-        sizeof(response), TRAIT_ABI_VERSION, 0U, 0U
+    struct opengat_memory_map_request request;
+    struct opengat_memory_map_response response = {
+        sizeof(response), OPENGAT_ABI_VERSION, 0U, 0U
     };
     size_t page_count;
     uint64_t length;
@@ -3060,21 +3067,21 @@ static int64_t syscall_memory_map(
             sizeof(request)) ||
         !validate_user_range(process, response_address, sizeof(response),
             true)) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (request.size != sizeof(request) ||
-        request.version != TRAIT_ABI_VERSION || request.reserved != 0U ||
-        (request.flags & ~TRAIT_MEMORY_FLAGS_V1) != 0U ||
-        (request.flags & (TRAIT_MEMORY_READ | TRAIT_MEMORY_WRITE)) !=
-            (TRAIT_MEMORY_READ | TRAIT_MEMORY_WRITE) ||
+        request.version != OPENGAT_ABI_VERSION || request.reserved != 0U ||
+        (request.flags & ~OPENGAT_MEMORY_FLAGS_V1) != 0U ||
+        (request.flags & (OPENGAT_MEMORY_READ | OPENGAT_MEMORY_WRITE)) !=
+            (OPENGAT_MEMORY_READ | OPENGAT_MEMORY_WRITE) ||
         request.length == 0U || request.length > UINT64_MAX -
             (PAGING_PAGE_SIZE - 1U)) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     guard_before_flag =
-        (request.flags & TRAIT_MEMORY_GUARD_BEFORE) != 0U;
+        (request.flags & OPENGAT_MEMORY_GUARD_BEFORE) != 0U;
     guard_after_flag =
-        (request.flags & TRAIT_MEMORY_GUARD_AFTER) != 0U;
+        (request.flags & OPENGAT_MEMORY_GUARD_AFTER) != 0U;
     length = (request.length + PAGING_PAGE_SIZE - 1U) &
         ~(PAGING_PAGE_SIZE - 1U);
     page_count = (size_t)(length / PAGING_PAGE_SIZE);
@@ -3082,16 +3089,16 @@ static int64_t syscall_memory_map(
         process->page_count > NATIVE_PROCESS_PAGE_LIMIT - page_count ||
         (process->page_count + page_count) * PAGING_PAGE_SIZE >
             process->manifest.memory_limit) {
-        return -TRAIT_ENOMEM;
+        return -OPENGAT_ENOMEM;
     }
     if (request.address_hint != 0U) {
         if ((request.address_hint & (PAGING_PAGE_SIZE - 1U)) != 0U) {
-            return -TRAIT_EINVAL;
+            return -OPENGAT_EINVAL;
         }
         base = request.address_hint;
         if (!anonymous_span_free(process, base, page_count,
                 guard_before_flag, guard_after_flag)) {
-            return -TRAIT_EBUSY;
+            return -OPENGAT_EBUSY;
         }
     } else {
         const size_t prefix = guard_before_flag ? 1U : 0U;
@@ -3113,7 +3120,7 @@ static int64_t syscall_memory_map(
             candidate += PAGING_PAGE_SIZE;
         }
         if (base == 0U) {
-            return -TRAIT_ENOMEM;
+            return -OPENGAT_ENOMEM;
         }
     }
     for (size_t page = 0U; page < page_count; ++page) {
@@ -3145,7 +3152,7 @@ static int64_t syscall_memory_map(
                     (void)release_page_frame(&removed);
                 }
             }
-            return -TRAIT_ENOMEM;
+            return -OPENGAT_ENOMEM;
         }
         page_at(process, address)->mapped = true;
     }
@@ -3153,7 +3160,7 @@ static int64_t syscall_memory_map(
     response.length = length;
     if (!copy_to_user(process, response_address, &response, sizeof(response))) {
         (void)syscall_memory_unmap(process, base, length);
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     return 0;
 }
@@ -3170,7 +3177,7 @@ static int64_t syscall_memory_unmap(
         (length & (PAGING_PAGE_SIZE - 1U)) != 0U ||
         address < PAGING_NATIVE_ANON_BASE ||
         length > PAGING_NATIVE_ANON_END - address) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     page_count = (size_t)(length / PAGING_PAGE_SIZE);
     for (size_t page = 0U; page < page_count; ++page) {
@@ -3179,7 +3186,7 @@ static int64_t syscall_memory_unmap(
 
         if (record == NULL || !record->mapped ||
             record->kind != PAGING_PROCESS_MAPPING_NATIVE_ANON) {
-            return -TRAIT_EFAULT;
+            return -OPENGAT_EFAULT;
         }
     }
     for (size_t page = 0U; page < page_count; ++page) {
@@ -3193,7 +3200,7 @@ static int64_t syscall_memory_unmap(
             !release_page_frame(&removed)) {
             process->faulted = true;
             process->exiting = true;
-            return -TRAIT_EIO;
+            return -OPENGAT_EIO;
         }
     }
     return 0;
@@ -3204,64 +3211,64 @@ static int64_t syscall_file_open(
     uint64_t request_address
 )
 {
-    struct trait_file_open_request request;
+    struct opengat_file_open_request request;
     struct native_resource resource = {{0U, 0U, 0U, 0U}};
-    char path[TRAITFS_MAX_PATH];
-    enum traitfs_volume volume;
-    enum traitfs_access access;
-    traitfs_handle file;
-    trait_handle_t handle;
-    enum traitfs_status status;
+    char path[OPENGATFS_MAX_PATH];
+    enum opengatfs_volume volume;
+    enum opengatfs_access access;
+    opengatfs_handle file;
+    opengat_handle_t handle;
+    enum opengatfs_status status;
 
     if (!copy_from_user(process, &request, request_address,
             sizeof(request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (request.size != sizeof(request) ||
-        request.version != TRAIT_ABI_VERSION || request.reserved != 0U ||
-        (request.flags & ~TRAIT_OPEN_FLAGS_V1) != 0U ||
-        (request.flags & (TRAIT_OPEN_READ | TRAIT_OPEN_WRITE)) == 0U ||
+        request.version != OPENGAT_ABI_VERSION || request.reserved != 0U ||
+        (request.flags & ~OPENGAT_OPEN_FLAGS_V1) != 0U ||
+        (request.flags & (OPENGAT_OPEN_READ | OPENGAT_OPEN_WRITE)) == 0U ||
         !path_from_user(process, &request.path, path, &volume)) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
-    if (volume == TRAITFS_VOLUME_SYSTEM &&
-        (request.flags & (TRAIT_OPEN_WRITE | TRAIT_OPEN_CREATE |
-            TRAIT_OPEN_TRUNCATE)) != 0U) {
-        return -TRAIT_EACCES;
+    if (volume == OPENGATFS_VOLUME_SYSTEM &&
+        (request.flags & (OPENGAT_OPEN_WRITE | OPENGAT_OPEN_CREATE |
+            OPENGAT_OPEN_TRUNCATE)) != 0U) {
+        return -OPENGAT_EACCES;
     }
-    if ((request.flags & (TRAIT_OPEN_WRITE | TRAIT_OPEN_CREATE |
-            TRAIT_OPEN_TRUNCATE)) != 0U &&
-        (process->manifest.capabilities & TRAIT_CAP_DATA_WRITE) == 0U) {
-        return -TRAIT_EACCES;
+    if ((request.flags & (OPENGAT_OPEN_WRITE | OPENGAT_OPEN_CREATE |
+            OPENGAT_OPEN_TRUNCATE)) != 0U &&
+        (process->manifest.capabilities & OPENGAT_CAP_DATA_WRITE) == 0U) {
+        return -OPENGAT_EACCES;
     }
-    access = (request.flags & TRAIT_OPEN_WRITE) != 0U ?
-        ((request.flags & TRAIT_OPEN_READ) != 0U ? TRAITFS_ACCESS_READ_WRITE :
-            TRAITFS_ACCESS_WRITE) : TRAITFS_ACCESS_READ;
+    access = (request.flags & OPENGAT_OPEN_WRITE) != 0U ?
+        ((request.flags & OPENGAT_OPEN_READ) != 0U ? OPENGATFS_ACCESS_READ_WRITE :
+            OPENGATFS_ACCESS_WRITE) : OPENGATFS_ACCESS_READ;
     cpu_interrupt_enable();
-    status = traitfs_stat_path(volume, path, &(struct traitfs_stat){0});
-    if (status == TRAITFS_STATUS_NOT_FOUND &&
-        (request.flags & TRAIT_OPEN_CREATE) != 0U) {
-        status = traitfs_create(volume, path);
+    status = opengatfs_stat_path(volume, path, &(struct opengatfs_stat){0});
+    if (status == OPENGATFS_STATUS_NOT_FOUND &&
+        (request.flags & OPENGAT_OPEN_CREATE) != 0U) {
+        status = opengatfs_create(volume, path);
     }
-    if (status == TRAITFS_STATUS_OK &&
-        (request.flags & TRAIT_OPEN_TRUNCATE) != 0U) {
-        status = traitfs_truncate(volume, path, 0U);
+    if (status == OPENGATFS_STATUS_OK &&
+        (request.flags & OPENGAT_OPEN_TRUNCATE) != 0U) {
+        status = opengatfs_truncate(volume, path, 0U);
     }
-    if (status == TRAITFS_STATUS_OK) {
-        status = traitfs_open(volume, path, access, &file);
+    if (status == OPENGATFS_STATUS_OK) {
+        status = opengatfs_open(volume, path, access, &file);
     }
     cpu_interrupt_disable();
-    if (status != TRAITFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         return filesystem_error(status);
     }
     resource.words[0] = file;
     {
         const enum native_handle_status handle_status = native_handle_install(
-            &process->handles, TRAIT_HANDLE_FILE, &resource, &handle);
+            &process->handles, OPENGAT_HANDLE_FILE, &resource, &handle);
 
         if (handle_status != NATIVE_HANDLE_OK) {
             cpu_interrupt_enable();
-            (void)traitfs_close(file);
+            (void)opengatfs_close(file);
             cpu_interrupt_disable();
             return handle_error(handle_status);
         }
@@ -3278,21 +3285,21 @@ static int64_t syscall_file_io(
     bool write
 )
 {
-    struct trait_io_request request;
+    struct opengat_io_request request;
     struct native_resource *resource;
     size_t completed = 0U;
     enum native_handle_status handle_status;
 
     if (!copy_from_user(process, &request, request_address,
             sizeof(request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (request.size != sizeof(request) ||
-        request.version != TRAIT_ABI_VERSION || request.flags != 0U) {
-        return -TRAIT_EINVAL;
+        request.version != OPENGAT_ABI_VERSION || request.flags != 0U) {
+        return -OPENGAT_EINVAL;
     }
     handle_status = native_handle_resolve(&process->handles, request.handle,
-        TRAIT_HANDLE_FILE, &resource);
+        OPENGAT_HANDLE_FILE, &resource);
     if (handle_status != NATIVE_HANDLE_OK) {
         return handle_error(handle_status);
     }
@@ -3300,60 +3307,60 @@ static int64_t syscall_file_io(
         return 0;
     }
     if (!validate_user_range(process, request.buffer, request.length, !write)) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (write && request.offset != UINT64_MAX) {
         uint64_t position;
 
         if (request.offset > INT64_MAX) {
-            return -TRAIT_EINVAL;
+            return -OPENGAT_EINVAL;
         }
         cpu_interrupt_enable();
-        const enum traitfs_status seek_status = traitfs_seek(
-            (traitfs_handle)resource->words[0], (int64_t)request.offset,
-            TRAITFS_SEEK_START, &position);
+        const enum opengatfs_status seek_status = opengatfs_seek(
+            (opengatfs_handle)resource->words[0], (int64_t)request.offset,
+            OPENGATFS_SEEK_START, &position);
         cpu_interrupt_disable();
-        if (seek_status != TRAITFS_STATUS_OK) {
+        if (seek_status != OPENGATFS_STATUS_OK) {
             return filesystem_error(seek_status);
         }
     }
     while (completed < request.length) {
         size_t chunk = request.length - completed;
         size_t transferred = 0U;
-        enum traitfs_status status;
+        enum opengatfs_status status;
 
         if (chunk > sizeof(process->transfer)) {
             chunk = sizeof(process->transfer);
         }
         if (write && !copy_from_user(process, process->transfer,
                 request.buffer + completed, chunk)) {
-            return completed == 0U ? -TRAIT_EFAULT : (int64_t)completed;
+            return completed == 0U ? -OPENGAT_EFAULT : (int64_t)completed;
         }
         cpu_interrupt_enable();
         if (write) {
-            status = traitfs_write((traitfs_handle)resource->words[0],
+            status = opengatfs_write((opengatfs_handle)resource->words[0],
                 process->transfer, chunk, &transferred);
         } else if (request.offset != UINT64_MAX) {
             if (completed > UINT64_MAX - request.offset) {
                 cpu_interrupt_disable();
-                return completed == 0U ? -TRAIT_EINVAL : (int64_t)completed;
+                return completed == 0U ? -OPENGAT_EINVAL : (int64_t)completed;
             }
-            status = traitfs_pread((traitfs_handle)resource->words[0],
+            status = opengatfs_pread((opengatfs_handle)resource->words[0],
                 process->transfer, chunk, request.offset + completed,
                 &transferred);
         } else {
-            status = traitfs_read((traitfs_handle)resource->words[0],
+            status = opengatfs_read((opengatfs_handle)resource->words[0],
                 process->transfer, chunk, &transferred);
         }
         cpu_interrupt_disable();
-        if (status != TRAITFS_STATUS_OK) {
+        if (status != OPENGATFS_STATUS_OK) {
             return completed == 0U ? filesystem_error(status) :
                 (int64_t)completed;
         }
         if (!write && transferred != 0U &&
             !copy_to_user(process, request.buffer + completed,
                 process->transfer, transferred)) {
-            return completed == 0U ? -TRAIT_EFAULT : (int64_t)completed;
+            return completed == 0U ? -OPENGAT_EFAULT : (int64_t)completed;
         }
         completed += transferred;
         if (transferred < chunk) {
@@ -3368,33 +3375,33 @@ static int64_t syscall_file_seek(
     uint64_t request_address
 )
 {
-    struct trait_seek_request request;
+    struct opengat_seek_request request;
     struct native_resource *resource;
-    enum traitfs_seek_origin origin;
+    enum opengatfs_seek_origin origin;
     uint64_t position;
-    enum traitfs_status status;
+    enum opengatfs_status status;
 
     if (!copy_from_user(process, &request, request_address,
             sizeof(request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (request.size != sizeof(request) ||
-        request.version != TRAIT_ABI_VERSION || request.reserved != 0U ||
-        request.origin > TRAIT_SEEK_END) {
-        return -TRAIT_EINVAL;
+        request.version != OPENGAT_ABI_VERSION || request.reserved != 0U ||
+        request.origin > OPENGAT_SEEK_END) {
+        return -OPENGAT_EINVAL;
     }
     if (native_handle_resolve(&process->handles, request.handle,
-            TRAIT_HANDLE_FILE, &resource) != NATIVE_HANDLE_OK) {
-        return -TRAIT_EBADF;
+            OPENGAT_HANDLE_FILE, &resource) != NATIVE_HANDLE_OK) {
+        return -OPENGAT_EBADF;
     }
-    origin = request.origin == TRAIT_SEEK_START ? TRAITFS_SEEK_START :
-        (request.origin == TRAIT_SEEK_CURRENT ? TRAITFS_SEEK_CURRENT :
-            TRAITFS_SEEK_END);
+    origin = request.origin == OPENGAT_SEEK_START ? OPENGATFS_SEEK_START :
+        (request.origin == OPENGAT_SEEK_CURRENT ? OPENGATFS_SEEK_CURRENT :
+            OPENGATFS_SEEK_END);
     cpu_interrupt_enable();
-    status = traitfs_seek((traitfs_handle)resource->words[0], request.offset,
+    status = opengatfs_seek((opengatfs_handle)resource->words[0], request.offset,
         origin, &position);
     cpu_interrupt_disable();
-    return status == TRAITFS_STATUS_OK ? (int64_t)position :
+    return status == OPENGATFS_STATUS_OK ? (int64_t)position :
         filesystem_error(status);
 }
 
@@ -3404,34 +3411,34 @@ static int64_t syscall_path_stat(
     uint64_t output_address
 )
 {
-    struct trait_path path_request;
-    struct trait_path_stat output = {
-        sizeof(output), TRAIT_ABI_VERSION, 0U, 0U, 0U
+    struct opengat_path path_request;
+    struct opengat_path_stat output = {
+        sizeof(output), OPENGAT_ABI_VERSION, 0U, 0U, 0U
     };
-    struct traitfs_stat stat;
-    char path[TRAITFS_MAX_PATH];
-    enum traitfs_volume volume;
-    enum traitfs_status status;
+    struct opengatfs_stat stat;
+    char path[OPENGATFS_MAX_PATH];
+    enum opengatfs_volume volume;
+    enum opengatfs_status status;
 
     if (!copy_from_user(process, &path_request, path_address,
             sizeof(path_request)) ||
         !validate_user_range(process, output_address, sizeof(output), true)) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (!path_from_user(process, &path_request, path, &volume)) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     cpu_interrupt_enable();
-    status = traitfs_stat_path(volume, path, &stat);
+    status = opengatfs_stat_path(volume, path, &stat);
     cpu_interrupt_disable();
-    if (status != TRAITFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         return filesystem_error(status);
     }
     output.byte_length = stat.size;
-    output.attributes = (stat.directory ? TRAIT_PATH_DIRECTORY : 0U) |
-        (stat.read_only ? TRAIT_PATH_READ_ONLY : 0U);
+    output.attributes = (stat.directory ? OPENGAT_PATH_DIRECTORY : 0U) |
+        (stat.read_only ? OPENGAT_PATH_READ_ONLY : 0U);
     return copy_to_user(process, output_address, &output, sizeof(output)) ?
-        0 : -TRAIT_EFAULT;
+        0 : -OPENGAT_EFAULT;
 }
 
 static int64_t syscall_directory_open(
@@ -3439,21 +3446,21 @@ static int64_t syscall_directory_open(
     uint64_t path_address
 )
 {
-    struct trait_path path_request;
+    struct opengat_path path_request;
     struct native_resource resource = {{0U, 0U, 0U, 0U}};
-    char path[TRAITFS_MAX_PATH];
-    enum traitfs_volume volume;
-    enum traitfs_status status;
-    traitfs_directory_handle iterator = 0U;
-    trait_handle_t handle;
+    char path[OPENGATFS_MAX_PATH];
+    enum opengatfs_volume volume;
+    enum opengatfs_status status;
+    opengatfs_directory_handle iterator = 0U;
+    opengat_handle_t handle;
     size_t slot = SIZE_MAX;
 
     if (!copy_from_user(process, &path_request, path_address,
             sizeof(path_request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (!path_from_user(process, &path_request, path, &volume)) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     for (size_t index = 0U; index < NATIVE_HANDLE_LIMIT; ++index) {
         if (!process->directories[index].active) {
@@ -3462,12 +3469,12 @@ static int64_t syscall_directory_open(
         }
     }
     if (slot == SIZE_MAX) {
-        return -TRAIT_ENOMEM;
+        return -OPENGAT_ENOMEM;
     }
     cpu_interrupt_enable();
-    status = traitfs_directory_open(volume, path, &iterator);
+    status = opengatfs_directory_open(volume, path, &iterator);
     cpu_interrupt_disable();
-    if (status != TRAITFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         return filesystem_error(status);
     }
     process->directories[slot].iterator = iterator;
@@ -3475,10 +3482,10 @@ static int64_t syscall_directory_open(
     resource.words[0] = slot;
     {
         const enum native_handle_status handle_status = native_handle_install(
-            &process->handles, TRAIT_HANDLE_DIRECTORY, &resource, &handle);
+            &process->handles, OPENGAT_HANDLE_DIRECTORY, &resource, &handle);
 
         if (handle_status != NATIVE_HANDLE_OK) {
-            (void)traitfs_directory_close(iterator);
+            (void)opengatfs_directory_close(iterator);
             zero_bytes(&process->directories[slot],
                 sizeof(process->directories[slot]));
             return handle_error(handle_status);
@@ -3492,39 +3499,39 @@ static int64_t syscall_directory_open(
 
 static int64_t syscall_directory_read(
     struct native_process *process,
-    trait_handle_t handle,
+    opengat_handle_t handle,
     uint64_t output_address
 )
 {
     struct native_resource *resource;
-    struct traitfs_list_entry entry;
-    struct trait_directory_entry output;
+    struct opengatfs_list_entry entry;
+    struct opengat_directory_entry output;
     struct native_directory_resource *directory;
     bool present = false;
-    enum traitfs_status status;
+    enum opengatfs_status status;
 
     if (!validate_user_range(process, output_address, sizeof(output), true)) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     {
         const enum native_handle_status handle_status = native_handle_resolve(
-            &process->handles, handle, TRAIT_HANDLE_DIRECTORY, &resource);
+            &process->handles, handle, OPENGAT_HANDLE_DIRECTORY, &resource);
 
         if (handle_status != NATIVE_HANDLE_OK) {
             return handle_error(handle_status);
         }
     }
     if (resource->words[0] >= NATIVE_HANDLE_LIMIT) {
-        return -TRAIT_EBADF;
+        return -OPENGAT_EBADF;
     }
     directory = &process->directories[resource->words[0]];
     if (!directory->active) {
-        return -TRAIT_ESTALE;
+        return -OPENGAT_ESTALE;
     }
     cpu_interrupt_enable();
-    status = traitfs_directory_read(directory->iterator, &entry, &present);
+    status = opengatfs_directory_read(directory->iterator, &entry, &present);
     cpu_interrupt_disable();
-    if (status != TRAITFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         return filesystem_error(status);
     }
     if (!present) {
@@ -3532,18 +3539,18 @@ static int64_t syscall_directory_read(
     }
     zero_bytes(&output, sizeof(output));
     output.size = sizeof(output);
-    output.version = TRAIT_ABI_VERSION;
+    output.version = OPENGAT_ABI_VERSION;
     output.byte_length = entry.size;
     output.attributes = entry.directory ?
-        TRAIT_PATH_DIRECTORY : 0U;
+        OPENGAT_PATH_DIRECTORY : 0U;
     output.name_length = (uint16_t)bounded_length(
         (const uint8_t *)entry.name, sizeof(entry.name));
     if (output.name_length > sizeof(output.name)) {
-        return -TRAIT_EIO;
+        return -OPENGAT_EIO;
     }
     copy_bytes(output.name, entry.name, output.name_length);
     if (!copy_to_user(process, output_address, &output, sizeof(output))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     return 1;
 }
@@ -3555,33 +3562,33 @@ static int64_t syscall_single_path_mutation(
     uint64_t number
 )
 {
-    struct trait_path path_request;
-    struct traitfs_stat stat;
-    char path[TRAITFS_MAX_PATH];
-    enum traitfs_volume volume;
-    enum traitfs_status status;
+    struct opengat_path path_request;
+    struct opengatfs_stat stat;
+    char path[OPENGATFS_MAX_PATH];
+    enum opengatfs_volume volume;
+    enum opengatfs_status status;
 
     if (!copy_from_user(process, &path_request, path_address,
             sizeof(path_request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (!path_from_user(process, &path_request, path, &volume)) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
-    if (volume != TRAITFS_VOLUME_DATA ||
-        (process->manifest.capabilities & TRAIT_CAP_DATA_WRITE) == 0U) {
-        return -TRAIT_EACCES;
+    if (volume != OPENGATFS_VOLUME_DATA ||
+        (process->manifest.capabilities & OPENGAT_CAP_DATA_WRITE) == 0U) {
+        return -OPENGAT_EACCES;
     }
     cpu_interrupt_enable();
-    if (number == TRAIT_SYS_PATH_MKDIR) {
-        status = traitfs_mkdir(volume, path);
-    } else if (number == TRAIT_SYS_PATH_TRUNCATE) {
-        status = traitfs_truncate(volume, path, value);
+    if (number == OPENGAT_SYS_PATH_MKDIR) {
+        status = opengatfs_mkdir(volume, path);
+    } else if (number == OPENGAT_SYS_PATH_TRUNCATE) {
+        status = opengatfs_truncate(volume, path, value);
     } else {
-        status = traitfs_stat_path(volume, path, &stat);
-        if (status == TRAITFS_STATUS_OK) {
-            status = stat.directory ? traitfs_rmdir(volume, path) :
-                traitfs_unlink(volume, path);
+        status = opengatfs_stat_path(volume, path, &stat);
+        if (status == OPENGATFS_STATUS_OK) {
+            status = stat.directory ? opengatfs_rmdir(volume, path) :
+                opengatfs_unlink(volume, path);
         }
     }
     cpu_interrupt_disable();
@@ -3590,14 +3597,15 @@ static int64_t syscall_single_path_mutation(
 
 static bool replacement_backup_path(
     const char *destination,
-    char backup[TRAITFS_MAX_PATH]
+    char backup[OPENGATFS_MAX_PATH]
 )
 {
+    static const char backup_name[] = "OGTBK.TMP";
     size_t length = bounded_length((const uint8_t *)destination,
-        TRAITFS_MAX_PATH);
+        OPENGATFS_MAX_PATH);
     size_t slash = SIZE_MAX;
 
-    if (length == TRAITFS_MAX_PATH) {
+    if (length == OPENGATFS_MAX_PATH) {
         return false;
     }
     for (size_t index = 0U; index < length; ++index) {
@@ -3605,15 +3613,15 @@ static bool replacement_backup_path(
             slash = index;
         }
     }
-    zero_bytes(backup, TRAITFS_MAX_PATH);
+    zero_bytes(backup, OPENGATFS_MAX_PATH);
     if (slash != SIZE_MAX) {
-        if (slash + 1U + 11U >= TRAITFS_MAX_PATH) {
+        if (slash + sizeof(backup_name) >= OPENGATFS_MAX_PATH) {
             return false;
         }
         copy_bytes(backup, destination, slash + 1U);
-        copy_bytes(backup + slash + 1U, "TRAITBK.TMP", 11U);
+        copy_bytes(backup + slash + 1U, backup_name, sizeof(backup_name) - 1U);
     } else {
-        copy_bytes(backup, "TRAITBK.TMP", 11U);
+        copy_bytes(backup, backup_name, sizeof(backup_name) - 1U);
     }
     return true;
 }
@@ -3624,48 +3632,48 @@ static int64_t syscall_rename(
     bool replace
 )
 {
-    struct trait_rename_request request;
-    struct traitfs_stat destination_stat;
-    struct traitfs_stat backup_stat;
-    char source[TRAITFS_MAX_PATH];
-    char destination[TRAITFS_MAX_PATH];
-    char backup[TRAITFS_MAX_PATH];
-    enum traitfs_volume source_volume;
-    enum traitfs_volume destination_volume;
-    enum traitfs_status status;
+    struct opengat_rename_request request;
+    struct opengatfs_stat destination_stat;
+    struct opengatfs_stat backup_stat;
+    char source[OPENGATFS_MAX_PATH];
+    char destination[OPENGATFS_MAX_PATH];
+    char backup[OPENGATFS_MAX_PATH];
+    enum opengatfs_volume source_volume;
+    enum opengatfs_volume destination_volume;
+    enum opengatfs_status status;
 
     if (!copy_from_user(process, &request, request_address,
             sizeof(request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (request.size != sizeof(request) ||
-        request.version != TRAIT_ABI_VERSION || request.flags != 0U ||
+        request.version != OPENGAT_ABI_VERSION || request.flags != 0U ||
         request.reserved != 0U ||
         !path_from_user(process, &request.source, source, &source_volume) ||
         !path_from_user(process, &request.destination, destination,
             &destination_volume)) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
-    if (source_volume != TRAITFS_VOLUME_DATA ||
-        destination_volume != TRAITFS_VOLUME_DATA ||
-        (process->manifest.capabilities & TRAIT_CAP_DATA_WRITE) == 0U) {
-        return -TRAIT_EACCES;
+    if (source_volume != OPENGATFS_VOLUME_DATA ||
+        destination_volume != OPENGATFS_VOLUME_DATA ||
+        (process->manifest.capabilities & OPENGAT_CAP_DATA_WRITE) == 0U) {
+        return -OPENGAT_EACCES;
     }
     cpu_interrupt_enable();
-    status = traitfs_rename(TRAITFS_VOLUME_DATA, source, destination);
-    if (status == TRAITFS_STATUS_EXISTS && replace &&
+    status = opengatfs_rename(OPENGATFS_VOLUME_DATA, source, destination);
+    if (status == OPENGATFS_STATUS_EXISTS && replace &&
         replacement_backup_path(destination, backup) &&
-        traitfs_stat_path(TRAITFS_VOLUME_DATA, destination, &destination_stat) ==
-            TRAITFS_STATUS_OK && !destination_stat.directory &&
-        traitfs_stat_path(TRAITFS_VOLUME_DATA, backup, &backup_stat) ==
-            TRAITFS_STATUS_NOT_FOUND) {
-        status = traitfs_rename(TRAITFS_VOLUME_DATA, destination, backup);
-        if (status == TRAITFS_STATUS_OK) {
-            status = traitfs_rename(TRAITFS_VOLUME_DATA, source, destination);
-            if (status == TRAITFS_STATUS_OK) {
-                status = traitfs_unlink(TRAITFS_VOLUME_DATA, backup);
+        opengatfs_stat_path(OPENGATFS_VOLUME_DATA, destination, &destination_stat) ==
+            OPENGATFS_STATUS_OK && !destination_stat.directory &&
+        opengatfs_stat_path(OPENGATFS_VOLUME_DATA, backup, &backup_stat) ==
+            OPENGATFS_STATUS_NOT_FOUND) {
+        status = opengatfs_rename(OPENGATFS_VOLUME_DATA, destination, backup);
+        if (status == OPENGATFS_STATUS_OK) {
+            status = opengatfs_rename(OPENGATFS_VOLUME_DATA, source, destination);
+            if (status == OPENGATFS_STATUS_OK) {
+                status = opengatfs_unlink(OPENGATFS_VOLUME_DATA, backup);
             } else {
-                (void)traitfs_rename(TRAITFS_VOLUME_DATA, backup, destination);
+                (void)opengatfs_rename(OPENGATFS_VOLUME_DATA, backup, destination);
             }
         }
     }
@@ -3678,23 +3686,23 @@ static int64_t syscall_volume_sync(
     uint64_t volume_number
 )
 {
-    enum traitfs_volume volume;
+    enum opengatfs_volume volume;
 
-    if (volume_number == TRAIT_VOLUME_SYSTEM) {
-        if ((process->manifest.capabilities & TRAIT_CAP_SYSTEM_READ) == 0U) {
-            return -TRAIT_EACCES;
+    if (volume_number == OPENGAT_VOLUME_SYSTEM) {
+        if ((process->manifest.capabilities & OPENGAT_CAP_SYSTEM_READ) == 0U) {
+            return -OPENGAT_EACCES;
         }
-        volume = TRAITFS_VOLUME_SYSTEM;
-    } else if (volume_number == TRAIT_VOLUME_DATA) {
-        if ((process->manifest.capabilities & TRAIT_CAP_DATA_WRITE) == 0U) {
-            return -TRAIT_EACCES;
+        volume = OPENGATFS_VOLUME_SYSTEM;
+    } else if (volume_number == OPENGAT_VOLUME_DATA) {
+        if ((process->manifest.capabilities & OPENGAT_CAP_DATA_WRITE) == 0U) {
+            return -OPENGAT_EACCES;
         }
-        volume = TRAITFS_VOLUME_DATA;
+        volume = OPENGATFS_VOLUME_DATA;
     } else {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     cpu_interrupt_enable();
-    const enum traitfs_status status = traitfs_sync(volume);
+    const enum opengatfs_status status = opengatfs_sync(volume);
     cpu_interrupt_disable();
     return filesystem_error(status);
 }
@@ -3705,33 +3713,33 @@ static int64_t syscall_volume_space(
     uint64_t output_address
 )
 {
-    struct trait_volume_space output = {
-        sizeof(output), TRAIT_ABI_VERSION, 0U, 0U,
+    struct opengat_volume_space output = {
+        sizeof(output), OPENGAT_ABI_VERSION, 0U, 0U,
         (uint32_t)PAGING_PAGE_SIZE, 0U
     };
-    enum traitfs_volume volume;
-    struct traitfs_drive_info drive;
+    enum opengatfs_volume volume;
+    struct opengatfs_drive_info drive;
 
     if (!validate_user_range(process, output_address, sizeof(output), true)) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
-    if (volume_number == TRAIT_VOLUME_SYSTEM &&
-        (process->manifest.capabilities & TRAIT_CAP_SYSTEM_READ) != 0U) {
-        volume = TRAITFS_VOLUME_SYSTEM;
-    } else if (volume_number == TRAIT_VOLUME_DATA &&
-        (process->manifest.capabilities & TRAIT_CAP_DATA_READ) != 0U) {
-        volume = TRAITFS_VOLUME_DATA;
+    if (volume_number == OPENGAT_VOLUME_SYSTEM &&
+        (process->manifest.capabilities & OPENGAT_CAP_SYSTEM_READ) != 0U) {
+        volume = OPENGATFS_VOLUME_SYSTEM;
+    } else if (volume_number == OPENGAT_VOLUME_DATA &&
+        (process->manifest.capabilities & OPENGAT_CAP_DATA_READ) != 0U) {
+        volume = OPENGATFS_VOLUME_DATA;
     } else {
-        return -TRAIT_EACCES;
+        return -OPENGAT_EACCES;
     }
-    drive = traitfs_drive(volume);
+    drive = opengatfs_drive(volume);
     if (!drive.mounted || !drive.healthy) {
-        return -TRAIT_EIO;
+        return -OPENGAT_EIO;
     }
     output.total_bytes = drive.total_bytes;
     output.free_bytes = drive.free_bytes;
     return copy_to_user(process, output_address, &output, sizeof(output)) ?
-        0 : -TRAIT_EFAULT;
+        0 : -OPENGAT_EFAULT;
 }
 
 static int64_t network_error(enum network_status status)
@@ -3740,32 +3748,32 @@ static int64_t network_error(enum network_status status)
     case NETWORK_STATUS_OK:
         return 0;
     case NETWORK_STATUS_TIMEOUT:
-        return -TRAIT_ETIMEDOUT;
+        return -OPENGAT_ETIMEDOUT;
     case NETWORK_STATUS_CANCELLED:
-        return -TRAIT_ECANCELED;
+        return -OPENGAT_ECANCELED;
     case NETWORK_STATUS_WOULD_BLOCK:
-        return -TRAIT_EAGAIN;
+        return -OPENGAT_EAGAIN;
     case NETWORK_STATUS_NO_RESOURCES:
-        return -TRAIT_ENOMEM;
+        return -OPENGAT_ENOMEM;
     case NETWORK_STATUS_STALE_HANDLE:
-        return -TRAIT_ESTALE;
+        return -OPENGAT_ESTALE;
     case NETWORK_STATUS_WRONG_OWNER:
     case NETWORK_STATUS_WRONG_MODE:
-        return -TRAIT_EBADF;
+        return -OPENGAT_EBADF;
     case NETWORK_STATUS_ALREADY_BOUND:
     case NETWORK_STATUS_PORT_IN_USE:
-        return -TRAIT_EBUSY;
+        return -OPENGAT_EBUSY;
     case NETWORK_STATUS_CONNECTION_CLOSED:
-        return -TRAIT_EPIPE;
+        return -OPENGAT_EPIPE;
     case NETWORK_STATUS_RESET:
     case NETWORK_STATUS_CONNECTION_RESET:
-        return -TRAIT_EIO;
+        return -OPENGAT_EIO;
     case NETWORK_STATUS_INVALID_ARGUMENT:
     case NETWORK_STATUS_RANGE:
     case NETWORK_STATUS_NULL_ARGUMENT:
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     case NETWORK_STATUS_UNSUPPORTED:
-        return -TRAIT_ENOTSUP;
+        return -OPENGAT_ENOTSUP;
     case NETWORK_STATUS_UNAVAILABLE:
     case NETWORK_STATUS_LINK_DOWN:
     case NETWORK_STATUS_UNCONFIGURED:
@@ -3782,7 +3790,7 @@ static int64_t network_error(enum network_status status)
     case NETWORK_STATUS_ALREADY_INITIALIZED:
     case NETWORK_STATUS_COUNT:
     default:
-        return -TRAIT_EIO;
+        return -OPENGAT_EIO;
     }
 }
 
@@ -3830,17 +3838,17 @@ static int64_t syscall_random(
 {
     size_t completed = 0U;
 
-    if ((process->manifest.capabilities & TRAIT_CAP_ENTROPY) == 0U) {
-        return -TRAIT_EACCES;
+    if ((process->manifest.capabilities & OPENGAT_CAP_ENTROPY) == 0U) {
+        return -OPENGAT_EACCES;
     }
     if (length > RANDOM_MAX_REQUEST_BYTES) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     if (length == 0U) {
         return 0;
     }
     if (!validate_user_range(process, address, length, true)) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     while (completed < length) {
         size_t chunk = length - completed;
@@ -3855,7 +3863,7 @@ static int64_t syscall_random(
         if (status != RANDOM_STATUS_OK ||
             !copy_to_user(process, address + completed, process->transfer,
                 chunk)) {
-            return completed == 0U ? -TRAIT_EIO : (int64_t)completed;
+            return completed == 0U ? -OPENGAT_EIO : (int64_t)completed;
         }
         completed += chunk;
     }
@@ -3866,19 +3874,19 @@ static int64_t syscall_time_realtime(const struct native_process *process)
 {
     int64_t seconds;
 
-    if ((process->manifest.capabilities & TRAIT_CAP_TIME) == 0U) {
-        return -TRAIT_EACCES;
+    if ((process->manifest.capabilities & OPENGAT_CAP_TIME) == 0U) {
+        return -OPENGAT_EACCES;
     }
     return wall_clock_read_unix_seconds(&seconds) == WALL_CLOCK_STATUS_OK ?
-        seconds : -TRAIT_EIO;
+        seconds : -OPENGAT_EIO;
 }
 
 static int64_t syscall_timer_create(struct native_process *process)
 {
     struct native_resource resource = {{0U, 0U, 0U, 0U}};
-    trait_handle_t handle;
+    opengat_handle_t handle;
     const enum native_handle_status status = native_handle_install(
-        &process->handles, TRAIT_HANDLE_TIMER, &resource, &handle);
+        &process->handles, OPENGAT_HANDLE_TIMER, &resource, &handle);
 
     if (status != NATIVE_HANDLE_OK) {
         return handle_error(status);
@@ -3894,21 +3902,21 @@ static int64_t syscall_timer_set(
     uint64_t request_address
 )
 {
-    struct trait_timer_set_request request;
+    struct opengat_timer_set_request request;
     struct native_resource *resource;
     enum native_handle_status status;
 
     if (!copy_from_user(process, &request, request_address,
             sizeof(request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (request.size != sizeof(request) ||
-        request.version != TRAIT_ABI_VERSION || request.flags != 0U ||
+        request.version != OPENGAT_ABI_VERSION || request.flags != 0U ||
         request.reserved != 0U) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     status = native_handle_resolve(&process->handles, request.handle,
-        TRAIT_HANDLE_TIMER, &resource);
+        OPENGAT_HANDLE_TIMER, &resource);
     if (status != NATIVE_HANDLE_OK) {
         return handle_error(status);
     }
@@ -3924,11 +3932,11 @@ static int64_t syscall_sleep_until(
     struct native_thread *thread = running_thread(process);
     const uint64_t now = clock_monotonic_ns();
 
-    if ((process->manifest.capabilities & TRAIT_CAP_TIME) == 0U) {
-        return -TRAIT_EACCES;
+    if ((process->manifest.capabilities & OPENGAT_CAP_TIME) == 0U) {
+        return -OPENGAT_EACCES;
     }
     if (thread == NULL) {
-        return -TRAIT_EIO;
+        return -OPENGAT_EIO;
     }
     if (deadline <= now) {
         return 0;
@@ -3940,13 +3948,13 @@ static int64_t syscall_sleep_until(
 
 static int64_t poll_wait_items(
     struct native_process *process,
-    struct trait_wait_item *items,
+    struct opengat_wait_item *items,
     size_t count
 )
 {
-    struct network_poll_request network_requests[TRAIT_WAIT_MAX];
-    struct network_poll_result network_results[TRAIT_WAIT_MAX];
-    size_t network_indices[TRAIT_WAIT_MAX];
+    struct network_poll_request network_requests[OPENGAT_WAIT_MAX];
+    struct network_poll_result network_results[OPENGAT_WAIT_MAX];
+    size_t network_indices[OPENGAT_WAIT_MAX];
     size_t network_count = 0U;
     size_t ready_count = 0U;
 
@@ -3961,57 +3969,57 @@ static int64_t poll_wait_items(
         if (status != NATIVE_HANDLE_OK) {
             return handle_error(status);
         }
-        if ((items[index].interests & ~TRAIT_WAIT_INTERESTS_V1) != 0U ||
+        if ((items[index].interests & ~OPENGAT_WAIT_INTERESTS_V1) != 0U ||
             items[index].interests == 0U) {
-            return -TRAIT_EINVAL;
+            return -OPENGAT_EINVAL;
         }
-        if (type == TRAIT_HANDLE_FILE || type == TRAIT_HANDLE_DIRECTORY) {
+        if (type == OPENGAT_HANDLE_FILE || type == OPENGAT_HANDLE_DIRECTORY) {
             items[index].ready = items[index].interests &
-                (TRAIT_WAIT_READABLE | TRAIT_WAIT_WRITABLE);
-        } else if (type == TRAIT_HANDLE_TIMER) {
+                (OPENGAT_WAIT_READABLE | OPENGAT_WAIT_WRITABLE);
+        } else if (type == OPENGAT_HANDLE_TIMER) {
             if (resource->words[0] != 0U &&
                 clock_monotonic_ns() >= resource->words[0]) {
                 items[index].ready = items[index].interests &
-                    TRAIT_WAIT_SIGNALED;
+                    OPENGAT_WAIT_SIGNALED;
             }
-        } else if (type == TRAIT_HANDLE_EVENT_QUEUE) {
+        } else if (type == OPENGAT_HANDLE_EVENT_QUEUE) {
             if (process->window.allocated &&
                 process->window.generation == resource->words[1] &&
                 (process->window.event_count != 0U ||
                     process->window.overflow_pending)) {
                 items[index].ready = items[index].interests &
-                    TRAIT_WAIT_READABLE;
+                    OPENGAT_WAIT_READABLE;
             }
-        } else if (type == TRAIT_HANDLE_AUDIO_OUTPUT) {
+        } else if (type == OPENGAT_HANDLE_AUDIO_OUTPUT) {
             bool writable;
             bool closed;
             const enum audio_native_status audio_status = audio_native_poll(
                 process->generation, resource->words[0], &writable, &closed);
 
             if ((items[index].interests &
-                    ~(TRAIT_WAIT_WRITABLE | TRAIT_WAIT_CLOSED)) != 0U) {
-                return -TRAIT_EINVAL;
+                    ~(OPENGAT_WAIT_WRITABLE | OPENGAT_WAIT_CLOSED)) != 0U) {
+                return -OPENGAT_EINVAL;
             }
             if (audio_status != AUDIO_NATIVE_OK) {
                 return audio_error(audio_status);
             }
             if (writable) {
                 items[index].ready |= items[index].interests &
-                    TRAIT_WAIT_WRITABLE;
+                    OPENGAT_WAIT_WRITABLE;
             }
             if (closed) {
                 items[index].ready |= items[index].interests &
-                    TRAIT_WAIT_CLOSED;
+                    OPENGAT_WAIT_CLOSED;
             }
-        } else if (type == TRAIT_HANDLE_STREAM ||
-            type == TRAIT_HANDLE_DATAGRAM) {
+        } else if (type == OPENGAT_HANDLE_STREAM ||
+            type == OPENGAT_HANDLE_DATAGRAM) {
             network_requests[network_count].handle = resource->words[0];
             network_requests[network_count].interests = 0U;
-            if ((items[index].interests & TRAIT_WAIT_READABLE) != 0U) {
+            if ((items[index].interests & OPENGAT_WAIT_READABLE) != 0U) {
                 network_requests[network_count].interests |=
                     NETWORK_READY_READABLE;
             }
-            if ((items[index].interests & TRAIT_WAIT_WRITABLE) != 0U) {
+            if ((items[index].interests & OPENGAT_WAIT_WRITABLE) != 0U) {
                 network_requests[network_count].interests |=
                     NETWORK_READY_WRITABLE;
             }
@@ -4036,15 +4044,15 @@ static int64_t poll_wait_items(
             const size_t index = network_indices[result];
 
             if ((network_results[result].ready & NETWORK_READY_READABLE) != 0U) {
-                items[index].ready |= TRAIT_WAIT_READABLE;
+                items[index].ready |= OPENGAT_WAIT_READABLE;
             }
             if ((network_results[result].ready & NETWORK_READY_WRITABLE) != 0U) {
-                items[index].ready |= TRAIT_WAIT_WRITABLE;
+                items[index].ready |= OPENGAT_WAIT_WRITABLE;
             }
             if ((network_results[result].ready &
                     (NETWORK_READY_PEER_CLOSED | NETWORK_READY_ERROR |
                         NETWORK_READY_CANCELLED)) != 0U) {
-                items[index].ready |= TRAIT_WAIT_CLOSED;
+                items[index].ready |= OPENGAT_WAIT_CLOSED;
             }
             if (items[index].ready != 0U) {
                 ++ready_count;
@@ -4059,25 +4067,25 @@ static int64_t syscall_wait(
     uint64_t request_address
 )
 {
-    struct trait_wait_request request;
-    struct trait_wait_item items[TRAIT_WAIT_MAX];
+    struct opengat_wait_request request;
+    struct opengat_wait_item items[OPENGAT_WAIT_MAX];
     struct native_thread *thread = running_thread(process);
     int64_t ready;
 
     if (!copy_from_user(process, &request, request_address,
             sizeof(request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (request.size != sizeof(request) ||
-        request.version != TRAIT_ABI_VERSION || request.flags != 0U ||
-        request.count == 0U || request.count > TRAIT_WAIT_MAX) {
-        return -TRAIT_EINVAL;
+        request.version != OPENGAT_ABI_VERSION || request.flags != 0U ||
+        request.count == 0U || request.count > OPENGAT_WAIT_MAX) {
+        return -OPENGAT_EINVAL;
     }
     if (thread == NULL || !validate_user_range(process, request.items,
             request.count * sizeof(items[0]), true) ||
         !copy_from_user(process, items, request.items,
             request.count * sizeof(items[0]))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     ready = poll_wait_items(process, items, request.count);
     if (ready < 0) {
@@ -4086,9 +4094,9 @@ static int64_t syscall_wait(
     if (ready != 0 || request.deadline_ns <= clock_monotonic_ns()) {
         if (!copy_to_user(process, request.items, items,
                 request.count * sizeof(items[0]))) {
-            return -TRAIT_EFAULT;
+            return -OPENGAT_EFAULT;
         }
-        return ready == 0 ? -TRAIT_ETIMEDOUT : ready;
+        return ready == 0 ? -OPENGAT_ETIMEDOUT : ready;
     }
     copy_bytes(thread->wait_items, items,
         request.count * sizeof(items[0]));
@@ -4107,7 +4115,7 @@ static void native_ui_event(
 {
     struct native_process *process = context;
     struct native_window_state *window;
-    struct trait_event event;
+    struct opengat_event event;
 
     if (process == NULL || source == NULL || !process->active ||
         !process->window.allocated ||
@@ -4118,13 +4126,13 @@ static void native_ui_event(
     if ((source->type == UI_NATIVE_EVENT_KEY ||
             source->type == UI_NATIVE_EVENT_POINTER_MOVE ||
             source->type == UI_NATIVE_EVENT_POINTER_BUTTON) &&
-        (process->manifest.capabilities & TRAIT_CAP_INPUT) == 0U) {
+        (process->manifest.capabilities & OPENGAT_CAP_INPUT) == 0U) {
         return;
     }
     window = &process->window;
     zero_bytes(&event, sizeof(event));
     event.size = sizeof(event);
-    event.version = TRAIT_ABI_VERSION;
+    event.version = OPENGAT_ABI_VERSION;
     event.monotonic_ns = source->monotonic_ns;
     event.x = source->x;
     event.y = source->y;
@@ -4135,26 +4143,26 @@ static void native_ui_event(
     event.modifiers = source->modifiers;
     switch (source->type) {
     case UI_NATIVE_EVENT_KEY:
-        event.type = TRAIT_EVENT_KEY;
+        event.type = OPENGAT_EVENT_KEY;
         break;
     case UI_NATIVE_EVENT_POINTER_MOVE:
-        event.type = TRAIT_EVENT_POINTER_MOVE;
+        event.type = OPENGAT_EVENT_POINTER_MOVE;
         break;
     case UI_NATIVE_EVENT_POINTER_BUTTON:
-        event.type = TRAIT_EVENT_POINTER_BUTTON;
+        event.type = OPENGAT_EVENT_POINTER_BUTTON;
         break;
     case UI_NATIVE_EVENT_FOCUS:
-        event.type = TRAIT_EVENT_FOCUS;
+        event.type = OPENGAT_EVENT_FOCUS;
         break;
     case UI_NATIVE_EVENT_CLOSE:
-        event.type = TRAIT_EVENT_CLOSE;
+        event.type = OPENGAT_EVENT_CLOSE;
         break;
     default:
         return;
     }
-    if (event.type == TRAIT_EVENT_POINTER_MOVE && window->event_count != 0U &&
+    if (event.type == OPENGAT_EVENT_POINTER_MOVE && window->event_count != 0U &&
         window->events[window->event_count - 1U].type ==
-            TRAIT_EVENT_POINTER_MOVE) {
+            OPENGAT_EVENT_POINTER_MOVE) {
         window->events[window->event_count - 1U] = event;
         return;
     }
@@ -4162,7 +4170,7 @@ static void native_ui_event(
         size_t remove = 0U;
 
         for (size_t index = 0U; index < window->event_count; ++index) {
-            if (window->events[index].type == TRAIT_EVENT_POINTER_MOVE) {
+            if (window->events[index].type == OPENGAT_EVENT_POINTER_MOVE) {
                 remove = index;
                 break;
             }
@@ -4183,48 +4191,48 @@ static int64_t syscall_window_create(
     uint64_t response_address
 )
 {
-    struct trait_window_create_request request;
-    struct trait_window_create_response response = {
-        sizeof(response), TRAIT_ABI_VERSION, TRAIT_HANDLE_INVALID,
-        TRAIT_HANDLE_INVALID, 0U, 0U, 0U, 0U, TRAIT_PIXEL_XRGB8888
+    struct opengat_window_create_request request;
+    struct opengat_window_create_response response = {
+        sizeof(response), OPENGAT_ABI_VERSION, OPENGAT_HANDLE_INVALID,
+        OPENGAT_HANDLE_INVALID, 0U, 0U, 0U, 0U, OPENGAT_PIXEL_XRGB8888
     };
     struct native_resource window_resource = {{0U, 0U, 0U, 0U}};
     struct native_resource event_resource = {{0U, 0U, 0U, 0U}};
     struct native_window_state *window = &process->window;
-    char title[TRAIT_WINDOW_TITLE_MAX + 1U];
+    char title[OPENGAT_WINDOW_TITLE_MAX + 1U];
     uint64_t byte_length;
     size_t page_count;
-    trait_handle_t window_handle;
-    trait_handle_t event_handle;
+    opengat_handle_t window_handle;
+    opengat_handle_t event_handle;
 
-    if ((process->manifest.capabilities & TRAIT_CAP_WINDOW) == 0U) {
-        return -TRAIT_EACCES;
+    if ((process->manifest.capabilities & OPENGAT_CAP_WINDOW) == 0U) {
+        return -OPENGAT_EACCES;
     }
     if (!copy_from_user(process, &request, request_address,
             sizeof(request)) ||
         !validate_user_range(process, response_address, sizeof(response),
             true)) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (request.size != sizeof(request) ||
-        request.version != TRAIT_ABI_VERSION || request.flags != 0U ||
+        request.version != OPENGAT_ABI_VERSION || request.flags != 0U ||
         request.reserved != 0U || request.title_length == 0U ||
-        request.title_length > TRAIT_WINDOW_TITLE_MAX ||
+        request.title_length > OPENGAT_WINDOW_TITLE_MAX ||
         request.width < 64U || request.width > NATIVE_SURFACE_MAX_WIDTH ||
         request.height < 64U || request.height > NATIVE_SURFACE_MAX_HEIGHT ||
-        request.pixel_format != TRAIT_PIXEL_XRGB8888 || window->allocated ||
+        request.pixel_format != OPENGAT_PIXEL_XRGB8888 || window->allocated ||
         !copy_from_user(process, title, request.title,
             request.title_length)) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     for (size_t index = 0U; index < request.title_length; ++index) {
         if (title[index] < ' ' || title[index] > '~') {
-            return -TRAIT_EINVAL;
+            return -OPENGAT_EINVAL;
         }
     }
     title[request.title_length] = '\0';
     if (request.width > UINT32_MAX / SURFACE_BYTES_PER_PIXEL) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     window->stride_bytes = request.width * SURFACE_BYTES_PER_PIXEL;
     byte_length = (uint64_t)window->stride_bytes * request.height;
@@ -4234,7 +4242,7 @@ static int64_t syscall_window_create(
             (size_t)((byte_length + PAGING_PAGE_SIZE - 1U) /
                 PAGING_PAGE_SIZE)) {
         zero_bytes(window, sizeof(*window));
-        return -TRAIT_ENOMEM;
+        return -OPENGAT_ENOMEM;
     }
     window->allocated = true;
     window->window_object_open = true;
@@ -4250,7 +4258,7 @@ static int64_t syscall_window_create(
     if (heap_allocate(window->surface_bytes,
             (void **)&window->shadow_pixels) != HEAP_STATUS_OK) {
         zero_bytes(window, sizeof(*window));
-        return -TRAIT_ENOMEM;
+        return -OPENGAT_ENOMEM;
     }
     zero_bytes(window->shadow_pixels, window->surface_bytes);
     page_count = (window->surface_bytes + PAGING_PAGE_SIZE - 1U) /
@@ -4266,24 +4274,24 @@ static int64_t syscall_window_create(
                 PAGING_PROCESS_MAPPING_NATIVE_SURFACE, address,
                 physical_address, PAGING_WRITE) != PAGING_STATUS_OK) {
             (void)window_release_surface(process);
-            return -TRAIT_ENOMEM;
+            return -OPENGAT_ENOMEM;
         }
         page_at(process, address)->mapped = true;
     }
     window_resource.words[0] = window->ui_slot;
     window_resource.words[1] = window->generation;
-    if (native_handle_install(&process->handles, TRAIT_HANDLE_WINDOW,
+    if (native_handle_install(&process->handles, OPENGAT_HANDLE_WINDOW,
             &window_resource, &window_handle) != NATIVE_HANDLE_OK) {
         (void)window_release_surface(process);
-        return -TRAIT_ENOMEM;
+        return -OPENGAT_ENOMEM;
     }
     event_resource.words[0] = window->ui_slot;
     event_resource.words[1] = window->generation;
-    if (native_handle_install(&process->handles, TRAIT_HANDLE_EVENT_QUEUE,
+    if (native_handle_install(&process->handles, OPENGAT_HANDLE_EVENT_QUEUE,
             &event_resource, &event_handle) != NATIVE_HANDLE_OK) {
         (void)native_handle_close(&process->handles, window_handle,
             close_resource, process);
-        return -TRAIT_ENOMEM;
+        return -OPENGAT_ENOMEM;
     }
     window->event_object_open = true;
     const enum ui_status ui_status = ui_native_window_open(window->ui_slot,
@@ -4291,14 +4299,14 @@ static int64_t syscall_window_create(
         window->stride_bytes, native_ui_event, process);
 
     if (ui_status != UI_STATUS_OK) {
-        console_write("Trait OS: native window open failed: ");
+        console_write("OpenGAT: native window open failed: ");
         console_write(ui_status_string(ui_status));
         console_write("\n");
         (void)native_handle_close(&process->handles, event_handle,
             close_resource, process);
         (void)native_handle_close(&process->handles, window_handle,
             close_resource, process);
-        return -TRAIT_EIO;
+        return -OPENGAT_EIO;
     }
     window->visible = true;
     response.window = window_handle;
@@ -4313,7 +4321,7 @@ static int64_t syscall_window_create(
             close_resource, process);
         (void)native_handle_close(&process->handles, window_handle,
             close_resource, process);
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (process->handles.active_handles > process->peak_handles) {
         process->peak_handles = process->handles.active_handles;
@@ -4326,39 +4334,39 @@ static int64_t syscall_surface_present(
     uint64_t request_address
 )
 {
-    struct trait_present_request request;
-    struct trait_rect rectangles[TRAIT_DAMAGE_MAX];
-    struct ui_rect damage[TRAIT_DAMAGE_MAX];
+    struct opengat_present_request request;
+    struct opengat_rect rectangles[OPENGAT_DAMAGE_MAX];
+    struct ui_rect damage[OPENGAT_DAMAGE_MAX];
     struct native_resource *resource;
     struct native_window_state *window = &process->window;
     uint64_t pixel_count = 0U;
 
     if (!copy_from_user(process, &request, request_address,
             sizeof(request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (request.size != sizeof(request) ||
-        request.version != TRAIT_ABI_VERSION || request.flags != 0U ||
+        request.version != OPENGAT_ABI_VERSION || request.flags != 0U ||
         request.rectangle_count == 0U ||
-        request.rectangle_count > TRAIT_DAMAGE_MAX ||
+        request.rectangle_count > OPENGAT_DAMAGE_MAX ||
         !copy_from_user(process, rectangles, request.rectangles,
             request.rectangle_count * sizeof(rectangles[0]))) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     if (native_handle_resolve(&process->handles, request.window,
-            TRAIT_HANDLE_WINDOW, &resource) != NATIVE_HANDLE_OK ||
+            OPENGAT_HANDLE_WINDOW, &resource) != NATIVE_HANDLE_OK ||
         !window->allocated || !window->window_object_open ||
         resource->words[1] != window->generation) {
-        return -TRAIT_EBADF;
+        return -OPENGAT_EBADF;
     }
     for (size_t index = 0U; index < request.rectangle_count; ++index) {
-        const struct trait_rect rectangle = rectangles[index];
+        const struct opengat_rect rectangle = rectangles[index];
 
         if (rectangle.width == 0U || rectangle.height == 0U ||
             rectangle.x >= window->width || rectangle.y >= window->height ||
             rectangle.width > window->width - rectangle.x ||
             rectangle.height > window->height - rectangle.y) {
-            return -TRAIT_EINVAL;
+            return -OPENGAT_EINVAL;
         }
         for (uint32_t row = 0U; row < rectangle.height; ++row) {
             const uint64_t address = window->surface_address +
@@ -4368,7 +4376,7 @@ static int64_t syscall_surface_present(
             if (!validate_user_range(process, address,
                     (size_t)rectangle.width * SURFACE_BYTES_PER_PIXEL,
                     false)) {
-                return -TRAIT_EFAULT;
+                return -OPENGAT_EFAULT;
             }
         }
         damage[index] = (struct ui_rect){ rectangle.x, rectangle.y,
@@ -4376,7 +4384,7 @@ static int64_t syscall_surface_present(
         pixel_count += (uint64_t)rectangle.width * rectangle.height;
     }
     for (size_t index = 0U; index < request.rectangle_count; ++index) {
-        const struct trait_rect rectangle = rectangles[index];
+        const struct opengat_rect rectangle = rectangles[index];
 
         for (uint32_t row = 0U; row < rectangle.height; ++row) {
             uint32_t completed = 0U;
@@ -4395,7 +4403,7 @@ static int64_t syscall_surface_present(
                 }
                 if (!copy_from_user(process, process->transfer, address,
                         (size_t)pixels * SURFACE_BYTES_PER_PIXEL)) {
-                    return -TRAIT_EFAULT;
+                    return -OPENGAT_EFAULT;
                 }
                 for (uint32_t pixel = 0U; pixel < pixels; ++pixel) {
                     const size_t offset = (size_t)pixel * 4U;
@@ -4417,7 +4425,7 @@ static int64_t syscall_surface_present(
     }
     if (ui_native_window_damage(window->ui_slot, damage,
             request.rectangle_count) != UI_STATUS_OK) {
-        return -TRAIT_EIO;
+        return -OPENGAT_EIO;
     }
     ++window->present_calls;
     window->presented_pixels += pixel_count;
@@ -4426,37 +4434,37 @@ static int64_t syscall_surface_present(
 
 static int64_t syscall_event_read(
     struct native_process *process,
-    trait_handle_t handle,
+    opengat_handle_t handle,
     uint64_t output_address
 )
 {
     struct native_resource *resource;
-    struct trait_event event;
+    struct opengat_event event;
     struct native_window_state *window = &process->window;
     enum native_handle_status status;
 
     if (!validate_user_range(process, output_address, sizeof(event), true)) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     status = native_handle_resolve(&process->handles, handle,
-        TRAIT_HANDLE_EVENT_QUEUE, &resource);
+        OPENGAT_HANDLE_EVENT_QUEUE, &resource);
     if (status != NATIVE_HANDLE_OK) {
         return handle_error(status);
     }
     if (!window->allocated || !window->event_object_open ||
         resource->words[1] != window->generation) {
-        return -TRAIT_ESTALE;
+        return -OPENGAT_ESTALE;
     }
     if (window->overflow_pending) {
         zero_bytes(&event, sizeof(event));
         event.size = sizeof(event);
-        event.version = TRAIT_ABI_VERSION;
-        event.type = TRAIT_EVENT_QUEUE_OVERFLOW;
+        event.version = OPENGAT_ABI_VERSION;
+        event.type = OPENGAT_EVENT_QUEUE_OVERFLOW;
         event.monotonic_ns = clock_monotonic_ns();
         window->overflow_pending = false;
     } else {
         if (window->event_count == 0U) {
-            return -TRAIT_EAGAIN;
+            return -OPENGAT_EAGAIN;
         }
         event = window->events[0];
         for (size_t index = 1U; index < window->event_count; ++index) {
@@ -4465,31 +4473,31 @@ static int64_t syscall_event_read(
         --window->event_count;
     }
     return copy_to_user(process, output_address, &event, sizeof(event)) ?
-        1 : -TRAIT_EFAULT;
+        1 : -OPENGAT_EFAULT;
 }
 
 static int64_t syscall_pointer_capture(
     struct native_process *process,
-    trait_handle_t handle,
+    opengat_handle_t handle,
     uint64_t capture
 )
 {
     struct native_resource *resource;
     enum native_handle_status status;
 
-    if ((process->manifest.capabilities & TRAIT_CAP_INPUT) == 0U) {
-        return -TRAIT_EACCES;
+    if ((process->manifest.capabilities & OPENGAT_CAP_INPUT) == 0U) {
+        return -OPENGAT_EACCES;
     }
     if (capture > 1U) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     status = native_handle_resolve(&process->handles, handle,
-        TRAIT_HANDLE_WINDOW, &resource);
+        OPENGAT_HANDLE_WINDOW, &resource);
     if (status != NATIVE_HANDLE_OK) {
         return handle_error(status);
     }
     return ui_native_pointer_capture((uint32_t)resource->words[0],
-        capture != 0U) == UI_STATUS_OK ? 0 : -TRAIT_EBUSY;
+        capture != 0U) == UI_STATUS_OK ? 0 : -OPENGAT_EBUSY;
 }
 
 static int64_t syscall_dns_resolve(
@@ -4504,18 +4512,18 @@ static int64_t syscall_dns_resolve(
     uint32_t address;
     enum network_status status;
 
-    if ((process->manifest.capabilities & TRAIT_CAP_NETWORK) == 0U) {
-        return -TRAIT_EACCES;
+    if ((process->manifest.capabilities & OPENGAT_CAP_NETWORK) == 0U) {
+        return -OPENGAT_EACCES;
     }
     if (hostname_length == 0U || hostname_length > NETWORK_MAX_HOSTNAME ||
         !copy_from_user(process, hostname, hostname_address,
             hostname_length)) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     for (size_t index = 0U; index < hostname_length; ++index) {
         if (hostname[index] == '\0' ||
             (uint8_t)hostname[index] > UINT8_C(0x7F)) {
-            return -TRAIT_EINVAL;
+            return -OPENGAT_EINVAL;
         }
     }
     hostname[hostname_length] = '\0';
@@ -4536,12 +4544,12 @@ static int64_t syscall_network_open(
 {
     network_handle network = 0U;
     struct native_resource resource = {{0U, 0U, 0U, 0U}};
-    trait_handle_t handle;
+    opengat_handle_t handle;
     enum network_status status;
     enum native_handle_status handle_status;
 
-    if ((process->manifest.capabilities & TRAIT_CAP_NETWORK) == 0U) {
-        return -TRAIT_EACCES;
+    if ((process->manifest.capabilities & OPENGAT_CAP_NETWORK) == 0U) {
+        return -OPENGAT_EACCES;
     }
     cpu_interrupt_enable();
     status = datagram ? network_udp_open(process->generation, &network) :
@@ -4552,7 +4560,7 @@ static int64_t syscall_network_open(
     }
     resource.words[0] = network;
     handle_status = native_handle_install(&process->handles,
-        datagram ? TRAIT_HANDLE_DATAGRAM : TRAIT_HANDLE_STREAM,
+        datagram ? OPENGAT_HANDLE_DATAGRAM : OPENGAT_HANDLE_STREAM,
         &resource, &handle);
     if (handle_status != NATIVE_HANDLE_OK) {
         cpu_interrupt_enable();
@@ -4568,12 +4576,12 @@ static int64_t syscall_network_open(
 
 static int64_t syscall_stream_connect(
     struct native_process *process,
-    trait_handle_t handle,
+    opengat_handle_t handle,
     uint64_t endpoint_address,
     uint64_t deadline
 )
 {
-    struct trait_ipv4_endpoint endpoint;
+    struct opengat_ipv4_endpoint endpoint;
     struct native_resource *resource;
     uint64_t timeout;
     enum native_handle_status handle_status;
@@ -4581,14 +4589,14 @@ static int64_t syscall_stream_connect(
 
     if (!copy_from_user(process, &endpoint, endpoint_address,
             sizeof(endpoint))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (endpoint.reserved != 0U || endpoint.address == 0U ||
         endpoint.port == 0U) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     handle_status = native_handle_resolve(&process->handles, handle,
-        TRAIT_HANDLE_STREAM, &resource);
+        OPENGAT_HANDLE_STREAM, &resource);
     if (handle_status != NATIVE_HANDLE_OK) {
         return handle_error(handle_status);
     }
@@ -4609,7 +4617,7 @@ static int64_t syscall_network_io(
     bool write
 )
 {
-    struct trait_network_io request;
+    struct opengat_network_io request;
     struct native_resource *resource;
     uint64_t timeout;
     size_t transferred = 0U;
@@ -4620,26 +4628,26 @@ static int64_t syscall_network_io(
 
     if (!copy_from_user(process, &request, request_address,
             sizeof(request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (request.size != sizeof(request) ||
-        request.version != TRAIT_ABI_VERSION || request.flags != 0U ||
+        request.version != OPENGAT_ABI_VERSION || request.flags != 0U ||
         request.endpoint.reserved != 0U || request.length == 0U ||
         request.length > (datagram ? NETWORK_MAX_UDP_DATAGRAM :
-            TRAIT_NETWORK_IO_MAX_BYTES) ||
+            OPENGAT_NETWORK_IO_MAX_BYTES) ||
         !validate_user_range(process, request.buffer, request.length, !write) ||
         (!write && datagram && !validate_user_range(process, request_address,
             sizeof(request), true))) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     handle_status = native_handle_resolve(&process->handles, request.handle,
-        datagram ? TRAIT_HANDLE_DATAGRAM : TRAIT_HANDLE_STREAM, &resource);
+        datagram ? OPENGAT_HANDLE_DATAGRAM : OPENGAT_HANDLE_STREAM, &resource);
     if (handle_status != NATIVE_HANDLE_OK) {
         return handle_error(handle_status);
     }
     if (write && !copy_from_user(process, process->transfer, request.buffer,
             request.length)) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     cpu_interrupt_enable();
     status = prepare_native_network(request.deadline_ns, &timeout);
@@ -4666,7 +4674,7 @@ static int64_t syscall_network_io(
     if (!write && transferred != 0U &&
         !copy_to_user(process, request.buffer, process->transfer,
             transferred)) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (!write && datagram) {
         request.endpoint.address = source;
@@ -4674,7 +4682,7 @@ static int64_t syscall_network_io(
         request.length = (uint32_t)transferred;
         if (!copy_to_user(process, request_address, &request,
                 sizeof(request))) {
-            return -TRAIT_EFAULT;
+            return -OPENGAT_EFAULT;
         }
     }
     return (int64_t)transferred;
@@ -4682,13 +4690,13 @@ static int64_t syscall_network_io(
 
 static int64_t syscall_datagram_bind(
     struct native_process *process,
-    trait_handle_t handle,
+    opengat_handle_t handle,
     uint16_t port
 )
 {
     struct native_resource *resource;
     enum native_handle_status handle_status = native_handle_resolve(
-        &process->handles, handle, TRAIT_HANDLE_DATAGRAM, &resource);
+        &process->handles, handle, OPENGAT_HANDLE_DATAGRAM, &resource);
 
     if (handle_status != NATIVE_HANDLE_OK) {
         return handle_error(handle_status);
@@ -4702,7 +4710,7 @@ static int64_t syscall_datagram_bind(
 
 static int64_t syscall_stream_shutdown(
     struct native_process *process,
-    trait_handle_t handle,
+    opengat_handle_t handle,
     uint32_t flags,
     uint64_t deadline
 )
@@ -4711,13 +4719,13 @@ static int64_t syscall_stream_shutdown(
     uint64_t timeout;
     enum native_handle_status handle_status;
 
-    if ((flags & ~(TRAIT_SHUTDOWN_READ | TRAIT_SHUTDOWN_WRITE)) != 0U ||
-        (flags & TRAIT_SHUTDOWN_WRITE) == 0U ||
+    if ((flags & ~(OPENGAT_SHUTDOWN_READ | OPENGAT_SHUTDOWN_WRITE)) != 0U ||
+        (flags & OPENGAT_SHUTDOWN_WRITE) == 0U ||
         !deadline_timeout(deadline, &timeout)) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     handle_status = native_handle_resolve(&process->handles, handle,
-        TRAIT_HANDLE_STREAM, &resource);
+        OPENGAT_HANDLE_STREAM, &resource);
     if (handle_status != NATIVE_HANDLE_OK) {
         return handle_error(handle_status);
     }
@@ -4730,20 +4738,20 @@ static int64_t syscall_stream_shutdown(
 
 static int64_t syscall_network_address(
     struct native_process *process,
-    trait_handle_t handle,
+    opengat_handle_t handle,
     bool peer,
     uint64_t output_address
 )
 {
     struct native_resource *resource;
-    struct trait_ipv4_endpoint endpoint = {0U, 0U, 0U};
+    struct opengat_ipv4_endpoint endpoint = {0U, 0U, 0U};
     uint32_t address = 0U;
     uint16_t port = 0U;
     enum native_handle_status handle_status;
     enum network_status status;
 
     if (!validate_user_range(process, output_address, sizeof(endpoint), true)) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     handle_status = native_handle_resolve(&process->handles, handle, 0U,
         &resource);
@@ -4752,8 +4760,8 @@ static int64_t syscall_network_address(
     }
     const uint8_t type = (uint8_t)((handle >> 16U) & UINT64_C(0xFF));
 
-    if (type != TRAIT_HANDLE_STREAM && type != TRAIT_HANDLE_DATAGRAM) {
-        return -TRAIT_EBADF;
+    if (type != OPENGAT_HANDLE_STREAM && type != OPENGAT_HANDLE_DATAGRAM) {
+        return -OPENGAT_EBADF;
     }
     cpu_interrupt_enable();
     status = network_address(process->generation, resource->words[0], peer,
@@ -4765,18 +4773,18 @@ static int64_t syscall_network_address(
     endpoint.address = address;
     endpoint.port = port;
     return copy_to_user(process, output_address, &endpoint, sizeof(endpoint)) ?
-        0 : -TRAIT_EFAULT;
+        0 : -OPENGAT_EFAULT;
 }
 
 static int64_t syscall_audio_open(struct native_process *process)
 {
     struct native_resource resource = {{0U, 0U, 0U, 0U}};
-    trait_handle_t handle;
+    opengat_handle_t handle;
     enum audio_native_status audio_status;
     enum native_handle_status handle_status;
 
-    if ((process->manifest.capabilities & TRAIT_CAP_AUDIO) == 0U) {
-        return -TRAIT_EACCES;
+    if ((process->manifest.capabilities & OPENGAT_CAP_AUDIO) == 0U) {
+        return -OPENGAT_EACCES;
     }
     audio_status = audio_native_open(process->generation,
         &resource.words[0]);
@@ -4784,7 +4792,7 @@ static int64_t syscall_audio_open(struct native_process *process)
         return audio_error(audio_status);
     }
     handle_status = native_handle_install(&process->handles,
-        TRAIT_HANDLE_AUDIO_OUTPUT, &resource, &handle);
+        OPENGAT_HANDLE_AUDIO_OUTPUT, &resource, &handle);
     if (handle_status != NATIVE_HANDLE_OK) {
         (void)audio_native_close(process->generation, resource.words[0]);
         return handle_error(handle_status);
@@ -4800,28 +4808,28 @@ static int64_t syscall_audio_submit(
     uint64_t request_address
 )
 {
-    struct trait_audio_submit_request request;
+    struct opengat_audio_submit_request request;
     struct native_resource *resource;
     enum native_handle_status handle_status;
     enum audio_native_status audio_status;
 
     if (!copy_from_user(process, &request, request_address,
             sizeof(request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (request.size != sizeof(request) ||
-        request.version != TRAIT_ABI_VERSION || request.flags != 0U ||
-        request.length != TRAIT_AUDIO_CHUNK_BYTES) {
-        return -TRAIT_EINVAL;
+        request.version != OPENGAT_ABI_VERSION || request.flags != 0U ||
+        request.length != OPENGAT_AUDIO_CHUNK_BYTES) {
+        return -OPENGAT_EINVAL;
     }
     handle_status = native_handle_resolve(&process->handles, request.handle,
-        TRAIT_HANDLE_AUDIO_OUTPUT, &resource);
+        OPENGAT_HANDLE_AUDIO_OUTPUT, &resource);
     if (handle_status != NATIVE_HANDLE_OK) {
         return handle_error(handle_status);
     }
     if (!copy_from_user(process, process->transfer, request.buffer,
             request.length)) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     audio_status = audio_native_submit(process->generation,
         resource->words[0], (const int16_t *)(const void *)process->transfer,
@@ -4835,23 +4843,23 @@ static int64_t syscall_audio_volume(
     uint64_t request_address
 )
 {
-    struct trait_audio_volume_request request;
+    struct opengat_audio_volume_request request;
     struct native_resource *resource;
     enum native_handle_status handle_status;
 
     if (!copy_from_user(process, &request, request_address,
             sizeof(request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (request.size != sizeof(request) ||
-        request.version != TRAIT_ABI_VERSION || request.flags != 0U ||
+        request.version != OPENGAT_ABI_VERSION || request.flags != 0U ||
         request.reserved != 0U ||
-        request.left_q15 > TRAIT_AUDIO_VOLUME_MAX ||
-        request.right_q15 > TRAIT_AUDIO_VOLUME_MAX) {
-        return -TRAIT_EINVAL;
+        request.left_q15 > OPENGAT_AUDIO_VOLUME_MAX ||
+        request.right_q15 > OPENGAT_AUDIO_VOLUME_MAX) {
+        return -OPENGAT_EINVAL;
     }
     handle_status = native_handle_resolve(&process->handles, request.handle,
-        TRAIT_HANDLE_AUDIO_OUTPUT, &resource);
+        OPENGAT_HANDLE_AUDIO_OUTPUT, &resource);
     if (handle_status != NATIVE_HANDLE_OK) {
         return handle_error(handle_status);
     }
@@ -4861,37 +4869,37 @@ static int64_t syscall_audio_volume(
 
 static int64_t syscall_audio_drain(
     struct native_process *process,
-    trait_handle_t handle,
+    opengat_handle_t handle,
     uint64_t deadline_ns
 )
 {
     struct native_resource *resource;
     struct native_thread *thread = running_thread(process);
     const enum native_handle_status handle_status = native_handle_resolve(
-        &process->handles, handle, TRAIT_HANDLE_AUDIO_OUTPUT, &resource);
+        &process->handles, handle, OPENGAT_HANDLE_AUDIO_OUTPUT, &resource);
     enum audio_native_drain_state state;
 
     if (handle_status != NATIVE_HANDLE_OK) {
         return handle_error(handle_status);
     }
     if (thread == NULL) {
-        return -TRAIT_EIO;
+        return -OPENGAT_EIO;
     }
     state = audio_native_drain(process->generation, resource->words[0]);
     if (state == AUDIO_NATIVE_DRAIN_COMPLETE) {
         return 0;
     }
     if (state == AUDIO_NATIVE_DRAIN_CANCELED) {
-        return -TRAIT_ECANCELED;
+        return -OPENGAT_ECANCELED;
     }
     if (state == AUDIO_NATIVE_DRAIN_ERROR) {
-        return -TRAIT_EIO;
+        return -OPENGAT_EIO;
     }
     if (state == AUDIO_NATIVE_DRAIN_STALE) {
-        return -TRAIT_ESTALE;
+        return -OPENGAT_ESTALE;
     }
     if (deadline_ns != 0U && deadline_ns <= clock_monotonic_ns()) {
-        return -TRAIT_ETIMEDOUT;
+        return -OPENGAT_ETIMEDOUT;
     }
     thread->audio_token = resource->words[0];
     thread->deadline_ns = deadline_ns;
@@ -4903,14 +4911,14 @@ static int64_t syscall_package_upload_open(struct native_process *process)
 {
     struct package_upload_report report;
     struct native_resource resource = {{0U, 0U, 0U, 0U}};
-    trait_handle_t handle;
+    opengat_handle_t handle;
 
-    if ((process->manifest.capabilities & TRAIT_CAP_PACKAGES) == 0U) {
-        return -TRAIT_EACCES;
+    if ((process->manifest.capabilities & OPENGAT_CAP_PACKAGES) == 0U) {
+        return -OPENGAT_EACCES;
     }
     if (process->handles.active_handles >= process->handles.limit ||
         process->handles.active_objects >= process->handles.limit) {
-        return -TRAIT_ENOMEM;
+        return -OPENGAT_ENOMEM;
     }
     cpu_interrupt_enable();
     enum package_upload_status upload_status = package_upload_open(
@@ -4925,7 +4933,7 @@ static int64_t syscall_package_upload_open(struct native_process *process)
     }
     resource.words[0] = report.token;
     enum native_handle_status handle_status = native_handle_install(
-        &process->handles, TRAIT_HANDLE_PACKAGE_UPLOAD, &resource, &handle);
+        &process->handles, OPENGAT_HANDLE_PACKAGE_UPLOAD, &resource, &handle);
 
     if (handle_status != NATIVE_HANDLE_OK) {
         cpu_interrupt_enable();
@@ -4944,29 +4952,29 @@ static int64_t syscall_package_upload_write(
     uint64_t request_address
 )
 {
-    struct trait_package_upload_write_request request;
+    struct opengat_package_upload_write_request request;
     struct package_upload_report report;
     struct native_resource *resource;
     size_t written = 0U;
 
-    if ((process->manifest.capabilities & TRAIT_CAP_PACKAGES) == 0U) {
-        return -TRAIT_EACCES;
+    if ((process->manifest.capabilities & OPENGAT_CAP_PACKAGES) == 0U) {
+        return -OPENGAT_EACCES;
     }
     if (!copy_from_user(process, &request, request_address,
             sizeof(request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (request.size != sizeof(request) ||
-        request.version != TRAIT_ABI_VERSION || request.flags != 0U ||
-        request.length > TRAIT_PACKAGE_UPLOAD_WRITE_MAX) {
-        return -TRAIT_EINVAL;
+        request.version != OPENGAT_ABI_VERSION || request.flags != 0U ||
+        request.length > OPENGAT_PACKAGE_UPLOAD_WRITE_MAX) {
+        return -OPENGAT_EINVAL;
     }
     if (request.length != 0U && !copy_from_user(process, process->transfer,
             request.buffer, request.length)) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     enum native_handle_status handle_status = native_handle_resolve(
-        &process->handles, request.handle, TRAIT_HANDLE_PACKAGE_UPLOAD,
+        &process->handles, request.handle, OPENGAT_HANDLE_PACKAGE_UPLOAD,
         &resource);
 
     if (handle_status != NATIVE_HANDLE_OK) {
@@ -4986,31 +4994,31 @@ static int64_t syscall_package_upload_seal(
     uint64_t request_address
 )
 {
-    struct trait_package_upload_seal_request request;
+    struct opengat_package_upload_seal_request request;
     struct package_upload_report report;
     struct native_resource *resource;
 
-    if ((process->manifest.capabilities & TRAIT_CAP_PACKAGES) == 0U) {
-        return -TRAIT_EACCES;
+    if ((process->manifest.capabilities & OPENGAT_CAP_PACKAGES) == 0U) {
+        return -OPENGAT_EACCES;
     }
     if (!validate_user_range(process, request_address, sizeof(request), true) ||
         !copy_from_user(process, &request, request_address, sizeof(request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (request.size != sizeof(request) ||
-        request.version != TRAIT_ABI_VERSION || request.expected_bytes == 0U ||
-        request.expected_bytes > TRAIT_PACKAGE_UPLOAD_MAX_BYTES ||
+        request.version != OPENGAT_ABI_VERSION || request.expected_bytes == 0U ||
+        request.expected_bytes > OPENGAT_PACKAGE_UPLOAD_MAX_BYTES ||
         request.actual_bytes != 0U || request.result_flags != 0U ||
         request.reserved != 0U) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     for (size_t index = 0U; index < sizeof(request.actual_sha256); ++index) {
         if (request.actual_sha256[index] != 0U) {
-            return -TRAIT_EINVAL;
+            return -OPENGAT_EINVAL;
         }
     }
     enum native_handle_status handle_status = native_handle_resolve(
-        &process->handles, request.handle, TRAIT_HANDLE_PACKAGE_UPLOAD,
+        &process->handles, request.handle, OPENGAT_HANDLE_PACKAGE_UPLOAD,
         &resource);
 
     if (handle_status != NATIVE_HANDLE_OK) {
@@ -5026,13 +5034,13 @@ static int64_t syscall_package_upload_seal(
         request.actual_sha256[index] = report.sha256[index];
     }
     if (report.sealed) {
-        request.result_flags |= TRAIT_PACKAGE_UPLOAD_SEALED;
+        request.result_flags |= OPENGAT_PACKAGE_UPLOAD_SEALED;
     }
     if (report.durable) {
-        request.result_flags |= TRAIT_PACKAGE_UPLOAD_DURABLE;
+        request.result_flags |= OPENGAT_PACKAGE_UPLOAD_DURABLE;
     }
     if (!copy_to_user(process, request_address, &request, sizeof(request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     return package_upload_error(upload_status, report.filesystem_status);
 }
@@ -5042,44 +5050,44 @@ static int64_t syscall_package_control_open_install(
     uint64_t request_address
 )
 {
-    struct trait_package_control_open_request request;
+    struct opengat_package_control_open_request request;
     struct package_control_report report;
     struct native_resource *upload = NULL;
     struct native_resource resource = {{0U, 0U, 0U, 0U}};
-    trait_handle_t handle;
+    opengat_handle_t handle;
 
-    if ((process->manifest.capabilities & TRAIT_CAP_PACKAGES) == 0U) {
-        return -TRAIT_EACCES;
+    if ((process->manifest.capabilities & OPENGAT_CAP_PACKAGES) == 0U) {
+        return -OPENGAT_EACCES;
     }
     if (!validate_user_range(process, request_address, sizeof(request), true) ||
         !copy_from_user(process, &request, request_address, sizeof(request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (request.size != sizeof(request) ||
-        request.version != TRAIT_ABI_VERSION ||
-        request.flags > TRAIT_PACKAGE_CONTROL_OPEN_REPAIR ||
-        (request.flags == TRAIT_PACKAGE_CONTROL_OPEN_REPAIR ?
+        request.version != OPENGAT_ABI_VERSION ||
+        request.flags > OPENGAT_PACKAGE_CONTROL_OPEN_REPAIR ||
+        (request.flags == OPENGAT_PACKAGE_CONTROL_OPEN_REPAIR ?
             (request.identifier != 0U || request.identifier_bytes != 0U) :
             request.identifier_bytes == 0U) ||
-        request.identifier_bytes >= TRAIT_PACKAGE_CONTROL_TEXT_BYTES ||
+        request.identifier_bytes >= OPENGAT_PACKAGE_CONTROL_TEXT_BYTES ||
         request.repository_version != 0U || request.generation != 0U ||
         request.plan_count != 0U || request.result_flags != 0U) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     if (request.identifier_bytes != 0U &&
         !copy_from_user(process, process->transfer, request.identifier,
             request.identifier_bytes)) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     enum native_handle_status handle_status = NATIVE_HANDLE_OK;
 
-    if (request.flags == TRAIT_PACKAGE_CONTROL_OPEN_INSTALL ||
-            request.flags == TRAIT_PACKAGE_CONTROL_OPEN_REPAIR) {
+    if (request.flags == OPENGAT_PACKAGE_CONTROL_OPEN_INSTALL ||
+            request.flags == OPENGAT_PACKAGE_CONTROL_OPEN_REPAIR) {
         handle_status = native_handle_resolve(&process->handles,
-            request.repository_upload, TRAIT_HANDLE_PACKAGE_UPLOAD,
+            request.repository_upload, OPENGAT_HANDLE_PACKAGE_UPLOAD,
             &upload);
-    } else if (request.repository_upload != TRAIT_HANDLE_INVALID) {
-        return -TRAIT_EINVAL;
+    } else if (request.repository_upload != OPENGAT_HANDLE_INVALID) {
+        return -OPENGAT_EINVAL;
     }
 
     if (handle_status != NATIVE_HANDLE_OK) {
@@ -5087,15 +5095,15 @@ static int64_t syscall_package_control_open_install(
     }
     if (process->handles.active_handles >= process->handles.limit ||
         process->handles.active_objects >= process->handles.limit) {
-        return -TRAIT_ENOMEM;
+        return -OPENGAT_ENOMEM;
     }
     cpu_interrupt_enable();
     enum package_control_status control_status;
-    if (request.flags == TRAIT_PACKAGE_CONTROL_OPEN_INSTALL) {
+    if (request.flags == OPENGAT_PACKAGE_CONTROL_OPEN_INSTALL) {
         control_status = package_control_open_install(process->generation,
             upload->words[0], process->transfer, request.identifier_bytes,
             &report);
-    } else if (request.flags == TRAIT_PACKAGE_CONTROL_OPEN_REMOVE) {
+    } else if (request.flags == OPENGAT_PACKAGE_CONTROL_OPEN_REMOVE) {
         control_status = package_control_open_remove(process->generation,
             process->transfer, request.identifier_bytes, &report);
     } else {
@@ -5108,7 +5116,7 @@ static int64_t syscall_package_control_open_install(
     }
     resource.words[0] = report.token;
     handle_status = native_handle_install(&process->handles,
-        TRAIT_HANDLE_PACKAGE_CONTROL, &resource, &handle);
+        OPENGAT_HANDLE_PACKAGE_CONTROL, &resource, &handle);
     if (handle_status != NATIVE_HANDLE_OK) {
         cpu_interrupt_enable();
         (void)package_control_close(process->generation, report.token, &report);
@@ -5124,7 +5132,7 @@ static int64_t syscall_package_control_open_install(
         (void)native_handle_close(&process->handles, handle, close_resource,
             process);
         cpu_interrupt_disable();
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (process->handles.active_handles > process->peak_handles) {
         process->peak_handles = process->handles.active_handles;
@@ -5137,21 +5145,21 @@ static int64_t syscall_package_control_item(
     uint64_t request_address
 )
 {
-    struct trait_package_control_item_request request;
+    struct opengat_package_control_item_request request;
     struct package_control_item item;
     struct package_control_report report;
     struct native_resource *control;
 
-    if ((process->manifest.capabilities & TRAIT_CAP_PACKAGES) == 0U) {
-        return -TRAIT_EACCES;
+    if ((process->manifest.capabilities & OPENGAT_CAP_PACKAGES) == 0U) {
+        return -OPENGAT_EACCES;
     }
     if (!validate_user_range(process, request_address, sizeof(request), true) ||
         !copy_from_user(process, &request, request_address, sizeof(request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (request.size != sizeof(request) ||
-        request.version != TRAIT_ABI_VERSION || request.flags != 0U ||
-        request.index >= TRAIT_PACKAGE_CONTROL_PLAN_MAX ||
+        request.version != OPENGAT_ABI_VERSION || request.flags != 0U ||
+        request.index >= OPENGAT_PACKAGE_CONTROL_PLAN_MAX ||
         request.package_bytes != 0U || request.identifier_bytes != 0U ||
         request.version_bytes != 0U || request.path_bytes != 0U ||
         request.reserved != 0U ||
@@ -5162,10 +5170,10 @@ static int64_t syscall_package_control_item(
             sizeof(request.package_version)) ||
         !bytes_are_zero(request.download_path,
             sizeof(request.download_path))) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     enum native_handle_status handle_status = native_handle_resolve(
-        &process->handles, request.control, TRAIT_HANDLE_PACKAGE_CONTROL,
+        &process->handles, request.control, OPENGAT_HANDLE_PACKAGE_CONTROL,
         &control);
 
     if (handle_status != NATIVE_HANDLE_OK) {
@@ -5190,7 +5198,7 @@ static int64_t syscall_package_control_item(
     copy_bytes(request.download_path, item.download_path,
         sizeof(request.download_path));
     return copy_to_user(process, request_address, &request, sizeof(request)) ?
-        0 : -TRAIT_EFAULT;
+        0 : -OPENGAT_EFAULT;
 }
 
 static int64_t syscall_package_control_attach(
@@ -5198,31 +5206,31 @@ static int64_t syscall_package_control_attach(
     uint64_t request_address
 )
 {
-    struct trait_package_control_attach_request request;
+    struct opengat_package_control_attach_request request;
     struct package_control_report report;
     struct native_resource *control;
     struct native_resource *upload;
 
-    if ((process->manifest.capabilities & TRAIT_CAP_PACKAGES) == 0U) {
-        return -TRAIT_EACCES;
+    if ((process->manifest.capabilities & OPENGAT_CAP_PACKAGES) == 0U) {
+        return -OPENGAT_EACCES;
     }
     if (!validate_user_range(process, request_address, sizeof(request), true) ||
         !copy_from_user(process, &request, request_address, sizeof(request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (request.size != sizeof(request) ||
-        request.version != TRAIT_ABI_VERSION || request.flags != 0U ||
-        request.index >= TRAIT_PACKAGE_CONTROL_PLAN_MAX ||
+        request.version != OPENGAT_ABI_VERSION || request.flags != 0U ||
+        request.index >= OPENGAT_PACKAGE_CONTROL_PLAN_MAX ||
         request.attached_count != 0U || request.result_flags != 0U) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     enum native_handle_status handle_status = native_handle_resolve(
-        &process->handles, request.control, TRAIT_HANDLE_PACKAGE_CONTROL,
+        &process->handles, request.control, OPENGAT_HANDLE_PACKAGE_CONTROL,
         &control);
 
     if (handle_status == NATIVE_HANDLE_OK) {
         handle_status = native_handle_resolve(&process->handles,
-            request.package_upload, TRAIT_HANDLE_PACKAGE_UPLOAD, &upload);
+            request.package_upload, OPENGAT_HANDLE_PACKAGE_UPLOAD, &upload);
     }
     if (handle_status != NATIVE_HANDLE_OK) {
         return handle_error(handle_status);
@@ -5235,7 +5243,7 @@ static int64_t syscall_package_control_attach(
     request.attached_count = report.attached_count;
     request.result_flags = package_control_result_flags(&report);
     if (!copy_to_user(process, request_address, &request, sizeof(request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     return package_control_error(control_status, &report);
 }
@@ -5245,26 +5253,26 @@ static int64_t syscall_package_control_commit(
     uint64_t request_address
 )
 {
-    struct trait_package_control_commit_request request;
+    struct opengat_package_control_commit_request request;
     struct package_control_report report;
     struct native_resource *control;
 
-    if ((process->manifest.capabilities & TRAIT_CAP_PACKAGES) == 0U) {
-        return -TRAIT_EACCES;
+    if ((process->manifest.capabilities & OPENGAT_CAP_PACKAGES) == 0U) {
+        return -OPENGAT_EACCES;
     }
     if (!validate_user_range(process, request_address, sizeof(request), true) ||
         !copy_from_user(process, &request, request_address, sizeof(request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (request.size != sizeof(request) ||
-        request.version != TRAIT_ABI_VERSION || request.flags != 0U ||
+        request.version != OPENGAT_ABI_VERSION || request.flags != 0U ||
         request.reserved != 0U || request.generation != 0U ||
         request.plan_count != 0U || request.attached_count != 0U ||
         request.result_flags != 0U || request.result_reserved != 0U) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     enum native_handle_status handle_status = native_handle_resolve(
-        &process->handles, request.control, TRAIT_HANDLE_PACKAGE_CONTROL,
+        &process->handles, request.control, OPENGAT_HANDLE_PACKAGE_CONTROL,
         &control);
 
     if (handle_status != NATIVE_HANDLE_OK) {
@@ -5279,14 +5287,14 @@ static int64_t syscall_package_control_commit(
     request.attached_count = report.attached_count;
     request.result_flags = package_control_result_flags(&report);
     if (!copy_to_user(process, request_address, &request, sizeof(request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     return package_control_error(control_status, &report);
 }
 
 static int64_t syscall_cancel(
     struct native_process *process,
-    trait_handle_t handle
+    opengat_handle_t handle
 )
 {
     struct native_resource *resource;
@@ -5297,16 +5305,16 @@ static int64_t syscall_cancel(
     if (handle_status != NATIVE_HANDLE_OK) {
         return handle_error(handle_status);
     }
-    if (type == TRAIT_HANDLE_TIMER) {
+    if (type == OPENGAT_HANDLE_TIMER) {
         resource->words[0] = 0U;
         return 0;
     }
-    if (type == TRAIT_HANDLE_AUDIO_OUTPUT) {
+    if (type == OPENGAT_HANDLE_AUDIO_OUTPUT) {
         return audio_error(audio_native_cancel(process->generation,
             resource->words[0]));
     }
-    if (type != TRAIT_HANDLE_STREAM && type != TRAIT_HANDLE_DATAGRAM) {
-        return -TRAIT_ENOTSUP;
+    if (type != OPENGAT_HANDLE_STREAM && type != OPENGAT_HANDLE_DATAGRAM) {
+        return -OPENGAT_ENOTSUP;
     }
     cpu_interrupt_enable();
     const enum network_status status = network_cancel(process->generation,
@@ -5352,24 +5360,24 @@ static int64_t syscall_thread_create(
     uint64_t request_address
 )
 {
-    struct trait_thread_create_request request;
+    struct opengat_thread_create_request request;
     struct native_thread *thread;
     struct native_resource resource = {{0U, 0U, 0U, 0U}};
-    trait_handle_t handle;
+    opengat_handle_t handle;
     size_t index;
     size_t stack_pages;
     uint64_t guard;
     uint64_t stack_base;
 
-    if ((process->manifest.capabilities & TRAIT_CAP_THREADS) == 0U) {
-        return -TRAIT_EACCES;
+    if ((process->manifest.capabilities & OPENGAT_CAP_THREADS) == 0U) {
+        return -OPENGAT_EACCES;
     }
     if (!copy_from_user(process, &request, request_address,
             sizeof(request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (request.size != sizeof(request) ||
-        request.version != TRAIT_ABI_VERSION || request.flags != 0U ||
+        request.version != OPENGAT_ABI_VERSION || request.flags != 0U ||
         request.entry < process->image.mapping_start ||
         request.entry >= process->image.mapping_end ||
         page_at(process, request.entry) == NULL ||
@@ -5378,11 +5386,11 @@ static int64_t syscall_thread_create(
         request.stack_bytes > NATIVE_STACK_PAGES * PAGING_PAGE_SIZE ||
         (request.tls_base != 0U &&
             !validate_user_range(process, request.tls_base, 1U, false))) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     if (process->thread_count >= process->manifest.max_threads ||
         process->thread_count >= NATIVE_THREAD_LIMIT) {
-        return -TRAIT_ENOMEM;
+        return -OPENGAT_ENOMEM;
     }
     index = process->thread_count;
     stack_pages = (request.stack_bytes + PAGING_PAGE_SIZE - 1U) /
@@ -5391,7 +5399,7 @@ static int64_t syscall_thread_create(
         index * (NATIVE_STACK_PAGES + 1U) * PAGING_PAGE_SIZE;
     stack_base = guard + PAGING_PAGE_SIZE;
     if (stack_base + stack_pages * PAGING_PAGE_SIZE > PAGING_NATIVE_STACK_END) {
-        return -TRAIT_ENOMEM;
+        return -OPENGAT_ENOMEM;
     }
     for (size_t page = 0U; page < stack_pages; ++page) {
         uintptr_t physical_address;
@@ -5422,7 +5430,7 @@ static int64_t syscall_thread_create(
                     (void)release_page_frame(&removed);
                 }
             }
-            return -TRAIT_ENOMEM;
+            return -OPENGAT_ENOMEM;
         }
         page_at(process, address)->mapped = true;
     }
@@ -5431,7 +5439,7 @@ static int64_t syscall_thread_create(
     if (!native_fpu_state_initialize(&thread->fpu)) {
         (void)release_runtime_pages(process, stack_base, stack_pages,
             PAGING_PROCESS_MAPPING_NATIVE_STACK);
-        return -TRAIT_EIO;
+        return -OPENGAT_EIO;
     }
     thread->generation = next_thread_generation++;
     if (next_thread_generation == 0U) {
@@ -5450,7 +5458,7 @@ static int64_t syscall_thread_create(
     resource.words[1] = thread->generation;
     {
         const enum native_handle_status status = native_handle_install(
-            &process->handles, TRAIT_HANDLE_THREAD, &resource, &handle);
+            &process->handles, OPENGAT_HANDLE_THREAD, &resource, &handle);
 
         if (status != NATIVE_HANDLE_OK) {
             const int64_t error = handle_error(status);
@@ -5459,9 +5467,9 @@ static int64_t syscall_thread_create(
             if (!release_runtime_pages(process, stack_base, stack_pages,
                     PAGING_PROCESS_MAPPING_NATIVE_STACK)) {
                 process->faulted = true;
-                process->exit_status = -TRAIT_EIO;
+                process->exit_status = -OPENGAT_EIO;
                 process->exiting = true;
-                return -TRAIT_EIO;
+                return -OPENGAT_EIO;
             }
             return error;
         }
@@ -5475,24 +5483,24 @@ static int64_t syscall_thread_create(
 
 static int64_t syscall_thread_join(
     struct native_process *process,
-    trait_handle_t handle
+    opengat_handle_t handle
 )
 {
     struct native_resource *resource;
     struct native_thread *current = running_thread(process);
     struct native_thread *target;
     enum native_handle_status status = native_handle_resolve(
-        &process->handles, handle, TRAIT_HANDLE_THREAD, &resource);
+        &process->handles, handle, OPENGAT_HANDLE_THREAD, &resource);
 
     if (status != NATIVE_HANDLE_OK) {
         return handle_error(status);
     }
     if (resource->words[0] >= process->thread_count || current == NULL) {
-        return -TRAIT_EBADF;
+        return -OPENGAT_EBADF;
     }
     target = &process->threads[resource->words[0]];
     if (target == current || target->generation != resource->words[1]) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     if (target->state == NATIVE_THREAD_EXITED ||
         target->state == NATIVE_THREAD_FAULTED) {
@@ -5512,7 +5520,7 @@ static int64_t syscall_tls_set(
 
     if (thread == NULL || (tls_base != 0U &&
             !validate_user_range(process, tls_base, 1U, false))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     thread->fs_base = tls_base;
     return 0;
@@ -5523,23 +5531,23 @@ static int64_t syscall_futex_wait(
     uint64_t request_address
 )
 {
-    struct trait_futex_request request;
+    struct opengat_futex_request request;
     struct native_thread *thread = running_thread(process);
     uint32_t observed;
 
     if (thread == NULL || !copy_from_user(process, &request, request_address,
             sizeof(request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (request.size != sizeof(request) ||
-        request.version != TRAIT_ABI_VERSION || request.count != 0U ||
+        request.version != OPENGAT_ABI_VERSION || request.count != 0U ||
         !validate_futex_word(process, request.address) ||
         !copy_from_user(process, &observed, request.address,
             sizeof(observed))) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     if (observed != request.expected) {
-        return -TRAIT_EAGAIN;
+        return -OPENGAT_EAGAIN;
     }
     thread->futex_address = request.address;
     thread->deadline_ns = request.deadline_ns;
@@ -5552,18 +5560,18 @@ static int64_t syscall_futex_wake(
     uint64_t request_address
 )
 {
-    struct trait_futex_request request;
+    struct opengat_futex_request request;
     size_t woken = 0U;
 
     if (!copy_from_user(process, &request, request_address,
             sizeof(request))) {
-        return -TRAIT_EFAULT;
+        return -OPENGAT_EFAULT;
     }
     if (request.size != sizeof(request) ||
-        request.version != TRAIT_ABI_VERSION || request.expected != 0U ||
+        request.version != OPENGAT_ABI_VERSION || request.expected != 0U ||
         request.deadline_ns != 0U || request.count == 0U ||
         !validate_futex_word(process, request.address)) {
-        return -TRAIT_EINVAL;
+        return -OPENGAT_EINVAL;
     }
     for (size_t index = 0U; index < process->thread_count &&
          woken < request.count; ++index) {
@@ -5680,7 +5688,7 @@ static bool begin_dynamic_finalizers(
 
 static int64_t syscall_handle_close(
     struct native_process *process,
-    trait_handle_t handle
+    opengat_handle_t handle
 )
 {
     enum native_handle_status status;
@@ -5694,10 +5702,10 @@ static int64_t syscall_handle_close(
 
 static int64_t syscall_handle_duplicate(
     struct native_process *process,
-    trait_handle_t handle
+    opengat_handle_t handle
 )
 {
-    trait_handle_t duplicate;
+    opengat_handle_t duplicate;
     const enum native_handle_status status = native_handle_duplicate(
         &process->handles, handle, &duplicate);
 
@@ -5717,152 +5725,152 @@ static int64_t dispatch_syscall(
 )
 {
     switch (frame->rax) {
-    case TRAIT_SYS_ABI_VERSION:
-        return TRAIT_ABI_VERSION;
-    case TRAIT_SYS_EXIT:
+    case OPENGAT_SYS_ABI_VERSION:
+        return OPENGAT_ABI_VERSION;
+    case OPENGAT_SYS_EXIT:
         if (!begin_dynamic_finalizers(process, thread,
                 (int32_t)frame->rdi)) {
             terminate_process(process, (int32_t)frame->rdi);
         }
         return 0;
-    case TRAIT_SYS_CONSOLE_WRITE:
+    case OPENGAT_SYS_CONSOLE_WRITE:
         return syscall_console_write(process, frame->rdi, (size_t)frame->rsi);
-    case TRAIT_SYS_CONSOLE_READ:
+    case OPENGAT_SYS_CONSOLE_READ:
         return syscall_console_read(process, frame->rdi, (size_t)frame->rsi);
-    case TRAIT_SYS_HANDLE_CLOSE:
+    case OPENGAT_SYS_HANDLE_CLOSE:
         return syscall_handle_close(process, frame->rdi);
-    case TRAIT_SYS_HANDLE_DUPLICATE:
+    case OPENGAT_SYS_HANDLE_DUPLICATE:
         return syscall_handle_duplicate(process, frame->rdi);
-    case TRAIT_SYS_MEMORY_MAP:
+    case OPENGAT_SYS_MEMORY_MAP:
         return syscall_memory_map(process, frame->rdi, frame->rsi);
-    case TRAIT_SYS_MEMORY_UNMAP:
+    case OPENGAT_SYS_MEMORY_UNMAP:
         return syscall_memory_unmap(process, frame->rdi, frame->rsi);
-    case TRAIT_SYS_FILE_OPEN:
+    case OPENGAT_SYS_FILE_OPEN:
         return syscall_file_open(process, frame->rdi);
-    case TRAIT_SYS_FILE_READ:
+    case OPENGAT_SYS_FILE_READ:
         return syscall_file_io(process, frame->rdi, false);
-    case TRAIT_SYS_FILE_WRITE:
+    case OPENGAT_SYS_FILE_WRITE:
         return syscall_file_io(process, frame->rdi, true);
-    case TRAIT_SYS_FILE_SEEK:
+    case OPENGAT_SYS_FILE_SEEK:
         return syscall_file_seek(process, frame->rdi);
-    case TRAIT_SYS_PATH_STAT:
+    case OPENGAT_SYS_PATH_STAT:
         return syscall_path_stat(process, frame->rdi, frame->rsi);
-    case TRAIT_SYS_DIRECTORY_OPEN:
+    case OPENGAT_SYS_DIRECTORY_OPEN:
         return syscall_directory_open(process, frame->rdi);
-    case TRAIT_SYS_DIRECTORY_READ:
+    case OPENGAT_SYS_DIRECTORY_READ:
         return syscall_directory_read(process, frame->rdi, frame->rsi);
-    case TRAIT_SYS_PATH_MKDIR:
-    case TRAIT_SYS_PATH_UNLINK:
-    case TRAIT_SYS_PATH_TRUNCATE:
+    case OPENGAT_SYS_PATH_MKDIR:
+    case OPENGAT_SYS_PATH_UNLINK:
+    case OPENGAT_SYS_PATH_TRUNCATE:
         return syscall_single_path_mutation(process, frame->rdi, frame->rsi,
             frame->rax);
-    case TRAIT_SYS_PATH_RENAME:
+    case OPENGAT_SYS_PATH_RENAME:
         return syscall_rename(process, frame->rdi, false);
-    case TRAIT_SYS_PATH_REPLACE:
+    case OPENGAT_SYS_PATH_REPLACE:
         return syscall_rename(process, frame->rdi, true);
-    case TRAIT_SYS_VOLUME_SYNC:
+    case OPENGAT_SYS_VOLUME_SYNC:
         return syscall_volume_sync(process, frame->rdi);
-    case TRAIT_SYS_VOLUME_SPACE:
+    case OPENGAT_SYS_VOLUME_SPACE:
         return syscall_volume_space(process, frame->rdi, frame->rsi);
-    case TRAIT_SYS_TIME_MONOTONIC:
-        return (process->manifest.capabilities & TRAIT_CAP_TIME) != 0U ?
-            (int64_t)clock_monotonic_ns() : -TRAIT_EACCES;
-    case TRAIT_SYS_TIME_REALTIME:
+    case OPENGAT_SYS_TIME_MONOTONIC:
+        return (process->manifest.capabilities & OPENGAT_CAP_TIME) != 0U ?
+            (int64_t)clock_monotonic_ns() : -OPENGAT_EACCES;
+    case OPENGAT_SYS_TIME_REALTIME:
         return syscall_time_realtime(process);
-    case TRAIT_SYS_SLEEP_UNTIL:
+    case OPENGAT_SYS_SLEEP_UNTIL:
         return syscall_sleep_until(process, frame->rdi);
-    case TRAIT_SYS_WAIT:
+    case OPENGAT_SYS_WAIT:
         return syscall_wait(process, frame->rdi);
-    case TRAIT_SYS_RANDOM:
+    case OPENGAT_SYS_RANDOM:
         return syscall_random(process, frame->rdi, (size_t)frame->rsi, false);
-    case TRAIT_SYS_RANDOM_STRONG:
+    case OPENGAT_SYS_RANDOM_STRONG:
         return syscall_random(process, frame->rdi, (size_t)frame->rsi, true);
-    case TRAIT_SYS_TIMER_CREATE:
-        return (process->manifest.capabilities & TRAIT_CAP_TIME) != 0U ?
-            syscall_timer_create(process) : -TRAIT_EACCES;
-    case TRAIT_SYS_TIMER_SET:
-        return (process->manifest.capabilities & TRAIT_CAP_TIME) != 0U ?
-            syscall_timer_set(process, frame->rdi) : -TRAIT_EACCES;
-    case TRAIT_SYS_CANCEL:
+    case OPENGAT_SYS_TIMER_CREATE:
+        return (process->manifest.capabilities & OPENGAT_CAP_TIME) != 0U ?
+            syscall_timer_create(process) : -OPENGAT_EACCES;
+    case OPENGAT_SYS_TIMER_SET:
+        return (process->manifest.capabilities & OPENGAT_CAP_TIME) != 0U ?
+            syscall_timer_set(process, frame->rdi) : -OPENGAT_EACCES;
+    case OPENGAT_SYS_CANCEL:
         return syscall_cancel(process, frame->rdi);
-    case TRAIT_SYS_WINDOW_CREATE:
+    case OPENGAT_SYS_WINDOW_CREATE:
         return syscall_window_create(process, frame->rdi, frame->rsi);
-    case TRAIT_SYS_SURFACE_PRESENT:
+    case OPENGAT_SYS_SURFACE_PRESENT:
         return syscall_surface_present(process, frame->rdi);
-    case TRAIT_SYS_EVENT_READ:
+    case OPENGAT_SYS_EVENT_READ:
         return syscall_event_read(process, frame->rdi, frame->rsi);
-    case TRAIT_SYS_POINTER_CAPTURE:
+    case OPENGAT_SYS_POINTER_CAPTURE:
         return syscall_pointer_capture(process, frame->rdi, frame->rsi);
-    case TRAIT_SYS_DNS_RESOLVE:
+    case OPENGAT_SYS_DNS_RESOLVE:
         return syscall_dns_resolve(process, frame->rdi, (size_t)frame->rsi,
             frame->rdx);
-    case TRAIT_SYS_STREAM_OPEN:
+    case OPENGAT_SYS_STREAM_OPEN:
         return syscall_network_open(process, false);
-    case TRAIT_SYS_STREAM_CONNECT:
+    case OPENGAT_SYS_STREAM_CONNECT:
         return syscall_stream_connect(process, frame->rdi, frame->rsi,
             frame->rdx);
-    case TRAIT_SYS_STREAM_READ:
+    case OPENGAT_SYS_STREAM_READ:
         return syscall_network_io(process, frame->rdi, false, false);
-    case TRAIT_SYS_STREAM_WRITE:
+    case OPENGAT_SYS_STREAM_WRITE:
         return syscall_network_io(process, frame->rdi, false, true);
-    case TRAIT_SYS_STREAM_SHUTDOWN:
+    case OPENGAT_SYS_STREAM_SHUTDOWN:
         return syscall_stream_shutdown(process, frame->rdi,
             (uint32_t)frame->rsi, frame->rdx);
-    case TRAIT_SYS_DATAGRAM_OPEN:
+    case OPENGAT_SYS_DATAGRAM_OPEN:
         return syscall_network_open(process, true);
-    case TRAIT_SYS_DATAGRAM_BIND:
+    case OPENGAT_SYS_DATAGRAM_BIND:
         return syscall_datagram_bind(process, frame->rdi,
             (uint16_t)frame->rsi);
-    case TRAIT_SYS_DATAGRAM_SEND:
+    case OPENGAT_SYS_DATAGRAM_SEND:
         return syscall_network_io(process, frame->rdi, true, true);
-    case TRAIT_SYS_DATAGRAM_RECEIVE:
+    case OPENGAT_SYS_DATAGRAM_RECEIVE:
         return syscall_network_io(process, frame->rdi, true, false);
-    case TRAIT_SYS_NETWORK_ADDRESS:
+    case OPENGAT_SYS_NETWORK_ADDRESS:
         if (frame->rsi > 1U) {
-            return -TRAIT_EINVAL;
+            return -OPENGAT_EINVAL;
         }
         return syscall_network_address(process, frame->rdi,
             frame->rsi != 0U, frame->rdx);
-    case TRAIT_SYS_THREAD_CREATE:
+    case OPENGAT_SYS_THREAD_CREATE:
         return syscall_thread_create(process, frame->rdi);
-    case TRAIT_SYS_THREAD_EXIT:
+    case OPENGAT_SYS_THREAD_EXIT:
         thread->exit_status = (int32_t)frame->rdi;
         thread->state = NATIVE_THREAD_EXITED;
         return 0;
-    case TRAIT_SYS_THREAD_JOIN:
+    case OPENGAT_SYS_THREAD_JOIN:
         return syscall_thread_join(process, frame->rdi);
-    case TRAIT_SYS_TLS_SET:
+    case OPENGAT_SYS_TLS_SET:
         return syscall_tls_set(process, frame->rdi);
-    case TRAIT_SYS_TLS_GET:
+    case OPENGAT_SYS_TLS_GET:
         return (int64_t)thread->fs_base;
-    case TRAIT_SYS_FUTEX_WAIT:
+    case OPENGAT_SYS_FUTEX_WAIT:
         return syscall_futex_wait(process, frame->rdi);
-    case TRAIT_SYS_FUTEX_WAKE:
+    case OPENGAT_SYS_FUTEX_WAKE:
         return syscall_futex_wake(process, frame->rdi);
-    case TRAIT_SYS_AUDIO_OPEN:
+    case OPENGAT_SYS_AUDIO_OPEN:
         return syscall_audio_open(process);
-    case TRAIT_SYS_AUDIO_SUBMIT:
+    case OPENGAT_SYS_AUDIO_SUBMIT:
         return syscall_audio_submit(process, frame->rdi);
-    case TRAIT_SYS_AUDIO_VOLUME:
+    case OPENGAT_SYS_AUDIO_VOLUME:
         return syscall_audio_volume(process, frame->rdi);
-    case TRAIT_SYS_AUDIO_DRAIN:
+    case OPENGAT_SYS_AUDIO_DRAIN:
         return syscall_audio_drain(process, frame->rdi, frame->rsi);
-    case TRAIT_SYS_PACKAGE_UPLOAD_OPEN:
+    case OPENGAT_SYS_PACKAGE_UPLOAD_OPEN:
         return syscall_package_upload_open(process);
-    case TRAIT_SYS_PACKAGE_UPLOAD_WRITE:
+    case OPENGAT_SYS_PACKAGE_UPLOAD_WRITE:
         return syscall_package_upload_write(process, frame->rdi);
-    case TRAIT_SYS_PACKAGE_UPLOAD_SEAL:
+    case OPENGAT_SYS_PACKAGE_UPLOAD_SEAL:
         return syscall_package_upload_seal(process, frame->rdi);
-    case TRAIT_SYS_PACKAGE_CONTROL_OPEN_INSTALL:
+    case OPENGAT_SYS_PACKAGE_CONTROL_OPEN_INSTALL:
         return syscall_package_control_open_install(process, frame->rdi);
-    case TRAIT_SYS_PACKAGE_CONTROL_ITEM:
+    case OPENGAT_SYS_PACKAGE_CONTROL_ITEM:
         return syscall_package_control_item(process, frame->rdi);
-    case TRAIT_SYS_PACKAGE_CONTROL_ATTACH:
+    case OPENGAT_SYS_PACKAGE_CONTROL_ATTACH:
         return syscall_package_control_attach(process, frame->rdi);
-    case TRAIT_SYS_PACKAGE_CONTROL_COMMIT:
+    case OPENGAT_SYS_PACKAGE_CONTROL_COMMIT:
         return syscall_package_control_commit(process, frame->rdi);
     default:
-        return -TRAIT_ENOSYS;
+        return -OPENGAT_ENOSYS;
     }
 }
 
@@ -5940,7 +5948,7 @@ static void report_user_backtrace(
             !copy_from_user(process, words, frame_pointer, sizeof(words))) {
             break;
         }
-        console_write("Trait OS: native backtrace ");
+        console_write("OpenGAT: native backtrace ");
         console_write_u64(depth);
         console_write(" frame ");
         console_write_hex(frame_pointer);
@@ -5985,7 +5993,7 @@ void native_process_on_interrupt(struct interrupt_frame *frame, void *context)
             record_context_transition(process, without_cycles, fpu_cycles);
         }
         if (frame->vector < INTERRUPT_EXCEPTION_COUNT) {
-            console_write("Trait OS: native thread fault vector ");
+            console_write("OpenGAT: native thread fault vector ");
             console_write_u64(frame->vector);
             console_write(" error ");
             console_write_hex(frame->error_code);
@@ -6008,14 +6016,14 @@ void native_process_on_interrupt(struct interrupt_frame *frame, void *context)
             console_write("\n");
             report_user_backtrace(process, frame->rbp);
             thread->state = NATIVE_THREAD_FAULTED;
-            thread->exit_status = -TRAIT_EFAULT;
+            thread->exit_status = -OPENGAT_EFAULT;
             process->faulted = true;
-            terminate_process(process, -TRAIT_EFAULT);
+            terminate_process(process, -OPENGAT_EFAULT);
         }
     }
     if (!valid && process != NULL) {
         process->faulted = true;
-        terminate_process(process, -TRAIT_EIO);
+        terminate_process(process, -OPENGAT_EIO);
     }
     if (resume_stack == 0U ||
         interrupt_request_kernel_resume(frame, resume_stack) !=
@@ -6063,7 +6071,7 @@ static void update_waiting_threads(
             thread->deadline_ns != 0U && now >= thread->deadline_ns) {
             thread->deadline_ns = 0U;
             thread->futex_address = 0U;
-            thread->context.rax = (uint64_t)-(int64_t)TRAIT_ETIMEDOUT;
+            thread->context.rax = (uint64_t)-(int64_t)OPENGAT_ETIMEDOUT;
             thread->state = NATIVE_THREAD_RUNNABLE;
         } else if (thread->state == NATIVE_THREAD_JOIN_WAIT) {
             for (size_t target = 0U; target < process->thread_count; ++target) {
@@ -6090,9 +6098,9 @@ static void update_waiting_threads(
                         thread->wait_items_address, thread->wait_items,
                         thread->wait_item_count *
                             sizeof(thread->wait_items[0]))) {
-                    ready = -TRAIT_EFAULT;
+                    ready = -OPENGAT_EFAULT;
                 } else if (ready == 0) {
-                    ready = -TRAIT_ETIMEDOUT;
+                    ready = -OPENGAT_ETIMEDOUT;
                 }
                 thread->wait_items_address = 0U;
                 thread->wait_item_count = 0U;
@@ -6111,13 +6119,13 @@ static void update_waiting_threads(
             if (state == AUDIO_NATIVE_DRAIN_PENDING && !timed_out) {
                 complete = false;
             } else if (timed_out) {
-                result = -TRAIT_ETIMEDOUT;
+                result = -OPENGAT_ETIMEDOUT;
             } else if (state == AUDIO_NATIVE_DRAIN_CANCELED) {
-                result = -TRAIT_ECANCELED;
+                result = -OPENGAT_ECANCELED;
             } else if (state == AUDIO_NATIVE_DRAIN_ERROR) {
-                result = -TRAIT_EIO;
+                result = -OPENGAT_EIO;
             } else if (state == AUDIO_NATIVE_DRAIN_STALE) {
-                result = -TRAIT_ESTALE;
+                result = -OPENGAT_ESTALE;
             }
             if (complete) {
                 thread->audio_token = 0U;
@@ -6135,7 +6143,7 @@ static void update_waiting_threads(
                 console_input_consume(process, copied);
                 thread->context.rax = (uint64_t)copied;
             } else {
-                thread->context.rax = (uint64_t)-(int64_t)TRAIT_EFAULT;
+                thread->context.rax = (uint64_t)-(int64_t)OPENGAT_EFAULT;
             }
             thread->console_address = 0U;
             thread->console_length = 0U;
@@ -6143,7 +6151,7 @@ static void update_waiting_threads(
         }
     }
     if (!process->exiting && !process_has_live_thread(process)) {
-        terminate_process(process, process->faulted ? -TRAIT_EFAULT :
+        terminate_process(process, process->faulted ? -OPENGAT_EFAULT :
             process->exit_status);
     }
 }
@@ -6251,7 +6259,7 @@ static struct native_process *console_input_target(void)
 
         if (process->active && !process->exiting &&
             !process->window.allocated &&
-            (process->manifest.capabilities & TRAIT_CAP_CONSOLE) != 0U &&
+            (process->manifest.capabilities & OPENGAT_CAP_CONSOLE) != 0U &&
             (selected == NULL ||
                 process->generation > selected->generation)) {
             selected = process;
@@ -6319,7 +6327,7 @@ static bool any_handle_waiter(void)
 
 static void report_scheduler_stall(void)
 {
-    console_write("Trait OS: native scheduler stalled\n");
+    console_write("OpenGAT: native scheduler stalled\n");
     for (size_t process_index = 0U; process_index < NATIVE_PROCESS_LIMIT;
          ++process_index) {
         const struct native_process *process = &processes[process_index];
@@ -6327,7 +6335,7 @@ static void report_scheduler_stall(void)
         if (!process->active || process->exiting) {
             continue;
         }
-        console_write("Trait OS: stalled process ");
+        console_write("OpenGAT: stalled process ");
         console_write_u64(process_index);
         console_write(" generation ");
         console_write_u64(process->generation);
@@ -6339,7 +6347,7 @@ static void report_scheduler_stall(void)
             const struct native_thread *thread =
                 &process->threads[thread_index];
 
-            console_write("Trait OS: stalled thread ");
+            console_write("OpenGAT: stalled thread ");
             console_write_u64(thread_index);
             console_write(" generation ");
             console_write_u64(thread->generation);
@@ -6466,13 +6474,13 @@ enum native_process_status native_process_run(struct native_process_result *resu
                 cleanup_ok = false;
                 process->failure_stage =
                     NATIVE_PROCESS_FAILURE_GATE_VALIDATE;
-                terminate_process(process, -TRAIT_EIO);
+                terminate_process(process, -OPENGAT_EIO);
             } else if (native_gate.state == INTERRUPT_PROCESS_GATE_RETURNED &&
                 interrupt_process_gate_rearm(&native_gate) !=
                     INTERRUPT_STATUS_OK) {
                 cleanup_ok = false;
                 process->failure_stage = NATIVE_PROCESS_FAILURE_GATE_REARM;
-                terminate_process(process, -TRAIT_EIO);
+                terminate_process(process, -OPENGAT_EIO);
             } else {
                 without_started = tsc_read();
                 activation = paging_process_activate(&process->address_space);
@@ -6482,12 +6490,12 @@ enum native_process_status native_process_run(struct native_process_result *resu
                     cleanup_ok = false;
                     process->failure_stage =
                         NATIVE_PROCESS_FAILURE_ADDRESS_SPACE_ACTIVATE;
-                    terminate_process(process, -TRAIT_EIO);
+                    terminate_process(process, -OPENGAT_EIO);
                 } else if (!native_fpu_restore(&thread->fpu)) {
                     cleanup_ok = false;
                     process->failure_stage =
                         NATIVE_PROCESS_FAILURE_FPU_RESTORE;
-                    terminate_process(process, -TRAIT_EIO);
+                    terminate_process(process, -OPENGAT_EIO);
                 } else {
                     fpu_cycles = tsc_read() - fpu_started;
                     without_started = tsc_read();
@@ -6531,7 +6539,7 @@ enum native_process_status native_process_run(struct native_process_result *resu
                     if (processes[index].active &&
                         !processes[index].exiting) {
                         processes[index].faulted = true;
-                        terminate_process(&processes[index], -TRAIT_EBUSY);
+                        terminate_process(&processes[index], -OPENGAT_EBUSY);
                     }
                 }
             }
@@ -6611,7 +6619,7 @@ enum native_process_status native_process_launch_installed(
         return NATIVE_PROCESS_IMAGE_REFUSED;
     }
     status = native_process_spawn_from_volume(manifest_path,
-        TRAITFS_VOLUME_DATA, &generation);
+        OPENGATFS_VOLUME_DATA, &generation);
     if (status != NATIVE_PROCESS_OK) {
         return status;
     }
@@ -6643,8 +6651,8 @@ bool native_process_self_test(size_t *completed_tests)
     size_t handle_tests;
     size_t fpu_tests;
     size_t audio_tests;
-    const uint32_t image_tests = trait_native_image_self_test();
-    const uint32_t dynamic_tests = trait_elf64_dynamic_self_test();
+    const uint32_t image_tests = opengat_native_image_self_test();
+    const uint32_t dynamic_tests = opengat_elf64_dynamic_self_test();
 
     if (completed_tests == NULL) {
         return false;
@@ -6674,7 +6682,7 @@ bool native_process_self_test(size_t *completed_tests)
     *completed_tests += audio_tests;
     if (!process_user_context_layout_self_test() ||
         sizeof(struct native_syscall_frame) != 144U ||
-        sizeof(struct trait_event) != 56U) {
+        sizeof(struct opengat_event) != 56U) {
         return false;
     }
     *completed_tests += 3U;

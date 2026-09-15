@@ -1,23 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#include <trait/de/theme.h>
+#include <opengat/de/theme.h>
 
 /*
- * FOUR THEMES, AND EVERY COLOUR IN THEM IS TAKEN FROM SOMEWHERE.
- *
- * Clearlooks and Adwaita are the palettes the pinned upstream gtkrc files carry;
- * Adwaita-dark is the dark variant's.  Those three are the GTK themes on
- * the machine, and nothing in them is a colour somebody liked.
- *
- * The fourth is NOT a GTK theme and does not pretend to be one - it is
- * this desktop's own, and it is here because the desktop has an identity
- * that the Trait OS desktop defaults do not carry.  Its colours are not invented
- * either: they are SAMPLED from the owner's artwork.  The selection gold
- * is #B08020, one of the onion's own ambers; the ground is the
- * wallpaper's #212121 charcoal, read out of the corner of the PNG.  A
- * theme whose accent is guessed at sits next to the wallpaper and argues
- * with it.
+ * The first three palettes retain their documented upstream definitions.
+ * The OpenGAT palette uses the supplied G mark's navy and blue-grey with a
+ * neutral charcoal surface. It is the default desktop palette.
  */
-static const struct trait_palette PALETTES[] = {
+
+static const struct opengat_palette PALETTES[] = {
     /* Clearlooks: gtk2-engines, usr/share/themes/Clearlooks/gtk-2.0/gtkrc */
     {
         0xEDECEBU, 0xF2F1F0U, 0xD5D4D3U, 0xFFFFFFU, 0xE1E0DFU,
@@ -38,43 +28,36 @@ static const struct trait_palette PALETTES[] = {
         0xEEEEECU, 0xEEEEECU, 0x215D9CU, 0xFFFFFFU, 0x1B1B1BU, 0x4A4A4AU,
         0x2F2F2FU, 0x1E1E1EU, 0x262626U, 0x1A1A1AU, 0xD8D8D6U, 0x8A8A88U
     },
-    /*
-     * Trait.  Sampled, not chosen:
-     *   #212121  the wallpaper's ground, from the corner of the PNG
-     *   #B08020  the onion's amber, its sixth most common opaque colour
-     *   #503000  the onion's darkest amber, which the title ramp ends on
-     * The selected foreground is dark because the selection is GOLD and
-     * white on gold is the one pairing this palette could get wrong.
-     */
+    /* OpenGAT: navy accent, blue-grey focus, neutral dark surfaces. */
     {
-        0x2B2B2BU, 0x333333U, 0x212121U, 0x232323U, 0x2A2A2AU,
-        0xE8E6E0U, 0xE0DED6U, 0xB08020U, 0x1A1400U, 0x151515U, 0x3A3A3AU,
-        0x4A3C22U, 0x2A2114U, 0x272727U, 0x1C1C1CU, 0xE8E6E0U, 0x8A8780U
+        0x30363CU, 0x394149U, 0x252A2FU, 0x2A3036U, 0x333A41U,
+        0xF1F3F5U, 0xE5E9EDU, 0x0E4976U, 0xFFFFFFU, 0x1D2227U, 0x46515CU,
+        0x6F879EU, 0x30475BU, 0x2C3339U, 0x20262BU, 0xF1F3F5U, 0x88939DU
     }
 };
 
 static const char *const NAMES[] = {
-    "Clearlooks", "Adwaita", "Adwaita-dark", "Trait"
+    "Clearlooks", "Adwaita", "Adwaita-dark", "OpenGAT"
 };
 
 #define THEME_COUNT (sizeof(PALETTES) / sizeof(PALETTES[0]))
 
-/* Trait, not Clearlooks: this is the desktop's own theme and the one it
+/* OpenGAT, not Clearlooks: this is the desktop's own theme and the one it
  * was drawn to look like.  The LXDE defaults are still in the list, one
  * press of the Widget row away. */
 static uint32_t current = 3U;
 
-const struct trait_palette *trait_theme(void)
+const struct opengat_palette *opengat_theme(void)
 {
     return &PALETTES[current];
 }
 
-uint32_t trait_theme_count(void)
+uint32_t opengat_theme_count(void)
 {
     return (uint32_t)THEME_COUNT;
 }
 
-const char *trait_theme_name(uint32_t at)
+const char *opengat_theme_name(uint32_t at)
 {
     if (at >= THEME_COUNT) {
         return "";
@@ -82,7 +65,7 @@ const char *trait_theme_name(uint32_t at)
     return NAMES[at];
 }
 
-bool trait_theme_select(uint32_t at)
+bool opengat_theme_select(uint32_t at)
 {
     if (at >= THEME_COUNT) {
         return false;
@@ -91,12 +74,12 @@ bool trait_theme_select(uint32_t at)
     return true;
 }
 
-uint32_t trait_theme_selected(void)
+uint32_t opengat_theme_selected(void)
 {
     return current;
 }
 
-bool trait_theme_select_named(const char *name)
+bool opengat_theme_select_named(const char *name)
 {
     uint32_t at;
 

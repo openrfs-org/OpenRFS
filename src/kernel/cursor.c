@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * The pointer.  See include/trait/cursor.h for what this is, what it is
+ * The pointer.  See include/opengat/cursor.h for what this is, what it is
  * not, and the two Windows cursors it does not draw.
  */
 
-#include <trait/cursor.h>
+#include <opengat/cursor.h>
 
-#include <trait/clock.h>
-#include <trait/framebuffer.h>
+#include <opengat/clock.h>
+#include <opengat/framebuffer.h>
 
 #include "cursor_art.h"
 

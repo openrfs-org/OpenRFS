@@ -9,9 +9,9 @@ int package_state_core_host_test_main(void);
 #include <stdlib.h>
 #include <string.h>
 
-#include <trait/fat32_fs.h>
-#include <trait/heap.h>
-#include <trait/package_service.h>
+#include <opengat/fat32_fs.h>
+#include <opengat/heap.h>
+#include <opengat/package_service.h>
 
 #define MOCK_MAX_NODES 96U
 #define MOCK_MAX_FILE_BYTES 4096U
@@ -32,7 +32,7 @@ enum mock_event {
 struct mock_node {
     bool active;
     bool directory;
-    char path[TRAITFS_MAX_PATH];
+    char path[OPENGATFS_MAX_PATH];
     uint8_t bytes[MOCK_MAX_FILE_BYTES];
     size_t byte_count;
     uint16_t mode;
@@ -176,9 +176,9 @@ static void add_bootstrap_generation(
         (const uint8_t *)"lib", 3U, UINT16_C(0444));
 }
 
-struct traitfs_drive_info traitfs_drive(enum traitfs_volume volume)
+struct opengatfs_drive_info opengatfs_drive(enum opengatfs_volume volume)
 {
-    struct traitfs_drive_info info;
+    struct opengatfs_drive_info info;
     memset(&info, 0, sizeof(info));
     info.volume = volume;
     info.present = true;
@@ -189,28 +189,28 @@ struct traitfs_drive_info traitfs_drive(enum traitfs_volume volume)
     return info;
 }
 
-enum traitfs_status traitfs_sync(enum traitfs_volume volume)
+enum opengatfs_status opengatfs_sync(enum opengatfs_volume volume)
 {
     (void)volume;
     event(MOCK_EVENT_SYNC);
     ++sync_attempts;
     if (fail_next_sync || sync_attempts == fail_sync_ordinal) {
         fail_next_sync = false;
-        return TRAITFS_STATUS_WRITEBACK;
+        return OPENGATFS_STATUS_WRITEBACK;
     }
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum traitfs_status traitfs_stat_path(
-    enum traitfs_volume volume,
+enum opengatfs_status opengatfs_stat_path(
+    enum opengatfs_volume volume,
     const char *path,
-    struct traitfs_stat *stat
+    struct opengatfs_stat *stat
 )
 {
     (void)volume;
     size_t index = find_node(path);
     if (index == MOCK_MAX_NODES) {
-        return TRAITFS_STATUS_NOT_FOUND;
+        return OPENGATFS_STATUS_NOT_FOUND;
     }
     memset(stat, 0, sizeof(*stat));
     stat->size = nodes[index].byte_count;
@@ -219,24 +219,24 @@ enum traitfs_status traitfs_stat_path(
     stat->links = 1U;
     stat->directory = nodes[index].directory;
     stat->read_only = (nodes[index].mode & UINT16_C(0222)) == 0U;
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum traitfs_status traitfs_open(
-    enum traitfs_volume volume,
+enum opengatfs_status opengatfs_open(
+    enum opengatfs_volume volume,
     const char *path,
-    enum traitfs_access access,
-    traitfs_handle *handle
+    enum opengatfs_access access,
+    opengatfs_handle *handle
 )
 {
     (void)volume;
     (void)access;
     size_t node = find_node(path);
     if (node == MOCK_MAX_NODES) {
-        return TRAITFS_STATUS_NOT_FOUND;
+        return OPENGATFS_STATUS_NOT_FOUND;
     }
     if (nodes[node].directory) {
-        return TRAITFS_STATUS_IS_DIRECTORY;
+        return OPENGATFS_STATUS_IS_DIRECTORY;
     }
     for (size_t index = 0U; index < MOCK_MAX_HANDLES; ++index) {
         if (!handles[index].active) {
@@ -244,13 +244,13 @@ enum traitfs_status traitfs_open(
             handles[index].node = node;
             handles[index].offset = 0U;
             *handle = index + 1U;
-            return TRAITFS_STATUS_OK;
+            return OPENGATFS_STATUS_OK;
         }
     }
-    return TRAITFS_STATUS_NO_HANDLES;
+    return OPENGATFS_STATUS_NO_HANDLES;
 }
 
-static struct mock_handle *mock_handle(traitfs_handle handle)
+static struct mock_handle *mock_handle(opengatfs_handle handle)
 {
     if (handle == 0U || handle > MOCK_MAX_HANDLES ||
         !handles[handle - 1U].active) {
@@ -259,18 +259,18 @@ static struct mock_handle *mock_handle(traitfs_handle handle)
     return &handles[handle - 1U];
 }
 
-enum traitfs_status traitfs_close(traitfs_handle handle)
+enum opengatfs_status opengatfs_close(opengatfs_handle handle)
 {
     struct mock_handle *state = mock_handle(handle);
     if (state == NULL) {
-        return TRAITFS_STATUS_STALE_HANDLE;
+        return OPENGATFS_STATUS_STALE_HANDLE;
     }
     state->active = false;
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum traitfs_status traitfs_read(
-    traitfs_handle handle,
+enum opengatfs_status opengatfs_read(
+    opengatfs_handle handle,
     uint8_t *destination,
     size_t capacity,
     size_t *read_bytes
@@ -278,7 +278,7 @@ enum traitfs_status traitfs_read(
 {
     struct mock_handle *state = mock_handle(handle);
     if (state == NULL) {
-        return TRAITFS_STATUS_STALE_HANDLE;
+        return OPENGATFS_STATUS_STALE_HANDLE;
     }
     struct mock_node *node = &nodes[state->node];
     size_t available = node->byte_count - state->offset;
@@ -288,11 +288,11 @@ enum traitfs_status traitfs_read(
     }
     state->offset += count;
     *read_bytes = count;
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum traitfs_status traitfs_write(
-    traitfs_handle handle,
+enum opengatfs_status opengatfs_write(
+    opengatfs_handle handle,
     const uint8_t *source,
     size_t source_bytes,
     size_t *written_bytes
@@ -300,10 +300,10 @@ enum traitfs_status traitfs_write(
 {
     struct mock_handle *state = mock_handle(handle);
     if (state == NULL) {
-        return TRAITFS_STATUS_STALE_HANDLE;
+        return OPENGATFS_STATUS_STALE_HANDLE;
     }
     if (source_bytes > MOCK_MAX_FILE_BYTES - state->offset) {
-        return TRAITFS_STATUS_FULL;
+        return OPENGATFS_STATUS_FULL;
     }
     struct mock_node *node = &nodes[state->node];
     memcpy(node->bytes + state->offset, source, source_bytes);
@@ -315,7 +315,7 @@ enum traitfs_status traitfs_write(
     if (strcmp(node->path, PACKAGE_SERVICE_AUTHORITY_NEW_PATH) == 0) {
         event(MOCK_EVENT_WRITE_AUTHORITY);
     }
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
 static bool direct_child(
@@ -337,10 +337,10 @@ static bool direct_child(
     return true;
 }
 
-enum traitfs_status traitfs_list(
-    enum traitfs_volume volume,
+enum opengatfs_status opengatfs_list(
+    enum opengatfs_volume volume,
     const char *path,
-    struct traitfs_list_entry *entries,
+    struct opengatfs_list_entry *entries,
     size_t capacity,
     size_t *entry_count
 )
@@ -348,10 +348,10 @@ enum traitfs_status traitfs_list(
     (void)volume;
     size_t parent = find_node(path);
     if (parent == MOCK_MAX_NODES) {
-        return TRAITFS_STATUS_NOT_FOUND;
+        return OPENGATFS_STATUS_NOT_FOUND;
     }
     if (!nodes[parent].directory) {
-        return TRAITFS_STATUS_NOT_DIRECTORY;
+        return OPENGATFS_STATUS_NOT_DIRECTORY;
     }
     size_t count = 0U;
     for (size_t index = 0U; index < MOCK_MAX_NODES; ++index) {
@@ -361,7 +361,7 @@ enum traitfs_status traitfs_list(
             continue;
         }
         if (count == capacity) {
-            return TRAITFS_STATUS_DIRECTORY_FULL;
+            return OPENGATFS_STATUS_DIRECTORY_FULL;
         }
         memset(&entries[count], 0, sizeof(entries[count]));
         (void)snprintf(entries[count].name, sizeof(entries[count].name),
@@ -373,37 +373,37 @@ enum traitfs_status traitfs_list(
         ++count;
     }
     *entry_count = count;
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum traitfs_status traitfs_create(enum traitfs_volume volume, const char *path)
+enum opengatfs_status opengatfs_create(enum opengatfs_volume volume, const char *path)
 {
     (void)volume;
     if (find_node(path) != MOCK_MAX_NODES) {
-        return TRAITFS_STATUS_EXISTS;
+        return OPENGATFS_STATUS_EXISTS;
     }
     return add_node(path, false, NULL, 0U, 0U) ==
-        MOCK_MAX_NODES ? TRAITFS_STATUS_FULL : TRAITFS_STATUS_OK;
+        MOCK_MAX_NODES ? OPENGATFS_STATUS_FULL : OPENGATFS_STATUS_OK;
 }
 
-enum traitfs_status traitfs_create_mode(enum traitfs_volume volume,
+enum opengatfs_status opengatfs_create_mode(enum opengatfs_volume volume,
     const char *path, uint16_t mode)
 {
-    enum traitfs_status status = traitfs_create(volume, path);
+    enum opengatfs_status status = opengatfs_create(volume, path);
 
-    if (status == TRAITFS_STATUS_OK) {
+    if (status == OPENGATFS_STATUS_OK) {
         size_t index = find_node(path);
 
         if (index == MOCK_MAX_NODES) {
-            return TRAITFS_STATUS_CORRUPT;
+            return OPENGATFS_STATUS_CORRUPT;
         }
         nodes[index].mode = mode;
     }
     return status;
 }
 
-enum traitfs_status traitfs_truncate(
-    enum traitfs_volume volume,
+enum opengatfs_status opengatfs_truncate(
+    enum opengatfs_volume volume,
     const char *path,
     uint64_t size
 )
@@ -412,30 +412,30 @@ enum traitfs_status traitfs_truncate(
     size_t node = find_node(path);
 
     if (node == MOCK_MAX_NODES) {
-        return TRAITFS_STATUS_NOT_FOUND;
+        return OPENGATFS_STATUS_NOT_FOUND;
     }
     if (nodes[node].directory) {
-        return TRAITFS_STATUS_IS_DIRECTORY;
+        return OPENGATFS_STATUS_IS_DIRECTORY;
     }
     if (size > SIZE_MAX) {
-        return TRAITFS_STATUS_RANGE;
+        return OPENGATFS_STATUS_RANGE;
     }
     nodes[node].byte_count = (size_t)size;
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum traitfs_status traitfs_mkdir(enum traitfs_volume volume, const char *path)
+enum opengatfs_status opengatfs_mkdir(enum opengatfs_volume volume, const char *path)
 {
     (void)volume;
     if (find_node(path) != MOCK_MAX_NODES) {
-        return TRAITFS_STATUS_EXISTS;
+        return OPENGATFS_STATUS_EXISTS;
     }
     return add_node(path, true, NULL, 0U, 0U) == MOCK_MAX_NODES ?
-        TRAITFS_STATUS_FULL : TRAITFS_STATUS_OK;
+        OPENGATFS_STATUS_FULL : OPENGATFS_STATUS_OK;
 }
 
-enum traitfs_status traitfs_rename(
-    enum traitfs_volume volume,
+enum opengatfs_status opengatfs_rename(
+    enum opengatfs_volume volume,
     const char *source,
     const char *destination
 )
@@ -443,10 +443,10 @@ enum traitfs_status traitfs_rename(
     (void)volume;
     size_t node = find_node(source);
     if (node == MOCK_MAX_NODES) {
-        return TRAITFS_STATUS_NOT_FOUND;
+        return OPENGATFS_STATUS_NOT_FOUND;
     }
     if (find_node(destination) != MOCK_MAX_NODES) {
-        return TRAITFS_STATUS_EXISTS;
+        return OPENGATFS_STATUS_EXISTS;
     }
     (void)snprintf(nodes[node].path, sizeof(nodes[node].path), "%s",
         destination);
@@ -455,45 +455,45 @@ enum traitfs_status traitfs_rename(
     } else if (strcmp(destination, PACKAGE_SERVICE_AUTHORITY_PATH) == 0) {
         event(MOCK_EVENT_RENAME_AUTHORITY);
     }
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum traitfs_status traitfs_unlink(enum traitfs_volume volume, const char *path)
+enum opengatfs_status opengatfs_unlink(enum opengatfs_volume volume, const char *path)
 {
     (void)volume;
     size_t node = find_node(path);
     if (node == MOCK_MAX_NODES) {
-        return TRAITFS_STATUS_NOT_FOUND;
+        return OPENGATFS_STATUS_NOT_FOUND;
     }
     if (nodes[node].directory) {
-        return TRAITFS_STATUS_IS_DIRECTORY;
+        return OPENGATFS_STATUS_IS_DIRECTORY;
     }
     if (strcmp(path, PACKAGE_SERVICE_JOURNAL_PATH) == 0) {
         event(MOCK_EVENT_UNLINK_JOURNAL);
     }
     nodes[node].active = false;
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum traitfs_status traitfs_rmdir(enum traitfs_volume volume, const char *path)
+enum opengatfs_status opengatfs_rmdir(enum opengatfs_volume volume, const char *path)
 {
     (void)volume;
     size_t node = find_node(path);
     if (node == MOCK_MAX_NODES) {
-        return TRAITFS_STATUS_NOT_FOUND;
+        return OPENGATFS_STATUS_NOT_FOUND;
     }
     if (!nodes[node].directory) {
-        return TRAITFS_STATUS_NOT_DIRECTORY;
+        return OPENGATFS_STATUS_NOT_DIRECTORY;
     }
     for (size_t index = 0U; index < MOCK_MAX_NODES; ++index) {
         const char *ignored;
         if (nodes[index].active && direct_child(path, nodes[index].path,
                 &ignored)) {
-            return TRAITFS_STATUS_NOT_EMPTY;
+            return OPENGATFS_STATUS_NOT_EMPTY;
         }
     }
     nodes[node].active = false;
-    return TRAITFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
 enum heap_status heap_allocate(uint64_t size, void **pointer)
@@ -554,7 +554,7 @@ static bool prepare_workspace(
     struct package_builder_workspace *workspace
 )
 {
-    static const uint8_t target[] = "org.trait.app";
+    static const uint8_t target[] = "org.opengat.app";
 
     memset(workspace, 0, sizeof(*workspace));
     if (package_state_database_parse(old_database, OLD_DATABASE_BYTES,
@@ -918,7 +918,7 @@ static int test_prepare_copies_unchanged_installed_file(
     const uint8_t new_authority[PACKAGE_STATE_AUTHORITY_BYTES]
 )
 {
-    static const uint8_t target[] = "org.trait.app";
+    static const uint8_t target[] = "org.opengat.app";
     struct package_builder_workspace *workspace = malloc(sizeof(*workspace));
     struct package_state_database_view target_view;
     struct package_state_package_view library;

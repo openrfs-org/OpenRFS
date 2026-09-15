@@ -25,8 +25,8 @@ FIRST_ROOT_SECTOR = 3
 FIRST_DATA_SECTOR = 4
 FILE_CLUSTER = 2
 MEDIA = 0xF8
-SHORT_NAME = b"TRAIT   BIN"
-IMAGE_SHA256 = "C7D8294F85376E23A099FDC4B362917EACB1EAB8440AA73C1339BF249B89598F"
+SHORT_NAME = b"OPENGAT BIN"
+IMAGE_SHA256 = "3DD00932416E7CBF816C187DBEFD8467BA90B35ACB064F916BE3297BBA066FD7"
 
 
 def put_u16(image: bytearray, offset: int, value: int) -> None:
@@ -41,7 +41,7 @@ def build_image() -> bytes:
     """Construct the v0.6.0 geometry with the independently built ELF body."""
     image = bytearray(IMAGE_BYTES)
     image[0:3] = b"\xEB\x3C\x90"
-    image[3:11] = b"TRAITOS "
+    image[3:11] = b"OPENGAT "
     put_u16(image, 11, BLOCK_BYTES)
     image[13] = 1
     put_u16(image, 14, RESERVED_SECTORS)
@@ -55,7 +55,7 @@ def build_image() -> bytes:
     image[36] = 0x80
     image[38] = 0x29
     put_u32(image, 39, 0x0600_0001)
-    image[43:54] = b"TRAIT      "
+    image[43:54] = b"OPENGAT    "
     image[54:62] = b"FAT16   "
     image[510:512] = b"\x55\xAA"
 
@@ -184,7 +184,7 @@ def main() -> int:
         return 1
     print(
         f"{output}: {TOTAL_SECTORS} sectors x {BLOCK_BYTES} bytes, "
-        f"ELF64 TRAIT.BIN {FILE_BYTES} bytes, SHA-256 {PAYLOAD_SHA256}, "
+        f"ELF64 OPENGAT.BIN {FILE_BYTES} bytes, SHA-256 {PAYLOAD_SHA256}, "
         f"image SHA-256 {IMAGE_SHA256}"
     )
     return 0
