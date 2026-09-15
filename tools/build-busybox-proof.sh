@@ -211,7 +211,7 @@ cmp --silent "$work_dir/expected-syscall-sequence.txt" \
 test "$(sort -u "$output_dir/syscall-sequence.txt" | wc -l)" -eq 7
 grep -Fq 'arch_prctl(ARCH_SET_FS, 0x400001008998)' "$trace_file"
 grep -Fq 'set_tid_address(0x400001008b34)' "$trace_file"
-grep -Fq 'write(1, "TRAIT\n", 7)' "$trace_file"
+grep -Fq 'write(1, "TRAIT\n", 6)' "$trace_file"
 grep -Fq 'exit_group(0)' "$trace_file"
 
 qemu_stdout="$output_dir/qemu-stdout.txt"

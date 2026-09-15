@@ -6,7 +6,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
-use trait::{File, OPEN_CREATE, OPEN_TRUNCATE, OPEN_WRITE, Startup, Thread,
+use r#trait::{File, OPEN_CREATE, OPEN_TRUNCATE, OPEN_WRITE, Startup, Thread,
     VOLUME_DATA, console_write, monotonic_ns, random, sleep_until, thread_exit};
 
 static THREAD_VALUE: AtomicU32 = AtomicU32::new(0);
@@ -49,4 +49,4 @@ fn application(startup: Startup) -> i32 {
     0
 }
 
-trait::trait_main!(application);
+r#trait::trait_main!(application);

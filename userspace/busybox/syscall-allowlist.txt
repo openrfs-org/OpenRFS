@@ -19,7 +19,7 @@
               MAP_PRIVATE|MAP_FIXED|MAP_ANONYMOUS, -1, 0) = heap-base
 06    9  mmap(NULL, 4096, PROT_READ|PROT_WRITE,
               MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = anonymous-page
-07    1  write(1, "TRAIT\n", 7) = 7
+07    1  write(1, "TRAIT\n", 6) = 6
 08   11  munmap(anonymous-page, 4096) = 0
 09  231  exit_group(0) = no-return
 

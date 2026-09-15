@@ -2615,7 +2615,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/trait.iso
 			grep -Fxq 'Trait OS: Boot Ledger installed proof passed' "$$log" || \
 				diagnostics_ok=false ;; \
 		trait-proof) \
-		grep -Eq '^ST TRAIT_PROOF geometry 1024x768 dock 5 events [1-9][0-9]* panels [1-9][0-9]* cursor [1-9][0-9]* damage [1-9][0-9]* glyphs [1-9][0-9]* fingerprint 0x[0-9A-F]{16}$$' "$$log" && \
+		grep -Eq '^ST TRAIT_PROOF geometry 1024x768 apps 5 events [1-9][0-9]* windows [1-9][0-9]* cursor [1-9][0-9]* damage [1-9][0-9]* fingerprint 0x[0-9A-F]{16}$$' "$$log" && \
 			grep -Fxq 'Trait OS: installed proof passed' "$$log" || \
 				diagnostics_ok=false ;; \
 		device-substrate) \
@@ -2658,7 +2658,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/trait.iso
 			grep -Fxq 'Trait OS: ELF64 parser robustness controls 34/34 passed' "$$log" || \
 				diagnostics_ok=false ;; \
 		linux-abi) \
-			grep -Fxq 'ST LINUX ABI busybox echo bytes 7 syscalls 9 stdout valid exit 0 ring 3 address-space private teardown clean robustness 72' "$$log" && \
+			grep -Fxq 'ST LINUX ABI busybox echo bytes 6 syscalls 9 stdout valid exit 0 ring 3 address-space private teardown clean robustness 72' "$$log" && \
 			grep -Fxq 'Trait OS: Linux SYSCALL CPU foundation controls 10/10 passed' "$$log" && \
 			grep -Fxq 'Trait OS: BusyBox image and Linux stack controls 32/32 passed' "$$log" && \
 			grep -Fqx 'TRAIT' "$$log" || \

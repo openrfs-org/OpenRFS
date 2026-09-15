@@ -58,10 +58,10 @@ Version 1.1.0 places all three exact executables in one 16 MiB read-only FAT16
 volume. `tools/make-trait-proof-userland.py` rebuilds every byte, independently
 verifies each file and root entry, runs negative mutations, and pins the volume
 SHA-256 to
-`C2A2B2FEC703C654E1260EF07A91FF1DD7808F8D83734C0D7AFD3967525B34B9`.
+`ACA66204CEA82B1BBF11CE51A31F934C5F2486ED14F6B613F0A1DE07BFCFB475`.
 The same builder preserves the v1.0.0 echo/uname-only image byte-for-byte as the
 v1.1.0 missing-cat negative fixture with SHA-256
-`F7DB823EE1CB7FF2A05E7020DB0F4502656B9950EFBBE79E23ED0EA755FC8478`.
+`9E19035320ACC718FB9AC1AC1C14EA211E71A8E71662A35FF38DA543365A5D17`.
 
 Version 2.0.0 places those same executable bytes in the deterministic immutable
 FAT32 system image. `tools/fat32_image.py` verifies each filename, size, digest,

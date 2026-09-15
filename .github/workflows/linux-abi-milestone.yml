@@ -133,7 +133,7 @@ jobs:
                   grep -Fx 'TRAIT' "$proof" \
                       >evidence/linux-abi/stable-busybox-transcript.txt
                   grep -Fx \
-                      'ST LINUX ABI busybox echo bytes 7 syscalls 9 stdout valid exit 0 ring 3 address-space private teardown clean robustness 72' \
+                      'ST LINUX ABI busybox echo bytes 6 syscalls 9 stdout valid exit 0 ring 3 address-space private teardown clean robustness 72' \
                       "$proof" >>evidence/linux-abi/stable-busybox-transcript.txt
                   grep -Fx 'ST PASS linux-abi' "$proof" \
                       >>evidence/linux-abi/stable-busybox-transcript.txt

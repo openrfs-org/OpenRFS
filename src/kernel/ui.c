@@ -553,6 +553,11 @@ enum ui_status ui_construct(bool pointer_present)
             canvas->height != framebuffer.height) {
         return UI_STATUS_SURFACE_FAILURE;
     }
+    if (pointer_present &&
+            pointer_set_bounds(framebuffer.width, framebuffer.height) !=
+                POINTER_STATUS_OK) {
+        return UI_STATUS_BAD_CURSOR_HOTSPOT;
+    }
     bytes = (uint64_t)canvas->width * canvas->height * sizeof(uint32_t);
     if (heap_allocate(bytes, (void **)&desktop_pixels) != HEAP_STATUS_OK) {
         return UI_STATUS_SURFACE_FAILURE;
