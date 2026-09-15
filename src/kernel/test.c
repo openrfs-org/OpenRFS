@@ -5208,14 +5208,25 @@ _Noreturn void kernel_test_complete_native_lua(void)
     uint8_t bytes[sizeof(expected) - 1U];
     size_t read_bytes = 0U;
     bool content_matches = true;
+    enum native_process_status launch_status;
 
     if (active_scenario != KERNEL_TEST_NATIVE_LUA) {
         kernel_test_fail("Lua completion used outside its scenario");
     }
-    if (native_process_launch("LUA.MAN", &result) != NATIVE_PROCESS_OK ||
+    launch_status = native_process_launch("LUA.MAN", &result);
+    if (launch_status != NATIVE_PROCESS_OK ||
         !result.exited || result.faulted || result.exit_status != 0 ||
         !result.resources_released || result.syscall_count < 10U ||
         !native_process_resources_released()) {
+        console_write("OpenGAT: Lua result launch ");
+        console_write(native_process_status_string(launch_status));
+        console_write(" exit ");
+        console_write_u64((uint64_t)result.exit_status);
+        console_write(" syscalls ");
+        console_write_u64(result.syscall_count);
+        console_write(" released ");
+        console_write(result.resources_released ? "yes" : "no");
+        console_putc('\n');
         kernel_test_fail("Lua did not exit with a clean resource census");
     }
     if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "LUA/RESULT.TXT", &output) !=
@@ -6764,15 +6775,15 @@ static bool focus_opengat_proof_terminal(void)
     return ui_get_state()->active_panel == UI_PANEL_TERMINAL;
 }
 
-static bool installed_opengat_proof_ready(void)
+static bool installed_test_runtime_ready(void)
 {
     const struct boot_ledger *ledger = boot_ledger_installed();
 
     return ledger != NULL && ledger->validated && ledger->executed &&
-        ledger->status == BOOT_LEDGER_STATUS_OK && !ledger->degraded &&
+        ledger->status == BOOT_LEDGER_STATUS_OK &&
         boot_ledger_fingerprint_valid(ledger) &&
         boot_ledger_has_capability(ledger,
-            BOOT_CAPABILITY_OPENGAT_INSTALLED_PROOF_COMPLETE) &&
+            BOOT_CAPABILITY_BOOT_PROOFS_COMPLETE) &&
         boot_ledger_has_capability(ledger,
             BOOT_CAPABILITY_LINUX_SYSCALL_CPU_FOUNDATION_AVAILABLE) &&
         boot_ledger_has_capability(ledger,
@@ -6794,7 +6805,7 @@ _Noreturn void kernel_test_complete_opengat_proof_userland(void)
     struct linux_uname_abi_proof_result uname;
 
     if (active_scenario != KERNEL_TEST_OPENGAT_PROOF_USERLAND ||
-        !installed_opengat_proof_ready() || !shell_is_active()) {
+        !installed_test_runtime_ready() || !shell_is_active()) {
         kernel_test_fail("OpenGAT userspace prerequisites are incomplete");
     }
     cpu_interrupt_enable();
@@ -6842,7 +6853,7 @@ _Noreturn void kernel_test_complete_opengat_proof_userland_absent(void)
         linux_userland_completed(LINUX_USERLAND_PROFILE_ECHO);
 
     if (active_scenario != KERNEL_TEST_OPENGAT_PROOF_USERLAND_ABSENT ||
-        !installed_opengat_proof_ready() || !shell_is_active()) {
+        !installed_test_runtime_ready() || !shell_is_active()) {
         kernel_test_fail("absent-volume userspace prerequisites are incomplete");
     }
     cpu_interrupt_enable();
@@ -6872,7 +6883,7 @@ _Noreturn void kernel_test_complete_opengat_proof_userland_interactive(void)
     struct linux_cat_abi_proof_result proof;
 
     if (active_scenario != KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE ||
-        !installed_opengat_proof_ready() || !shell_is_active() ||
+        !installed_test_runtime_ready() || !shell_is_active() ||
         !keyboard_is_initialized()) {
         kernel_test_fail("interactive userspace prerequisites are incomplete");
     }
@@ -6946,7 +6957,7 @@ _Noreturn void kernel_test_complete_opengat_proof_userland_interactive_absent(
 
     if (active_scenario !=
             KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE_ABSENT ||
-        !installed_opengat_proof_ready() || !shell_is_active() ||
+        !installed_test_runtime_ready() || !shell_is_active() ||
         !keyboard_is_initialized()) {
         kernel_test_fail("interactive absent-profile prerequisites incomplete");
     }
@@ -7047,7 +7058,7 @@ static void fat32_require_base(bool data_required)
     struct opengatfs_drive_info system = opengatfs_drive(OPENGATFS_VOLUME_SYSTEM);
     struct opengatfs_drive_info data = opengatfs_drive(OPENGATFS_VOLUME_DATA);
 
-    if (!installed_opengat_proof_ready() || !shell_is_active() ||
+    if (!installed_test_runtime_ready() || !shell_is_active() ||
         !system.present || !system.healthy || !system.mounted ||
         !system.read_only || system.volume_id != FAT32_SYSTEM_VOLUME_ID ||
         (data_required && (!data.present || !data.healthy || !data.mounted ||

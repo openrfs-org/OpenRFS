@@ -6406,7 +6406,8 @@ static bool service_native_devices(void)
             /* The bounded byte stream retains older input and drops newest. */
             (void)console_input_push(target, (uint8_t)event.character);
         }
-        if (!console_event && ui_handle_keyboard(&event) != UI_STATUS_OK) {
+        if (!console_event && ui_is_active() &&
+            ui_handle_keyboard(&event) != UI_STATUS_OK) {
             success = false;
         }
     }

@@ -35,7 +35,7 @@ TEST_SCENARIOS := normal breakpoint invalid-opcode page-fault ist pit unexpected
 	native-https native-opengat
 TEST_TARGETS := $(addprefix qemu-test-,$(TEST_SCENARIOS))
 EXPECTED_TEST_SCENARIO_COUNT := 115
-EXPECTED_SHELL_ASSERTION_COUNT := 458
+EXPECTED_SHELL_ASSERTION_COUNT := 459
 
 CC := gcc
 LD := ld

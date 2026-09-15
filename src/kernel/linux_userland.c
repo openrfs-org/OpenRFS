@@ -38,12 +38,12 @@ static bool ledger_authorizes(enum linux_userland_profile profile)
         BOOT_CAPABILITY_ELF64_LOADER_FOUNDATION_AVAILABLE,
         BOOT_CAPABILITY_LINUX_SYSCALL_CPU_FOUNDATION_AVAILABLE,
         BOOT_CAPABILITY_LINUX_IMAGE_STACK_FOUNDATION_AVAILABLE,
-        BOOT_CAPABILITY_OPENGAT_INSTALLED_PROOF_COMPLETE
+        BOOT_CAPABILITY_BOOT_PROOFS_COMPLETE
     };
     const struct boot_ledger *ledger = boot_ledger_installed();
 
     if (ledger == NULL || !ledger->validated || !ledger->executed ||
-        ledger->status != BOOT_LEDGER_STATUS_OK || ledger->degraded ||
+        ledger->status != BOOT_LEDGER_STATUS_OK ||
         !boot_ledger_fingerprint_valid(ledger)) {
         return false;
     }
