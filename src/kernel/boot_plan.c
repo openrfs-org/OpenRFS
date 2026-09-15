@@ -2070,6 +2070,7 @@ static bool scenario_starts_desktop(enum kernel_test_scenario scenario)
     return scenario == KERNEL_TEST_OPENGAT_PROOF ||
         scenario == KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE ||
         scenario == KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE_ABSENT ||
+        scenario == KERNEL_TEST_NATIVE_CRASH ||
         scenario == KERNEL_TEST_NATIVE_SDL ||
         scenario == KERNEL_TEST_NATIVE_OPENGAT;
 }
