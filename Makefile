@@ -2422,8 +2422,8 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/trait.iso
 		monitor_argument="-monitor unix:$$monitor_socket,server=on,wait=off"; \
 		$(PYTHON) tools/qemu-send-keys.py --monitor "$$monitor_socket" \
 			--serial "$$log" --marker 'TRAIT SDL READY run=1' \
-			--text s --hmp 'mouse_move -240 -30' \
-			--hmp 'mouse_move -240 -30' --hmp 'mouse_button 1' \
+			--text s --hmp 'mouse_move -100 0' \
+			--hmp 'mouse_button 1' \
 			--hmp 'mouse_button 0' \
 			--capture-dir '$(abspath $(TEST_BUILD_DIR)/$*/sdl-frames)' \
 			--screenshot '$(abspath $(TEST_BUILD_DIR)/$*/sdl.png)' \
@@ -2820,9 +2820,9 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/trait.iso
 		native-sdl) \
 			test -s '$(TEST_BUILD_DIR)/$*/sdl.png' && \
 			test -s '$(TEST_BUILD_DIR)/$*/sdl.mp4' && \
-			grep -Fxq 'TRAIT SDL READY run=1 video=trait audio=trait pref=Data:SDL/D81F0C7A/' "$$log" && \
+			grep -Fxq 'TRAIT SDL READY run=1 video=trait audio=trait pref=Data:SDL/4D692C47/' "$$log" && \
 			grep -Fxq 'TRAIT SDL PASS run=1 present=partial input=key-pointer audio=non-silent persistent=yes' "$$log" && \
-			grep -Fxq 'TRAIT SDL READY run=2 video=trait audio=trait pref=Data:SDL/D81F0C7A/' "$$log" && \
+			grep -Fxq 'TRAIT SDL READY run=2 video=trait audio=trait pref=Data:SDL/4D692C47/' "$$log" && \
 			grep -Fxq 'TRAIT SDL PASS run=2 present=partial input=prior-run audio=non-silent persistent=yes' "$$log" && \
 			grep -Fxq 'Trait OS: SDL 2 window, input, partial damage, PCM and persistence passed' "$$log" || diagnostics_ok=false; \
 			if test "$$audio_capture" = true; then \

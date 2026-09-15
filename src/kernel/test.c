@@ -5533,7 +5533,7 @@ _Noreturn void kernel_test_complete_native_audio(void)
 
 _Noreturn void kernel_test_complete_native_sdl(void)
 {
-    static const char state_path[] = "SDLPROOF/SDL/D81F0C7A/STATE.BIN";
+    static const char state_path[] = "SDLPROOF/SDL/4D692C47/STATE.BIN";
     struct native_process_result first = { 0 };
     struct native_process_result second = { 0 };
     struct traitfs_stat state;
