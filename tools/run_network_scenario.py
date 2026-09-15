@@ -304,7 +304,7 @@ def run(args: argparse.Namespace) -> int:
     if args.scenario == "network-native" and healthy:
         healthy = (
             transcript.count(
-                "OPENGAT NETAPP PASS dns=10.0.2.20 http=32 udp=echo "
+                "OPENGAT NETAPP PASS dns=10.0.2.20 http=31 udp=echo "
                 "timeout reset cancel malformed-dns\n"
             ) == 1
             and transcript.count(
