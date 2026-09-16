@@ -9,8 +9,8 @@ fi
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 output=$1
-cc=${PHIPIA_SDK_CC:-clang}
-ld=${PHIPIA_SDK_LD:-ld.lld}
+cc=${OPENGAT_SDK_CC:-clang}
+ld=${OPENGAT_SDK_LD:-ld.lld}
 python=${PYTHON:-python3}
 readelf=${READELF:-llvm-readelf}
 

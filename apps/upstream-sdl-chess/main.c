@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: Zlib */
-/* Bounded Phipia harness for SDL 2.32.10's testdrawchessboard application. */
+/* Bounded OpenGAT harness for SDL 2.32.10's testdrawchessboard application. */
 
 #define SDL_MAIN_HANDLED
-#define main phipia_upstream_sdl_chess_main
+#define main opengat_upstream_sdl_chess_main
 #include "upstream.c"
 #undef main
 
-#include <phipia/runtime.h>
+#include <opengat/runtime.h>
 
 #define PROOF_FRAME_COUNT 8U
 
@@ -14,7 +14,7 @@ static int persist_launch(void)
 {
     static const char proof[] = "SDL chess release-2.32.10\n";
     char state_path[96];
-    char *preference_path = SDL_GetPrefPath("Phipia", "SDL Chess");
+    char *preference_path = SDL_GetPrefPath("OpenGAT", "SDL Chess");
     SDL_RWops *state;
 
     if (preference_path == NULL ||
@@ -32,7 +32,7 @@ static int persist_launch(void)
     const int closed = SDL_RWclose(state);
 
     return written == sizeof(proof) - 1U && closed == 0 &&
-        phipia_volume_sync(PHIPIA_VOLUME_DATA) == 0 ? 0 : -1;
+        opengat_volume_sync(OPENGAT_VOLUME_DATA) == 0 ? 0 : -1;
 }
 
 int main(int argc, char **argv)
@@ -45,8 +45,8 @@ int main(int argc, char **argv)
     (void)setvbuf(stdout, NULL, _IONBF, 0U);
     SDL_LogSetPriority(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_INFO);
     if (SDL_Init(SDL_INIT_VIDEO) != 0 ||
-            SDL_strcmp(SDL_GetPlatform(), "Phipia") != 0 ||
-            SDL_strcmp(SDL_GetCurrentVideoDriver(), "phipia") != 0) {
+            SDL_strcmp(SDL_GetPlatform(), "OpenGAT") != 0 ||
+            SDL_strcmp(SDL_GetCurrentVideoDriver(), "opengat") != 0) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
             "SDL chess initialization failed: %s", SDL_GetError());
         goto cleanup;
@@ -81,7 +81,7 @@ int main(int argc, char **argv)
             "SDL chess exited before its bounded frame proof");
         goto cleanup;
     }
-    printf("PHIPIA SDL CHESS PASS upstream=release-2.32.10 "
+    printf("OPENGAT SDL CHESS PASS upstream=release-2.32.10 "
         "frames=%u persistent=yes\n", frames);
     result = 0;
 

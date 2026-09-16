@@ -55,8 +55,6 @@ jobs:
                       build/native-porting-qemu.txt
                       build/tests/native*/serial.log
                       build/tests/native*/data.raw
-                      build/tests/native-canvas/canvas.png
-                      build/tests/native-canvas/canvas.mp4
                       build/tests/native-audio/native-audio.wav
                       build/tests/native-sdl/sdl.png
                       build/tests/native-sdl/sdl.mp4
@@ -64,13 +62,13 @@ jobs:
                       build/tests/native-https/network.pcap
                       build/tests/native-https/fixture.log
                       build/tests/native-https/packet-audit.json
-                      build/tests/native-phip/network.pcap
-                      build/tests/native-phip/fixture.log
-                      build/tests/native-phip/packet-audit.json
-                      build/native-phip/PHIP.APP
-                      build/native-phip/PHIP.map
-                      build/native-phip/repository/repository.sri
-                      build/native-phip/repository/packages/**/*.spk
+                      build/tests/native-opengat/network.pcap
+                      build/tests/native-opengat/fixture.log
+                      build/tests/native-opengat/packet-audit.json
+                      build/native-opengat/OPENGAT.APP
+                      build/native-opengat/OPENGAT.map
+                      build/native-opengat/repository/repository.sri
+                      build/native-opengat/repository/packages/**/*.spk
                       build/native-dynamic/DYNROOT.APP
                       build/native-dynamic/DYNLIB.SO
                       build/native-dynamic/DYNROOT.CAT

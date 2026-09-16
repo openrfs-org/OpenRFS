@@ -1,15 +1,15 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include <pthread.h>
-#include <phipia/event.h>
-#include <phipia/runtime.h>
-#include <phipia/window.h>
+#include <opengat/event.h>
+#include <opengat/runtime.h>
+#include <opengat/window.h>
 #include <stdint.h>
 
 static void *blocked_thread(void *argument)
 {
     (void)argument;
     for (;;) {
-        (void)phipia_sleep_until(phipia_monotonic_ns() +
+        (void)opengat_sleep_until(opengat_monotonic_ns() +
             UINT64_C(1000000000));
     }
 }
@@ -28,25 +28,25 @@ static _Noreturn void poison_state_and_fault(void)
 
 int main(void)
 {
-    struct phipia_memory_map_response mapping = {0U, 0U, 0U, 0U};
-    struct phipia_window_create_response window = {0U};
+    struct opengat_memory_map_response mapping = {0U, 0U, 0U, 0U};
+    struct opengat_window_create_response window = {0U};
     pthread_t thread;
     long file;
     long directory;
     long timer;
 
-    if (phipia_path_mkdir(PHIPIA_VOLUME_DATA, "LIVE") != 0) return 10;
-    file = phipia_file_open(PHIPIA_VOLUME_DATA, "LIVE/OPEN.TXT",
-        PHIPIA_OPEN_WRITE | PHIPIA_OPEN_CREATE | PHIPIA_OPEN_TRUNCATE);
-    directory = phipia_directory_open(PHIPIA_VOLUME_DATA, "LIVE");
-    timer = phipia_timer_create();
+    if (opengat_path_mkdir(OPENGAT_VOLUME_DATA, "LIVE") != 0) return 10;
+    file = opengat_file_open(OPENGAT_VOLUME_DATA, "LIVE/OPEN.TXT",
+        OPENGAT_OPEN_WRITE | OPENGAT_OPEN_CREATE | OPENGAT_OPEN_TRUNCATE);
+    directory = opengat_directory_open(OPENGAT_VOLUME_DATA, "LIVE");
+    timer = opengat_timer_create();
     if (file < 0 || directory < 0 || timer < 0 ||
-        phipia_file_write((phipia_handle_t)file, "live", 4U) != 4 ||
-        phipia_timer_set((phipia_handle_t)timer,
-            phipia_monotonic_ns() + UINT64_C(1000000000)) != 0 ||
-        phipia_memory_allocate(2U * PHIPIA_ABI_PAGE_SIZE,
-            PHIPIA_MEMORY_READ | PHIPIA_MEMORY_WRITE, &mapping) != 0 ||
-        phipia_window_create("Crash containment", 160U, 96U, &window) != 0 ||
+        opengat_file_write((opengat_handle_t)file, "live", 4U) != 4 ||
+        opengat_timer_set((opengat_handle_t)timer,
+            opengat_monotonic_ns() + UINT64_C(1000000000)) != 0 ||
+        opengat_memory_allocate(2U * OPENGAT_ABI_PAGE_SIZE,
+            OPENGAT_MEMORY_READ | OPENGAT_MEMORY_WRITE, &mapping) != 0 ||
+        opengat_window_create("Crash containment", 160U, 96U, &window) != 0 ||
         pthread_create(&thread, NULL, blocked_thread, NULL) != 0) {
         return 11;
     }

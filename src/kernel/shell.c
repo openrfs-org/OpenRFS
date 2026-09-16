@@ -3,24 +3,26 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/clock.h>
-#include <phipia/boot_ledger.h>
-#include <phipia/console.h>
-#include <phipia/cpu.h>
-#include <phipia/framebuffer.h>
-#include <phipia/fat32_fs.h>
-#include <phipia/heap.h>
-#include <phipia/keyboard.h>
-#include <phipia/linux_userland.h>
-#include <phipia/linux_syscall.h>
-#include <phipia/memory.h>
-#include <phipia/native_process.h>
-#include <phipia/network.h>
-#include <phipia/pci.h>
-#include <phipia/screen.h>
-#include <phipia/shell.h>
-#include <phipia/thread.h>
-#include <phipia/ui.h>
+#include <opengat/account.h>
+#include <opengat/boot_plan.h>
+#include <opengat/clock.h>
+#include <opengat/boot_ledger.h>
+#include <opengat/console.h>
+#include <opengat/cpu.h>
+#include <opengat/framebuffer.h>
+#include <opengat/fat32_fs.h>
+#include <opengat/heap.h>
+#include <opengat/keyboard.h>
+#include <opengat/linux_userland.h>
+#include <opengat/linux_syscall.h>
+#include <opengat/memory.h>
+#include <opengat/native_process.h>
+#include <opengat/network.h>
+#include <opengat/pci.h>
+#include <opengat/screen.h>
+#include <opengat/shell.h>
+#include <opengat/thread.h>
+#include <opengat/ui.h>
 
 /*
  * A command line.
@@ -40,7 +42,7 @@
  * mistakes, so an unknown command is a line of output and not an incident.
  */
 
-#define SHELL_PROMPT "phip> "
+#define SHELL_PROMPT "opengat$ "
 #define SHELL_NETWORK_OWNER UINT64_C(1)
 
 /* What splits a command from its arguments. Nothing exotic; space and tab. */
@@ -54,7 +56,27 @@ static char line[SHELL_LINE_LIMIT + 1U];
 static bool linux_prompt_evidence_pending;
 static bool ui_keyboard_operational;
 static bool ui_keyboard_decided;
-static char filesystem_cwd[PHIPFS_MAX_PATH + 1U] = ".";
+static char filesystem_cwd[OPENGATFS_MAX_PATH + 1U] = ".";
+
+enum authentication_prompt {
+    AUTHENTICATION_NONE = 0,
+    AUTHENTICATION_CREATE_PASSWORD,
+    AUTHENTICATION_CONFIRM_PASSWORD,
+    AUTHENTICATION_STARTY_USERNAME,
+    AUTHENTICATION_STARTY_PASSWORD
+};
+
+struct authentication_state {
+    enum authentication_prompt prompt;
+    char username[ACCOUNT_USERNAME_BYTES];
+    uint8_t first_password[ACCOUNT_PASSWORD_MAX_BYTES];
+    size_t first_password_bytes;
+    uint8_t input[ACCOUNT_PASSWORD_MAX_BYTES + 1U];
+    size_t input_bytes;
+};
+
+static struct authentication_state authentication;
+static void write_prompt_restored(void);
 
 struct foreground_input_state {
     uint8_t line[LINUX_CAT_INPUT_LINE_BYTES + 1U];
@@ -74,6 +96,16 @@ static void zero_bytes(void *pointer, size_t length)
 
     for (size_t index = 0U; index < length; ++index) {
         bytes[index] = 0U;
+    }
+}
+
+static void secure_zero(void *memory, size_t length)
+{
+    volatile uint8_t *bytes = memory;
+
+    while (length != 0U) {
+        *bytes++ = 0U;
+        --length;
     }
 }
 
@@ -158,6 +190,8 @@ static void print_size(uint64_t bytes)
 static void command_help(void)
 {
     console_write("  help      this list\n");
+    console_write("  useradd NAME  create the first local user\n");
+    console_write("  starty    authenticate and start the OpenGAT desktop\n");
     console_write("  echo      print the rest of the line\n");
     console_write("  linux     run measured echo, uname, or bounded cat userspace\n");
     console_write("  native    launch one native application manifest\n");
@@ -179,7 +213,7 @@ static void command_help(void)
     console_write("  netstat   bounded socket and packet counters\n");
     console_write("  reboot    sync, unmount, and restart cleanly\n");
     console_write("  clear     clear the screen\n");
-    console_write("  fetch     Phipia identity and live system summary\n");
+    console_write("  fetch     OpenGAT identity and live system summary\n");
     console_write("  uptime    nanoseconds since the clock started\n");
     console_write("  mem       physical frames and kernel heap\n");
     console_write("  pci       every function enumeration found\n");
@@ -213,7 +247,7 @@ static void command_linux(const char *arguments)
         console_serial_write("RW USERLAND unsupported profile refused\n");
         return;
     }
-    console_serial_write("RW USERLAND command accepted through Phipia shell linux ");
+    console_serial_write("RW USERLAND command accepted through OpenGAT shell linux ");
     console_serial_write(linux_userland_profile_name(profile));
     console_serial_write("\n");
     status = linux_userland_launch(profile, &result);
@@ -293,36 +327,36 @@ static void command_native_go(void)
     report_native_result(native_process_run(&result), &result);
 }
 
-static void filesystem_error(const char *command, enum phipfs_status status)
+static void filesystem_error(const char *command, enum opengatfs_status status)
 {
     console_write(command);
     console_write(": ");
-    console_write(phipfs_status_string(status));
+    console_write(opengatfs_status_string(status));
     console_putc('\n');
 }
 
 static bool filesystem_path(const char *argument, char *output)
 {
-    char combined[PHIPFS_MAX_PATH + 1U];
+    char combined[OPENGATFS_MAX_PATH + 1U];
     size_t used = 0U;
     size_t index = 0U;
     size_t output_used = 0U;
-    size_t component_starts[PHIPFS_MAX_DEPTH];
+    size_t component_starts[OPENGATFS_MAX_DEPTH];
     size_t depth = 0U;
 
     if (argument == NULL || output == NULL || argument[0] == '/') {
         return false;
     }
     if (filesystem_cwd[0] != '.' || filesystem_cwd[1] != '\0') {
-        while (filesystem_cwd[used] != '\0' && used < PHIPFS_MAX_PATH) {
+        while (filesystem_cwd[used] != '\0' && used < OPENGATFS_MAX_PATH) {
             combined[used] = filesystem_cwd[used];
             ++used;
         }
-        if (argument[0] != '\0' && used < PHIPFS_MAX_PATH) {
+        if (argument[0] != '\0' && used < OPENGATFS_MAX_PATH) {
             combined[used++] = '/';
         }
     }
-    while (argument[index] != '\0' && used < PHIPFS_MAX_PATH) {
+    while (argument[index] != '\0' && used < OPENGATFS_MAX_PATH) {
         combined[used++] = argument[index++];
     }
     if (argument[index] != '\0' || used == 0U) {
@@ -351,18 +385,18 @@ static bool filesystem_path(const char *argument, char *output)
                 --output_used;
             }
         } else {
-            if (depth >= PHIPFS_MAX_DEPTH) {
+            if (depth >= OPENGATFS_MAX_DEPTH) {
                 return false;
             }
             if (output_used != 0U) {
-                if (output_used >= PHIPFS_MAX_PATH) {
+                if (output_used >= OPENGATFS_MAX_PATH) {
                     return false;
                 }
                 output[output_used++] = '/';
             }
             component_starts[depth++] = output_used;
             for (size_t source = index; source < end; ++source) {
-                if (output_used >= PHIPFS_MAX_PATH) {
+                if (output_used >= OPENGATFS_MAX_PATH) {
                     return false;
                 }
                 output[output_used++] = combined[source];
@@ -396,7 +430,7 @@ static bool first_argument(
     }
     while (arguments[index] != '\0' &&
         !is_separator(arguments[index])) {
-        if (length >= PHIPFS_MAX_PATH) {
+        if (length >= OPENGATFS_MAX_PATH) {
             return false;
         }
         first[length++] = arguments[index++];
@@ -470,7 +504,7 @@ static bool line_content(
     return true;
 }
 
-static void print_drive(const char *name, struct phipfs_drive_info drive)
+static void print_drive(const char *name, struct opengatfs_drive_info drive)
 {
     console_write(name);
     console_write("  fat32  ");
@@ -488,34 +522,34 @@ static void print_drive(const char *name, struct phipfs_drive_info drive)
 
 static void command_drives(void)
 {
-    print_drive("system", phipfs_drive(PHIPFS_VOLUME_SYSTEM));
-    print_drive("data  ", phipfs_drive(PHIPFS_VOLUME_DATA));
+    print_drive("system", opengatfs_drive(OPENGATFS_VOLUME_SYSTEM));
+    print_drive("data  ", opengatfs_drive(OPENGATFS_VOLUME_DATA));
 }
 
 static void command_mount(const char *arguments)
 {
-    enum phipfs_volume first = PHIPFS_VOLUME_SYSTEM;
-    enum phipfs_volume last = PHIPFS_VOLUME_DATA;
+    enum opengatfs_volume first = OPENGATFS_VOLUME_SYSTEM;
+    enum opengatfs_volume last = OPENGATFS_VOLUME_DATA;
 
     if (argument_equals(arguments, "system")) {
-        last = PHIPFS_VOLUME_SYSTEM;
+        last = OPENGATFS_VOLUME_SYSTEM;
     } else if (argument_equals(arguments, "data")) {
-        first = PHIPFS_VOLUME_DATA;
+        first = OPENGATFS_VOLUME_DATA;
     } else if (arguments[0] != '\0') {
         console_write("mount: use 'mount system' or 'mount data'\n");
         return;
     }
-    for (enum phipfs_volume volume = first; volume <= last;
-         volume = (enum phipfs_volume)(volume + 1)) {
-        struct phipfs_drive_info drive = phipfs_drive(volume);
-        enum phipfs_status status;
+    for (enum opengatfs_volume volume = first; volume <= last;
+         volume = (enum opengatfs_volume)(volume + 1)) {
+        struct opengatfs_drive_info drive = opengatfs_drive(volume);
+        enum opengatfs_status status;
 
         if (drive.mounted) {
             continue;
         }
-        status = phipfs_mount(volume);
-        if (status != PHIPFS_STATUS_OK) {
-            filesystem_error(volume == PHIPFS_VOLUME_SYSTEM ?
+        status = opengatfs_mount(volume);
+        if (status != OPENGATFS_STATUS_OK) {
+            filesystem_error(volume == OPENGATFS_VOLUME_SYSTEM ?
                 "mount system" : "mount data", status);
         }
     }
@@ -533,21 +567,21 @@ static void command_pwd(void)
 
 static void command_cd(const char *arguments)
 {
-    char path[PHIPFS_MAX_PATH + 1U];
-    struct phipfs_stat stat;
-    enum phipfs_status status;
+    char path[OPENGATFS_MAX_PATH + 1U];
+    struct opengatfs_stat stat;
+    enum opengatfs_status status;
 
     if (!filesystem_path(arguments[0] == '\0' ? "." : arguments, path)) {
         console_write("cd: malformed path\n");
         return;
     }
-    status = phipfs_stat_path(PHIPFS_VOLUME_DATA, path, &stat);
-    if (status != PHIPFS_STATUS_OK) {
+    status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA, path, &stat);
+    if (status != OPENGATFS_STATUS_OK) {
         filesystem_error("cd", status);
         return;
     }
     if (!stat.directory) {
-        filesystem_error("cd", PHIPFS_STATUS_NOT_DIRECTORY);
+        filesystem_error("cd", OPENGATFS_STATUS_NOT_DIRECTORY);
         return;
     }
     size_t index = 0U;
@@ -558,18 +592,18 @@ static void command_cd(const char *arguments)
 
 static void command_ls(const char *arguments)
 {
-    char path[PHIPFS_MAX_PATH + 1U];
-    struct phipfs_list_entry entries[PHIPFS_MAX_LIST_ENTRIES];
+    char path[OPENGATFS_MAX_PATH + 1U];
+    struct opengatfs_list_entry entries[OPENGATFS_MAX_LIST_ENTRIES];
     size_t count = 0U;
-    enum phipfs_status status;
+    enum opengatfs_status status;
 
     if (!filesystem_path(arguments[0] == '\0' ? "." : arguments, path)) {
         console_write("ls: malformed path\n");
         return;
     }
-    status = phipfs_list(PHIPFS_VOLUME_DATA, path, entries,
-        PHIPFS_MAX_LIST_ENTRIES, &count);
-    if (status != PHIPFS_STATUS_OK) {
+    status = opengatfs_list(OPENGATFS_VOLUME_DATA, path, entries,
+        OPENGATFS_MAX_LIST_ENTRIES, &count);
+    if (status != OPENGATFS_STATUS_OK) {
         filesystem_error("ls", status);
         return;
     }
@@ -586,92 +620,92 @@ static void command_ls(const char *arguments)
 
 static void command_mkdir(const char *arguments)
 {
-    char path[PHIPFS_MAX_PATH + 1U];
-    enum phipfs_status status;
+    char path[OPENGATFS_MAX_PATH + 1U];
+    enum opengatfs_status status;
 
     if (arguments[0] == '\0' || !filesystem_path(arguments, path)) {
         console_write("mkdir: provide one relative 8.3 path\n");
         return;
     }
-    status = phipfs_mkdir(PHIPFS_VOLUME_DATA, path);
-    if (status != PHIPFS_STATUS_OK) {
+    status = opengatfs_mkdir(OPENGATFS_VOLUME_DATA, path);
+    if (status != OPENGATFS_STATUS_OK) {
         filesystem_error("mkdir", status);
     }
 }
 
 static void command_touch(const char *arguments)
 {
-    char path[PHIPFS_MAX_PATH + 1U];
-    struct phipfs_stat stat;
-    enum phipfs_status status;
+    char path[OPENGATFS_MAX_PATH + 1U];
+    struct opengatfs_stat stat;
+    enum opengatfs_status status;
 
     if (arguments[0] == '\0' || !filesystem_path(arguments, path)) {
         console_write("touch: provide one relative 8.3 path\n");
         return;
     }
-    status = phipfs_stat_path(PHIPFS_VOLUME_DATA, path, &stat);
-    if (status == PHIPFS_STATUS_OK) {
+    status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA, path, &stat);
+    if (status == OPENGATFS_STATUS_OK) {
         if (stat.directory) {
-            filesystem_error("touch", PHIPFS_STATUS_IS_DIRECTORY);
+            filesystem_error("touch", OPENGATFS_STATUS_IS_DIRECTORY);
         }
         return;
     }
-    if (status != PHIPFS_STATUS_NOT_FOUND) {
+    if (status != OPENGATFS_STATUS_NOT_FOUND) {
         filesystem_error("touch", status);
         return;
     }
-    status = phipfs_create(PHIPFS_VOLUME_DATA, path);
-    if (status != PHIPFS_STATUS_OK) {
+    status = opengatfs_create(OPENGATFS_VOLUME_DATA, path);
+    if (status != OPENGATFS_STATUS_OK) {
         filesystem_error("touch", status);
     }
 }
 
 static void command_read(const char *arguments)
 {
-    char path[PHIPFS_MAX_PATH + 1U];
+    char path[OPENGATFS_MAX_PATH + 1U];
     uint8_t buffer[128];
-    phipfs_handle handle;
-    enum phipfs_status status;
+    opengatfs_handle handle;
+    enum opengatfs_status status;
 
     if (arguments[0] == '\0' || !filesystem_path(arguments, path)) {
         console_write("read: provide one relative 8.3 path\n");
         return;
     }
-    status = phipfs_open(PHIPFS_VOLUME_DATA, path, PHIPFS_ACCESS_READ, &handle);
-    if (status != PHIPFS_STATUS_OK) {
+    status = opengatfs_open(OPENGATFS_VOLUME_DATA, path, OPENGATFS_ACCESS_READ, &handle);
+    if (status != OPENGATFS_STATUS_OK) {
         filesystem_error("read", status);
         return;
     }
     for (;;) {
         size_t read_bytes = 0U;
 
-        status = phipfs_read(handle, buffer, sizeof(buffer), &read_bytes);
+        status = opengatfs_read(handle, buffer, sizeof(buffer), &read_bytes);
         if (read_bytes != 0U) {
             console_write_n((const char *)buffer, read_bytes);
         }
-        if (status != PHIPFS_STATUS_OK || read_bytes == 0U) {
+        if (status != OPENGATFS_STATUS_OK || read_bytes == 0U) {
             break;
         }
     }
-    if (phipfs_close(handle) != PHIPFS_STATUS_OK && status == PHIPFS_STATUS_OK) {
-        status = PHIPFS_STATUS_STALE_HANDLE;
+    if (opengatfs_close(handle) != OPENGATFS_STATUS_OK && status == OPENGATFS_STATUS_OK) {
+        status = OPENGATFS_STATUS_STALE_HANDLE;
     }
-    if (status != PHIPFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         filesystem_error("read", status);
     }
 }
 
 static void command_write_line(const char *arguments, bool append)
 {
-    char argument_path[PHIPFS_MAX_PATH + 1U];
-    char path[PHIPFS_MAX_PATH + 1U];
+    char argument_path[OPENGATFS_MAX_PATH + 1U];
+    char path[OPENGATFS_MAX_PATH + 1U];
     const char *text;
     uint8_t content[SHELL_LINE_LIMIT + 1U];
     size_t content_bytes;
     size_t written = 0U;
-    phipfs_handle handle;
+    opengatfs_handle handle;
     bool opened = false;
-    enum phipfs_status status;
+    enum opengatfs_status status;
 
     if (!first_argument(arguments, argument_path, &text) ||
         !filesystem_path(argument_path, path) ||
@@ -681,42 +715,42 @@ static void command_write_line(const char *arguments, bool append)
             "write: use write PATH \"text\"\n");
         return;
     }
-    struct phipfs_stat stat;
-    status = phipfs_stat_path(PHIPFS_VOLUME_DATA, path, &stat);
-    if (status == PHIPFS_STATUS_NOT_FOUND) {
-        status = phipfs_create(PHIPFS_VOLUME_DATA, path);
+    struct opengatfs_stat stat;
+    status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA, path, &stat);
+    if (status == OPENGATFS_STATUS_NOT_FOUND) {
+        status = opengatfs_create(OPENGATFS_VOLUME_DATA, path);
     }
-    if (status == PHIPFS_STATUS_OK && !append) {
-        status = phipfs_truncate(PHIPFS_VOLUME_DATA, path, 0U);
+    if (status == OPENGATFS_STATUS_OK && !append) {
+        status = opengatfs_truncate(OPENGATFS_VOLUME_DATA, path, 0U);
     }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_open(PHIPFS_VOLUME_DATA, path,
-            PHIPFS_ACCESS_WRITE, &handle);
-        opened = status == PHIPFS_STATUS_OK;
+    if (status == OPENGATFS_STATUS_OK) {
+        status = opengatfs_open(OPENGATFS_VOLUME_DATA, path,
+            OPENGATFS_ACCESS_WRITE, &handle);
+        opened = status == OPENGATFS_STATUS_OK;
     }
-    if (status == PHIPFS_STATUS_OK && append) {
+    if (status == OPENGATFS_STATUS_OK && append) {
         uint64_t position;
 
-        status = phipfs_seek(handle, 0, PHIPFS_SEEK_END, &position);
+        status = opengatfs_seek(handle, 0, OPENGATFS_SEEK_END, &position);
     }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_write(handle, content, content_bytes, &written);
+    if (status == OPENGATFS_STATUS_OK) {
+        status = opengatfs_write(handle, content, content_bytes, &written);
     }
-    if (opened && phipfs_close(handle) != PHIPFS_STATUS_OK &&
-        status == PHIPFS_STATUS_OK) {
-        status = PHIPFS_STATUS_STALE_HANDLE;
+    if (opened && opengatfs_close(handle) != OPENGATFS_STATUS_OK &&
+        status == OPENGATFS_STATUS_OK) {
+        status = OPENGATFS_STATUS_STALE_HANDLE;
     }
-    if (status != PHIPFS_STATUS_OK || written != content_bytes) {
+    if (status != OPENGATFS_STATUS_OK || written != content_bytes) {
         filesystem_error(append ? "append" : "write",
-            status != PHIPFS_STATUS_OK ? status : PHIPFS_STATUS_WRITEBACK);
+            status != OPENGATFS_STATUS_OK ? status : OPENGATFS_STATUS_WRITEBACK);
     }
 }
 
 static void command_write_at(const char *arguments)
 {
-    char argument_path[PHIPFS_MAX_PATH + 1U];
-    char argument_offset[PHIPFS_MAX_PATH + 1U];
-    char path[PHIPFS_MAX_PATH + 1U];
+    char argument_path[OPENGATFS_MAX_PATH + 1U];
+    char argument_offset[OPENGATFS_MAX_PATH + 1U];
+    char path[OPENGATFS_MAX_PATH + 1U];
     const char *after_path;
     const char *text;
     uint8_t content[SHELL_LINE_LIMIT + 1U];
@@ -724,9 +758,9 @@ static void command_write_at(const char *arguments)
     size_t written = 0U;
     uint32_t offset;
     uint64_t position = 0U;
-    phipfs_handle handle;
+    opengatfs_handle handle;
     bool opened = false;
-    enum phipfs_status status;
+    enum opengatfs_status status;
 
     if (!first_argument(arguments, argument_path, &after_path) ||
         !first_argument(after_path, argument_offset, &text) ||
@@ -736,34 +770,34 @@ static void command_write_at(const char *arguments)
         console_write("writeat: use writeat PATH OFFSET \"text\"\n");
         return;
     }
-    status = phipfs_open(PHIPFS_VOLUME_DATA, path,
-        PHIPFS_ACCESS_WRITE, &handle);
-    opened = status == PHIPFS_STATUS_OK;
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_seek(handle, (int64_t)offset,
-            PHIPFS_SEEK_START, &position);
+    status = opengatfs_open(OPENGATFS_VOLUME_DATA, path,
+        OPENGATFS_ACCESS_WRITE, &handle);
+    opened = status == OPENGATFS_STATUS_OK;
+    if (status == OPENGATFS_STATUS_OK) {
+        status = opengatfs_seek(handle, (int64_t)offset,
+            OPENGATFS_SEEK_START, &position);
     }
-    if (status == PHIPFS_STATUS_OK) {
-        status = phipfs_write(handle, content, content_bytes, &written);
+    if (status == OPENGATFS_STATUS_OK) {
+        status = opengatfs_write(handle, content, content_bytes, &written);
     }
-    if (opened && phipfs_close(handle) != PHIPFS_STATUS_OK &&
-        status == PHIPFS_STATUS_OK) {
-        status = PHIPFS_STATUS_STALE_HANDLE;
+    if (opened && opengatfs_close(handle) != OPENGATFS_STATUS_OK &&
+        status == OPENGATFS_STATUS_OK) {
+        status = OPENGATFS_STATUS_STALE_HANDLE;
     }
-    if (status != PHIPFS_STATUS_OK || position != offset ||
+    if (status != OPENGATFS_STATUS_OK || position != offset ||
         written != content_bytes) {
-        filesystem_error("writeat", status != PHIPFS_STATUS_OK ? status :
-            PHIPFS_STATUS_WRITEBACK);
+        filesystem_error("writeat", status != OPENGATFS_STATUS_OK ? status :
+            OPENGATFS_STATUS_WRITEBACK);
     }
 }
 
 static void command_truncate(const char *arguments)
 {
-    char argument_path[PHIPFS_MAX_PATH + 1U];
-    char path[PHIPFS_MAX_PATH + 1U];
+    char argument_path[OPENGATFS_MAX_PATH + 1U];
+    char path[OPENGATFS_MAX_PATH + 1U];
     const char *size_text;
     uint32_t size;
-    enum phipfs_status status;
+    enum opengatfs_status status;
 
     if (!first_argument(arguments, argument_path, &size_text) ||
         !filesystem_path(argument_path, path) ||
@@ -771,24 +805,24 @@ static void command_truncate(const char *arguments)
         console_write("truncate: use truncate PATH BYTES\n");
         return;
     }
-    status = phipfs_truncate(PHIPFS_VOLUME_DATA, path, size);
-    if (status != PHIPFS_STATUS_OK) {
+    status = opengatfs_truncate(OPENGATFS_VOLUME_DATA, path, size);
+    if (status != OPENGATFS_STATUS_OK) {
         filesystem_error("truncate", status);
     }
 }
 
 static void command_stat(const char *arguments)
 {
-    char path[PHIPFS_MAX_PATH + 1U];
-    struct phipfs_stat stat;
-    enum phipfs_status status;
+    char path[OPENGATFS_MAX_PATH + 1U];
+    struct opengatfs_stat stat;
+    enum opengatfs_status status;
 
     if (arguments[0] == '\0' || !filesystem_path(arguments, path)) {
         console_write("stat: provide one relative 8.3 path\n");
         return;
     }
-    status = phipfs_stat_path(PHIPFS_VOLUME_DATA, path, &stat);
-    if (status != PHIPFS_STATUS_OK) {
+    status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA, path, &stat);
+    if (status != OPENGATFS_STATUS_OK) {
         filesystem_error("stat", status);
         return;
     }
@@ -803,11 +837,11 @@ static void command_stat(const char *arguments)
 
 static void command_mv(const char *arguments)
 {
-    char first[PHIPFS_MAX_PATH + 1U];
-    char source[PHIPFS_MAX_PATH + 1U];
-    char destination[PHIPFS_MAX_PATH + 1U];
+    char first[OPENGATFS_MAX_PATH + 1U];
+    char source[OPENGATFS_MAX_PATH + 1U];
+    char destination[OPENGATFS_MAX_PATH + 1U];
     const char *second;
-    enum phipfs_status status;
+    enum opengatfs_status status;
 
     if (!first_argument(arguments, first, &second) || second[0] == '\0' ||
         !filesystem_path(first, source) ||
@@ -815,37 +849,37 @@ static void command_mv(const char *arguments)
         console_write("mv: use mv SOURCE DESTINATION\n");
         return;
     }
-    status = phipfs_rename(PHIPFS_VOLUME_DATA, source, destination);
-    if (status != PHIPFS_STATUS_OK) {
+    status = opengatfs_rename(OPENGATFS_VOLUME_DATA, source, destination);
+    if (status != OPENGATFS_STATUS_OK) {
         filesystem_error("mv", status);
     }
 }
 
 static void command_rm(const char *arguments)
 {
-    char path[PHIPFS_MAX_PATH + 1U];
-    struct phipfs_stat stat;
-    enum phipfs_status status;
+    char path[OPENGATFS_MAX_PATH + 1U];
+    struct opengatfs_stat stat;
+    enum opengatfs_status status;
 
     if (arguments[0] == '\0' || !filesystem_path(arguments, path)) {
         console_write("rm: provide one relative 8.3 path\n");
         return;
     }
-    status = phipfs_stat_path(PHIPFS_VOLUME_DATA, path, &stat);
-    if (status == PHIPFS_STATUS_OK) {
-        status = stat.directory ? phipfs_rmdir(PHIPFS_VOLUME_DATA, path) :
-            phipfs_unlink(PHIPFS_VOLUME_DATA, path);
+    status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA, path, &stat);
+    if (status == OPENGATFS_STATUS_OK) {
+        status = stat.directory ? opengatfs_rmdir(OPENGATFS_VOLUME_DATA, path) :
+            opengatfs_unlink(OPENGATFS_VOLUME_DATA, path);
     }
-    if (status != PHIPFS_STATUS_OK) {
+    if (status != OPENGATFS_STATUS_OK) {
         filesystem_error("rm", status);
     }
 }
 
 static void command_sync(void)
 {
-    enum phipfs_status status = phipfs_sync(PHIPFS_VOLUME_DATA);
+    enum opengatfs_status status = opengatfs_sync(OPENGATFS_VOLUME_DATA);
 
-    if (status == PHIPFS_STATUS_OK) {
+    if (status == OPENGATFS_STATUS_OK) {
         console_write("data synchronized\n");
     } else {
         filesystem_error("sync", status);
@@ -854,16 +888,16 @@ static void command_sync(void)
 
 static void command_reboot(void)
 {
-    enum phipfs_status status = phipfs_unmount(PHIPFS_VOLUME_DATA);
+    enum opengatfs_status status = opengatfs_unmount(OPENGATFS_VOLUME_DATA);
 
-    if (status != PHIPFS_STATUS_OK && status != PHIPFS_STATUS_NOT_MOUNTED) {
+    if (status != OPENGATFS_STATUS_OK && status != OPENGATFS_STATUS_NOT_MOUNTED) {
         filesystem_error("reboot", status);
         return;
     }
-    status = phipfs_unmount(PHIPFS_VOLUME_SYSTEM);
-    if (status != PHIPFS_STATUS_OK && status != PHIPFS_STATUS_NOT_MOUNTED) {
+    status = opengatfs_unmount(OPENGATFS_VOLUME_SYSTEM);
+    if (status != OPENGATFS_STATUS_OK && status != OPENGATFS_STATUS_NOT_MOUNTED) {
         filesystem_error("reboot", status);
-        (void)phipfs_mount(PHIPFS_VOLUME_DATA);
+        (void)opengatfs_mount(OPENGATFS_VOLUME_DATA);
         return;
     }
     console_write("restarting after clean synchronization\n");
@@ -871,8 +905,8 @@ static void command_reboot(void)
     cpu_out8(UINT16_C(0x0064), UINT8_C(0xFE));
     cpu_interrupt_enable();
     console_write("reboot: platform reset failed\n");
-    (void)phipfs_mount(PHIPFS_VOLUME_SYSTEM);
-    (void)phipfs_mount(PHIPFS_VOLUME_DATA);
+    (void)opengatfs_mount(OPENGATFS_VOLUME_SYSTEM);
+    (void)opengatfs_mount(OPENGATFS_VOLUME_DATA);
 }
 
 static void command_uptime(void)
@@ -970,7 +1004,7 @@ static void command_version(void)
 {
     const struct screen_state screen = screen_get_state();
 
-    console_write("Phipia 2.2.0 dev, a proof-driven x86_64 operating system.\n");
+    console_write("OpenGAT 2.2.0 dev, a proof-driven x86_64 operating system.\n");
     console_write("console ");
     console_write_u64(screen.columns);
     console_putc('x');
@@ -978,7 +1012,7 @@ static void command_version(void)
     console_write(" characters\n");
 }
 
-static void print_fetch_drive(struct phipfs_drive_info drive)
+static void print_fetch_drive(struct opengatfs_drive_info drive)
 {
     if (!drive.present || !drive.healthy || !drive.mounted) {
         console_write("unavailable");
@@ -991,16 +1025,16 @@ static void command_fetch(void)
 {
     const struct screen_state screen = screen_get_state();
     const struct heap_state heap = heap_get_state();
-    const struct phipfs_drive_info system = phipfs_drive(PHIPFS_VOLUME_SYSTEM);
-    const struct phipfs_drive_info data = phipfs_drive(PHIPFS_VOLUME_DATA);
+    const struct opengatfs_drive_info system = opengatfs_drive(OPENGATFS_VOLUME_SYSTEM);
+    const struct opengatfs_drive_info data = opengatfs_drive(OPENGATFS_VOLUME_DATA);
 
     console_write("\n");
     if (ui_terminal_draw_logo() != UI_STATUS_OK) {
-        console_write("  [ Phipia ]\n");
+        console_write("  [ OpenGAT ]\n");
     }
     console_write("\n");
-    console_write("  Phipia\n");
-    console_write("  kernel      Phipia 2.2.0 dev / x86_64\n");
+    console_write("  OpenGAT\n");
+    console_write("  kernel      OpenGAT 2.2.0 dev / x86_64\n");
     console_write("  terminal    ");
     console_write_u64(screen.columns);
     console_putc('x');
@@ -1118,10 +1152,10 @@ static void command_dhcp(void)
 
 static void command_ip(const char *arguments)
 {
-    char address_text[PHIPFS_MAX_PATH + 1U];
-    char mask_text[PHIPFS_MAX_PATH + 1U];
-    char gateway_text[PHIPFS_MAX_PATH + 1U];
-    char dns_text[PHIPFS_MAX_PATH + 1U];
+    char address_text[OPENGATFS_MAX_PATH + 1U];
+    char mask_text[OPENGATFS_MAX_PATH + 1U];
+    char gateway_text[OPENGATFS_MAX_PATH + 1U];
+    char dns_text[OPENGATFS_MAX_PATH + 1U];
     const char *remainder;
     uint32_t address;
     uint32_t mask;
@@ -1168,7 +1202,7 @@ static void command_arp(void)
 
 static void command_ping(const char *arguments)
 {
-    char address_text[PHIPFS_MAX_PATH + 1U];
+    char address_text[OPENGATFS_MAX_PATH + 1U];
     const char *remainder;
     uint32_t address;
     uint32_t count = 3U;
@@ -1203,7 +1237,7 @@ static void command_ping(const char *arguments)
 
 static void command_resolve(const char *arguments)
 {
-    char hostname[PHIPFS_MAX_PATH + 1U];
+    char hostname[OPENGATFS_MAX_PATH + 1U];
     const char *remainder;
     uint32_t address;
     enum network_status status;
@@ -1225,8 +1259,8 @@ static void command_resolve(const char *arguments)
 
 static void command_http(const char *arguments)
 {
-    char url[PHIPFS_MAX_PATH + 1U];
-    char path[PHIPFS_MAX_PATH + 1U];
+    char url[OPENGATFS_MAX_PATH + 1U];
+    char path[OPENGATFS_MAX_PATH + 1U];
     const char *remainder;
     struct network_http_result result;
     enum network_status status;
@@ -1279,6 +1313,249 @@ static void command_netstat(void)
     console_putc('\n');
 }
 
+static bool username_shape_valid(const char *username)
+{
+    size_t length = 0U;
+
+    while (username[length] != '\0' && length < ACCOUNT_USERNAME_BYTES) {
+        const char character = username[length];
+        const bool alphanumeric =
+            (character >= 'a' && character <= 'z') ||
+            (character >= 'A' && character <= 'Z') ||
+            (character >= '0' && character <= '9');
+
+        if (!alphanumeric && character != '-' && character != '_') {
+            return false;
+        }
+        if (length == 0U && !alphanumeric) {
+            return false;
+        }
+        ++length;
+    }
+    return length != 0U && length < ACCOUNT_USERNAME_BYTES &&
+        username[length] == '\0';
+}
+
+static void authentication_clear_input(void)
+{
+    secure_zero(authentication.input, sizeof(authentication.input));
+    authentication.input_bytes = 0U;
+}
+
+static void authentication_reset(void)
+{
+    secure_zero(&authentication, sizeof(authentication));
+}
+
+static bool authentication_equal(
+    const uint8_t *left,
+    const uint8_t *right,
+    size_t length
+)
+{
+    uint8_t difference = 0U;
+
+    for (size_t index = 0U; index < length; ++index) {
+        difference |= left[index] ^ right[index];
+    }
+    return difference == 0U;
+}
+
+static void authentication_error(enum account_status status)
+{
+    console_write("account: ");
+    console_write(account_status_string(status));
+    console_putc('\n');
+}
+
+static void command_useradd(const char *arguments)
+{
+    bool configured = false;
+    enum account_status status;
+    size_t length = 0U;
+
+    if (!username_shape_valid(arguments)) {
+        authentication_error(ACCOUNT_STATUS_INVALID_USERNAME);
+        return;
+    }
+    status = account_configured(&configured);
+    if (status != ACCOUNT_STATUS_OK) {
+        authentication_error(status);
+        return;
+    }
+    if (configured) {
+        authentication_error(ACCOUNT_STATUS_ALREADY_CONFIGURED);
+        return;
+    }
+    authentication_reset();
+    while (arguments[length] != '\0') {
+        authentication.username[length] = arguments[length];
+        ++length;
+    }
+    authentication.username[length] = '\0';
+    authentication.prompt = AUTHENTICATION_CREATE_PASSWORD;
+    console_write("New password (8-64 characters): ");
+}
+
+static void command_starty(const char *arguments)
+{
+    bool configured = false;
+    enum account_status status;
+
+    if (arguments[0] != '\0') {
+        console_write("starty: this command takes no arguments\n");
+        return;
+    }
+    if (ui_is_active()) {
+        console_write("starty: the OpenGAT desktop is already active\n");
+        return;
+    }
+    status = account_configured(&configured);
+    if (status != ACCOUNT_STATUS_OK) {
+        authentication_error(status);
+        return;
+    }
+    if (!configured) {
+        console_write("starty: create a user first with 'useradd NAME'\n");
+        return;
+    }
+    authentication_reset();
+    authentication.prompt = AUTHENTICATION_STARTY_USERNAME;
+    console_write("Username: ");
+}
+
+static bool start_desktop(void)
+{
+    const enum ui_status status = boot_plan_start_desktop();
+
+    if (status != UI_STATUS_OK) {
+        console_write("starty: desktop start failed: ");
+        console_write(ui_status_string(status));
+        console_putc('\n');
+        return false;
+    }
+    ui_keyboard_operational = true;
+    ui_keyboard_decided = true;
+    ui_animation_attach();
+    console_serial_write("OpenGAT: authenticated desktop started\n");
+    return true;
+}
+
+static bool authentication_feed(char character)
+{
+    const bool password_prompt =
+        authentication.prompt == AUTHENTICATION_CREATE_PASSWORD ||
+        authentication.prompt == AUTHENTICATION_CONFIRM_PASSWORD ||
+        authentication.prompt == AUTHENTICATION_STARTY_PASSWORD;
+
+    if (authentication.prompt == AUTHENTICATION_NONE) {
+        return false;
+    }
+    if (character == '\b') {
+        if (authentication.input_bytes != 0U) {
+            --authentication.input_bytes;
+            authentication.input[authentication.input_bytes] = 0U;
+            if (!password_prompt) {
+                console_write("\b \b");
+            }
+        }
+        return true;
+    }
+    if (character != '\n' && character != '\r') {
+        const size_t capacity = password_prompt ? ACCOUNT_PASSWORD_MAX_BYTES :
+            ACCOUNT_USERNAME_BYTES - 1U;
+
+        if (character >= ' ' && character <= '~' &&
+                authentication.input_bytes < capacity) {
+            authentication.input[authentication.input_bytes++] =
+                (uint8_t)character;
+            authentication.input[authentication.input_bytes] = 0U;
+            if (!password_prompt) {
+                console_putc(character);
+            }
+        }
+        return true;
+    }
+
+    console_putc('\n');
+    if (authentication.prompt == AUTHENTICATION_CREATE_PASSWORD) {
+        if (authentication.input_bytes < ACCOUNT_PASSWORD_MIN_BYTES) {
+            authentication_clear_input();
+            console_write("Password must contain 8-64 printable characters.\n");
+            console_write("New password (8-64 characters): ");
+            return true;
+        }
+        copy_bytes(authentication.first_password, authentication.input,
+            authentication.input_bytes);
+        authentication.first_password_bytes = authentication.input_bytes;
+        authentication_clear_input();
+        authentication.prompt = AUTHENTICATION_CONFIRM_PASSWORD;
+        console_write("Confirm password: ");
+        return true;
+    }
+    if (authentication.prompt == AUTHENTICATION_CONFIRM_PASSWORD) {
+        enum account_status status;
+
+        if (authentication.input_bytes != authentication.first_password_bytes ||
+                !authentication_equal(authentication.input,
+                    authentication.first_password,
+                    authentication.first_password_bytes)) {
+            secure_zero(authentication.first_password,
+                sizeof(authentication.first_password));
+            authentication.first_password_bytes = 0U;
+            authentication_clear_input();
+            authentication.prompt = AUTHENTICATION_CREATE_PASSWORD;
+            console_write("Passwords do not match.\n");
+            console_write("New password (8-64 characters): ");
+            return true;
+        }
+        status = account_create(authentication.username, authentication.input,
+            authentication.input_bytes);
+        authentication_reset();
+        if (status == ACCOUNT_STATUS_OK) {
+            console_write("OpenGAT user created. Run 'starty' to enter the desktop.\n");
+        } else {
+            authentication_error(status);
+        }
+        write_prompt_restored();
+        return true;
+    }
+    if (authentication.prompt == AUTHENTICATION_STARTY_USERNAME) {
+        size_t length = authentication.input_bytes;
+
+        if (length >= ACCOUNT_USERNAME_BYTES) {
+            length = ACCOUNT_USERNAME_BYTES - 1U;
+        }
+        copy_bytes((uint8_t *)authentication.username, authentication.input,
+            length);
+        authentication.username[length] = '\0';
+        authentication_clear_input();
+        authentication.prompt = AUTHENTICATION_STARTY_PASSWORD;
+        console_write("Password: ");
+        return true;
+    }
+    if (authentication.prompt == AUTHENTICATION_STARTY_PASSWORD) {
+        const enum account_status status = account_authenticate(
+            authentication.username, authentication.input,
+            authentication.input_bytes);
+        bool started = false;
+
+        if (status == ACCOUNT_STATUS_OK) {
+            started = start_desktop();
+        } else {
+            authentication_error(status);
+        }
+        authentication_reset();
+        if (!started) {
+            write_prompt_restored();
+        }
+        return true;
+    }
+    authentication_reset();
+    write_prompt_restored();
+    return true;
+}
+
 enum shell_status shell_execute(const char *text)
 {
     size_t start = 0U;
@@ -1302,6 +1579,10 @@ enum shell_status shell_execute(const char *text)
 
     if (matches(text, "help")) {
         command_help();
+    } else if (matches(text, "useradd")) {
+        command_useradd(arguments_of(text));
+    } else if (matches(text, "starty")) {
+        command_starty(arguments_of(text));
     } else if (matches(text, "echo")) {
         command_echo(arguments_of(text));
     } else if (matches(text, "linux")) {
@@ -1399,7 +1680,7 @@ static void write_prompt_restored(void)
 {
     console_write(SHELL_PROMPT);
     if (linux_prompt_evidence_pending) {
-        console_serial_write("\nRW USERLAND Phipia prompt restored\n");
+        console_serial_write("\nRW USERLAND OpenGAT prompt restored\n");
         console_serial_write(SHELL_PROMPT);
         linux_prompt_evidence_pending = false;
     }
@@ -1546,12 +1827,17 @@ enum shell_status shell_feed(char character)
         return SHELL_STATUS_NOT_INITIALIZED;
     }
 
+    if (authentication_feed(character)) {
+        return SHELL_STATUS_OK;
+    }
+
     if (character == '\n' || character == '\r') {
         console_putc('\n');
         line[state.length] = '\0';
         state.length = 0U;
         status = shell_execute(line);
-        if (linux_userland_foreground_waiting()) {
+        if (linux_userland_foreground_waiting() ||
+                authentication.prompt != AUTHENTICATION_NONE) {
             return status;
         }
         write_prompt_restored();
@@ -1601,6 +1887,7 @@ enum shell_status shell_initialize(void)
     state.active = true;
     state.length = 0U;
     line[0] = '\0';
+    authentication_reset();
     filesystem_cwd[0] = '.';
     filesystem_cwd[1] = '\0';
     return SHELL_STATUS_OK;
@@ -1665,7 +1952,16 @@ _Noreturn void shell_run(void)
         ui_animation_attach();
     }
 
-    console_write("\n");
+    if (!ui_operational && screen_is_active()) {
+        (void)screen_clear();
+    }
+    bool configured = false;
+    const enum account_status account = account_configured(&configured);
+
+    if (account != ACCOUNT_STATUS_OK) {
+        authentication_error(account);
+    }
+    (void)configured;
     console_write(SHELL_PROMPT);
 
     for (;;) {
@@ -1690,13 +1986,13 @@ _Noreturn void shell_run(void)
                 (void)screen_set_viewport((struct surface_rect){
                     0U, 0U, framebuffer.width, framebuffer.height
                 }, true);
-                console_write("Phipia: runtime disabled: ");
+                console_write("OpenGAT: runtime disabled: ");
                 console_write(ui_status_string(status));
                 console_putc('\n');
             }
         }
         if (ui_operational) {
-            char manifest[PHIPFS_MAX_PATH + 1U];
+            char manifest[OPENGATFS_MAX_PATH + 1U];
 
             if (ui_application_launch_dequeue(manifest,
                     sizeof(manifest))) {
@@ -1969,7 +2265,7 @@ bool shell_self_test(void)
 {
     struct shell_state saved;
 
-    if (!matching_is_right()) {
+    if (!account_self_test() || !matching_is_right()) {
         return false;
     }
 

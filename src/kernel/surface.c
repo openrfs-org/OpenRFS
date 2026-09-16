@@ -3,11 +3,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/framebuffer.h>
-#include <phipia/cpu.h>
-#include <phipia/heap.h>
-#include <phipia/paging.h>
-#include <phipia/surface.h>
+#include <opengat/framebuffer.h>
+#include <opengat/cpu.h>
+#include <opengat/heap.h>
+#include <opengat/paging.h>
+#include <opengat/surface.h>
 
 /*
  * A cached picture and the one rectangle that changed.

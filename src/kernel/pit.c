@@ -3,13 +3,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/apic.h>
-#include <phipia/cpu.h>
-#include <phipia/interrupts.h>
-#include <phipia/ioapic.h>
-#include <phipia/pic.h>
-#include <phipia/pit.h>
-#include <phipia/pm_timer.h>
+#include <opengat/apic.h>
+#include <opengat/cpu.h>
+#include <opengat/interrupts.h>
+#include <opengat/ioapic.h>
+#include <opengat/pic.h>
+#include <opengat/pit.h>
+#include <opengat/pm_timer.h>
 
 #define PIT_INPUT_FREQUENCY UINT32_C(1193182)
 #define PIT_CHANNEL_ZERO UINT16_C(0x40)

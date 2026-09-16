@@ -2,7 +2,7 @@
 
 # Native application manifests and packages
 
-`tools/phipia-package.py` builds, inspects, and installs Phipia application
+`tools/opengat-package.py` builds, inspects, and installs OpenGAT application
 packages without network access. JSON is only the host-side build input. The
 guest validates a deterministic 1,024-byte binary manifest at the Rust
 admission boundary.
@@ -25,7 +25,7 @@ admission boundary.
 | `arguments` | At most eight nonempty printable-ASCII strings of at most 31 bytes each. They are opaque program arguments, so URL and option punctuation are permitted. |
 | `resources` | Optional list of `{ "path": "NAME.EXT", "source": "host/path" }` records. Sources are resolved relative to the JSON file. |
 
-The binary manifest starts with `PHIPIAA1`, format version and size, ABI
+The binary manifest starts with `OPENGAT1`, format version and size, ABI
 version, limits, capability bits, fixed-width text records, the executable
 SHA-256, and zero-filled reserved space. Nonzero reserved bytes, unterminated
 text, nonzero text tails, unknown capabilities, or unused argument records are
@@ -33,7 +33,7 @@ named refusals.
 
 ## Legacy package containers and installation
 
-An `.SPK` file contains a 64-byte `PHIPPKG1` header, the 1,024-byte manifest,
+An `.SPK` file contains a 64-byte `OGTPKG01` header, the 1,024-byte manifest,
 and the exact static executable. Container version 1 ends there. Version 2
 adds up to 13 deterministic resource records; each has a fixed 32-byte header,
 an 8.3 path, a byte length, zero reserved bytes, and its exact payload. The
@@ -47,12 +47,12 @@ format version 3 was added.
 Typical commands are:
 
 ```sh
-python3 tools/phipia-package.py build \
+python3 tools/opengat-package.py build \
     --spec apps/my-app/manifest.json \
     --executable build/my-app/MYAPP.APP \
     --output build/my-app/MYAPP.SPK
-python3 tools/phipia-package.py inspect build/my-app/MYAPP.SPK
-python3 tools/phipia-package.py install-system \
+python3 tools/opengat-package.py inspect build/my-app/MYAPP.SPK
+python3 tools/opengat-package.py install-system \
     --output build/my-app/system.raw build/my-app/MYAPP.SPK
 ```
 
@@ -71,7 +71,7 @@ and cross-namespace access.
 
 Version 3 is the signed repository container built by host tooling and admitted
 by the guest package manager. It does not reuse or reinterpret the version 1/2
-header. It uses the same `PHIPPKG1` magic,
+header. It uses the same `OGTPKG01` magic,
 a 512-byte header, fixed-size canonical tables, and contiguous file payloads.
 All integer fields are little-endian. Package and file sizes are checked before
 slicing or allocating from their declared values.
@@ -97,7 +97,7 @@ The exact header layout is:
 
 | Offset | Bytes | Field |
 | ---: | ---: | --- |
-| 0 | 8 | `PHIPPKG1` magic |
+| 0 | 8 | `OGTPKG01` magic |
 | 8 | 2 | format version |
 | 10 | 2 | header bytes |
 | 12 | 4 | flags |
@@ -157,13 +157,13 @@ relative to the JSON specification:
   "architecture": "x86_64",
   "abi_min": 1,
   "abi_max": 1,
-  "identifier": "org.phipia.example",
+  "identifier": "org.opengat.example",
   "name": "Example",
   "version": "1.0.0",
-  "publisher": "Phipia Project",
+  "publisher": "OpenGAT Project",
   "capabilities": ["console", "system-read"],
   "dependencies": [
-    {"identifier": "org.phipia.libc", "constraint": "^1.0.0"}
+    {"identifier": "org.opengat.libc", "constraint": "^1.0.0"}
   ],
   "conflicts": [],
   "files": [
@@ -177,11 +177,11 @@ relative to the JSON specification:
 Build and inspect with a real Ed25519 private/public key pair:
 
 ```sh
-python3 tools/phipia-package.py build --format 3 \
+python3 tools/opengat-package.py build --format 3 \
     --spec apps/example/package-v3.json \
     --signing-key keys/repository-ed25519-private.pem \
     --output build/example/example.spk
-python3 tools/phipia-package.py inspect \
+python3 tools/opengat-package.py inspect \
     --trusted-key keys/repository-ed25519-public.pem \
     build/example/example.spk
 ```
@@ -203,7 +203,7 @@ therefore refuses version 3 after authenticating it. The bounded guest
 callbacks and binds them to signed repository metadata. The pinned guest
 Ed25519 verifier and validated immutable key-table provider implement those
 callbacks. The generation builder and package service consume the authenticated
-extraction views, and the Phip client drives their install/update/remove/repair
+extraction views, and the OpenGAT client drives their install/update/remove/repair
 transactions from signed HTTPS repository bytes. The ELF shared-library loader
 consumes the older installed
 System package/catalog profile independently. See

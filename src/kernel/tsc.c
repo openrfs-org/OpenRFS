@@ -3,9 +3,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/cpu.h>
-#include <phipia/pm_timer.h>
-#include <phipia/tsc.h>
+#include <opengat/cpu.h>
+#include <opengat/pm_timer.h>
+#include <opengat/tsc.h>
 
 /* Intel SDM volume 3B section 18.17: CPUID.01H:EDX[4] reports a TSC. */
 #define CPUID_FEATURE_LEAF UINT32_C(1)

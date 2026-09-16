@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef PHIPIA_FLOAT_H
-#define PHIPIA_FLOAT_H
+#ifndef OPENGAT_FLOAT_H
+#define OPENGAT_FLOAT_H
 #define FLT_RADIX 2
 #define FLT_MANT_DIG 24
 #define DBL_MANT_DIG 53

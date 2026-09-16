@@ -3,22 +3,22 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/acpi.h>
-#include <phipia/acpi_util.h>
-#include <phipia/cpu.h>
-#include <phipia/pm_timer.h>
+#include <opengat/acpi.h>
+#include <opengat/acpi_util.h>
+#include <opengat/cpu.h>
+#include <opengat/pm_timer.h>
 
 #define NANOSECONDS_PER_SECOND UINT64_C(1000000000)
 
 /*
- * Phipia policy bound, not an ACPI limit. One wait may not ask for more than a
+ * OpenGAT policy bound, not an ACPI limit. One wait may not ask for more than a
  * quarter of the narrowest counter's period, about 1.17 seconds, which keeps a
  * bounded spin from becoming an excuse to sit in the kernel indefinitely.
  */
 #define PM_TIMER_MAX_WAIT_TICKS (UINT32_C(1) << (ACPI_PM_TIMER_BASE_BITS - 2U))
 
 /*
- * Phipia policy bound on the spin. Each iteration is one 32-bit port read of
+ * OpenGAT policy bound on the spin. Each iteration is one 32-bit port read of
  * the ACPI timer block, and nothing can make that cheaper than a bus
  * transaction, so a counter running at 3.579545 MHz advances at least once
  * every few reads. Allowing sixty-four polls for every requested tick is orders

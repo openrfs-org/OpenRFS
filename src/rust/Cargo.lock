@@ -121,7 +121,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "phipia-kernel-rust"
+name = "opengat-kernel-rust"
 version = "0.1.0"
 dependencies = [
  "ext4plus",

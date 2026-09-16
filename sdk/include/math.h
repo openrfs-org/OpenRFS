@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef PHIPIA_MATH_H
-#define PHIPIA_MATH_H
+#ifndef OPENGAT_MATH_H
+#define OPENGAT_MATH_H
 
 #define HUGE_VAL (__builtin_huge_val())
 #define INFINITY (__builtin_inff())

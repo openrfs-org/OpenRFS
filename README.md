@@ -1,78 +1,97 @@
 <p align="center">
-  <img src="assets/phipia/logo.png" alt="Phipia logo" width="170">
+  <img src="assets/opengat/logo.png" alt="OpenGAT logo" width="180">
 </p>
 
-<h1 align="center">Phipia</h1>
+<h1 align="center">OpenGAT</h1>
 
-<p align="center"><strong>An x86_64 operating system built from first principles.</strong></p>
+<p align="center"><strong>A small Unix-like operating system built from scratch, with privacy as its design goal.</strong></p>
 
 <p align="center">
-  <a href="https://github.com/saudaljuaid/Phipia/actions/workflows/verify.yml"><img src="https://github.com/saudaljuaid/Phipia/actions/workflows/verify.yml/badge.svg" alt="verification status"></a>
-  <img src="https://img.shields.io/badge/release-2.2.0-0078D7" alt="Phipia 2.2.0">
+  <a href="https://github.com/saudaljuaid/OpenGAT/actions/workflows/verify.yml"><img src="https://github.com/saudaljuaid/OpenGAT/actions/workflows/verify.yml/badge.svg" alt="verification status"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--only-595976" alt="GPL-3.0-only"></a>
 </p>
 
+OpenGAT boots to its own command line. The desktop is optional: create the
+first local user, run `starty`, and authenticate before the graphical session
+is constructed. The kernel, drivers, shell, application ABI, package system,
+and desktop are part of this repository; Linux is not underneath the guest.
+
 <p align="center">
-  <img src="assets/phipia/desktop.png" alt="Phipia desktop" width="820">
+  <img src="assets/opengat/wallpaper.png" alt="OpenGAT grey wallpaper" width="768">
 </p>
 
-## Main mission
+## First boot
 
-Our mission is to provide a stable and truthful operating system to the modern world!
+At the bare `opengat$` boot prompt, create the single local account:
 
-## About
+```text
+opengat$ useradd alice
+New password (8-64 characters):
+Confirm password:
+OpenGAT user created. Run 'starty' to enter the desktop.
+```
 
-Phipia is an operating system built from scratch. The current development
-release is Phipia 2.2.0.
+Passwords are not echoed. On later boots, start the desktop with:
 
-## Highlights
+```text
+opengat$ starty
+Username: alice
+Password:
+```
 
-- A 64-bit kernel built from scratch — no Linux inside.
-- Drivers for real hardware: NVMe, USB, audio, networking.
-- Runs real outside software — Lua and SQLite, natively.
-- 117 automated QEMU scenarios on every change, including reboot and
-  deliberate power-cut recovery paths.
+The account record is stored on the writable data volume. OpenGAT refuses to
+create it when the initialized random source or durable storage is unavailable.
+The current account model supports one local user.
+
+## What exists today
+
+- A freestanding x86_64 kernel written in C, Rust, and assembly.
+- A command line, a lightweight desktop, and bounded native applications.
+- NVMe, USB, audio, IPv4 networking, FAT32, and an ext4/JBD2 integration
+  boundary.
+- Signed package manifests, explicit trust roots, TLS, and checked native
+  process interfaces.
+- QEMU scenarios for normal boot, deliberate faults, reboot persistence, and
+  selected power-cut recovery cases.
+- Measured compatibility profiles for selected BusyBox programs and native
+  ports of Lua, SQLite, SDL 2, zlib, and BearSSL.
+
+The measured profiles are small. OpenGAT does not currently provide a complete
+POSIX environment, multi-user permissions, full process control, IPv6,
+firewalling, Wi-Fi, an IOMMU, or a completed privacy threat model. This is
+development software and is not an anonymity, privacy, security, or everyday
+use certification.
 
 ## Build and boot
 
-Ubuntu 24.04 (or similar), with a few standard tools.
+Ubuntu 24.04 is the reference host:
 
 ```sh
 sudo apt-get install binutils gcc grub-common grub-pc-bin make mtools \
     qemu-system-x86 xorriso
 rustup target add x86_64-unknown-none
 
+make verify
 make run
 ```
 
-That's it — it boots straight into QEMU. Run `make verify` first if you
-want the full test suite to pass before you trust it!
-
-## Design
-
-C and assembly handle anything that touches real hardware. Rust's job is
-narrower: check any bytes the kernel didn't create itself — a file, a
-network packet — before C ever touches them. That same Rust also runs
-native applications.
-
-There's a Boot Ledger too — it just keeps track of what's started and in
-what order, so nothing boots blind.
+`make verify` runs the local acceptance suite. Hardware, filesystem, process,
+networking, and ABI sweeps run in GitHub Actions and must be inspected at the
+exact commit they tested.
 
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
-- [Phipia desktop](docs/PHIPIA.md)
+- [Command-line accounts and `starty`](docs/LOGIN.md)
+- [Desktop](docs/OPENGAT.md)
+- [Brand and artwork](docs/BRAND.md)
+- [Application loader](docs/APPLICATION_LOADER.md)
+- [Package manager](docs/PACKAGE_MANAGER.md)
+- [TLS](docs/TLS.md)
 - [Persistent FAT32](docs/FAT32.md)
-- [Networking](docs/NETWORKING.md)
-- [Processes](docs/MULTIPROCESS.md)
-- [Drivers](docs/DRIVERS.md)
-- [HD Audio](docs/AUDIO.md)
-- [SDL 2](docs/SDL.md)
-- [NVIDIA](docs/NVIDIA.md)
-- [Linux syscall boundary](docs/LINUX_SYSCALL_ABI.md)
-- [Rust boundary](docs/RUST.md)
+- [ext4/JBD2 boundary](docs/EXT4.md)
 - [Verification](docs/VERIFICATION.md)
-- [Third-party assets](docs/THIRD_PARTY_ASSETS.md)
+- [Third-party provenance](docs/THIRD_PARTY_ASSETS.md)
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) before sending changes. Phipia is
-licensed under [GPL-3.0-only](LICENSE).
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+OpenGAT is licensed under [GPL-3.0-only](LICENSE).

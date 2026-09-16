@@ -2,7 +2,7 @@
 
 # High Definition Audio
 
-Phipia has a bounded PCM path for the QEMU ICH9 controller and
+OpenGAT has a bounded PCM path for the QEMU ICH9 controller and
 `hda-duplex` codec. The boot proof remains a one-shot kernel-owned stream. The
 native ABI now reuses the same controller route through a persistent bounded
 owner; applications never see its DMA pages or registers.
@@ -25,11 +25,11 @@ The only accepted profile is:
 - 48,000 frames per second;
 - stream format `0x0011`;
 - stream tag 1, starting at channel 0;
-- 1,024 frames / 4,096 bytes of payload followed by one zero-filled 4,096-byte
-  drain-guard period;
-- two 4,096-byte BDL periods; the proof marks both for status and native
-  playback marks the payload period so the guard absorbs bounded stop latency
-  without replaying the payload;
+- 1,024 frames / 4,096 bytes of payload followed by a zero-filled
+  48,128-frame / 192,512-byte drain guard, just over one second;
+- two BDL entries: the payload and the silent guard; the proof marks both for
+  status and native playback marks the payload entry so delayed polling stops
+  within silence instead of cycling back into audible bytes;
 - a deterministic 750 Hz square wave at amplitude +/-8192, identical on both
   channels.
 
@@ -49,7 +49,7 @@ Four typed below-4-GiB DMA allocations exist during the proof:
 1. CORB command ring;
 2. RIRB response ring;
 3. BDL page;
-4. immutable two-page PCM payload-and-guard allocation.
+4. immutable 48-page PCM payload-and-guard allocation.
 
 All four are initialized while CPU-owned and named in one bus-master request.
 The first enable attempt, before ownership transfer, must fail with
@@ -58,7 +58,7 @@ mastering be enabled. The BDL and PCM allocation are never modified while the
 device owns them.
 
 The first output stream descriptor is located after all input descriptors, as
-required by GCAP. Phipia stops and resets it, programs BDL base, cyclic buffer
+required by GCAP. OpenGAT stops and resets it, programs BDL base, cyclic buffer
 length, LVI 1, format and tag, then sets RUN. The proof accepts playback only
 after both forms of independent controller evidence appear within one second:
 
@@ -73,11 +73,11 @@ were made available to the device; it is not an acoustic-capture claim.
 ## Native ABI, queueing and mixing
 
 An admitted application must request the distinct `audio` capability. It can
-open at most two generation-protected `PHIPIA_HANDLE_AUDIO_OUTPUT` objects. One
+open at most two generation-protected `OPENGAT_HANDLE_AUDIO_OUTPUT` objects. One
 process owns the controller at a time; another process receives `EBUSY`, not an
 implicitly shared global device.
 
-The public format is exactly the fixed profile above. `phipia_audio_submit()`
+The public format is exactly the fixed profile above. `opengat_audio_submit()`
 accepts one complete 4,096-byte chunk. Lengths, request versions, flags, handle
 types, generations, and every input page are validated before the kernel copies
 the chunk into its own bounded queue. Submitting while that handle already owns
@@ -96,8 +96,8 @@ queued handle starts after the grace/window expires; a single open handle starts
 without the two-handle coalescing delay. At most two 4,096-byte source chunks and
 one 8,192-byte DMA payload-and-guard mix exist.
 
-`PHIPIA_WAIT_WRITABLE` means the handle can accept another chunk;
-`PHIPIA_WAIT_CLOSED` reports cancellation or a stream error. Drain blocks only
+`OPENGAT_WAIT_WRITABLE` means the handle can accept another chunk;
+`OPENGAT_WAIT_CLOSED` reports cancellation or a stream error. Drain blocks only
 the calling native thread and has an absolute monotonic deadline. Cancel removes
 a chunk that has not entered DMA. Once a mixed chunk is device-owned it is
 atomic: cancel marks that handle canceled when the current 21.3 ms chunk

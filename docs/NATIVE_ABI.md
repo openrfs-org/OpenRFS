@@ -2,10 +2,10 @@
 
 # Native userspace ABI v1
 
-The Phipia native ABI is the kernel contract for static Ring 3 applications.
+The OpenGAT native ABI is the kernel contract for static Ring 3 applications.
 It is separate from the three measured Linux/BusyBox profiles. The canonical
-machine-readable definitions are under `include/phipia/abi/`; the SDK installs
-the same headers under `sdk/include/phipia/abi/`.
+machine-readable definitions are under `include/opengat/abi/`; the SDK installs
+the same headers under `sdk/include/opengat/abi/`.
 
 ## Calling and result convention
 
@@ -16,7 +16,7 @@ Its low-end canary is checked during disarm; the TSS `RSP0` stack remains
 reserved for privilege-changing interrupts and is not reused by deep filesystem
 or package-service syscall paths.
 Results are returned in `RAX`: zero or a positive value is success and a
-negative `phipia_errno` value is failure. Unknown numbers return `-ENOSYS`.
+negative `opengat_errno` value is failure. Unknown numbers return `-ENOSYS`.
 
 Every public record uses fixed-width fields, begins with `size` and `version`
 where evolution is expected, and names its reserved fields. Callers set every
@@ -105,7 +105,7 @@ is immutable; writable Data paths are rooted below the application namespace.
 | `0x0307 TIME_REALTIME()` | UTC Unix seconds or `-EIO` | K | Performs one bounded coherent CMOS/RTC read. It owns no object. RTC validity does not affect monotonic deadlines. |
 | `0x0308 RANDOM_STRONG(buffer, length)` | Bytes written or `-EIO` | K | Bypasses the non-cryptographic generator and copies only repetition-checked RDSEED/RDRAND output. It fails closed when strong hardware entropy is unavailable. |
 
-### Phipia window, surface, and input
+### OpenGAT window, surface, and input
 
 | Number and signature | Result | Mode | Ownership, concurrency, and cleanup |
 | --- | --- | --- | --- |
@@ -168,7 +168,7 @@ duplicated; the final close releases the authenticated repository snapshot,
 installed-state snapshot, and copied payloads. Process teardown performs the
 same close. The v1 control profile admits at most eight changed packages with
 4 MiB of aggregate package bytes. Removal is exposed without a repository or
-payload upload. `phip repair` uses the repair flag with a signed repository and
+payload upload. `opengat repair` uses the repair flag with a signed repository and
 the same payload-binding path. Install/update/repair advance a checksummed,
 monotonic repository-version floor before package staging, so a signed older
 index remains refused across reboot and crash recovery.
@@ -181,7 +181,7 @@ DNS and stream/datagram operations pump bounded protocol state, recheck their
 absolute deadline and completion state, then halt the core until a device or
 timer interrupt. They never poll in a userspace or kernel spin loop.
 
-`include/phipia/abi/base.h` is the syscall-number and error-number registry.
+`include/opengat/abi/base.h` is the syscall-number and error-number registry.
 The service-specific headers define exact records, limits, flags, event values,
 pixel format, IPv4 endpoint encoding, and static size checks.
 

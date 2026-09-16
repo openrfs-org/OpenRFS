@@ -1,0 +1,15 @@
+OpenGAT wallpaper source receipt
+
+Logo input: assets/opengat/logo-source.png
+Input SHA-256: 4290c111fa662f3fe40e11176a492140850fa38c6146ac1cd75a0382163bbd4b
+Generated path: assets/opengat/wallpaper.png
+Dimensions: 1672x941 RGB
+SHA-256: 9f403808a1de05a75740e96625e351cac2516f9af6cf42c27b0630390ee5c77c
+Generated: 2026-09-15 with the built-in OpenAI image tool
+
+Transformation request: center the supplied OpenGAT G mark on a restrained
+grey 16:9 field, preserve its navy and blue-grey colours, and add no text,
+slogan, symbol, scenery, texture, mockup, or watermark.
+
+The build performs a deterministic centered crop and conversion to the bounded
+SPW3 runtime format.

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef PHIPIA_NATIVE_DYNAMIC_PROOF_H
-#define PHIPIA_NATIVE_DYNAMIC_PROOF_H
+#ifndef OPENGAT_NATIVE_DYNAMIC_PROOF_H
+#define OPENGAT_NATIVE_DYNAMIC_PROOF_H
 
 #include <stddef.h>
 

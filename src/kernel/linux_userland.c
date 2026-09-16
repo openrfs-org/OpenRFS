@@ -3,13 +3,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/boot_ledger.h>
-#include <phipia/console.h>
-#include <phipia/fat32_fs.h>
-#include <phipia/linux_abi.h>
-#include <phipia/linux_cat.h>
-#include <phipia/linux_uname.h>
-#include <phipia/linux_userland.h>
+#include <opengat/boot_ledger.h>
+#include <opengat/console.h>
+#include <opengat/fat32_fs.h>
+#include <opengat/linux_abi.h>
+#include <opengat/linux_cat.h>
+#include <opengat/linux_uname.h>
+#include <opengat/linux_userland.h>
 
 static uint64_t next_generation = UINT64_C(1);
 static uint64_t active_generation;
@@ -38,12 +38,12 @@ static bool ledger_authorizes(enum linux_userland_profile profile)
         BOOT_CAPABILITY_ELF64_LOADER_FOUNDATION_AVAILABLE,
         BOOT_CAPABILITY_LINUX_SYSCALL_CPU_FOUNDATION_AVAILABLE,
         BOOT_CAPABILITY_LINUX_IMAGE_STACK_FOUNDATION_AVAILABLE,
-        BOOT_CAPABILITY_PHIPIA_INSTALLED_PROOF_COMPLETE
+        BOOT_CAPABILITY_BOOT_PROOFS_COMPLETE
     };
     const struct boot_ledger *ledger = boot_ledger_installed();
 
     if (ledger == NULL || !ledger->validated || !ledger->executed ||
-        ledger->status != BOOT_LEDGER_STATUS_OK || ledger->degraded ||
+        ledger->status != BOOT_LEDGER_STATUS_OK ||
         !boot_ledger_fingerprint_valid(ledger)) {
         return false;
     }
@@ -65,7 +65,7 @@ static bool ledger_authorizes(enum linux_userland_profile profile)
 static void evidence_selected(enum linux_userland_profile profile)
 {
     console_serial_write("RW USERLAND deterministic read-only NVMe/");
-    console_serial_write(phipfs_drive(PHIPFS_VOLUME_SYSTEM).mounted ?
+    console_serial_write(opengatfs_drive(OPENGATFS_VOLUME_SYSTEM).mounted ?
         "FAT32" : "FAT16");
     console_serial_write(" profile selected ");
     console_serial_write(linux_userland_profile_name(profile));
@@ -83,7 +83,7 @@ static void evidence_complete(const struct linux_userland_result *result)
     const char *profile = linux_userland_profile_name(result->profile);
 
     console_serial_write("RW USERLAND Rust ");
-    console_serial_write(phipfs_drive(PHIPFS_VOLUME_SYSTEM).mounted ?
+    console_serial_write(opengatfs_drive(OPENGATFS_VOLUME_SYSTEM).mounted ?
         "FAT32" : "FAT16");
     console_serial_write(" SHA-256 ELF64 validation passed ");
     console_serial_write(profile);
@@ -239,7 +239,7 @@ enum linux_userland_status linux_userland_launch(
         result->resume_count = proof.resume_count;
         result->waiting_for_input = true;
         console_serial_write(
-            "RW USERLAND cat foreground launch yielded to Phipia\n");
+            "RW USERLAND cat foreground launch yielded to OpenGAT\n");
         return LINUX_USERLAND_STATUS_WAITING;
     }
 

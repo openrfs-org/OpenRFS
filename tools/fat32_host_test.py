@@ -63,7 +63,7 @@ class Fat32HostTests(unittest.TestCase):
     def test_host_staging_populates_a_bounded_file_set(self) -> None:
         image = fat32.populate_data_files(self.image, [
             ("AURORA.BMP", bytes(range(256)) * 5),
-            ("NEW1.TXT", b"Phipia note"),
+            ("NEW1.TXT", b"OpenGAT note"),
         ])
         report = fat32.inspect_image(image)
         self.assertEqual(
@@ -81,9 +81,9 @@ class Fat32HostTests(unittest.TestCase):
 
     def test_host_staging_populates_application_namespaces(self) -> None:
         files = [
-            ("LUA/SCRIPT.LUA", b"print('Phipia')\n"),
+            ("LUA/SCRIPT.LUA", b"print('OpenGAT')\n"),
             ("SQLITE/SEED.TXT", b"seed"),
-            ("LUA/INPUT.TXT", b"phipia\n"),
+            ("LUA/INPUT.TXT", b"opengat\n"),
         ]
         populated = fat32.populate_data_tree(self.image, files)
         report = fat32.inspect_image(populated)
@@ -92,7 +92,7 @@ class Fat32HostTests(unittest.TestCase):
                     and not item["path"].endswith("/..")]
         self.assertEqual(
             [(item["path"], item["size"]) for item in ordinary],
-            [("LUA/INPUT.TXT", 7), ("LUA/SCRIPT.LUA", 16),
+            [("LUA/INPUT.TXT", 8), ("LUA/SCRIPT.LUA", 17),
              ("SQLITE/SEED.TXT", 4)],
         )
         self.assertEqual(populated, fat32.populate_data_tree(

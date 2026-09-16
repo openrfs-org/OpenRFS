@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef PHIPIA_TIME_H
-#define PHIPIA_TIME_H
+#ifndef OPENGAT_TIME_H
+#define OPENGAT_TIME_H
 
 #include <stddef.h>
 #include <stdint.h>
