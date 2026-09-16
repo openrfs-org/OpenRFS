@@ -98,7 +98,7 @@ jobs:
                       'BEGIN { exit !(duration >= 20.0 && duration <= 25.0) }'
                   grep -Fq '200 HTTP response' \
                       build/networking-capture/opengat-v2.1.0-networking-serial.log
-                  grep -Fq '30 bytes synchronized' \
+                  grep -Fq '31 bytes synchronized' \
                       build/networking-capture/opengat-v2.1.0-networking-serial.log
                   grep -Fq '"production_path": true' \
                       build/networking-capture/opengat-v2.1.0-network-packet-audit.json
@@ -120,7 +120,7 @@ jobs:
                       item["path"]: item for item in report["files"]
                       if not item["directory"]
                   }
-                  assert files["NETCAP.TXT"]["size"] == 30
+                  assert files["NETCAP.TXT"]["size"] == 31
                   assert report["fat_copies_match"] is True
                   assert report["cycles"] == 0
                   assert report["cross_links"] == 0

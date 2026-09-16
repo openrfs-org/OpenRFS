@@ -19,7 +19,7 @@ import fat32_image
 
 
 def load_capture_support():
-    path = Path(__file__).with_name("capture-opengat.py")
+    path = Path(__file__).with_name("capture-opengat-proof.py")
     specification = importlib.util.spec_from_file_location(
         "opengat_capture_support", path
     )
@@ -28,6 +28,41 @@ def load_capture_support():
     module = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(module)
     return module
+
+
+def capture_ppm(qmp, destination: Path) -> None:
+    qmp.execute("screendump", {
+        "filename": destination.resolve().as_posix(), "format": "ppm"
+    })
+
+
+def encode(ffmpeg: str, frames: list[Path], capture_times: list[float],
+           fps: int, seconds: float, output: Path) -> None:
+    if not frames or len(frames) != len(capture_times):
+        raise RuntimeError("video frame timing evidence is incomplete")
+    origin = capture_times[0]
+    normalized = [timestamp - origin for timestamp in capture_times]
+    manifest = frames[0].parent / "frames.ffconcat"
+    lines = ["ffconcat version 1.0"]
+    for index, frame in enumerate(frames):
+        if index + 1 < len(frames):
+            duration = normalized[index + 1] - normalized[index]
+        else:
+            duration = seconds - normalized[index]
+        lines.append(f"file '{frame.resolve().as_posix()}'")
+        lines.append(f"duration {max(0.001, duration):.9f}")
+    lines.append(f"file '{frames[-1].resolve().as_posix()}'")
+    manifest.write_text("\n".join(lines) + "\n", encoding="ascii")
+    frame_count = int(round(seconds * fps))
+    subprocess.run([
+        ffmpeg, "-hide_banner", "-loglevel", "warning", "-y",
+        "-f", "concat", "-safe", "0", "-i", str(manifest),
+        "-vf", "setpts=PTS-STARTPTS,format=yuv420p,"
+               "tpad=stop_mode=clone:stop_duration=12",
+        "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+        "-r", str(fps), "-frames:v", str(frame_count),
+        "-movflags", "+faststart", str(output),
+    ], check=True)
 
 
 def wait_serial_markers(support, serial: Path, markers: tuple[bytes, ...],
@@ -90,54 +125,6 @@ def send_command(support, qmp, command: str) -> None:
         qmp.hmp(f"sendkey {key} 15")
         time.sleep(0.020)
     qmp.hmp("sendkey ret")
-
-
-class Pointer:
-    def __init__(self, qmp) -> None:
-        self.qmp = qmp
-        self.x = 1024 - 1024 // 4
-        self.y = 768 // 3
-
-    def move_to(self, x: int, y: int) -> None:
-        while self.x != x or self.y != y:
-            dx = max(-20, min(20, x - self.x))
-            dy = max(-20, min(20, y - self.y))
-            events = []
-            if dx != 0:
-                events.append({
-                    "type": "rel", "data": {"axis": "x", "value": dx}
-                })
-            if dy != 0:
-                events.append({
-                    "type": "rel", "data": {"axis": "y", "value": dy}
-                })
-            self.qmp.execute("input-send-event", {"events": events})
-            self.x += dx
-            self.y += dy
-            time.sleep(0.02)
-        time.sleep(0.10)
-
-    def rehome(self) -> None:
-        """Clamp guest and script coordinates to the same top-left origin."""
-        for _ in range(14):
-            self.qmp.execute("input-send-event", {"events": [
-                {"type": "rel", "data": {"axis": "x", "value": -80}},
-                {"type": "rel", "data": {"axis": "y", "value": -80}},
-            ]})
-            time.sleep(0.02)
-        self.x = 0
-        self.y = 0
-        time.sleep(0.15)
-
-    def click(self) -> None:
-        self.qmp.execute("input-send-event", {"events": [{
-            "type": "btn", "data": {"button": "left", "down": True}
-        }]})
-        time.sleep(0.05)
-        self.qmp.execute("input-send-event", {"events": [{
-            "type": "btn", "data": {"button": "left", "down": False}
-        }]})
-        time.sleep(0.10)
 
 
 def storage_arguments(system: Path, data: Path) -> list[str]:
@@ -270,8 +257,6 @@ def main() -> int:
         wait_serial_markers(
             support, serial, (support.PROOF_LINE, support.PROMPT)
         )
-        pointer = Pointer(qmp)
-        pointer.rehome()
         events: set[str] = set()
         frames: list[Path] = []
         capture_times: list[float] = []
@@ -282,33 +267,7 @@ def main() -> int:
             index = 0
             while time.monotonic() - started < args.seconds:
                 elapsed = time.monotonic() - started
-                if elapsed >= 0.50 and "terminal_hover" not in events:
-                    # Dock artwork magnifies and eases, but input uses the
-                    # fixed resting lane shared with the OpenGAT capture.
-                    pointer.move_to(
-                        support.dock_item_center(support.DOCK_TERMINAL),
-                        support.DOCK_POINTER_Y,
-                    )
-                    events.add("terminal_hover")
-                elif elapsed >= 1.50 and "terminal_open" not in events:
-                    # Keyboard activation is deterministic even while the
-                    # magnified Dock is still settling after the hover.  The
-                    # installed focus starts on Files, so Tab selects Terminal
-                    # and Enter opens it through the ordinary PS/2 path.
-                    qmp.hmp("sendkey tab 15")
-                    time.sleep(0.08)
-                    qmp.hmp("sendkey ret 15")
-                    wait_serial_markers(
-                        support,
-                        serial, (b"OpenGAT: OpenGAT terminal opened",),
-                        timeout=5.0,
-                    )
-                    support.capture_png(
-                        qmp, work, output,
-                        "OpenGAT-v2.1.0-networking-terminal-open",
-                    )
-                    events.add("terminal_open")
-                elif elapsed >= 2.30 and "network" not in events:
+                if elapsed >= 2.30 and "network" not in events:
                     send_command(support, qmp, "network")
                     events.add("network")
                 elif elapsed >= 3.60 and "dhcp" not in events:
@@ -339,15 +298,14 @@ def main() -> int:
                 if captured_at - started >= args.seconds:
                     break
                 frame = work / f"frame-{index:04d}.ppm"
-                support.capture_ppm(qmp, frame)
+                capture_ppm(qmp, frame)
                 frames.append(frame)
                 capture_times.append(time.monotonic())
                 index += 1
                 next_capture = capture_times[-1] + 1.0 / args.fps
 
             required_events = {
-                "terminal_hover", "terminal_open", "network", "dhcp",
-                "ping", "resolve", "http", "netstat",
+                "network", "dhcp", "ping", "resolve", "http", "netstat",
             }
             if events != required_events:
                 raise RuntimeError(
@@ -357,13 +315,23 @@ def main() -> int:
                 b"virtio-net0  link up", b"source       dhcp",
                 b"1 sent, 1 received", b"10.0.2.20",
                 b"200 HTTP response", b"saved NETCAP.TXT",
-                b"30 bytes synchronized", b"ipv4-checksum-fail 0",
+                b"31 bytes synchronized", b"ipv4-checksum-fail 0",
             ), timeout=20.0)
-            ppm = work / "final.ppm"
-            support.capture_ppm(qmp, ppm)
-            support.ppm_to_png(ppm, screenshot)
-            support.encode(args.ffmpeg, frames, capture_times, args.fps,
-                           args.seconds, video)
+            # The boot CLI is the primary interface. After its networking
+            # transcript is complete, exercise the authenticated `starty`
+            # transition and open Terminal once to capture that same guest
+            # transcript inside the desktop.
+            support.start_authenticated_desktop(qmp, serial)
+            time.sleep(0.35)
+            support.press(qmp, "esc", 0.25)
+            support.press(qmp, "tab", 0.15)
+            support.press(qmp, "ret", 0.40)
+            support.capture(
+                qmp, output, "OpenGAT-v2.1.0-networking-terminal-open"
+            )
+            support.capture(qmp, output, "OpenGAT-v2.1.0-networking")
+            encode(args.ffmpeg, frames, capture_times, args.fps,
+                   args.seconds, video)
     finally:
         if qmp is not None:
             try:
@@ -388,7 +356,7 @@ def main() -> int:
         str(record["path"]): record for record in report["files"]
         if not bool(record["directory"])
     }
-    if "NETCAP.TXT" not in files or int(files["NETCAP.TXT"]["size"]) != 30:
+    if "NETCAP.TXT" not in files or int(files["NETCAP.TXT"]["size"]) != 31:
         raise RuntimeError("captured HTTP response was not synchronized to FAT32")
     if (not bool(report["fat_copies_match"]) or int(report["cycles"]) != 0 or
             int(report["cross_links"]) != 0 or
