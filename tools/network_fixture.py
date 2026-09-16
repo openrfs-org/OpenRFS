@@ -125,6 +125,17 @@ def dns_question(message: bytes) -> tuple[bytes, int] | None:
     return b".".join(labels), offset + 4
 
 
+def dns_wire_name(name: bytes) -> bytes:
+    labels = name.split(b".")
+    if any(not label or len(label) > 63 for label in labels):
+        raise ValueError("invalid DNS name")
+    wire_name = b"".join(
+        bytes((len(label),)) + label for label in labels) + b"\x00"
+    if len(wire_name) > 255:
+        raise ValueError("DNS name is too long")
+    return wire_name
+
+
 class PcapWriter:
     def __init__(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -296,7 +307,7 @@ class Fixture:
         elif self.mode == "dns-truncated":
             flags, answers, suffix = 0x8380, 0, b""
         elif self.mode == "dns-cname":
-            alias = b"\x05alias\x05opengat\x04test\x00"
+            alias = dns_wire_name(b"alias.opengat.test")
             cname = (b"\xc0\x0c\x00\x05\x00\x01\x00\x00\x00\x3c" +
                      struct.pack("!H", len(alias)) + alias)
             address = (alias + b"\x00\x01\x00\x01\x00\x00\x00\x3c"
@@ -527,13 +538,22 @@ def self_test() -> int:
     assert len(arp_reply(GUEST_MAC, GUEST_IP, GATEWAY_IP)) == 42
     knock = KNOCK_MAGIC + struct.pack("!H", 7777)
     assert len(knock) == 6 and struct.unpack_from("!H", knock, 4)[0] == 7777
+    alias = dns_wire_name(b"alias.opengat.test")
+    question = b"\x00" * 12 + alias + b"\x00\x01\x00\x01"
+    assert dns_question(question) == (b"alias.opengat.test", len(question))
+    try:
+        dns_wire_name(b".".join((b"a" * 63,) * 4))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("overlength DNS wire name was accepted")
     session = ClientSession(CLIENT_PORT, 7777, CLIENT_ISN)
     segment = tcp(HTTP_IP, GUEST_IP, session.local_port, session.remote_port,
                   session.send_next, session.receive_next, 0x02,
                   options=b"\x02\x04\x05\xb4")
     pseudo = HTTP_IP + GUEST_IP + struct.pack("!BBH", 0, 6, len(segment))
     assert checksum(pseudo + segment) == 0 and segment[13] == 0x02
-    print("network fixture self-test: 6/6 passed")
+    print("network fixture self-test: 8/8 passed")
     return 0
 
 
