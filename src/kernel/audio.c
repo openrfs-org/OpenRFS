@@ -2,9 +2,9 @@
 /*
  * Intel High Definition Audio: codec control and one kernel-owned PCM stream.
  *
- * This is the first Phipia driver whose device writes into kernel memory for
+ * This is the first OpenGAT driver whose device writes into kernel memory for
  * something other than storage or networking, and the ordering that makes that
- * safe is the whole point of the file. Phipia has no IOMMU. A device with bus
+ * safe is the whole point of the file. OpenGAT has no IOMMU. A device with bus
  * mastering enabled can write anywhere, so bus mastering is enabled only after
  * every ring, BDL and PCM region is a typed DMA allocation declared to the
  * claim, and it is withdrawn only after the stream and ring engines have been
@@ -21,16 +21,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/audio.h>
-#include <phipia/clock.h>
-#include <phipia/cpu.h>
-#include <phipia/dma.h>
-#include <phipia/interrupt_vector.h>
-#include <phipia/memory.h>
-#include <phipia/msix.h>
-#include <phipia/paging.h>
-#include <phipia/pci.h>
-#include <phipia/pci_resource.h>
+#include <opengat/audio.h>
+#include <opengat/clock.h>
+#include <opengat/cpu.h>
+#include <opengat/dma.h>
+#include <opengat/interrupt_vector.h>
+#include <opengat/memory.h>
+#include <opengat/msix.h>
+#include <opengat/paging.h>
+#include <opengat/pci.h>
+#include <opengat/pci_resource.h>
 
 /* PCI Code and ID Assignment Specification 1.19: multimedia, HD Audio. */
 #define AUDIO_PCI_VENDOR UINT16_C(0x8086)
@@ -422,20 +422,21 @@ static bool fill_buffer_list(
 )
 {
     if (entries == NULL ||
+        AUDIO_PCM_BDL_ENTRIES != 2U ||
         AUDIO_PCM_BDL_ENTRIES * sizeof(*entries) > PAGING_PAGE_SIZE ||
-        AUDIO_PCM_PERIOD_BYTES * AUDIO_PCM_BDL_ENTRIES !=
-            AUDIO_PCM_DMA_BYTES ||
-        AUDIO_PCM_PERIOD_BYTES % 128U != 0U) {
+        AUDIO_PCM_BYTES + AUDIO_PCM_GUARD_BYTES != AUDIO_PCM_DMA_BYTES ||
+        AUDIO_PCM_BYTES % 128U != 0U ||
+        AUDIO_PCM_GUARD_BYTES % 128U != 0U) {
         return false;
     }
 
-    for (size_t index = 0U; index < AUDIO_PCM_BDL_ENTRIES; ++index) {
-        entries[index].address = pcm_physical +
-            index * AUDIO_PCM_PERIOD_BYTES;
-        entries[index].length = AUDIO_PCM_PERIOD_BYTES;
-        entries[index].flags = (every_period_reports || index == 0U) ?
-                HDA_BDL_INTERRUPT_ON_COMPLETION : 0U;
-    }
+    entries[0].address = pcm_physical;
+    entries[0].length = AUDIO_PCM_BYTES;
+    entries[0].flags = HDA_BDL_INTERRUPT_ON_COMPLETION;
+    entries[1].address = pcm_physical + AUDIO_PCM_BYTES;
+    entries[1].length = AUDIO_PCM_GUARD_BYTES;
+    entries[1].flags = every_period_reports ?
+        HDA_BDL_INTERRUPT_ON_COMPLETION : 0U;
     return true;
 }
 
@@ -1760,11 +1761,12 @@ bool audio_foundation_self_test(size_t *completed_tests)
         return false;
     }
     ++completed;
-    /* The fixed payload is followed by one page of zero drain guard. */
+    /* The fixed payload is followed by one second of zero drain guard. */
     if (AUDIO_STREAM_FORMAT != UINT16_C(0x0011) ||
         AUDIO_PCM_FRAME_BYTES != 4U || AUDIO_PCM_BYTES != PAGING_PAGE_SIZE ||
         AUDIO_PCM_PERIOD_BYTES != AUDIO_PCM_BYTES ||
-        AUDIO_PCM_DMA_BYTES != 2U * PAGING_PAGE_SIZE) {
+        AUDIO_PCM_GUARD_BYTES != 47U * PAGING_PAGE_SIZE ||
+        AUDIO_PCM_DMA_BYTES != 48U * PAGING_PAGE_SIZE) {
         return false;
     }
     ++completed;
@@ -1773,8 +1775,8 @@ bool audio_foundation_self_test(size_t *completed_tests)
     if (!fill_buffer_list(descriptors, UINT64_C(0x00100000), true) ||
         descriptors[0].address != UINT64_C(0x00100000) ||
         descriptors[1].address != UINT64_C(0x00101000) ||
-        descriptors[0].length != AUDIO_PCM_PERIOD_BYTES ||
-        descriptors[1].length != AUDIO_PCM_PERIOD_BYTES ||
+        descriptors[0].length != AUDIO_PCM_BYTES ||
+        descriptors[1].length != AUDIO_PCM_GUARD_BYTES ||
         descriptors[0].flags != HDA_BDL_INTERRUPT_ON_COMPLETION ||
         descriptors[1].flags != HDA_BDL_INTERRUPT_ON_COMPLETION) {
         return false;
@@ -2504,6 +2506,8 @@ bool audio_native_self_test(size_t *completed_tests)
     ++completed;
     zero_bytes(descriptors, sizeof(descriptors));
     if (!fill_buffer_list(descriptors, UINT64_C(0x00200000), false) ||
+        descriptors[0].length != AUDIO_PCM_BYTES ||
+        descriptors[1].length != AUDIO_PCM_GUARD_BYTES ||
         descriptors[0].flags != HDA_BDL_INTERRUPT_ON_COMPLETION ||
         descriptors[1].flags != 0U) {
         return false;

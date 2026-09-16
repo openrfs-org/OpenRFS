@@ -1,39 +1,39 @@
-# Phipia identity
+# OpenGAT identity
 
-Phipia is the product, desktop, shell, and release identity. Every surface a
-user can see uses `Phipia`: boot and panic text, the `phip>` shell prompt,
-Linux `uname`, Settings, application chrome, package presentation, filesystem
-labels, screenshots, videos, releases, and downloadable artifacts.
+`OpenGAT` is the product, kernel, command line, desktop, SDK, and release name.
+Use that spelling in public text. Code identifiers and paths use `opengat` or
+`OPENGAT` when spaces or mixed case are unsuitable. The shell prompt is
+`opengat$`.
 
-The repository, public C include namespace, SDK, packages, tooling, boot
-diagnostics, and user-facing product all use the Phipia identity. No legacy
-identity is retained as a compatibility alias or fallback.
+The public description is:
 
-## Canonical identity assets
+> OpenGAT is a small Unix-like operating system built from scratch, with
+> privacy as its design goal.
 
-[`assets/phipia/logo.png`](../assets/phipia/logo.png) is the canonical Phipia
-logo. Its SHA-256 is:
+That sentence states the direction of the project. It is not a claim that the
+current build is anonymous, certified, or suitable for high-risk everyday use.
 
-    6A07ABE324C2D80AA0F1DD3A318C103C3B6A81FEF1F72D5F4808D589626B1E88
+## Logo
 
-[`assets/phipia/wallpaper.png`](../assets/phipia/wallpaper.png) is the default
-1024x768 desktop wallpaper. Application icons are the Phipia icon set embedded
-by the deterministic asset generators. Old product marks must not be bundled,
-drawn, or used as fallbacks.
+The canonical mark is [`assets/opengat/logo.png`](../assets/opengat/logo.png), a
+transparent runtime derivative of the user-supplied source stored as
+[`assets/opengat/logo-source.png`](../assets/opengat/logo-source.png). The mark
+must keep its navy ring, blue-grey wedge, proportions, and clear space. Do not
+add a slogan, glow, shadow, outline, texture, or another symbol.
 
-The kernel does not parse PNG at runtime. The normal asset pipeline converts
-the canonical logo and wallpaper into bounded embedded streams; the boot proof
-decodes and verifies the displayed pixels.
+## Wallpaper
+
+[`assets/opengat/wallpaper.png`](../assets/opengat/wallpaper.png) is the default
+wallpaper: the OpenGAT mark centered on a restrained grey field. The build
+converts it to the bounded SPW3 format; the guest does not parse PNG or run an
+image library.
+
+The adjacent source receipts record the input hashes, derivative hashes, tool,
+and transformation request. `tools/verify-ui-assets.py` pins those files and
+the generated runtime assets.
 
 ## Product copy
 
-The current development version is `Phipia 2.2.0`. Public copy uses short,
-direct descriptions. Proof terms such as `PASS`, `READY`, and `ONLINE` belong
-in diagnostics rather than desktop chrome.
-
-## Verification
-
-Linux CI is authoritative for the kernel build and QEMU evidence. Verification
-must reject a shipped transcript or user-facing asset that contains an earlier
-product, shell, or release identity. QEMU captures are generated from the exact
-commit and are never manually edited.
+Prefer direct descriptions of implemented behavior. Reserve `PASS`, `READY`,
+and `ONLINE` for measured diagnostics. Every privacy or security statement must
+name the boundary and evidence that support it.

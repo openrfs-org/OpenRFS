@@ -3,8 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/clock.h>
-#include <phipia/tsc.h>
+#include <opengat/clock.h>
+#include <opengat/tsc.h>
 
 static struct clock_state state;
 

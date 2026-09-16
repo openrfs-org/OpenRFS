@@ -3,9 +3,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/clock.h>
-#include <phipia/cpu.h>
-#include <phipia/rtc.h>
+#include <opengat/clock.h>
+#include <opengat/cpu.h>
+#include <opengat/rtc.h>
 
 #define RTC_ADDRESS_PORT UINT16_C(0x70)
 #define RTC_DATA_PORT UINT16_C(0x71)

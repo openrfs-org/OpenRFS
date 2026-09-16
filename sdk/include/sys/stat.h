@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef PHIPIA_SYS_STAT_H
-#define PHIPIA_SYS_STAT_H
+#ifndef OPENGAT_SYS_STAT_H
+#define OPENGAT_SYS_STAT_H
 
 #include <stdint.h>
 typedef uint32_t mode_t;

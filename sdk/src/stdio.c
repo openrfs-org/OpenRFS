@@ -15,8 +15,8 @@
 #define FILE_STATIC 16U
 #define FILE_BUFFER_DIRTY 32U
 
-struct phipia_FILE {
-    phipia_handle_t handle;
+struct opengat_FILE {
+    opengat_handle_t handle;
     unsigned int flags;
     unsigned int error;
     unsigned int eof;
@@ -27,13 +27,13 @@ struct phipia_FILE {
     volatile uint32_t lock;
 };
 
-static struct phipia_FILE input_stream = {
+static struct opengat_FILE input_stream = {
     0U, FILE_READ | FILE_CONSOLE | FILE_STATIC, 0U, 0U, {0}, 0U, 0U, -1, 0U
 };
-static struct phipia_FILE output_stream = {
+static struct opengat_FILE output_stream = {
     0U, FILE_WRITE | FILE_CONSOLE | FILE_STATIC, 0U, 0U, {0}, 0U, 0U, -1, 0U
 };
-static struct phipia_FILE error_stream = {
+static struct opengat_FILE error_stream = {
     0U, FILE_WRITE | FILE_CONSOLE | FILE_STATIC, 0U, 0U, {0}, 0U, 0U, -1, 0U
 };
 FILE *stdin = &input_stream;
@@ -53,11 +53,11 @@ static int flush_locked(FILE *stream)
         long result;
 
         if ((stream->flags & FILE_CONSOLE) != 0U) {
-            result = phipia_syscall2(PHIPIA_SYS_CONSOLE_WRITE,
+            result = opengat_syscall2(OPENGAT_SYS_CONSOLE_WRITE,
                 (uint64_t)(uintptr_t)(stream->buffer + offset),
                 stream->length - offset);
         } else {
-            result = phipia_file_write(stream->handle,
+            result = opengat_file_write(stream->handle,
                 stream->buffer + offset, stream->length - offset);
         }
         if (result <= 0) {
@@ -85,9 +85,9 @@ int fflush(FILE *stream)
         }
         return result;
     }
-    phipia_runtime_lock(&stream->lock);
+    opengat_runtime_lock(&stream->lock);
     result = flush_locked(stream);
-    phipia_runtime_unlock(&stream->lock);
+    opengat_runtime_unlock(&stream->lock);
     return result;
 }
 
@@ -102,47 +102,47 @@ static int mode_flags(const char *mode, uint32_t *open_flags)
     update = strchr(mode, '+') != NULL;
     if (mode[0] == 'r') {
         flags = FILE_READ | (update ? FILE_WRITE : 0);
-        *open_flags = PHIPIA_OPEN_READ |
-            (update ? PHIPIA_OPEN_WRITE : 0U);
+        *open_flags = OPENGAT_OPEN_READ |
+            (update ? OPENGAT_OPEN_WRITE : 0U);
     } else if (mode[0] == 'w') {
         flags = FILE_WRITE | (update ? FILE_READ : 0);
-        *open_flags = PHIPIA_OPEN_WRITE | PHIPIA_OPEN_CREATE |
-            PHIPIA_OPEN_TRUNCATE | (update ? PHIPIA_OPEN_READ : 0U);
+        *open_flags = OPENGAT_OPEN_WRITE | OPENGAT_OPEN_CREATE |
+            OPENGAT_OPEN_TRUNCATE | (update ? OPENGAT_OPEN_READ : 0U);
     } else if (mode[0] == 'a') {
         flags = FILE_WRITE | FILE_APPEND | (update ? FILE_READ : 0);
-        *open_flags = PHIPIA_OPEN_WRITE | PHIPIA_OPEN_CREATE |
-            (update ? PHIPIA_OPEN_READ : 0U);
+        *open_flags = OPENGAT_OPEN_WRITE | OPENGAT_OPEN_CREATE |
+            (update ? OPENGAT_OPEN_READ : 0U);
     }
     return flags;
 }
 
 FILE *fopen(const char *path, const char *mode)
 {
-    struct phipia_runtime_path parsed;
+    struct opengat_runtime_path parsed;
     uint32_t open_flags = 0U;
     const int flags = mode_flags(mode, &open_flags);
     long handle;
     FILE *stream;
 
-    if (flags == 0 || phipia_runtime_path(path, &parsed) != 0) {
+    if (flags == 0 || opengat_runtime_path(path, &parsed) != 0) {
         errno = EINVAL;
         return NULL;
     }
-    handle = phipia_file_open(parsed.volume, parsed.text, open_flags);
+    handle = opengat_file_open(parsed.volume, parsed.text, open_flags);
     if (handle < 0) {
         errno = (int)-handle;
         return NULL;
     }
     stream = calloc(1U, sizeof(*stream));
     if (stream == NULL) {
-        (void)phipia_handle_close((phipia_handle_t)handle);
+        (void)opengat_handle_close((opengat_handle_t)handle);
         return NULL;
     }
-    stream->handle = (phipia_handle_t)handle;
+    stream->handle = (opengat_handle_t)handle;
     stream->flags = (unsigned int)flags;
     stream->pushed = -1;
     if ((flags & FILE_APPEND) != 0 &&
-        phipia_file_seek(stream->handle, 0, PHIPIA_SEEK_END) < 0) {
+        opengat_file_seek(stream->handle, 0, OPENGAT_SEEK_END) < 0) {
         (void)fclose(stream);
         return NULL;
     }
@@ -163,7 +163,7 @@ FILE *freopen(const char *path, const char *mode, FILE *stream)
         return NULL;
     }
     (void)fflush(stream);
-    (void)phipia_handle_close(stream->handle);
+    (void)opengat_handle_close(stream->handle);
     *stream = *replacement;
     free(replacement);
     return stream;
@@ -178,7 +178,7 @@ int fclose(FILE *stream)
         return EOF;
     }
     result = fflush(stream);
-    if (phipia_handle_close(stream->handle) < 0) {
+    if (opengat_handle_close(stream->handle) < 0) {
         result = EOF;
     }
     free(stream);
@@ -204,7 +204,7 @@ static size_t read_locked(void *pointer, size_t bytes, FILE *stream)
         stream->pushed = -1;
     }
     if ((stream->flags & FILE_CONSOLE) != 0U && completed < bytes) {
-        const long result = phipia_console_read(output + completed,
+        const long result = opengat_console_read(output + completed,
             bytes - completed);
 
         if (result < 0) {
@@ -227,7 +227,7 @@ static size_t read_locked(void *pointer, size_t bytes, FILE *stream)
             completed += chunk;
             continue;
         }
-        const long result = phipia_file_read(stream->handle, stream->buffer,
+        const long result = opengat_file_read(stream->handle, stream->buffer,
             sizeof(stream->buffer));
 
         if (result < 0) {
@@ -256,9 +256,9 @@ size_t fread(void *pointer, size_t size, size_t count, FILE *stream)
         return 0U;
     }
     bytes = size * count;
-    phipia_runtime_lock(&stream->lock);
+    opengat_runtime_lock(&stream->lock);
     completed = read_locked(pointer, bytes, stream);
-    phipia_runtime_unlock(&stream->lock);
+    opengat_runtime_unlock(&stream->lock);
     return size == 0U ? 0U : completed / size;
 }
 
@@ -278,8 +278,8 @@ static size_t write_locked(const void *pointer, size_t bytes, FILE *stream)
         long seek_result = 0;
 
         if ((stream->flags & FILE_CONSOLE) == 0U && unread != 0U) {
-            seek_result = phipia_file_seek(stream->handle, -(int64_t)unread,
-                PHIPIA_SEEK_CURRENT);
+            seek_result = opengat_file_seek(stream->handle, -(int64_t)unread,
+                OPENGAT_SEEK_CURRENT);
         }
         if (seek_result < 0) {
             stream->error = 1U;
@@ -322,9 +322,9 @@ size_t fwrite(const void *pointer, size_t size, size_t count, FILE *stream)
         return 0U;
     }
     bytes = size * count;
-    phipia_runtime_lock(&stream->lock);
+    opengat_runtime_lock(&stream->lock);
     completed = write_locked(pointer, bytes, stream);
-    phipia_runtime_unlock(&stream->lock);
+    opengat_runtime_unlock(&stream->lock);
     return size == 0U ? 0U : completed / size;
 }
 
@@ -337,9 +337,9 @@ int fseek(FILE *stream, long offset, int origin)
         errno = EINVAL;
         return -1;
     }
-    phipia_runtime_lock(&stream->lock);
+    opengat_runtime_lock(&stream->lock);
     if (flush_locked(stream) == EOF) {
-        phipia_runtime_unlock(&stream->lock);
+        opengat_runtime_unlock(&stream->lock);
         return -1;
     }
     if ((stream->flags & FILE_READ) != 0U && origin == SEEK_CUR) {
@@ -349,8 +349,8 @@ int fseek(FILE *stream, long offset, int origin)
     stream->length = 0U;
     stream->pushed = -1;
     stream->eof = 0U;
-    result = phipia_file_seek(stream->handle, offset, (uint32_t)origin);
-    phipia_runtime_unlock(&stream->lock);
+    result = opengat_file_seek(stream->handle, offset, (uint32_t)origin);
+    opengat_runtime_unlock(&stream->lock);
     if (result < 0) {
         errno = (int)-result;
         return -1;
@@ -366,14 +366,14 @@ long ftell(FILE *stream)
         errno = EINVAL;
         return -1L;
     }
-    phipia_runtime_lock(&stream->lock);
-    result = phipia_file_seek(stream->handle, 0, PHIPIA_SEEK_CURRENT);
+    opengat_runtime_lock(&stream->lock);
+    result = opengat_file_seek(stream->handle, 0, OPENGAT_SEEK_CURRENT);
     if (result >= 0 && (stream->flags & FILE_BUFFER_DIRTY) != 0U) {
         result += (long)stream->length;
     } else if (result >= 0 && (stream->flags & FILE_READ) != 0U) {
         result -= (long)(stream->length - stream->position);
     }
-    phipia_runtime_unlock(&stream->lock);
+    opengat_runtime_unlock(&stream->lock);
     if (result < 0) {
         errno = (int)-result;
         return -1L;
@@ -602,30 +602,30 @@ int sprintf(char *output, const char *text, ...)
 
 int remove(const char *path)
 {
-    struct phipia_runtime_path parsed;
-    struct phipia_path request;
+    struct opengat_runtime_path parsed;
+    struct opengat_path request;
     long result;
-    if (phipia_runtime_path(path, &parsed) != 0) return -1;
+    if (opengat_runtime_path(path, &parsed) != 0) return -1;
     request.address = (uint64_t)(uintptr_t)parsed.text;
     request.length = (uint32_t)parsed.length;
     request.volume = parsed.volume; request.reserved = 0U;
-    result = phipia_syscall2(PHIPIA_SYS_PATH_UNLINK,
+    result = opengat_syscall2(OPENGAT_SYS_PATH_UNLINK,
         (uint64_t)(uintptr_t)&request, 0U);
-    return phipia_result(result);
+    return opengat_result(result);
 }
 int rename(const char *source, const char *destination)
 {
-    struct phipia_runtime_path from, to;
-    struct phipia_rename_request request;
-    if (phipia_runtime_path(source, &from) != 0 ||
-        phipia_runtime_path(destination, &to) != 0) return -1;
-    request.size = sizeof(request); request.version = PHIPIA_ABI_VERSION;
-    request.source = (struct phipia_path){(uint64_t)(uintptr_t)from.text,
+    struct opengat_runtime_path from, to;
+    struct opengat_rename_request request;
+    if (opengat_runtime_path(source, &from) != 0 ||
+        opengat_runtime_path(destination, &to) != 0) return -1;
+    request.size = sizeof(request); request.version = OPENGAT_ABI_VERSION;
+    request.source = (struct opengat_path){(uint64_t)(uintptr_t)from.text,
         (uint32_t)from.length, from.volume, 0U};
-    request.destination = (struct phipia_path){(uint64_t)(uintptr_t)to.text,
+    request.destination = (struct opengat_path){(uint64_t)(uintptr_t)to.text,
         (uint32_t)to.length, to.volume, 0U};
     request.flags = 0U; request.reserved = 0U;
-    return phipia_result(phipia_syscall1(PHIPIA_SYS_PATH_RENAME,
+    return opengat_result(opengat_syscall1(OPENGAT_SYS_PATH_RENAME,
         (uint64_t)(uintptr_t)&request));
 }
 int setvbuf(FILE *stream, char *buffer, int mode, size_t size)

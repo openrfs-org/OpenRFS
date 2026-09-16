@@ -3,13 +3,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/acpi_util.h>
-#include <phipia/boot.h>
+#include <opengat/acpi_util.h>
+#include <opengat/boot.h>
 
 bool acpi_span_is_early_mapped(uint64_t address, uint64_t length)
 {
-    return address < PHIPIA_EARLY_PHYSICAL_LIMIT &&
-        length <= PHIPIA_EARLY_PHYSICAL_LIMIT - address;
+    return address < OPENGAT_EARLY_PHYSICAL_LIMIT &&
+        length <= OPENGAT_EARLY_PHYSICAL_LIMIT - address;
 }
 
 uint8_t acpi_byte_sum(const void *data, size_t size)

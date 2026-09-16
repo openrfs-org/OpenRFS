@@ -70,8 +70,8 @@ def wait_for_file(path: Path, deadline: float) -> None:
     raise TimeoutError(f"QEMU did not write screendump: {path}")
 
 
-def encode_canvas_evidence(ffmpeg: str, frames: list[Path], fps: int,
-                           screenshot: Path, video: Path) -> None:
+def encode_video_evidence(ffmpeg: str, frames: list[Path], fps: int,
+                          screenshot: Path, video: Path) -> None:
     screenshot.parent.mkdir(parents=True, exist_ok=True)
     video.parent.mkdir(parents=True, exist_ok=True)
     for output in (screenshot, video):
@@ -88,7 +88,7 @@ def encode_canvas_evidence(ffmpeg: str, frames: list[Path], fps: int,
         "+faststart", str(video),
     ], check=True)
     if screenshot.stat().st_size == 0 or video.stat().st_size == 0:
-        raise RuntimeError("encoded native Canvas evidence is empty")
+        raise RuntimeError("encoded native video evidence is empty")
 
 
 def main() -> int:
@@ -113,9 +113,9 @@ def main() -> int:
     evidence_values = (args.capture_dir, args.screenshot, args.video)
     if any(value is not None for value in evidence_values) and not all(
             value is not None for value in evidence_values):
-        parser.error("canvas evidence requires capture-dir, screenshot, and video")
+        parser.error("video evidence requires capture-dir, screenshot, and video")
     if args.frames < 2 or args.fps < 1:
-        parser.error("canvas evidence needs at least two frames and a positive fps")
+        parser.error("video evidence needs at least two frames and a positive fps")
     deadline = time.monotonic() + args.timeout
     wait_for_marker(Path(args.serial), args.marker.encode("ascii"),
                     args.marker_count, deadline)
@@ -145,8 +145,8 @@ def main() -> int:
                 if remaining > 0:
                     time.sleep(remaining)
     if args.capture_dir is not None:
-        encode_canvas_evidence(args.ffmpeg, frames, args.fps,
-                               args.screenshot.resolve(), args.video.resolve())
+        encode_video_evidence(args.ffmpeg, frames, args.fps,
+                              args.screenshot.resolve(), args.video.resolve())
     return 0
 
 

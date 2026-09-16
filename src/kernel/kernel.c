@@ -6,18 +6,18 @@
  */
 #include <stdint.h>
 
-#include <phipia/boot_ledger.h>
-#include <phipia/boot_plan.h>
-#include <phipia/console.h>
-#include <phipia/ext4_fs.h>
-#include <phipia/fat32_fs.h>
-#include <phipia/native_process.h>
-#include <phipia/package_platform_trust.h>
-#include <phipia/package_service.h>
-#include <phipia/package_upload.h>
-#include <phipia/shell.h>
-#include <phipia/test.h>
-#include <phipia/ui.h>
+#include <opengat/boot_ledger.h>
+#include <opengat/boot_plan.h>
+#include <opengat/console.h>
+#include <opengat/ext4_fs.h>
+#include <opengat/fat32_fs.h>
+#include <opengat/native_process.h>
+#include <opengat/package_platform_trust.h>
+#include <opengat/package_service.h>
+#include <opengat/package_upload.h>
+#include <opengat/shell.h>
+#include <opengat/test.h>
+#include <opengat/ui.h>
 
 _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information);
 
@@ -40,12 +40,12 @@ static void initialize_package_trust(void)
 
 static void recover_package_state(void)
 {
-    enum phipfs_status filesystem_status = phipfs_mount(PHIPFS_VOLUME_DATA);
+    enum opengatfs_status filesystem_status = opengatfs_mount(OPENGATFS_VOLUME_DATA);
 
-    if (filesystem_status != PHIPFS_STATUS_OK &&
-        filesystem_status != PHIPFS_STATUS_ALREADY_MOUNTED) {
-        console_write("Phipia: package recovery unavailable: ");
-        console_write(phipfs_status_string(filesystem_status));
+    if (filesystem_status != OPENGATFS_STATUS_OK &&
+        filesystem_status != OPENGATFS_STATUS_ALREADY_MOUNTED) {
+        console_write("OpenGAT: package recovery unavailable: ");
+        console_write(opengatfs_status_string(filesystem_status));
         console_putc('\n');
         return;
     }
@@ -53,20 +53,20 @@ static void recover_package_state(void)
     enum package_service_status status = package_service_recover(&report);
 
     if (status == PACKAGE_SERVICE_STATUS_ABSENT) {
-        console_write("Phipia: package transaction state absent\n");
+        console_write("OpenGAT: package transaction state absent\n");
         return;
     }
     if (status != PACKAGE_SERVICE_STATUS_OK) {
-        console_write("Phipia: package recovery refused: ");
+        console_write("OpenGAT: package recovery refused: ");
         console_write(package_service_status_string(status));
         console_write("; state ");
         console_write(package_state_status_string(report.state_status));
         console_write("; filesystem ");
-        console_write(phipfs_status_string(report.filesystem_status));
+        console_write(opengatfs_status_string(report.filesystem_status));
         console_putc('\n');
         console_panic("unsafe package transaction state");
     }
-    console_write("Phipia: package generation ");
+    console_write("OpenGAT: package generation ");
     console_write_u64(report.generation);
     console_write(" verified files ");
     console_write_u64(report.files_verified);
@@ -79,10 +79,10 @@ static void initialize_package_uploads(void)
     enum package_upload_status status = package_upload_initialize(&report);
 
     if (status != PACKAGE_UPLOAD_STATUS_OK) {
-        console_write("Phipia: package upload service unavailable: ");
+        console_write("OpenGAT: package upload service unavailable: ");
         console_write(package_upload_status_string(status));
         console_write("; filesystem ");
-        console_write(phipfs_status_string(report.filesystem_status));
+        console_write(opengatfs_status_string(report.filesystem_status));
         console_putc('\n');
     }
 }
@@ -92,7 +92,7 @@ static void report_ledger_refusal(
     const struct boot_context *context
 )
 {
-    console_write("Phipia: Boot Ledger refusal: ");
+    console_write("OpenGAT: Boot Ledger refusal: ");
     console_write(boot_ledger_status_string(ledger->status));
 
     if (ledger->refusal_stage != BOOT_STAGE_INVALID) {
@@ -155,11 +155,11 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
     }
 
     boot_ledger_publish(&installed_ledger);
-    console_write("Phipia: Boot Ledger installed proof passed\n");
-    if (!phipfs_self_test(&filesystem_tests)) {
+    console_write("OpenGAT: Boot Ledger installed proof passed\n");
+    if (!opengatfs_self_test(&filesystem_tests)) {
         console_panic("FAT32 store self-test failed");
     }
-    console_write("Phipia: FAT32 store controls ");
+    console_write("OpenGAT: FAT32 store controls ");
     console_write_u64(filesystem_tests);
     console_write("/6 passed\n");
     if (installed_context.test_scenario == KERNEL_TEST_EXT4_RECOVERY &&
@@ -168,7 +168,7 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
             installed_context.information.command_line_length)) {
         console_panic("invalid ext4 power-cut configuration");
     }
-    phipfs_initialize();
+    opengatfs_initialize();
     if (installed_context.test_scenario == KERNEL_TEST_NORMAL) {
         recover_package_state();
         initialize_package_uploads();
@@ -176,11 +176,11 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
     if (!native_process_self_test(&native_process_tests)) {
         console_panic("native userspace foundation self-test failed");
     }
-    console_write("Phipia: native userspace controls ");
+    console_write("OpenGAT: native userspace controls ");
     console_write_u64(native_process_tests);
     console_write(" passed\n");
     if (ui_is_active() && ui_flush() != UI_STATUS_OK) {
-        console_write("Phipia: ledger status redraw failed\n");
+        console_write("OpenGAT: ledger status redraw failed\n");
     }
 
     if (installed_context.test_scenario == KERNEL_TEST_NORMAL) {
@@ -191,8 +191,8 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
         kernel_test_complete_boot_ledger(&installed_context);
     }
 
-    if (installed_context.test_scenario == KERNEL_TEST_PHIPIA_PROOF) {
-        kernel_test_complete_phipia_proof();
+    if (installed_context.test_scenario == KERNEL_TEST_OPENGAT_PROOF) {
+        kernel_test_complete_opengat_proof();
     }
 
     if (installed_context.test_scenario == KERNEL_TEST_DEVICE_SUBSTRATE) {
@@ -223,23 +223,23 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
         kernel_test_complete_linux_uname();
     }
 
-    if (installed_context.test_scenario == KERNEL_TEST_PHIPIA_PROOF_USERLAND) {
-        kernel_test_complete_phipia_proof_userland();
+    if (installed_context.test_scenario == KERNEL_TEST_OPENGAT_PROOF_USERLAND) {
+        kernel_test_complete_opengat_proof_userland();
     }
 
     if (installed_context.test_scenario ==
-            KERNEL_TEST_PHIPIA_PROOF_USERLAND_ABSENT) {
-        kernel_test_complete_phipia_proof_userland_absent();
+            KERNEL_TEST_OPENGAT_PROOF_USERLAND_ABSENT) {
+        kernel_test_complete_opengat_proof_userland_absent();
     }
 
     if (installed_context.test_scenario ==
-            KERNEL_TEST_PHIPIA_PROOF_USERLAND_INTERACTIVE) {
-        kernel_test_complete_phipia_proof_userland_interactive();
+            KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE) {
+        kernel_test_complete_opengat_proof_userland_interactive();
     }
 
     if (installed_context.test_scenario ==
-            KERNEL_TEST_PHIPIA_PROOF_USERLAND_INTERACTIVE_ABSENT) {
-        kernel_test_complete_phipia_proof_userland_interactive_absent();
+            KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE_ABSENT) {
+        kernel_test_complete_opengat_proof_userland_interactive_absent();
     }
 
     if (installed_context.test_scenario >= KERNEL_TEST_FAT32_SYSTEM &&
@@ -276,10 +276,6 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
 
     if (installed_context.test_scenario == KERNEL_TEST_NATIVE_SQLITE) {
         kernel_test_complete_native_sqlite();
-    }
-
-    if (installed_context.test_scenario == KERNEL_TEST_NATIVE_CANVAS) {
-        kernel_test_complete_native_canvas();
     }
 
     if (installed_context.test_scenario == KERNEL_TEST_NATIVE_NETWORK) {
@@ -319,8 +315,8 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
         kernel_test_complete_native_https();
     }
 
-    if (installed_context.test_scenario == KERNEL_TEST_NATIVE_PHIP) {
-        kernel_test_complete_native_phip();
+    if (installed_context.test_scenario == KERNEL_TEST_NATIVE_OPENGAT) {
+        kernel_test_complete_native_opengat();
     }
 
     if (installed_context.test_scenario == KERNEL_TEST_EXT4_RECOVERY) {

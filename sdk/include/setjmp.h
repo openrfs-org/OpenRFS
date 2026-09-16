@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef PHIPIA_SETJMP_H
-#define PHIPIA_SETJMP_H
+#ifndef OPENGAT_SETJMP_H
+#define OPENGAT_SETJMP_H
 
 typedef unsigned long jmp_buf[8];
 

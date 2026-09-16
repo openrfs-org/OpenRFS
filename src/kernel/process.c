@@ -4,17 +4,17 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/cpu.h>
-#include <phipia/dma.h>
-#include <phipia/elf64.h>
-#include <phipia/filesystem.h>
-#include <phipia/interrupt_vector.h>
-#include <phipia/interrupts.h>
-#include <phipia/memory.h>
-#include <phipia/msix.h>
-#include <phipia/paging.h>
-#include <phipia/pci_resource.h>
-#include <phipia/process.h>
+#include <opengat/cpu.h>
+#include <opengat/dma.h>
+#include <opengat/elf64.h>
+#include <opengat/filesystem.h>
+#include <opengat/interrupt_vector.h>
+#include <opengat/interrupts.h>
+#include <opengat/memory.h>
+#include <opengat/msix.h>
+#include <opengat/paging.h>
+#include <opengat/pci_resource.h>
+#include <opengat/process.h>
 
 #define PROCESS_EXPECTED_RETURN_RIP (ELF64_ENTRY_ADDRESS + UINT64_C(7))
 #define PROCESS_SENTINEL_BYTES 32U
@@ -101,9 +101,9 @@ static struct process_proof_result installed_result;
 static uint64_t next_process_generation = UINT64_C(1);
 static bool process_proof_active;
 static uint8_t process_sentinel[PROCESS_SENTINEL_BYTES] = {
-    0x50, 0x48, 0x49, 0x50, 0x49, 0x41, 0x2D, 0x50,
-    0x52, 0x4F, 0x43, 0x45, 0x53, 0x53, 0x2D, 0x53,
-    0x45, 0x4E, 0x54, 0x49, 0x4E, 0x45, 0x4C, 0x2D,
+    0x54, 0x52, 0x41, 0x49, 0x54, 0x2D, 0x50, 0x52,
+    0x4F, 0x43, 0x45, 0x53, 0x53, 0x2D, 0x53, 0x45,
+    0x4E, 0x54, 0x49, 0x4E, 0x45, 0x4C, 0x2D, 0x30,
     0x30, 0x37, 0x2D, 0x52, 0x49, 0x4E, 0x47, 0x33
 };
 
@@ -500,7 +500,7 @@ bool process_address_space_foundation_self_test(size_t *completed_tests)
 
 bool process_elf64_foundation_self_test(size_t *completed_tests)
 {
-    const uint32_t completed = phipia_elf64_self_test();
+    const uint32_t completed = opengat_elf64_self_test();
 
     if (completed_tests == NULL) {
         return false;
@@ -569,7 +569,7 @@ static enum process_status process_attempt(
         status = failure_status(failure_point);
         goto cleanup;
     }
-    if (phipia_elf64_parse(runtime.elf_bytes, sizeof(runtime.elf_bytes),
+    if (opengat_elf64_parse(runtime.elf_bytes, sizeof(runtime.elf_bytes),
             &runtime.image) != ELF64_STATUS_OK) {
         status = PROCESS_STATUS_ELF_PARSER;
         goto cleanup;

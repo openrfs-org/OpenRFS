@@ -9,9 +9,9 @@ int package_state_core_host_test_main(void);
 #include <stdlib.h>
 #include <string.h>
 
-#include <phipia/fat32_fs.h>
-#include <phipia/heap.h>
-#include <phipia/package_service.h>
+#include <opengat/fat32_fs.h>
+#include <opengat/heap.h>
+#include <opengat/package_service.h>
 
 #define MOCK_MAX_NODES 96U
 #define MOCK_MAX_FILE_BYTES 4096U
@@ -32,7 +32,7 @@ enum mock_event {
 struct mock_node {
     bool active;
     bool directory;
-    char path[PHIPFS_MAX_PATH];
+    char path[OPENGATFS_MAX_PATH];
     uint8_t bytes[MOCK_MAX_FILE_BYTES];
     size_t byte_count;
     uint16_t mode;
@@ -176,9 +176,9 @@ static void add_bootstrap_generation(
         (const uint8_t *)"lib", 3U, UINT16_C(0444));
 }
 
-struct phipfs_drive_info phipfs_drive(enum phipfs_volume volume)
+struct opengatfs_drive_info opengatfs_drive(enum opengatfs_volume volume)
 {
-    struct phipfs_drive_info info;
+    struct opengatfs_drive_info info;
     memset(&info, 0, sizeof(info));
     info.volume = volume;
     info.present = true;
@@ -189,28 +189,28 @@ struct phipfs_drive_info phipfs_drive(enum phipfs_volume volume)
     return info;
 }
 
-enum phipfs_status phipfs_sync(enum phipfs_volume volume)
+enum opengatfs_status opengatfs_sync(enum opengatfs_volume volume)
 {
     (void)volume;
     event(MOCK_EVENT_SYNC);
     ++sync_attempts;
     if (fail_next_sync || sync_attempts == fail_sync_ordinal) {
         fail_next_sync = false;
-        return PHIPFS_STATUS_WRITEBACK;
+        return OPENGATFS_STATUS_WRITEBACK;
     }
-    return PHIPFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum phipfs_status phipfs_stat_path(
-    enum phipfs_volume volume,
+enum opengatfs_status opengatfs_stat_path(
+    enum opengatfs_volume volume,
     const char *path,
-    struct phipfs_stat *stat
+    struct opengatfs_stat *stat
 )
 {
     (void)volume;
     size_t index = find_node(path);
     if (index == MOCK_MAX_NODES) {
-        return PHIPFS_STATUS_NOT_FOUND;
+        return OPENGATFS_STATUS_NOT_FOUND;
     }
     memset(stat, 0, sizeof(*stat));
     stat->size = nodes[index].byte_count;
@@ -219,24 +219,24 @@ enum phipfs_status phipfs_stat_path(
     stat->links = 1U;
     stat->directory = nodes[index].directory;
     stat->read_only = (nodes[index].mode & UINT16_C(0222)) == 0U;
-    return PHIPFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum phipfs_status phipfs_open(
-    enum phipfs_volume volume,
+enum opengatfs_status opengatfs_open(
+    enum opengatfs_volume volume,
     const char *path,
-    enum phipfs_access access,
-    phipfs_handle *handle
+    enum opengatfs_access access,
+    opengatfs_handle *handle
 )
 {
     (void)volume;
     (void)access;
     size_t node = find_node(path);
     if (node == MOCK_MAX_NODES) {
-        return PHIPFS_STATUS_NOT_FOUND;
+        return OPENGATFS_STATUS_NOT_FOUND;
     }
     if (nodes[node].directory) {
-        return PHIPFS_STATUS_IS_DIRECTORY;
+        return OPENGATFS_STATUS_IS_DIRECTORY;
     }
     for (size_t index = 0U; index < MOCK_MAX_HANDLES; ++index) {
         if (!handles[index].active) {
@@ -244,13 +244,13 @@ enum phipfs_status phipfs_open(
             handles[index].node = node;
             handles[index].offset = 0U;
             *handle = index + 1U;
-            return PHIPFS_STATUS_OK;
+            return OPENGATFS_STATUS_OK;
         }
     }
-    return PHIPFS_STATUS_NO_HANDLES;
+    return OPENGATFS_STATUS_NO_HANDLES;
 }
 
-static struct mock_handle *mock_handle(phipfs_handle handle)
+static struct mock_handle *mock_handle(opengatfs_handle handle)
 {
     if (handle == 0U || handle > MOCK_MAX_HANDLES ||
         !handles[handle - 1U].active) {
@@ -259,18 +259,18 @@ static struct mock_handle *mock_handle(phipfs_handle handle)
     return &handles[handle - 1U];
 }
 
-enum phipfs_status phipfs_close(phipfs_handle handle)
+enum opengatfs_status opengatfs_close(opengatfs_handle handle)
 {
     struct mock_handle *state = mock_handle(handle);
     if (state == NULL) {
-        return PHIPFS_STATUS_STALE_HANDLE;
+        return OPENGATFS_STATUS_STALE_HANDLE;
     }
     state->active = false;
-    return PHIPFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum phipfs_status phipfs_read(
-    phipfs_handle handle,
+enum opengatfs_status opengatfs_read(
+    opengatfs_handle handle,
     uint8_t *destination,
     size_t capacity,
     size_t *read_bytes
@@ -278,7 +278,7 @@ enum phipfs_status phipfs_read(
 {
     struct mock_handle *state = mock_handle(handle);
     if (state == NULL) {
-        return PHIPFS_STATUS_STALE_HANDLE;
+        return OPENGATFS_STATUS_STALE_HANDLE;
     }
     struct mock_node *node = &nodes[state->node];
     size_t available = node->byte_count - state->offset;
@@ -288,11 +288,11 @@ enum phipfs_status phipfs_read(
     }
     state->offset += count;
     *read_bytes = count;
-    return PHIPFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum phipfs_status phipfs_write(
-    phipfs_handle handle,
+enum opengatfs_status opengatfs_write(
+    opengatfs_handle handle,
     const uint8_t *source,
     size_t source_bytes,
     size_t *written_bytes
@@ -300,10 +300,10 @@ enum phipfs_status phipfs_write(
 {
     struct mock_handle *state = mock_handle(handle);
     if (state == NULL) {
-        return PHIPFS_STATUS_STALE_HANDLE;
+        return OPENGATFS_STATUS_STALE_HANDLE;
     }
     if (source_bytes > MOCK_MAX_FILE_BYTES - state->offset) {
-        return PHIPFS_STATUS_FULL;
+        return OPENGATFS_STATUS_FULL;
     }
     struct mock_node *node = &nodes[state->node];
     memcpy(node->bytes + state->offset, source, source_bytes);
@@ -315,7 +315,7 @@ enum phipfs_status phipfs_write(
     if (strcmp(node->path, PACKAGE_SERVICE_AUTHORITY_NEW_PATH) == 0) {
         event(MOCK_EVENT_WRITE_AUTHORITY);
     }
-    return PHIPFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
 static bool direct_child(
@@ -337,10 +337,10 @@ static bool direct_child(
     return true;
 }
 
-enum phipfs_status phipfs_list(
-    enum phipfs_volume volume,
+enum opengatfs_status opengatfs_list(
+    enum opengatfs_volume volume,
     const char *path,
-    struct phipfs_list_entry *entries,
+    struct opengatfs_list_entry *entries,
     size_t capacity,
     size_t *entry_count
 )
@@ -348,10 +348,10 @@ enum phipfs_status phipfs_list(
     (void)volume;
     size_t parent = find_node(path);
     if (parent == MOCK_MAX_NODES) {
-        return PHIPFS_STATUS_NOT_FOUND;
+        return OPENGATFS_STATUS_NOT_FOUND;
     }
     if (!nodes[parent].directory) {
-        return PHIPFS_STATUS_NOT_DIRECTORY;
+        return OPENGATFS_STATUS_NOT_DIRECTORY;
     }
     size_t count = 0U;
     for (size_t index = 0U; index < MOCK_MAX_NODES; ++index) {
@@ -361,7 +361,7 @@ enum phipfs_status phipfs_list(
             continue;
         }
         if (count == capacity) {
-            return PHIPFS_STATUS_DIRECTORY_FULL;
+            return OPENGATFS_STATUS_DIRECTORY_FULL;
         }
         memset(&entries[count], 0, sizeof(entries[count]));
         (void)snprintf(entries[count].name, sizeof(entries[count].name),
@@ -373,37 +373,37 @@ enum phipfs_status phipfs_list(
         ++count;
     }
     *entry_count = count;
-    return PHIPFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum phipfs_status phipfs_create(enum phipfs_volume volume, const char *path)
+enum opengatfs_status opengatfs_create(enum opengatfs_volume volume, const char *path)
 {
     (void)volume;
     if (find_node(path) != MOCK_MAX_NODES) {
-        return PHIPFS_STATUS_EXISTS;
+        return OPENGATFS_STATUS_EXISTS;
     }
     return add_node(path, false, NULL, 0U, 0U) ==
-        MOCK_MAX_NODES ? PHIPFS_STATUS_FULL : PHIPFS_STATUS_OK;
+        MOCK_MAX_NODES ? OPENGATFS_STATUS_FULL : OPENGATFS_STATUS_OK;
 }
 
-enum phipfs_status phipfs_create_mode(enum phipfs_volume volume,
+enum opengatfs_status opengatfs_create_mode(enum opengatfs_volume volume,
     const char *path, uint16_t mode)
 {
-    enum phipfs_status status = phipfs_create(volume, path);
+    enum opengatfs_status status = opengatfs_create(volume, path);
 
-    if (status == PHIPFS_STATUS_OK) {
+    if (status == OPENGATFS_STATUS_OK) {
         size_t index = find_node(path);
 
         if (index == MOCK_MAX_NODES) {
-            return PHIPFS_STATUS_CORRUPT;
+            return OPENGATFS_STATUS_CORRUPT;
         }
         nodes[index].mode = mode;
     }
     return status;
 }
 
-enum phipfs_status phipfs_truncate(
-    enum phipfs_volume volume,
+enum opengatfs_status opengatfs_truncate(
+    enum opengatfs_volume volume,
     const char *path,
     uint64_t size
 )
@@ -412,30 +412,30 @@ enum phipfs_status phipfs_truncate(
     size_t node = find_node(path);
 
     if (node == MOCK_MAX_NODES) {
-        return PHIPFS_STATUS_NOT_FOUND;
+        return OPENGATFS_STATUS_NOT_FOUND;
     }
     if (nodes[node].directory) {
-        return PHIPFS_STATUS_IS_DIRECTORY;
+        return OPENGATFS_STATUS_IS_DIRECTORY;
     }
     if (size > SIZE_MAX) {
-        return PHIPFS_STATUS_RANGE;
+        return OPENGATFS_STATUS_RANGE;
     }
     nodes[node].byte_count = (size_t)size;
-    return PHIPFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum phipfs_status phipfs_mkdir(enum phipfs_volume volume, const char *path)
+enum opengatfs_status opengatfs_mkdir(enum opengatfs_volume volume, const char *path)
 {
     (void)volume;
     if (find_node(path) != MOCK_MAX_NODES) {
-        return PHIPFS_STATUS_EXISTS;
+        return OPENGATFS_STATUS_EXISTS;
     }
     return add_node(path, true, NULL, 0U, 0U) == MOCK_MAX_NODES ?
-        PHIPFS_STATUS_FULL : PHIPFS_STATUS_OK;
+        OPENGATFS_STATUS_FULL : OPENGATFS_STATUS_OK;
 }
 
-enum phipfs_status phipfs_rename(
-    enum phipfs_volume volume,
+enum opengatfs_status opengatfs_rename(
+    enum opengatfs_volume volume,
     const char *source,
     const char *destination
 )
@@ -443,10 +443,10 @@ enum phipfs_status phipfs_rename(
     (void)volume;
     size_t node = find_node(source);
     if (node == MOCK_MAX_NODES) {
-        return PHIPFS_STATUS_NOT_FOUND;
+        return OPENGATFS_STATUS_NOT_FOUND;
     }
     if (find_node(destination) != MOCK_MAX_NODES) {
-        return PHIPFS_STATUS_EXISTS;
+        return OPENGATFS_STATUS_EXISTS;
     }
     (void)snprintf(nodes[node].path, sizeof(nodes[node].path), "%s",
         destination);
@@ -455,45 +455,45 @@ enum phipfs_status phipfs_rename(
     } else if (strcmp(destination, PACKAGE_SERVICE_AUTHORITY_PATH) == 0) {
         event(MOCK_EVENT_RENAME_AUTHORITY);
     }
-    return PHIPFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum phipfs_status phipfs_unlink(enum phipfs_volume volume, const char *path)
+enum opengatfs_status opengatfs_unlink(enum opengatfs_volume volume, const char *path)
 {
     (void)volume;
     size_t node = find_node(path);
     if (node == MOCK_MAX_NODES) {
-        return PHIPFS_STATUS_NOT_FOUND;
+        return OPENGATFS_STATUS_NOT_FOUND;
     }
     if (nodes[node].directory) {
-        return PHIPFS_STATUS_IS_DIRECTORY;
+        return OPENGATFS_STATUS_IS_DIRECTORY;
     }
     if (strcmp(path, PACKAGE_SERVICE_JOURNAL_PATH) == 0) {
         event(MOCK_EVENT_UNLINK_JOURNAL);
     }
     nodes[node].active = false;
-    return PHIPFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
-enum phipfs_status phipfs_rmdir(enum phipfs_volume volume, const char *path)
+enum opengatfs_status opengatfs_rmdir(enum opengatfs_volume volume, const char *path)
 {
     (void)volume;
     size_t node = find_node(path);
     if (node == MOCK_MAX_NODES) {
-        return PHIPFS_STATUS_NOT_FOUND;
+        return OPENGATFS_STATUS_NOT_FOUND;
     }
     if (!nodes[node].directory) {
-        return PHIPFS_STATUS_NOT_DIRECTORY;
+        return OPENGATFS_STATUS_NOT_DIRECTORY;
     }
     for (size_t index = 0U; index < MOCK_MAX_NODES; ++index) {
         const char *ignored;
         if (nodes[index].active && direct_child(path, nodes[index].path,
                 &ignored)) {
-            return PHIPFS_STATUS_NOT_EMPTY;
+            return OPENGATFS_STATUS_NOT_EMPTY;
         }
     }
     nodes[node].active = false;
-    return PHIPFS_STATUS_OK;
+    return OPENGATFS_STATUS_OK;
 }
 
 enum heap_status heap_allocate(uint64_t size, void **pointer)
@@ -554,7 +554,7 @@ static bool prepare_workspace(
     struct package_builder_workspace *workspace
 )
 {
-    static const uint8_t target[] = "org.phipia.app";
+    static const uint8_t target[] = "org.opengat.app";
 
     memset(workspace, 0, sizeof(*workspace));
     if (package_state_database_parse(old_database, OLD_DATABASE_BYTES,
@@ -918,7 +918,7 @@ static int test_prepare_copies_unchanged_installed_file(
     const uint8_t new_authority[PACKAGE_STATE_AUTHORITY_BYTES]
 )
 {
-    static const uint8_t target[] = "org.phipia.app";
+    static const uint8_t target[] = "org.opengat.app";
     struct package_builder_workspace *workspace = malloc(sizeof(*workspace));
     struct package_state_database_view target_view;
     struct package_state_package_view library;

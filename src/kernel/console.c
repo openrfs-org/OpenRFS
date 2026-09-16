@@ -2,8 +2,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/console.h>
-#include <phipia/screen.h>
+#include <opengat/console.h>
+#include <opengat/screen.h>
 
 #define VGA_WIDTH 80U
 #define VGA_HEIGHT 25U
@@ -225,7 +225,7 @@ _Noreturn void console_halt(void)
 
 _Noreturn void console_panic(const char *message)
 {
-    console_write("Phipia PANIC: ");
+    console_write("OpenGAT PANIC: ");
     console_write(message);
     console_putc('\n');
     console_halt();

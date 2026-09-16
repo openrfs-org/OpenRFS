@@ -3,64 +3,61 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <phipia/acpi.h>
-#include <phipia/acpi_util.h>
-#include <phipia/abi/base.h>
-#include <phipia/apic.h>
-#include <phipia/apic_timer.h>
-#include <phipia/boot_ledger.h>
-#include <phipia/boot_plan.h>
-#include <phipia/clock.h>
-#include <phipia/console.h>
-#include <phipia/cpu.h>
-#include <phipia/device_substrate.h>
-#include <phipia/dma.h>
-#include <phipia/ext4_fs.h>
-#include <phipia/framebuffer.h>
-#include <phipia/filesystem.h>
-#include <phipia/fat32_fs.h>
-#include <phipia/font.h>
-#include <phipia/heap.h>
-#include <phipia/interrupts.h>
-#include <phipia/ioapic.h>
-#include <phipia/memory.h>
-#include <phipia/network.h>
-#include <phipia/native_process.h>
-#include <phipia/network_syscall.h>
-#include <phipia/audio.h>
-#include <phipia/nvidia.h>
-#include <phipia/driver.h>
-#include <phipia/multiprocess.h>
-#include <phipia/nvme.h>
-#include <phipia/paging.h>
-#include <phipia/package_service.h>
-#include <phipia/package_state.h>
-#include <phipia/pci.h>
-#include <phipia/pci_resource.h>
-#include <phipia/pic.h>
-#include <phipia/pit.h>
-#include <phipia/pointer.h>
-#include <phipia/process.h>
-#include <phipia/random.h>
-#include <phipia/keyboard.h>
-#include <phipia/linux_abi.h>
-#include <phipia/linux_cat.h>
-#include <phipia/linux_uname.h>
-#include <phipia/linux_userland.h>
-#include <phipia/screen.h>
-#include <phipia/shell.h>
-#include <phipia/pm_timer.h>
-#include <phipia/surface.h>
-#include <phipia/store.h>
-#include <phipia/taskbar.h>
-#include <phipia/test.h>
-#include <phipia/thread.h>
-#include <phipia/timer.h>
-#include <phipia/tsc.h>
-#include <phipia/ui.h>
-#include <phipia/ui_anim.h>
-#include <phipia/ui_font.h>
-#include <phipia/xhci.h>
+#include <opengat/acpi.h>
+#include <opengat/acpi_util.h>
+#include <opengat/abi/base.h>
+#include <opengat/apic.h>
+#include <opengat/apic_timer.h>
+#include <opengat/boot_ledger.h>
+#include <opengat/boot_plan.h>
+#include <opengat/clock.h>
+#include <opengat/console.h>
+#include <opengat/cpu.h>
+#include <opengat/device_substrate.h>
+#include <opengat/dma.h>
+#include <opengat/ext4_fs.h>
+#include <opengat/framebuffer.h>
+#include <opengat/filesystem.h>
+#include <opengat/fat32_fs.h>
+#include <opengat/font.h>
+#include <opengat/heap.h>
+#include <opengat/interrupts.h>
+#include <opengat/ioapic.h>
+#include <opengat/memory.h>
+#include <opengat/network.h>
+#include <opengat/native_process.h>
+#include <opengat/network_syscall.h>
+#include <opengat/audio.h>
+#include <opengat/nvidia.h>
+#include <opengat/driver.h>
+#include <opengat/multiprocess.h>
+#include <opengat/nvme.h>
+#include <opengat/paging.h>
+#include <opengat/package_service.h>
+#include <opengat/package_state.h>
+#include <opengat/pci.h>
+#include <opengat/pci_resource.h>
+#include <opengat/pic.h>
+#include <opengat/pit.h>
+#include <opengat/pointer.h>
+#include <opengat/process.h>
+#include <opengat/random.h>
+#include <opengat/keyboard.h>
+#include <opengat/linux_abi.h>
+#include <opengat/linux_cat.h>
+#include <opengat/linux_uname.h>
+#include <opengat/linux_userland.h>
+#include <opengat/screen.h>
+#include <opengat/shell.h>
+#include <opengat/pm_timer.h>
+#include <opengat/surface.h>
+#include <opengat/test.h>
+#include <opengat/thread.h>
+#include <opengat/timer.h>
+#include <opengat/tsc.h>
+#include <opengat/ui.h>
+#include <opengat/ui_font.h>
+#include <opengat/xhci.h>
 
 #define QEMU_EXIT_PORT UINT16_C(0x00F4)
 #define QEMU_FAILURE_VALUE UINT8_C(0x7F)
@@ -102,7 +99,7 @@
 
 _Static_assert(
     PAGING_TEST_HUGE_ADDRESS % PAGING_HUGE_PAGE_SIZE == 0U &&
-        PAGING_TEST_HUGE_ADDRESS < PHIPIA_EARLY_PHYSICAL_LIMIT,
+        PAGING_TEST_HUGE_ADDRESS < OPENGAT_EARLY_PHYSICAL_LIMIT,
     "the paging huge-leaf probe must stay aligned inside the identity map"
 );
 
@@ -334,8 +331,8 @@ static enum kernel_test_scenario scenario_from_value(
         return KERNEL_TEST_BOOT_LEDGER;
     }
 
-    if (token_equals(value, length, "phipia-proof")) {
-        return KERNEL_TEST_PHIPIA_PROOF;
+    if (token_equals(value, length, "opengat-proof")) {
+        return KERNEL_TEST_OPENGAT_PROOF;
     }
 
     if (token_equals(value, length, "device-substrate")) {
@@ -366,21 +363,21 @@ static enum kernel_test_scenario scenario_from_value(
         return KERNEL_TEST_LINUX_ABI_UNAME;
     }
 
-    if (token_equals(value, length, "phipia-proof-userland")) {
-        return KERNEL_TEST_PHIPIA_PROOF_USERLAND;
+    if (token_equals(value, length, "opengat-proof-userland")) {
+        return KERNEL_TEST_OPENGAT_PROOF_USERLAND;
     }
 
-    if (token_equals(value, length, "phipia-proof-userland-absent")) {
-        return KERNEL_TEST_PHIPIA_PROOF_USERLAND_ABSENT;
+    if (token_equals(value, length, "opengat-proof-userland-absent")) {
+        return KERNEL_TEST_OPENGAT_PROOF_USERLAND_ABSENT;
     }
 
-    if (token_equals(value, length, "phipia-proof-userland-interactive")) {
-        return KERNEL_TEST_PHIPIA_PROOF_USERLAND_INTERACTIVE;
+    if (token_equals(value, length, "opengat-proof-userland-interactive")) {
+        return KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE;
     }
 
     if (token_equals(
-            value, length, "phipia-proof-userland-interactive-absent")) {
-        return KERNEL_TEST_PHIPIA_PROOF_USERLAND_INTERACTIVE_ABSENT;
+            value, length, "opengat-proof-userland-interactive-absent")) {
+        return KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE_ABSENT;
     }
 
     if (token_equals(value, length, "fat32-system")) {
@@ -521,9 +518,6 @@ static enum kernel_test_scenario scenario_from_value(
     if (token_equals(value, length, "network-notes")) {
         return KERNEL_TEST_NETWORK_NOTES;
     }
-    if (token_equals(value, length, "network-media-editor")) {
-        return KERNEL_TEST_NETWORK_MEDIA_EDITOR;
-    }
     if (token_equals(value, length, "network-persistence")) {
         return KERNEL_TEST_NETWORK_PERSISTENCE;
     }
@@ -566,9 +560,6 @@ static enum kernel_test_scenario scenario_from_value(
     if (token_equals(value, length, "native-sqlite")) {
         return KERNEL_TEST_NATIVE_SQLITE;
     }
-    if (token_equals(value, length, "native-canvas")) {
-        return KERNEL_TEST_NATIVE_CANVAS;
-    }
     if (token_equals(value, length, "network-native")) {
         return KERNEL_TEST_NATIVE_NETWORK;
     }
@@ -602,8 +593,8 @@ static enum kernel_test_scenario scenario_from_value(
     if (token_equals(value, length, "native-https")) {
         return KERNEL_TEST_NATIVE_HTTPS;
     }
-    if (token_equals(value, length, "native-phip")) {
-        return KERNEL_TEST_NATIVE_PHIP;
+    if (token_equals(value, length, "native-opengat")) {
+        return KERNEL_TEST_NATIVE_OPENGAT;
     }
     if (token_equals(value, length, "ext4-recovery")) {
         return KERNEL_TEST_EXT4_RECOVERY;
@@ -686,7 +677,7 @@ static uint8_t scenario_exit_value(enum kernel_test_scenario scenario)
         return UINT8_C(0x2D);
     case KERNEL_TEST_BOOT_LEDGER:
         return UINT8_C(0x2E);
-    case KERNEL_TEST_PHIPIA_PROOF:
+    case KERNEL_TEST_OPENGAT_PROOF:
         return UINT8_C(0x2F);
     case KERNEL_TEST_DEVICE_SUBSTRATE:
         return UINT8_C(0x30);
@@ -702,13 +693,13 @@ static uint8_t scenario_exit_value(enum kernel_test_scenario scenario)
         return UINT8_C(0x36);
     case KERNEL_TEST_LINUX_ABI_UNAME:
         return UINT8_C(0x37);
-    case KERNEL_TEST_PHIPIA_PROOF_USERLAND:
+    case KERNEL_TEST_OPENGAT_PROOF_USERLAND:
         return UINT8_C(0x38);
-    case KERNEL_TEST_PHIPIA_PROOF_USERLAND_ABSENT:
+    case KERNEL_TEST_OPENGAT_PROOF_USERLAND_ABSENT:
         return UINT8_C(0x39);
-    case KERNEL_TEST_PHIPIA_PROOF_USERLAND_INTERACTIVE:
+    case KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE:
         return UINT8_C(0x3A);
-    case KERNEL_TEST_PHIPIA_PROOF_USERLAND_INTERACTIVE_ABSENT:
+    case KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE_ABSENT:
         return UINT8_C(0x3B);
     case KERNEL_TEST_FAT32_SYSTEM:
         return UINT8_C(0x3C);
@@ -771,7 +762,6 @@ static uint8_t scenario_exit_value(enum kernel_test_scenario scenario)
     case KERNEL_TEST_NETWORK_MISSING_LINUX_CAT: return UINT8_C(0x67);
     case KERNEL_TEST_NETWORK_FILES: return UINT8_C(0x68);
     case KERNEL_TEST_NETWORK_NOTES: return UINT8_C(0x69);
-    case KERNEL_TEST_NETWORK_MEDIA_EDITOR: return UINT8_C(0x6A);
     case KERNEL_TEST_NETWORK_PERSISTENCE: return UINT8_C(0x6B);
     case KERNEL_TEST_NETWORK_SOCKET_ISOLATION: return UINT8_C(0x6C);
     case KERNEL_TEST_NETWORK_TCP_LISTEN: return UINT8_C(0x6D);
@@ -786,7 +776,6 @@ static uint8_t scenario_exit_value(enum kernel_test_scenario scenario)
     case KERNEL_TEST_NATIVE: return UINT8_C(0x76);
     case KERNEL_TEST_NATIVE_LUA: return UINT8_C(0x77);
     case KERNEL_TEST_NATIVE_SQLITE: return UINT8_C(0x78);
-    case KERNEL_TEST_NATIVE_CANVAS: return UINT8_C(0x79);
     case KERNEL_TEST_NATIVE_NETWORK: return UINT8_C(0x7A);
     case KERNEL_TEST_NATIVE_RUST: return UINT8_C(0x7B);
     case KERNEL_TEST_NATIVE_CRASH: return UINT8_C(0x7C);
@@ -800,7 +789,7 @@ static uint8_t scenario_exit_value(enum kernel_test_scenario scenario)
     case KERNEL_TEST_NATIVE_DYNAMIC: return UINT8_C(0x84);
     case KERNEL_TEST_NATIVE_HTTPS: return UINT8_C(0x85);
     case KERNEL_TEST_EXT4_RECOVERY: return UINT8_C(0x86);
-    case KERNEL_TEST_NATIVE_PHIP: return UINT8_C(0x87);
+    case KERNEL_TEST_NATIVE_OPENGAT: return UINT8_C(0x87);
     default:
         return QEMU_FAILURE_VALUE;
     }
@@ -988,7 +977,7 @@ enum kernel_test_scenario kernel_test_select(
     const struct boot_information *context
 )
 {
-    static const char prefix[] = "phipia.test=";
+    static const char prefix[] = "opengat.test=";
     enum kernel_test_scenario selected = KERNEL_TEST_NONE;
     size_t offset = 0;
 
@@ -1233,7 +1222,7 @@ static void ioapic_level_scenario(void)
 
     /*
      * Read the entry off the hardware. An entry programmed edge triggered while
-     * Phipia's records called it level triggered would deliver every interrupt
+     * OpenGAT's records called it level triggered would deliver every interrupt
      * below and latch nothing, so this is the check that catches it.
      */
     if (ioapic_read_redirection(pit_active_vector(), &entry) !=
@@ -2118,7 +2107,7 @@ static volatile uint8_t paging_scratch;
  * recorded in a table.
  *
  * `make verify` has always refused an RWX load segment, and until this
- * increment that assertion was the only thing standing behind Phipia's W^X
+ * increment that assertion was the only thing standing behind OpenGAT's W^X
  * claim - and it inspects the ELF file, not the machine the kernel runs on.
  * Everything below the rejections is the part a file check can never do: a
  * fresh frame is mapped writable, written, narrowed to read-only, and written
@@ -2183,23 +2172,23 @@ static void paging_scenario(const struct paging_device_windows *device_windows)
     }
 
     /* Every refusal, through the public interface, against the live tables. */
-    if (paging_map(PAGING_PROBE_ADDRESS + 1U, 0U, PHIPIA_PAGE_SIZE,
+    if (paging_map(PAGING_PROBE_ADDRESS + 1U, 0U, OPENGAT_PAGE_SIZE,
             PAGING_WRITE) != PAGING_STATUS_UNALIGNED_ADDRESS ||
         paging_map(PAGING_PROBE_ADDRESS, 0U, 0U, PAGING_WRITE) !=
             PAGING_STATUS_ZERO_LENGTH ||
-        paging_map(UINT64_C(0x0000800000000000), 0U, PHIPIA_PAGE_SIZE,
+        paging_map(UINT64_C(0x0000800000000000), 0U, OPENGAT_PAGE_SIZE,
             PAGING_WRITE) != PAGING_STATUS_NONCANONICAL_ADDRESS ||
-        paging_map(PAGING_PROBE_ADDRESS, 0U, PHIPIA_PAGE_SIZE,
+        paging_map(PAGING_PROBE_ADDRESS, 0U, OPENGAT_PAGE_SIZE,
             PAGING_WRITE | PAGING_EXECUTE) !=
             PAGING_STATUS_WRITABLE_AND_EXECUTABLE) {
         kernel_test_fail("a malformed mapping request was accepted");
     }
 
-    if (paging_map(text & ~(PHIPIA_PAGE_SIZE - 1U), 0U, PHIPIA_PAGE_SIZE,
+    if (paging_map(text & ~(OPENGAT_PAGE_SIZE - 1U), 0U, OPENGAT_PAGE_SIZE,
             PAGING_WRITE) != PAGING_STATUS_ALREADY_MAPPED ||
-        paging_unmap(PAGING_PROBE_ADDRESS, PHIPIA_PAGE_SIZE) !=
+        paging_unmap(PAGING_PROBE_ADDRESS, OPENGAT_PAGE_SIZE) !=
             PAGING_STATUS_NOT_MAPPED ||
-        paging_protect(PAGING_PROBE_ADDRESS, PHIPIA_PAGE_SIZE, PAGING_READ) !=
+        paging_protect(PAGING_PROBE_ADDRESS, OPENGAT_PAGE_SIZE, PAGING_READ) !=
             PAGING_STATUS_NOT_MAPPED) {
         kernel_test_fail("an impossible mapping change was accepted");
     }
@@ -2209,9 +2198,9 @@ static void paging_scenario(const struct paging_device_windows *device_windows)
      * so a 4 KiB change inside one is refused rather than silently applied to
      * the whole 2 MiB.
      */
-    if (paging_protect(PAGING_TEST_HUGE_ADDRESS, PHIPIA_PAGE_SIZE,
+    if (paging_protect(PAGING_TEST_HUGE_ADDRESS, OPENGAT_PAGE_SIZE,
             PAGING_READ) != PAGING_STATUS_HUGE_PAGE_PRESENT ||
-        paging_unmap(PAGING_TEST_HUGE_ADDRESS, PHIPIA_PAGE_SIZE) !=
+        paging_unmap(PAGING_TEST_HUGE_ADDRESS, OPENGAT_PAGE_SIZE) !=
             PAGING_STATUS_HUGE_PAGE_PRESENT) {
         kernel_test_fail("a 2 MiB mapping accepted a 4 KiB change");
     }
@@ -2225,9 +2214,9 @@ static void paging_scenario(const struct paging_device_windows *device_windows)
         kernel_test_fail("no frame was available for the probe page");
     }
 
-    if (paging_map(PAGING_PROBE_ADDRESS, frame, PHIPIA_PAGE_SIZE,
+    if (paging_map(PAGING_PROBE_ADDRESS, frame, OPENGAT_PAGE_SIZE,
             PAGING_WRITE) != PAGING_STATUS_OK ||
-        paging_map(PAGING_PROBE_ADDRESS, frame, PHIPIA_PAGE_SIZE,
+        paging_map(PAGING_PROBE_ADDRESS, frame, OPENGAT_PAGE_SIZE,
             PAGING_WRITE) != PAGING_STATUS_ALREADY_MAPPED) {
         kernel_test_fail("the probe page would not map exactly once");
     }
@@ -2246,7 +2235,7 @@ static void paging_scenario(const struct paging_device_windows *device_windows)
         kernel_test_fail("the probe page does not translate to its frame");
     }
 
-    if (paging_protect(PAGING_PROBE_ADDRESS, PHIPIA_PAGE_SIZE, PAGING_READ) !=
+    if (paging_protect(PAGING_PROBE_ADDRESS, OPENGAT_PAGE_SIZE, PAGING_READ) !=
         PAGING_STATUS_OK) {
         kernel_test_fail("the probe page would not narrow to read-only");
     }
@@ -2269,7 +2258,7 @@ static void paging_scenario(const struct paging_device_windows *device_windows)
      * kernel, so the check that matters is that the frame count is identical
      * after sixty-four cycles - and the paging state's own table count with it.
      */
-    if (paging_unmap(PAGING_PROBE_ADDRESS, PHIPIA_PAGE_SIZE) !=
+    if (paging_unmap(PAGING_PROBE_ADDRESS, OPENGAT_PAGE_SIZE) !=
         PAGING_STATUS_OK) {
         kernel_test_fail("the probe page would not unmap before the cycle");
     }
@@ -2281,9 +2270,9 @@ static void paging_scenario(const struct paging_device_windows *device_windows)
         uintptr_t cycle_frame;
 
         if (frame_allocate(&cycle_frame) != FRAME_STATUS_OK ||
-            paging_map(PAGING_PROBE_ADDRESS, cycle_frame, PHIPIA_PAGE_SIZE,
+            paging_map(PAGING_PROBE_ADDRESS, cycle_frame, OPENGAT_PAGE_SIZE,
                 PAGING_WRITE) != PAGING_STATUS_OK ||
-            paging_unmap(PAGING_PROBE_ADDRESS, PHIPIA_PAGE_SIZE) !=
+            paging_unmap(PAGING_PROBE_ADDRESS, OPENGAT_PAGE_SIZE) !=
                 PAGING_STATUS_OK ||
             frame_release(cycle_frame) != FRAME_STATUS_OK) {
             kernel_test_fail("a map and unmap cycle did not complete");
@@ -2304,9 +2293,9 @@ static void paging_scenario(const struct paging_device_windows *device_windows)
 
     /* Put the probe page back so the fault below has something to narrow. */
     if (frame_allocate(&frame) != FRAME_STATUS_OK ||
-        paging_map(PAGING_PROBE_ADDRESS, frame, PHIPIA_PAGE_SIZE,
+        paging_map(PAGING_PROBE_ADDRESS, frame, OPENGAT_PAGE_SIZE,
             PAGING_WRITE) != PAGING_STATUS_OK ||
-        paging_protect(PAGING_PROBE_ADDRESS, PHIPIA_PAGE_SIZE, PAGING_READ) !=
+        paging_protect(PAGING_PROBE_ADDRESS, OPENGAT_PAGE_SIZE, PAGING_READ) !=
             PAGING_STATUS_OK) {
         kernel_test_fail("the probe page would not come back read-only");
     }
@@ -2945,7 +2934,7 @@ static void pci_ecam_scenario(
     }
 
     /*
-     * A bus past what Phipia mapped is refused rather than folded back into the
+     * A bus past what OpenGAT mapped is refused rather than folded back into the
      * window, which is the failure that would read one bus as another.
      */
     address.segment = 0U;
@@ -3532,7 +3521,7 @@ static void shell_scenario(void)
     }
 
     after = shell_get_state();
-    console_write("Phipia: shell scenario ran ");
+    console_write("OpenGAT: shell scenario ran ");
     console_write_u64(after.commands);
     console_write(" commands and refused ");
     console_write_u64(after.unknown);
@@ -3693,7 +3682,7 @@ static void keyboard_scenario(void)
         kernel_test_fail("the keyboard lost events it never accounted for");
     }
 
-    console_write("Phipia: keyboard scenario queued ");
+    console_write("OpenGAT: keyboard scenario queued ");
     console_write_u64((uint64_t)after.queued);
     console_write(" and dropped ");
     console_write_u64(after.dropped - before.dropped);
@@ -3713,7 +3702,7 @@ static void screen_scenario(void)
         kernel_test_fail("the screen scenario has no console");
     }
 
-    if (phipia_font_geometry(&width, &height, &first, &count) !=
+    if (opengat_font_geometry(&width, &height, &first, &count) !=
         FONT_STATUS_OK) {
         kernel_test_fail("the font table would not describe itself");
     }
@@ -3810,7 +3799,7 @@ static void screen_scenario(void)
         }
     }
 
-    console_write("Phipia: screen scenario drew ");
+    console_write("OpenGAT: screen scenario drew ");
     console_write_u64((uint64_t)count);
     console_write(" glyphs and read every one back\n");
 }
@@ -4666,7 +4655,7 @@ void kernel_test_run(
     case KERNEL_TEST_BOOT_LEDGER:
         /* Deferred until kernel_main publishes the fully verified receipts. */
         return;
-    case KERNEL_TEST_PHIPIA_PROOF:
+    case KERNEL_TEST_OPENGAT_PROOF:
         /* Deferred until the ledger and UI are both installed and published. */
         return;
     case KERNEL_TEST_DEVICE_SUBSTRATE:
@@ -4690,10 +4679,10 @@ void kernel_test_run(
     case KERNEL_TEST_LINUX_ABI_UNAME:
         /* Deferred until the uname proof receipt is installed and published. */
         return;
-    case KERNEL_TEST_PHIPIA_PROOF_USERLAND:
-    case KERNEL_TEST_PHIPIA_PROOF_USERLAND_ABSENT:
-    case KERNEL_TEST_PHIPIA_PROOF_USERLAND_INTERACTIVE:
-    case KERNEL_TEST_PHIPIA_PROOF_USERLAND_INTERACTIVE_ABSENT:
+    case KERNEL_TEST_OPENGAT_PROOF_USERLAND:
+    case KERNEL_TEST_OPENGAT_PROOF_USERLAND_ABSENT:
+    case KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE:
+    case KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE_ABSENT:
     case KERNEL_TEST_FAT32_SYSTEM:
     case KERNEL_TEST_FAT32_DATA:
     case KERNEL_TEST_FAT32_NESTED:
@@ -4740,7 +4729,6 @@ void kernel_test_run(
     case KERNEL_TEST_NETWORK_MISSING_LINUX_CAT:
     case KERNEL_TEST_NETWORK_FILES:
     case KERNEL_TEST_NETWORK_NOTES:
-    case KERNEL_TEST_NETWORK_MEDIA_EDITOR:
     case KERNEL_TEST_NETWORK_PERSISTENCE:
     case KERNEL_TEST_NETWORK_SOCKET_ISOLATION:
     case KERNEL_TEST_NETWORK_TCP_LISTEN:
@@ -4754,7 +4742,6 @@ void kernel_test_run(
     case KERNEL_TEST_NATIVE:
     case KERNEL_TEST_NATIVE_LUA:
     case KERNEL_TEST_NATIVE_SQLITE:
-    case KERNEL_TEST_NATIVE_CANVAS:
     case KERNEL_TEST_NATIVE_NETWORK:
     case KERNEL_TEST_NATIVE_RUST:
     case KERNEL_TEST_NATIVE_CRASH:
@@ -4766,9 +4753,9 @@ void kernel_test_run(
     case KERNEL_TEST_NATIVE_SDL:
     case KERNEL_TEST_NATIVE_DYNAMIC:
     case KERNEL_TEST_NATIVE_HTTPS:
-    case KERNEL_TEST_NATIVE_PHIP:
+    case KERNEL_TEST_NATIVE_OPENGAT:
     case KERNEL_TEST_EXT4_RECOVERY:
-        /* Deferred until Phipia and the Boot Ledger are published. */
+        /* Deferred until OpenGAT and the Boot Ledger are published. */
         return;
     case KERNEL_TEST_MULTIPROCESS_SLOTS:
         multiprocess_slots_scenario();
@@ -4778,7 +4765,7 @@ void kernel_test_run(
         interrupt_test_set_gate_present(14U, false);
         interrupt_trigger_page_fault();
     case KERNEL_TEST_INVALID:
-        kernel_test_fail("invalid or duplicate phipia.test argument");
+        kernel_test_fail("invalid or duplicate opengat.test argument");
     case KERNEL_TEST_NONE:
     default:
         kernel_test_fail("unreachable test scenario");
@@ -4797,17 +4784,17 @@ _Noreturn void kernel_test_complete_normal(void)
 _Noreturn void kernel_test_complete_ext4_recovery(void)
 {
     static const uint8_t expected[] =
-        "Phipia deterministic ext4 fixture\n";
+        "OpenGAT deterministic ext4 fixture\n";
     static const uint8_t transaction_byte = 'X';
     const struct boot_ledger *ledger = boot_ledger_installed();
     const struct boot_stage_receipt *nvme_proof;
     const struct boot_stage_receipt *fat16_proof;
-    struct phipia_ext4_mount_diagnostic mount_diagnostic = {0};
-    struct phipia_ext4_recovery_report clean_remount = {0};
-    struct phipia_ext4_recovery_report recovery = {0};
-    const struct phipfs_drive_info drive = phipfs_drive(PHIPFS_VOLUME_SYSTEM);
-    struct phipfs_stat stat = {0};
-    phipfs_handle handle = 0U;
+    struct opengat_ext4_mount_diagnostic mount_diagnostic = {0};
+    struct opengat_ext4_recovery_report clean_remount = {0};
+    struct opengat_ext4_recovery_report recovery = {0};
+    const struct opengatfs_drive_info drive = opengatfs_drive(OPENGATFS_VOLUME_SYSTEM);
+    struct opengatfs_stat stat = {0};
+    opengatfs_handle handle = 0U;
     uint8_t bytes[sizeof(expected)] = {0};
     uint8_t appended = 0U;
     size_t read_bytes = 0U;
@@ -4815,7 +4802,7 @@ _Noreturn void kernel_test_complete_ext4_recovery(void)
     bool contents_match = true;
     bool transaction_already_visible = false;
     const bool power_cut = ext4_backend_test_power_cut_configured();
-    const uint64_t before = phipfs_completion_count(PHIPFS_VOLUME_SYSTEM);
+    const uint64_t before = opengatfs_completion_count(OPENGATFS_VOLUME_SYSTEM);
 
     if (active_scenario != KERNEL_TEST_EXT4_RECOVERY) {
         kernel_test_fail("ext4 recovery completion used outside its scenario");
@@ -4838,13 +4825,13 @@ _Noreturn void kernel_test_complete_ext4_recovery(void)
         kernel_test_fail("ext4 namespace proof skips are invalid");
     }
     if (!drive.present || !drive.mounted || drive.read_only || !drive.healthy) {
-        if (!ext4_backend_mount_diagnostic(PHIPFS_VOLUME_SYSTEM,
+        if (!ext4_backend_mount_diagnostic(OPENGATFS_VOLUME_SYSTEM,
                 &mount_diagnostic)) {
             kernel_test_fail("ext4 mount diagnostic is unavailable");
         }
         console_write("ST EXT4 RECOVERY mount status ");
         console_write_u64((uint64_t)ext4_backend_last_mount_status(
-            PHIPFS_VOLUME_SYSTEM));
+            OPENGATFS_VOLUME_SYSTEM));
         console_write(" begin ");
         console_write_u64((uint64_t)mount_diagnostic.begin_status);
         console_write(" rust ");
@@ -4866,7 +4853,7 @@ _Noreturn void kernel_test_complete_ext4_recovery(void)
     if (drive.free_bytes == 0U || drive.free_bytes >= drive.total_bytes) {
         kernel_test_fail("ext4 allocator capacity was not exported");
     }
-    if (!ext4_backend_recovery_report(PHIPFS_VOLUME_SYSTEM, &recovery)) {
+    if (!ext4_backend_recovery_report(OPENGATFS_VOLUME_SYSTEM, &recovery)) {
         kernel_test_fail("ext4 recovery report is unavailable");
     }
     if (recovery.performed) {
@@ -4883,13 +4870,13 @@ _Noreturn void kernel_test_complete_ext4_recovery(void)
         recovery.consumed_slots != 0U) {
         kernel_test_fail("clean ext4 mount reported journal recovery");
     }
-    if (phipfs_stat_path(PHIPFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
-            PHIPFS_STATUS_OK || stat.directory || stat.read_only ||
+    if (opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
+            OPENGATFS_STATUS_OK || stat.directory || stat.read_only ||
         (stat.size != sizeof(expected) - 1U && stat.size != UINT64_C(4097)) ||
-        phipfs_open(PHIPFS_VOLUME_SYSTEM, "system/README.TXT",
-            PHIPFS_ACCESS_READ, &handle) != PHIPFS_STATUS_OK ||
-        phipfs_pread(handle, bytes, sizeof(expected) - 1U, 0U, &read_bytes) !=
-            PHIPFS_STATUS_OK || read_bytes != sizeof(expected) - 1U) {
+        opengatfs_open(OPENGATFS_VOLUME_SYSTEM, "system/README.TXT",
+            OPENGATFS_ACCESS_READ, &handle) != OPENGATFS_STATUS_OK ||
+        opengatfs_pread(handle, bytes, sizeof(expected) - 1U, 0U, &read_bytes) !=
+            OPENGATFS_STATUS_OK || read_bytes != sizeof(expected) - 1U) {
         kernel_test_fail("ext4 recovered namespace could not be read");
     }
     transaction_already_visible = stat.size == UINT64_C(4097);
@@ -4900,178 +4887,178 @@ _Noreturn void kernel_test_complete_ext4_recovery(void)
     }
     if (!contents_match ||
         (transaction_already_visible &&
-            (phipfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
-                &read_bytes) != PHIPFS_STATUS_OK || read_bytes != 1U ||
+            (opengatfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
+                &read_bytes) != OPENGATFS_STATUS_OK || read_bytes != 1U ||
              appended != transaction_byte)) ||
-        phipfs_close(handle) != PHIPFS_STATUS_OK ||
-        phipfs_close(handle) != PHIPFS_STATUS_STALE_HANDLE ||
-        phipfs_completion_count(PHIPFS_VOLUME_SYSTEM) <= before) {
+        opengatfs_close(handle) != OPENGATFS_STATUS_OK ||
+        opengatfs_close(handle) != OPENGATFS_STATUS_STALE_HANDLE ||
+        opengatfs_completion_count(OPENGATFS_VOLUME_SYSTEM) <= before) {
         kernel_test_fail("ext4 recovery read leaked or changed data");
     }
-    if (phipfs_open(PHIPFS_VOLUME_SYSTEM, "system/README.TXT",
-            PHIPFS_ACCESS_WRITE, &handle) != PHIPFS_STATUS_OK ||
-        phipfs_pread(handle, &appended, sizeof(appended), 0U, &read_bytes) !=
-            PHIPFS_STATUS_ACCESS ||
-        phipfs_close(handle) != PHIPFS_STATUS_OK) {
+    if (opengatfs_open(OPENGATFS_VOLUME_SYSTEM, "system/README.TXT",
+            OPENGATFS_ACCESS_WRITE, &handle) != OPENGATFS_STATUS_OK ||
+        opengatfs_pread(handle, &appended, sizeof(appended), 0U, &read_bytes) !=
+            OPENGATFS_STATUS_ACCESS ||
+        opengatfs_close(handle) != OPENGATFS_STATUS_OK) {
         kernel_test_fail("ext4 writable handle access enforcement failed");
     }
-    if (phipfs_sync(PHIPFS_VOLUME_SYSTEM) != PHIPFS_STATUS_OK) {
+    if (opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK) {
         kernel_test_fail("clean ext4 sync failed");
     }
     if (!power_cut && !transaction_already_visible) {
         if (!ext4_backend_test_fail_storage_once(3U) ||
-            ext4_backend_transaction_probe(PHIPFS_VOLUME_SYSTEM,
+            ext4_backend_transaction_probe(OPENGATFS_VOLUME_SYSTEM,
                 "system/README.TXT", UINT64_C(4096), &transaction_byte,
-                sizeof(transaction_byte), &written_bytes) != PHIPFS_STATUS_IO ||
+                sizeof(transaction_byte), &written_bytes) != OPENGATFS_STATUS_IO ||
             !ext4_backend_test_storage_failure_observed(
-                PHIPIA_EXT4_TEST_STORAGE_WRITE) ||
+                OPENGAT_EXT4_TEST_STORAGE_WRITE) ||
             !ext4_backend_test_fail_storage_once(3U) ||
-            phipfs_sync(PHIPFS_VOLUME_SYSTEM) != PHIPFS_STATUS_IO ||
+            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_IO ||
             !ext4_backend_test_storage_failure_observed(
-                PHIPIA_EXT4_TEST_STORAGE_FLUSH)) {
+                OPENGAT_EXT4_TEST_STORAGE_FLUSH)) {
             kernel_test_fail("ext4 pending allocation failure retry is invalid");
         }
     }
     if (!transaction_already_visible &&
-        (ext4_backend_transaction_probe(PHIPFS_VOLUME_SYSTEM,
+        (ext4_backend_transaction_probe(OPENGATFS_VOLUME_SYSTEM,
             "system/README.TXT", UINT64_C(4096), &transaction_byte,
-            sizeof(transaction_byte), &written_bytes) != PHIPFS_STATUS_OK ||
+            sizeof(transaction_byte), &written_bytes) != OPENGATFS_STATUS_OK ||
          written_bytes != sizeof(transaction_byte))) {
         kernel_test_fail("ext4 private journal transaction probe failed");
     }
     if (!power_cut && !transaction_already_visible) {
         if (!ext4_backend_test_fail_storage_once(1U) ||
-            phipfs_sync(PHIPFS_VOLUME_SYSTEM) != PHIPFS_STATUS_IO ||
+            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_IO ||
             !ext4_backend_test_storage_failure_observed(
-                PHIPIA_EXT4_TEST_STORAGE_WRITE) ||
+                OPENGAT_EXT4_TEST_STORAGE_WRITE) ||
             !ext4_backend_test_fail_storage_once(2U) ||
-            phipfs_sync(PHIPFS_VOLUME_SYSTEM) != PHIPFS_STATUS_IO ||
+            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_IO ||
             !ext4_backend_test_storage_failure_observed(
-                PHIPIA_EXT4_TEST_STORAGE_FLUSH)) {
+                OPENGAT_EXT4_TEST_STORAGE_FLUSH)) {
             kernel_test_fail("ext4 sync retry is invalid");
         }
     }
-    if (phipfs_sync(PHIPFS_VOLUME_SYSTEM) != PHIPFS_STATUS_OK ||
-        phipfs_stat_path(PHIPFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
-            PHIPFS_STATUS_OK || stat.size != UINT64_C(4097) ||
-        phipfs_open(PHIPFS_VOLUME_SYSTEM, "system/README.TXT",
-            PHIPFS_ACCESS_READ, &handle) != PHIPFS_STATUS_OK ||
-        phipfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
-            &read_bytes) != PHIPFS_STATUS_OK || read_bytes != 1U ||
+    if (opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
+        opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
+            OPENGATFS_STATUS_OK || stat.size != UINT64_C(4097) ||
+        opengatfs_open(OPENGATFS_VOLUME_SYSTEM, "system/README.TXT",
+            OPENGATFS_ACCESS_READ, &handle) != OPENGATFS_STATUS_OK ||
+        opengatfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
+            &read_bytes) != OPENGATFS_STATUS_OK || read_bytes != 1U ||
         appended != transaction_byte ||
-        phipfs_close(handle) != PHIPFS_STATUS_OK) {
+        opengatfs_close(handle) != OPENGATFS_STATUS_OK) {
         kernel_test_fail("ext4 private journal transaction probe failed");
     }
     if (!power_cut && !transaction_already_visible) {
-        if (phipfs_truncate(PHIPFS_VOLUME_SYSTEM,
+        if (opengatfs_truncate(OPENGATFS_VOLUME_SYSTEM,
                 "system/README.TXT", sizeof(expected) - 1U) !=
-                PHIPFS_STATUS_OK ||
-            phipfs_sync(PHIPFS_VOLUME_SYSTEM) != PHIPFS_STATUS_OK ||
-            phipfs_stat_path(PHIPFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
-                PHIPFS_STATUS_OK || stat.size != sizeof(expected) - 1U ||
-            phipfs_open(PHIPFS_VOLUME_SYSTEM, "system/README.TXT",
-                PHIPFS_ACCESS_READ, &handle) != PHIPFS_STATUS_OK ||
-            phipfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
-                &read_bytes) != PHIPFS_STATUS_OK || read_bytes != 0U ||
-            phipfs_close(handle) != PHIPFS_STATUS_OK) {
+                OPENGATFS_STATUS_OK ||
+            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
+            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
+                OPENGATFS_STATUS_OK || stat.size != sizeof(expected) - 1U ||
+            opengatfs_open(OPENGATFS_VOLUME_SYSTEM, "system/README.TXT",
+                OPENGATFS_ACCESS_READ, &handle) != OPENGATFS_STATUS_OK ||
+            opengatfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
+                &read_bytes) != OPENGATFS_STATUS_OK || read_bytes != 0U ||
+            opengatfs_close(handle) != OPENGATFS_STATUS_OK) {
             kernel_test_fail("ext4 private truncate revocation probe failed");
         }
         written_bytes = 0U;
-        if (phipfs_open(PHIPFS_VOLUME_SYSTEM, "system/README.TXT",
-                PHIPFS_ACCESS_WRITE, &handle) != PHIPFS_STATUS_OK ||
-            phipfs_seek(handle, INT64_C(4096), PHIPFS_SEEK_START, NULL) !=
-                PHIPFS_STATUS_INVALID_ARGUMENT ||
-            phipfs_seek(handle, INT64_C(4096), PHIPFS_SEEK_START,
-                &stat.size) != PHIPFS_STATUS_OK || stat.size != UINT64_C(4096) ||
-            phipfs_write(handle, &transaction_byte, sizeof(transaction_byte),
-                &written_bytes) != PHIPFS_STATUS_OK ||
+        if (opengatfs_open(OPENGATFS_VOLUME_SYSTEM, "system/README.TXT",
+                OPENGATFS_ACCESS_WRITE, &handle) != OPENGATFS_STATUS_OK ||
+            opengatfs_seek(handle, INT64_C(4096), OPENGATFS_SEEK_START, NULL) !=
+                OPENGATFS_STATUS_INVALID_ARGUMENT ||
+            opengatfs_seek(handle, INT64_C(4096), OPENGATFS_SEEK_START,
+                &stat.size) != OPENGATFS_STATUS_OK || stat.size != UINT64_C(4096) ||
+            opengatfs_write(handle, &transaction_byte, sizeof(transaction_byte),
+                &written_bytes) != OPENGATFS_STATUS_OK ||
             written_bytes != sizeof(transaction_byte) ||
-            phipfs_close(handle) != PHIPFS_STATUS_OK ||
-            phipfs_sync(PHIPFS_VOLUME_SYSTEM) != PHIPFS_STATUS_OK ||
-            phipfs_stat_path(PHIPFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
-                PHIPFS_STATUS_OK || stat.size != UINT64_C(4097)) {
+            opengatfs_close(handle) != OPENGATFS_STATUS_OK ||
+            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
+            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
+                OPENGATFS_STATUS_OK || stat.size != UINT64_C(4097)) {
             kernel_test_fail("ext4 post-truncate marker re-arm failed");
         }
-        if (phipfs_create_mode(PHIPFS_VOLUME_SYSTEM,
+        if (opengatfs_create_mode(OPENGATFS_VOLUME_SYSTEM,
                 "data/user/JRNLPROBE.TMP", UINT16_C(0555)) !=
-                PHIPFS_STATUS_OK ||
-            phipfs_stat_path(PHIPFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.TMP",
-                &stat) != PHIPFS_STATUS_OK || stat.directory || stat.size != 0U ||
+                OPENGATFS_STATUS_OK ||
+            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.TMP",
+                &stat) != OPENGATFS_STATUS_OK || stat.directory || stat.size != 0U ||
             stat.read_only || (stat.mode & UINT16_C(0777)) != UINT16_C(0555) ||
-            phipfs_open(PHIPFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.TMP",
-                PHIPFS_ACCESS_READ_WRITE, &handle) != PHIPFS_STATUS_OK ||
-            phipfs_write(handle, &transaction_byte, sizeof(transaction_byte),
-                &written_bytes) != PHIPFS_STATUS_OK || written_bytes != 1U ||
-            phipfs_seek(handle, 0, PHIPFS_SEEK_START, &stat.size) !=
-                PHIPFS_STATUS_OK || stat.size != 0U ||
-            phipfs_read(handle, &appended, sizeof(appended), &read_bytes) !=
-                PHIPFS_STATUS_OK || read_bytes != 1U ||
+            opengatfs_open(OPENGATFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.TMP",
+                OPENGATFS_ACCESS_READ_WRITE, &handle) != OPENGATFS_STATUS_OK ||
+            opengatfs_write(handle, &transaction_byte, sizeof(transaction_byte),
+                &written_bytes) != OPENGATFS_STATUS_OK || written_bytes != 1U ||
+            opengatfs_seek(handle, 0, OPENGATFS_SEEK_START, &stat.size) !=
+                OPENGATFS_STATUS_OK || stat.size != 0U ||
+            opengatfs_read(handle, &appended, sizeof(appended), &read_bytes) !=
+                OPENGATFS_STATUS_OK || read_bytes != 1U ||
             appended != transaction_byte ||
-            phipfs_unlink(PHIPFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.TMP") != PHIPFS_STATUS_BUSY ||
-            phipfs_rename(PHIPFS_VOLUME_SYSTEM,
+            opengatfs_unlink(OPENGATFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.TMP") != OPENGATFS_STATUS_BUSY ||
+            opengatfs_rename(OPENGATFS_VOLUME_SYSTEM,
                 "data/user/JRNLPROBE.TMP", "data/user/JRNLPROBE.BUSY") !=
-                    PHIPFS_STATUS_BUSY ||
-            phipfs_close(handle) != PHIPFS_STATUS_OK ||
-            phipfs_sync(PHIPFS_VOLUME_SYSTEM) != PHIPFS_STATUS_OK ||
-            phipfs_link(PHIPFS_VOLUME_SYSTEM,
+                    OPENGATFS_STATUS_BUSY ||
+            opengatfs_close(handle) != OPENGATFS_STATUS_OK ||
+            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
+            opengatfs_link(OPENGATFS_VOLUME_SYSTEM,
                 "data/user/JRNLPROBE.TMP", "data/user/JRNLPROBE.LNK") !=
-                    PHIPFS_STATUS_OK ||
-            phipfs_sync(PHIPFS_VOLUME_SYSTEM) != PHIPFS_STATUS_OK ||
-            phipfs_unlink(PHIPFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.TMP") != PHIPFS_STATUS_OK ||
-            phipfs_sync(PHIPFS_VOLUME_SYSTEM) != PHIPFS_STATUS_OK ||
-            phipfs_stat_path(PHIPFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.TMP",
-                &stat) != PHIPFS_STATUS_NOT_FOUND ||
-            phipfs_stat_path(PHIPFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.LNK",
-                &stat) != PHIPFS_STATUS_OK || stat.directory || stat.size != 1U ||
-            phipfs_rename(PHIPFS_VOLUME_SYSTEM,
+                    OPENGATFS_STATUS_OK ||
+            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
+            opengatfs_unlink(OPENGATFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.TMP") != OPENGATFS_STATUS_OK ||
+            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
+            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.TMP",
+                &stat) != OPENGATFS_STATUS_NOT_FOUND ||
+            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.LNK",
+                &stat) != OPENGATFS_STATUS_OK || stat.directory || stat.size != 1U ||
+            opengatfs_rename(OPENGATFS_VOLUME_SYSTEM,
                 "data/user/JRNLPROBE.LNK", "data/user/JRNLPROBE.REN") !=
-                    PHIPFS_STATUS_OK ||
-            phipfs_sync(PHIPFS_VOLUME_SYSTEM) != PHIPFS_STATUS_OK ||
-            phipfs_stat_path(PHIPFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.LNK",
-                &stat) != PHIPFS_STATUS_NOT_FOUND ||
-            phipfs_stat_path(PHIPFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.REN",
-                &stat) != PHIPFS_STATUS_OK || stat.directory || stat.size != 1U ||
-            phipfs_unlink(PHIPFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.REN") != PHIPFS_STATUS_OK ||
-            phipfs_sync(PHIPFS_VOLUME_SYSTEM) != PHIPFS_STATUS_OK ||
-            phipfs_stat_path(PHIPFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.REN",
-                &stat) != PHIPFS_STATUS_NOT_FOUND ||
-            phipfs_mkdir(PHIPFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.DIR") != PHIPFS_STATUS_OK ||
-            phipfs_sync(PHIPFS_VOLUME_SYSTEM) != PHIPFS_STATUS_OK ||
-            phipfs_stat_path(PHIPFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.DIR",
-                &stat) != PHIPFS_STATUS_OK || !stat.directory ||
-            phipfs_rename(PHIPFS_VOLUME_SYSTEM,
+                    OPENGATFS_STATUS_OK ||
+            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
+            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.LNK",
+                &stat) != OPENGATFS_STATUS_NOT_FOUND ||
+            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.REN",
+                &stat) != OPENGATFS_STATUS_OK || stat.directory || stat.size != 1U ||
+            opengatfs_unlink(OPENGATFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.REN") != OPENGATFS_STATUS_OK ||
+            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
+            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.REN",
+                &stat) != OPENGATFS_STATUS_NOT_FOUND ||
+            opengatfs_mkdir(OPENGATFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.DIR") != OPENGATFS_STATUS_OK ||
+            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
+            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.DIR",
+                &stat) != OPENGATFS_STATUS_OK || !stat.directory ||
+            opengatfs_rename(OPENGATFS_VOLUME_SYSTEM,
                 "data/user/JRNLPROBE.DIR", "data/user/JRNLPROBE.RDR") !=
-                    PHIPFS_STATUS_OK ||
-            phipfs_sync(PHIPFS_VOLUME_SYSTEM) != PHIPFS_STATUS_OK ||
-            phipfs_stat_path(PHIPFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.DIR",
-                &stat) != PHIPFS_STATUS_NOT_FOUND ||
-            phipfs_stat_path(PHIPFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.RDR",
-                &stat) != PHIPFS_STATUS_OK || !stat.directory ||
-            phipfs_create(PHIPFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.RDR/CHILD.TMP") != PHIPFS_STATUS_OK ||
-            phipfs_sync(PHIPFS_VOLUME_SYSTEM) != PHIPFS_STATUS_OK ||
-            phipfs_rmdir(PHIPFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.RDR") != PHIPFS_STATUS_NOT_EMPTY ||
-            phipfs_stat_path(PHIPFS_VOLUME_SYSTEM,
+                    OPENGATFS_STATUS_OK ||
+            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
+            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.DIR",
+                &stat) != OPENGATFS_STATUS_NOT_FOUND ||
+            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.RDR",
+                &stat) != OPENGATFS_STATUS_OK || !stat.directory ||
+            opengatfs_create(OPENGATFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.RDR/CHILD.TMP") != OPENGATFS_STATUS_OK ||
+            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
+            opengatfs_rmdir(OPENGATFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.RDR") != OPENGATFS_STATUS_NOT_EMPTY ||
+            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM,
                 "data/user/JRNLPROBE.RDR/CHILD.TMP", &stat) !=
-                    PHIPFS_STATUS_OK || stat.directory ||
-            phipfs_unlink(PHIPFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.RDR/CHILD.TMP") != PHIPFS_STATUS_OK ||
-            phipfs_sync(PHIPFS_VOLUME_SYSTEM) != PHIPFS_STATUS_OK ||
-            phipfs_rmdir(PHIPFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.RDR") != PHIPFS_STATUS_OK ||
-            phipfs_sync(PHIPFS_VOLUME_SYSTEM) != PHIPFS_STATUS_OK ||
-            phipfs_stat_path(PHIPFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.RDR",
-                &stat) != PHIPFS_STATUS_NOT_FOUND) {
+                    OPENGATFS_STATUS_OK || stat.directory ||
+            opengatfs_unlink(OPENGATFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.RDR/CHILD.TMP") != OPENGATFS_STATUS_OK ||
+            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
+            opengatfs_rmdir(OPENGATFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.RDR") != OPENGATFS_STATUS_OK ||
+            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
+            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.RDR",
+                &stat) != OPENGATFS_STATUS_NOT_FOUND) {
             kernel_test_fail("ext4 VFS namespace journal proof failed");
         }
     }
-    if (phipfs_unmount(PHIPFS_VOLUME_SYSTEM) != PHIPFS_STATUS_OK ||
-        phipfs_drive(PHIPFS_VOLUME_SYSTEM).mounted ||
+    if (opengatfs_unmount(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
+        opengatfs_drive(OPENGATFS_VOLUME_SYSTEM).mounted ||
         !nvme_filesystem_session_resources_released() ||
         heap_verify() != HEAP_STATUS_OK) {
         kernel_test_fail("ext4 recovered mount did not release cleanly");
@@ -5079,21 +5066,21 @@ _Noreturn void kernel_test_complete_ext4_recovery(void)
     const struct heap_state heap_before_remount = heap_get_state();
     const struct frame_allocator_stats frames_before_remount =
         frame_allocator_get_stats();
-    if (phipfs_mount(PHIPFS_VOLUME_SYSTEM) != PHIPFS_STATUS_OK ||
-        !ext4_backend_recovery_report(PHIPFS_VOLUME_SYSTEM, &clean_remount) ||
+    if (opengatfs_mount(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
+        !ext4_backend_recovery_report(OPENGATFS_VOLUME_SYSTEM, &clean_remount) ||
         clean_remount.performed || clean_remount.transactions != 0U ||
         clean_remount.replayed_blocks != 0U ||
         clean_remount.consumed_slots != 0U ||
-        phipfs_stat_path(PHIPFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
-            PHIPFS_STATUS_OK || stat.directory ||
+        opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
+            OPENGATFS_STATUS_OK || stat.directory ||
         stat.size != UINT64_C(4097) ||
-        phipfs_open(PHIPFS_VOLUME_SYSTEM, "system/README.TXT",
-            PHIPFS_ACCESS_READ, &handle) != PHIPFS_STATUS_OK ||
-        phipfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
-            &read_bytes) != PHIPFS_STATUS_OK || read_bytes != 1U ||
-        appended != transaction_byte || phipfs_close(handle) != PHIPFS_STATUS_OK ||
-        phipfs_unmount(PHIPFS_VOLUME_SYSTEM) != PHIPFS_STATUS_OK ||
-        phipfs_drive(PHIPFS_VOLUME_SYSTEM).mounted ||
+        opengatfs_open(OPENGATFS_VOLUME_SYSTEM, "system/README.TXT",
+            OPENGATFS_ACCESS_READ, &handle) != OPENGATFS_STATUS_OK ||
+        opengatfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
+            &read_bytes) != OPENGATFS_STATUS_OK || read_bytes != 1U ||
+        appended != transaction_byte || opengatfs_close(handle) != OPENGATFS_STATUS_OK ||
+        opengatfs_unmount(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
+        opengatfs_drive(OPENGATFS_VOLUME_SYSTEM).mounted ||
         !nvme_filesystem_session_resources_released() ||
         heap_verify() != HEAP_STATUS_OK ||
         paging_verify() != PAGING_STATUS_OK) {
@@ -5137,8 +5124,8 @@ _Noreturn void kernel_test_complete_native(void)
 {
     static const uint8_t expected[] = "native ABI v1\n";
     struct native_process_result result = { 0 };
-    struct phipfs_stat output;
-    phipfs_handle file;
+    struct opengatfs_stat output;
+    opengatfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
     size_t read_bytes = 0U;
     bool content_matches = true;
@@ -5149,7 +5136,7 @@ _Noreturn void kernel_test_complete_native(void)
     }
     launch_status = native_process_launch("NATIVET.MAN", &result);
     if (launch_status != NATIVE_PROCESS_OK) {
-        console_write("Phipia: native launch refusal: ");
+        console_write("OpenGAT: native launch refusal: ");
         console_write(native_process_status_string(launch_status));
         console_putc('\n');
         kernel_test_fail("native application admission failed");
@@ -5160,7 +5147,7 @@ _Noreturn void kernel_test_complete_native(void)
         result.context_transition_samples == 0U ||
         result.context_cycles_with_fpu < result.context_cycles_without_fpu ||
         !native_process_resources_released()) {
-        console_write("Phipia: native result exit ");
+        console_write("OpenGAT: native result exit ");
         if (result.exit_status < 0) {
             console_putc('-');
             console_write_u64((uint64_t)(-(int64_t)result.exit_status));
@@ -5184,7 +5171,7 @@ _Noreturn void kernel_test_complete_native(void)
         console_putc('\n');
         kernel_test_fail("native application did not exit with a clean census");
     }
-    console_write("PHIPIA PERF context-switch transitions=");
+    console_write("OPENGAT PERF context-switch transitions=");
     console_write_u64(result.context_transition_samples);
     console_write(" without_fpu_cycles=");
     console_write_u64(result.context_cycles_without_fpu /
@@ -5193,60 +5180,71 @@ _Noreturn void kernel_test_complete_native(void)
     console_write_u64(result.context_cycles_with_fpu /
         result.context_transition_samples);
     console_putc('\n');
-    if (phipfs_stat_path(PHIPFS_VOLUME_DATA, "NATIVET/FOUND.TXT", &output) !=
-            PHIPFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
-        phipfs_open(PHIPFS_VOLUME_DATA, "NATIVET/FOUND.TXT", PHIPFS_ACCESS_READ,
-            &file) != PHIPFS_STATUS_OK ||
-        phipfs_read(file, bytes, sizeof(bytes), &read_bytes) != PHIPFS_STATUS_OK ||
+    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "NATIVET/FOUND.TXT", &output) !=
+            OPENGATFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
+        opengatfs_open(OPENGATFS_VOLUME_DATA, "NATIVET/FOUND.TXT", OPENGATFS_ACCESS_READ,
+            &file) != OPENGATFS_STATUS_OK ||
+        opengatfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENGATFS_STATUS_OK ||
         read_bytes != sizeof(bytes)) {
         kernel_test_fail("native Ring 3 file result is missing");
     }
     for (size_t index = 0U; index < sizeof(bytes); ++index) {
         content_matches = content_matches && bytes[index] == expected[index];
     }
-    if (phipfs_close(file) != PHIPFS_STATUS_OK || !content_matches) {
+    if (opengatfs_close(file) != OPENGATFS_STATUS_OK || !content_matches) {
         kernel_test_fail("native Ring 3 file result is wrong");
     }
-    console_write("Phipia: native general loader, SDK, TLS, threads and FPU passed\n");
+    console_write("OpenGAT: native general loader, SDK, TLS, threads and FPU passed\n");
     kernel_test_pass();
 }
 
 _Noreturn void kernel_test_complete_native_lua(void)
 {
     static const uint8_t expected[] =
-        "input=phipia\nsum=5050\nmath=ok\n";
+        "input=opengat\nsum=5050\nmath=ok\n";
     struct native_process_result result;
-    struct phipfs_stat output;
-    phipfs_handle file;
+    struct opengatfs_stat output;
+    opengatfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
     size_t read_bytes = 0U;
     bool content_matches = true;
+    enum native_process_status launch_status;
 
     if (active_scenario != KERNEL_TEST_NATIVE_LUA) {
         kernel_test_fail("Lua completion used outside its scenario");
     }
-    if (native_process_launch("LUA.MAN", &result) != NATIVE_PROCESS_OK ||
+    launch_status = native_process_launch("LUA.MAN", &result);
+    if (launch_status != NATIVE_PROCESS_OK ||
         !result.exited || result.faulted || result.exit_status != 0 ||
         !result.resources_released || result.syscall_count < 10U ||
         !native_process_resources_released()) {
+        console_write("OpenGAT: Lua result launch ");
+        console_write(native_process_status_string(launch_status));
+        console_write(" exit ");
+        console_write_u64((uint64_t)result.exit_status);
+        console_write(" syscalls ");
+        console_write_u64(result.syscall_count);
+        console_write(" released ");
+        console_write(result.resources_released ? "yes" : "no");
+        console_putc('\n');
         kernel_test_fail("Lua did not exit with a clean resource census");
     }
-    if (phipfs_stat_path(PHIPFS_VOLUME_DATA, "LUA/RESULT.TXT", &output) !=
-            PHIPFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
-        phipfs_open(PHIPFS_VOLUME_DATA, "LUA/RESULT.TXT", PHIPFS_ACCESS_READ,
-            &file) != PHIPFS_STATUS_OK ||
-        phipfs_read(file, bytes, sizeof(bytes), &read_bytes) != PHIPFS_STATUS_OK ||
+    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "LUA/RESULT.TXT", &output) !=
+            OPENGATFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
+        opengatfs_open(OPENGATFS_VOLUME_DATA, "LUA/RESULT.TXT", OPENGATFS_ACCESS_READ,
+            &file) != OPENGATFS_STATUS_OK ||
+        opengatfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENGATFS_STATUS_OK ||
         read_bytes != sizeof(bytes)) {
         kernel_test_fail("Lua result file is missing");
     }
     for (size_t index = 0U; index < sizeof(bytes); ++index) {
         content_matches = content_matches && bytes[index] == expected[index];
     }
-    if (phipfs_close(file) != PHIPFS_STATUS_OK || !content_matches ||
-        phipfs_sync(PHIPFS_VOLUME_DATA) != PHIPFS_STATUS_OK) {
+    if (opengatfs_close(file) != OPENGATFS_STATUS_OK || !content_matches ||
+        opengatfs_sync(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK) {
         kernel_test_fail("Lua result file is wrong or could not be synchronized");
     }
-    console_write("Phipia: upstream Lua used stdin, Data, math and stdout\n");
+    console_write("OpenGAT: upstream Lua used stdin, Data, math and stdout\n");
     kernel_test_pass();
 }
 
@@ -5255,20 +5253,20 @@ _Noreturn void kernel_test_complete_native_sqlite(void)
     static const uint8_t expected[] =
         "rows=3\nsum=66\nintegrity=ok\n";
     struct native_process_result result;
-    struct phipfs_stat database;
-    struct phipfs_stat journal;
-    struct phipfs_stat output;
-    phipfs_handle file;
+    struct opengatfs_stat database;
+    struct opengatfs_stat journal;
+    struct opengatfs_stat output;
+    opengatfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
     size_t read_bytes = 0U;
     bool content_matches = true;
-    const enum phipfs_status before = phipfs_stat_path(PHIPFS_VOLUME_DATA,
+    const enum opengatfs_status before = opengatfs_stat_path(OPENGATFS_VOLUME_DATA,
         "SQLITE/PORT.DB", &database);
 
     if (active_scenario != KERNEL_TEST_NATIVE_SQLITE) {
         kernel_test_fail("SQLite completion used outside its scenario");
     }
-    if (before != PHIPFS_STATUS_OK && before != PHIPFS_STATUS_NOT_FOUND) {
+    if (before != OPENGATFS_STATUS_OK && before != OPENGATFS_STATUS_NOT_FOUND) {
         kernel_test_fail("SQLite database census failed before launch");
     }
     if (native_process_launch("SQLITE.MAN", &result) != NATIVE_PROCESS_OK ||
@@ -5277,101 +5275,46 @@ _Noreturn void kernel_test_complete_native_sqlite(void)
         !native_process_resources_released()) {
         kernel_test_fail("SQLite did not exit with a clean resource census");
     }
-    if (phipfs_stat_path(PHIPFS_VOLUME_DATA, "SQLITE/PORT.JRN", &journal) !=
-            PHIPFS_STATUS_NOT_FOUND) {
+    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "SQLITE/PORT.JRN", &journal) !=
+            OPENGATFS_STATUS_NOT_FOUND) {
         kernel_test_fail("SQLite left a rollback journal after clean close");
     }
-    if (before == PHIPFS_STATUS_NOT_FOUND) {
-        if (phipfs_stat_path(PHIPFS_VOLUME_DATA, "SQLITE/PORT.DB", &database) !=
-                PHIPFS_STATUS_OK || database.directory || database.size == 0U ||
-            phipfs_unmount(PHIPFS_VOLUME_DATA) != PHIPFS_STATUS_OK) {
+    if (before == OPENGATFS_STATUS_NOT_FOUND) {
+        if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "SQLITE/PORT.DB", &database) !=
+                OPENGATFS_STATUS_OK || database.directory || database.size == 0U ||
+            opengatfs_unmount(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK) {
             kernel_test_fail("SQLite first phase did not synchronize its database");
         }
-        console_write("Phipia: upstream SQLite synchronized reboot phase\n");
+        console_write("OpenGAT: upstream SQLite synchronized reboot phase\n");
         cpu_out8(UINT16_C(0x0064), UINT8_C(0xFE));
         kernel_test_fail("platform reset did not restart SQLite scenario");
     }
-    if (phipfs_stat_path(PHIPFS_VOLUME_DATA, "SQLITE/RESULT.TXT", &output) !=
-            PHIPFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
-        phipfs_open(PHIPFS_VOLUME_DATA, "SQLITE/RESULT.TXT", PHIPFS_ACCESS_READ,
-            &file) != PHIPFS_STATUS_OK ||
-        phipfs_read(file, bytes, sizeof(bytes), &read_bytes) != PHIPFS_STATUS_OK ||
+    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "SQLITE/RESULT.TXT", &output) !=
+            OPENGATFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
+        opengatfs_open(OPENGATFS_VOLUME_DATA, "SQLITE/RESULT.TXT", OPENGATFS_ACCESS_READ,
+            &file) != OPENGATFS_STATUS_OK ||
+        opengatfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENGATFS_STATUS_OK ||
         read_bytes != sizeof(bytes)) {
         kernel_test_fail("SQLite reboot result is missing");
     }
     for (size_t index = 0U; index < sizeof(bytes); ++index) {
         content_matches = content_matches && bytes[index] == expected[index];
     }
-    if (phipfs_close(file) != PHIPFS_STATUS_OK || !content_matches ||
-        phipfs_sync(PHIPFS_VOLUME_DATA) != PHIPFS_STATUS_OK) {
+    if (opengatfs_close(file) != OPENGATFS_STATUS_OK || !content_matches ||
+        opengatfs_sync(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK) {
         kernel_test_fail("SQLite reboot result is wrong or could not be synchronized");
     }
-    console_write("Phipia: upstream SQLite retained and verified three rows after reboot\n");
-    kernel_test_pass();
-}
-
-_Noreturn void kernel_test_complete_native_canvas(void)
-{
-    struct native_process_result result;
-    uint64_t first_generation;
-    uint64_t second_generation;
-    enum native_process_status run_status;
-
-    if (active_scenario != KERNEL_TEST_NATIVE_CANVAS) {
-        kernel_test_fail("Canvas completion used outside its scenario");
-    }
-    if (native_process_spawn("CANVAS.MAN", &first_generation) !=
-            NATIVE_PROCESS_OK ||
-        native_process_spawn("CANVAS.MAN", &second_generation) !=
-            NATIVE_PROCESS_OK ||
-        first_generation == 0U || second_generation <= first_generation) {
-        kernel_test_fail("Canvas applications were not admitted together");
-    }
-    run_status = native_process_run(&result);
-    if (run_status != NATIVE_PROCESS_OK || !result.exited ||
-        result.faulted || result.exit_status != 0 ||
-        result.generation != second_generation || !result.resources_released ||
-        result.syscall_count < 20U || result.thread_switches < 10U ||
-        !native_process_resources_released() ||
-        ui_native_window_is_open(0U) || ui_native_window_is_open(1U)) {
-        console_write("Phipia: native Canvas run ");
-        console_write(native_process_status_string(run_status));
-        console_write(" generation ");
-        console_write_u64(result.generation);
-        console_write(" expected ");
-        console_write_u64(second_generation);
-        console_write(" exit ");
-        if (result.exit_status < 0) {
-            console_putc('-');
-            console_write_u64((uint64_t)(-(int64_t)result.exit_status));
-        } else {
-            console_write_u64((uint64_t)result.exit_status);
-        }
-        console_write(" syscalls ");
-        console_write_u64(result.syscall_count);
-        console_write(" switches ");
-        console_write_u64(result.thread_switches);
-        console_write(" faulted ");
-        console_write(result.faulted ? "yes" : "no");
-        console_write(" released ");
-        console_write(result.resources_released ? "yes" : "no");
-        console_write(" windows ");
-        console_write(ui_native_window_is_open(0U) ? "1" : "0");
-        console_write(ui_native_window_is_open(1U) ? "1" : "0");
-        console_putc('\n');
-        kernel_test_fail("Canvas windows did not exit with a clean census");
-    }
-    console_write("Phipia: two native Canvas windows handled focus, input and partial damage\n");
+    console_write("OpenGAT: upstream SQLite retained and verified three rows after reboot\n");
     kernel_test_pass();
 }
 
 _Noreturn void kernel_test_complete_native_network(void)
 {
-    static const uint8_t expected[] = "hello from the Phipia network\n";
+    static const uint8_t expected[] = "hello from the OpenGAT network\n";
     struct native_process_result result = { 0 };
-    struct phipfs_stat output;
+    struct opengatfs_stat output;
     struct network_state network;
-    phipfs_handle file;
+    opengatfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
     size_t read_bytes = 0U;
     bool matches = true;
@@ -5385,7 +5328,7 @@ _Noreturn void kernel_test_complete_native_network(void)
         !result.exited || result.faulted || result.exit_status != 0 ||
         !result.resources_released || result.syscall_count < 25U ||
         !native_process_resources_released()) {
-        console_write("Phipia: native network launch ");
+        console_write("OpenGAT: native network launch ");
         console_write(native_process_status_string(launch_status));
         console_write(" result exit ");
         if (result.exit_status < 0) {
@@ -5410,21 +5353,21 @@ _Noreturn void kernel_test_complete_native_network(void)
         network.timers != 0U) {
         kernel_test_fail("native network handles survived process teardown");
     }
-    if (phipfs_stat_path(PHIPFS_VOLUME_DATA, "NETAPP/HTTP.TXT", &output) !=
-            PHIPFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
-        phipfs_open(PHIPFS_VOLUME_DATA, "NETAPP/HTTP.TXT", PHIPFS_ACCESS_READ,
-            &file) != PHIPFS_STATUS_OK ||
-        phipfs_read(file, bytes, sizeof(bytes), &read_bytes) != PHIPFS_STATUS_OK ||
+    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "NETAPP/HTTP.TXT", &output) !=
+            OPENGATFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
+        opengatfs_open(OPENGATFS_VOLUME_DATA, "NETAPP/HTTP.TXT", OPENGATFS_ACCESS_READ,
+            &file) != OPENGATFS_STATUS_OK ||
+        opengatfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENGATFS_STATUS_OK ||
         read_bytes != sizeof(bytes)) {
         kernel_test_fail("native HTTP body is missing from Data");
     }
     for (size_t index = 0U; index < sizeof(bytes); ++index) {
         matches = matches && bytes[index] == expected[index];
     }
-    if (phipfs_close(file) != PHIPFS_STATUS_OK || !matches) {
+    if (opengatfs_close(file) != OPENGATFS_STATUS_OK || !matches) {
         kernel_test_fail("native HTTP body framing or contents are wrong");
     }
-    console_write("Phipia: native DNS, TCP, UDP, timeout, reset and cancellation passed\n");
+    console_write("OpenGAT: native DNS, TCP, UDP, timeout, reset and cancellation passed\n");
     console_write("ST NETWORK production path bounded and recoverable\n");
     kernel_test_pass();
 }
@@ -5433,8 +5376,8 @@ _Noreturn void kernel_test_complete_native_rust(void)
 {
     static const uint8_t expected[] = "native Rust no_std ABI v1\n";
     struct native_process_result result;
-    struct phipfs_stat output;
-    phipfs_handle file;
+    struct opengatfs_stat output;
+    opengatfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
     size_t read_bytes = 0U;
     bool matches = true;
@@ -5448,21 +5391,21 @@ _Noreturn void kernel_test_complete_native_rust(void)
         result.thread_switches == 0U || !native_process_resources_released()) {
         kernel_test_fail("Rust application did not exit with a clean census");
     }
-    if (phipfs_stat_path(PHIPFS_VOLUME_DATA, "RUSTAPP/RUST.TXT", &output) !=
-            PHIPFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
-        phipfs_open(PHIPFS_VOLUME_DATA, "RUSTAPP/RUST.TXT", PHIPFS_ACCESS_READ,
-            &file) != PHIPFS_STATUS_OK ||
-        phipfs_read(file, bytes, sizeof(bytes), &read_bytes) != PHIPFS_STATUS_OK ||
+    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "RUSTAPP/RUST.TXT", &output) !=
+            OPENGATFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
+        opengatfs_open(OPENGATFS_VOLUME_DATA, "RUSTAPP/RUST.TXT", OPENGATFS_ACCESS_READ,
+            &file) != OPENGATFS_STATUS_OK ||
+        opengatfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENGATFS_STATUS_OK ||
         read_bytes != sizeof(bytes)) {
         kernel_test_fail("Rust application output is missing");
     }
     for (size_t index = 0U; index < sizeof(bytes); ++index) {
         matches = matches && bytes[index] == expected[index];
     }
-    if (phipfs_close(file) != PHIPFS_STATUS_OK || !matches) {
+    if (opengatfs_close(file) != OPENGATFS_STATUS_OK || !matches) {
         kernel_test_fail("Rust application output is wrong");
     }
-    console_write("Phipia: no_std Rust application used native ABI v1 services\n");
+    console_write("OpenGAT: no_std Rust application used native ABI v1 services\n");
     kernel_test_pass();
 }
 
@@ -5475,7 +5418,7 @@ _Noreturn void kernel_test_complete_native_crash(void)
         kernel_test_fail("native crash completion used outside its scenario");
     }
     if (native_process_launch("CRASH.MAN", &crash) != NATIVE_PROCESS_OK ||
-        !crash.exited || !crash.faulted || crash.exit_status != -PHIPIA_EFAULT ||
+        !crash.exited || !crash.faulted || crash.exit_status != -OPENGAT_EFAULT ||
         !crash.resources_released || crash.peak_handles < 6U ||
         crash.peak_pages < 20U || !native_process_resources_released()) {
         kernel_test_fail("faulted process did not release its live resources");
@@ -5485,7 +5428,7 @@ _Noreturn void kernel_test_complete_native_crash(void)
         !survivor.resources_released || !native_process_resources_released()) {
         kernel_test_fail("process after fault observed damaged or leaked state");
     }
-    console_write("Phipia: native crash contained; mappings handles threads windows FS x87 SSE reclaimed\n");
+    console_write("OpenGAT: native crash contained; mappings handles threads windows FS x87 SSE reclaimed\n");
     kernel_test_pass();
 }
 
@@ -5498,15 +5441,15 @@ _Noreturn void kernel_test_complete_native_admission_refusal(void)
     switch (active_scenario) {
     case KERNEL_TEST_NATIVE_ELF_REFUSAL:
         manifest = "BADELF.MAN";
-        diagnostic = "Phipia: native malformed ELF refused; resource census unchanged\n";
+        diagnostic = "OpenGAT: native malformed ELF refused; resource census unchanged\n";
         break;
     case KERNEL_TEST_NATIVE_DIGEST_REFUSAL:
         manifest = "BADDGST.MAN";
-        diagnostic = "Phipia: native manifest digest mismatch refused; resource census unchanged\n";
+        diagnostic = "OpenGAT: native manifest digest mismatch refused; resource census unchanged\n";
         break;
     case KERNEL_TEST_NATIVE_ABI_REFUSAL:
         manifest = "BADABI.MAN";
-        diagnostic = "Phipia: native unsupported ABI version refused; resource census unchanged\n";
+        diagnostic = "OpenGAT: native unsupported ABI version refused; resource census unchanged\n";
         break;
     default:
         kernel_test_fail("native admission completion used outside its scenario");
@@ -5538,7 +5481,7 @@ _Noreturn void kernel_test_complete_native_relaunch(void)
         !native_process_resources_released()) {
         kernel_test_fail("native relaunch did not reset generations and resources");
     }
-    console_write("Phipia: native relaunch advanced generation; both resource censuses clean\n");
+    console_write("OpenGAT: native relaunch advanced generation; both resource censuses clean\n");
     kernel_test_pass();
 }
 
@@ -5595,17 +5538,17 @@ _Noreturn void kernel_test_complete_native_audio(void)
         kernel_test_fail("native audio proof did not leave a clean census");
     }
     console_write(
-        "Phipia: native audio ABI capability, mixing, cancellation and teardown passed\n");
+        "OpenGAT: native audio ABI capability, mixing, cancellation and teardown passed\n");
     kernel_test_pass();
 }
 
 _Noreturn void kernel_test_complete_native_sdl(void)
 {
-    static const char state_path[] = "SDLPROOF/SDL/D81F0C7A/STATE.BIN";
+    static const char state_path[] = "SDLPROOF/SDL/D7BAC15B/STATE.BIN";
     struct native_process_result first = { 0 };
     struct native_process_result second = { 0 };
-    struct phipfs_stat state;
-    phipfs_handle file;
+    struct opengatfs_stat state;
+    opengatfs_handle file;
     uint8_t bytes[4];
     size_t read_bytes = 0U;
 
@@ -5631,17 +5574,17 @@ _Noreturn void kernel_test_complete_native_sdl(void)
         ui_native_window_is_open(0U) || ui_native_window_is_open(1U)) {
         kernel_test_fail("second SDL process did not leave a clean census");
     }
-    if (phipfs_stat_path(PHIPFS_VOLUME_DATA, state_path, &state) !=
-            PHIPFS_STATUS_OK || state.directory || state.size != sizeof(bytes) ||
-        phipfs_open(PHIPFS_VOLUME_DATA, state_path, PHIPFS_ACCESS_READ, &file) !=
-            PHIPFS_STATUS_OK ||
-        phipfs_read(file, bytes, sizeof(bytes), &read_bytes) != PHIPFS_STATUS_OK ||
-        read_bytes != sizeof(bytes) || phipfs_close(file) != PHIPFS_STATUS_OK ||
+    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, state_path, &state) !=
+            OPENGATFS_STATUS_OK || state.directory || state.size != sizeof(bytes) ||
+        opengatfs_open(OPENGATFS_VOLUME_DATA, state_path, OPENGATFS_ACCESS_READ, &file) !=
+            OPENGATFS_STATUS_OK ||
+        opengatfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENGATFS_STATUS_OK ||
+        read_bytes != sizeof(bytes) || opengatfs_close(file) != OPENGATFS_STATUS_OK ||
         bytes[0] != 2U || bytes[1] != 0U || bytes[2] != 0U || bytes[3] != 0U) {
         kernel_test_fail("SDL preference state did not survive process relaunch");
     }
     console_write(
-        "Phipia: SDL 2 window, input, partial damage, PCM and persistence passed\n");
+        "OpenGAT: SDL 2 window, input, partial damage, PCM and persistence passed\n");
     kernel_test_pass();
 }
 
@@ -5669,18 +5612,18 @@ _Noreturn void kernel_test_complete_native_dynamic(void)
             "concurrent dynamic ELF proofs did not leave a clean census");
     }
     console_write(
-        "Phipia: dynamic ELF shared RX, private TLS and lifecycle passed\n");
+        "OpenGAT: dynamic ELF shared RX, private TLS and lifecycle passed\n");
     kernel_test_pass();
 }
 
 _Noreturn void kernel_test_complete_native_https(void)
 {
     static const uint8_t expected[] =
-        "hello from the Phipia HTTPS peer\n";
+        "hello from the OpenGAT HTTPS peer\n";
     struct native_process_result proof = { 0 };
-    struct phipfs_stat output;
+    struct opengatfs_stat output;
     struct network_state network;
-    phipfs_handle file;
+    opengatfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
     size_t read_bytes = 0U;
     bool matches = true;
@@ -5702,28 +5645,28 @@ _Noreturn void kernel_test_complete_native_https(void)
         network.timers != 0U) {
         kernel_test_fail("native HTTPS network resources survived teardown");
     }
-    if (phipfs_stat_path(PHIPFS_VOLUME_DATA, "HTTPSAPP/HTTPS.TXT", &output) !=
-            PHIPFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
-        phipfs_open(PHIPFS_VOLUME_DATA, "HTTPSAPP/HTTPS.TXT", PHIPFS_ACCESS_READ,
-            &file) != PHIPFS_STATUS_OK ||
-        phipfs_read(file, bytes, sizeof(bytes), &read_bytes) != PHIPFS_STATUS_OK ||
+    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "HTTPSAPP/HTTPS.TXT", &output) !=
+            OPENGATFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
+        opengatfs_open(OPENGATFS_VOLUME_DATA, "HTTPSAPP/HTTPS.TXT", OPENGATFS_ACCESS_READ,
+            &file) != OPENGATFS_STATUS_OK ||
+        opengatfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENGATFS_STATUS_OK ||
         read_bytes != sizeof(bytes)) {
         kernel_test_fail("authenticated HTTPS body is missing from Data");
     }
     for (size_t index = 0U; index < sizeof(bytes); ++index) {
         matches = matches && bytes[index] == expected[index];
     }
-    if (phipfs_close(file) != PHIPFS_STATUS_OK || !matches) {
+    if (opengatfs_close(file) != OPENGATFS_STATUS_OK || !matches) {
         kernel_test_fail("authenticated HTTPS body contents are wrong");
     }
-    console_write("Phipia: HTTPS strong hardware entropy passed\n");
+    console_write("OpenGAT: HTTPS strong hardware entropy passed\n");
     console_write(
-        "Phipia: HTTPS TLS 1.2 hostname time trust framing close and teardown passed\n");
+        "OpenGAT: HTTPS TLS 1.2 hostname time trust framing close and teardown passed\n");
     console_write("ST NETWORK production path bounded and recoverable\n");
     kernel_test_pass();
 }
 
-static bool native_phip_authority_is_canonical(
+static bool native_opengat_authority_is_canonical(
     uint8_t *database,
     size_t database_capacity,
     struct package_service_report *service
@@ -5764,7 +5707,7 @@ static bool native_phip_authority_is_canonical(
         manifest.owner_index == 0U && manifest.length == UINT64_C(1024);
 }
 
-_Noreturn void kernel_test_complete_native_phip(void)
+_Noreturn void kernel_test_complete_native_opengat(void)
 {
     static const uint8_t expected[] = "SDL chess release-2.32.10\n";
     static const char damaged_manifest[] =
@@ -5772,43 +5715,43 @@ _Noreturn void kernel_test_complete_native_phip(void)
     static const char repaired_manifest[] =
         "pkgstate/gen/00000000/00000003/root/bin/CHESS.MAN";
     static const char state_path[] =
-        "SDLCHESS/SDL/8F0B0BEC/STATE.TXT";
+        "SDLCHESS/SDL/5841541D/STATE.TXT";
     static uint8_t database[4096U];
     struct native_process_result proof = { 0 };
     struct package_service_report service;
-    const struct phipfs_drive_info data = phipfs_drive(PHIPFS_VOLUME_DATA);
-    struct phipfs_stat authority;
-    struct phipfs_stat output;
-    phipfs_handle file;
+    const struct opengatfs_drive_info data = opengatfs_drive(OPENGATFS_VOLUME_DATA);
+    struct opengatfs_stat authority;
+    struct opengatfs_stat output;
+    opengatfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
     size_t read_bytes = 0U;
     size_t database_bytes = 0U;
     bool matches = true;
     struct network_state network;
-    enum phipfs_status authority_status;
+    enum opengatfs_status authority_status;
     enum native_process_status launch_status;
 
-    if (active_scenario != KERNEL_TEST_NATIVE_PHIP) {
-        kernel_test_fail("native phip completion used outside its scenario");
+    if (active_scenario != KERNEL_TEST_NATIVE_OPENGAT) {
+        kernel_test_fail("native opengat completion used outside its scenario");
     }
     if (random_get_state().capability != RANDOM_CAPABILITY_INITIALIZED) {
-        kernel_test_fail("native phip did not retain strong hardware entropy");
+        kernel_test_fail("native opengat did not retain strong hardware entropy");
     }
     if (!data.present || !data.mounted || data.read_only || !data.healthy ||
         data.total_bytes != UINT64_C(128) * UINT64_C(1024) * UINT64_C(1024) ||
         data.free_bytes == 0U || data.free_bytes >= data.total_bytes) {
-        kernel_test_fail("native phip writable ext4 volume is unavailable");
+        kernel_test_fail("native opengat writable ext4 volume is unavailable");
     }
-    authority_status = phipfs_stat_path(PHIPFS_VOLUME_DATA,
+    authority_status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA,
         PACKAGE_SERVICE_AUTHORITY_PATH, &authority);
-    if (authority_status == PHIPFS_STATUS_NOT_FOUND) {
-        launch_status = native_process_launch("PHIP.MAN", &proof);
+    if (authority_status == OPENGATFS_STATUS_NOT_FOUND) {
+        launch_status = native_process_launch("OPENGAT.MAN", &proof);
         if (launch_status != NATIVE_PROCESS_OK ||
             !proof.exited || proof.faulted || proof.exit_status != 0 ||
             !proof.resources_released || proof.peak_handles < 3U ||
             proof.syscall_count < 20U || proof.thread_switches == 0U ||
             !native_process_resources_released()) {
-            console_write("ST PHIP DIAGNOSTIC launch ");
+            console_write("ST OPENGAT DIAGNOSTIC launch ");
             console_write_u64((uint64_t)launch_status);
             console_write(" exited ");
             console_write(proof.exited ? "yes" : "no");
@@ -5834,105 +5777,105 @@ _Noreturn void kernel_test_complete_native_phip(void)
             console_write(" switches ");
             console_write_u64(proof.thread_switches);
             console_putc('\n');
-            kernel_test_fail("native phip client did not leave a clean census");
+            kernel_test_fail("native opengat client did not leave a clean census");
         }
-        if (!native_phip_authority_is_canonical(database, sizeof(database),
+        if (!native_opengat_authority_is_canonical(database, sizeof(database),
                 &service) || service.generation != 1U) {
-            kernel_test_fail("native phip installed authority is not canonical");
+            kernel_test_fail("native opengat installed authority is not canonical");
         }
-        if (phipfs_sync(PHIPFS_VOLUME_DATA) != PHIPFS_STATUS_OK ||
-            phipfs_unmount(PHIPFS_VOLUME_DATA) != PHIPFS_STATUS_OK ||
+        if (opengatfs_sync(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK ||
+            opengatfs_unmount(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK ||
             !nvme_filesystem_session_resources_released() ||
             !native_process_resources_released()) {
-            kernel_test_fail("native phip ext4 reboot barrier leaked resources");
+            kernel_test_fail("native opengat ext4 reboot barrier leaked resources");
         }
         console_write(
-            "Phipia: signed HTTPS package install synchronized reboot phase\n");
+            "OpenGAT: signed HTTPS package install synchronized reboot phase\n");
         cpu_out8(UINT16_C(0x0064), UINT8_C(0xFE));
         kernel_test_fail("platform reset did not restart QEMU");
     }
-    if (authority_status != PHIPFS_STATUS_OK || authority.directory ||
+    if (authority_status != OPENGATFS_STATUS_OK || authority.directory ||
         authority.size == 0U) {
-        kernel_test_fail("native phip reboot authority is unavailable");
+        kernel_test_fail("native opengat reboot authority is unavailable");
     }
     network = network_get_state();
     if (network.udp_sockets != 0U || network.tcp_connections != 0U ||
         network.timers != 0U) {
-        kernel_test_fail("native phip network resources survived teardown");
+        kernel_test_fail("native opengat network resources survived teardown");
     }
-    if (!native_phip_authority_is_canonical(database, sizeof(database),
+    if (!native_opengat_authority_is_canonical(database, sizeof(database),
             &service)) {
-        kernel_test_fail("native phip reboot authority is not canonical");
+        kernel_test_fail("native opengat reboot authority is not canonical");
     }
     if (service.generation == 1U) {
-        if (native_process_launch("PHIP.MAN", &proof) != NATIVE_PROCESS_OK ||
+        if (native_process_launch("OPENGAT.MAN", &proof) != NATIVE_PROCESS_OK ||
             !proof.exited || proof.faulted || proof.exit_status != 0 ||
             !proof.resources_released || proof.peak_handles < 3U ||
             proof.syscall_count < 20U || proof.thread_switches == 0U ||
             !native_process_resources_released() ||
-            !native_phip_authority_is_canonical(database, sizeof(database),
+            !native_opengat_authority_is_canonical(database, sizeof(database),
                 &service) || service.generation != 2U ||
-            phipfs_sync(PHIPFS_VOLUME_DATA) != PHIPFS_STATUS_OK ||
-            phipfs_unmount(PHIPFS_VOLUME_DATA) != PHIPFS_STATUS_OK ||
+            opengatfs_sync(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK ||
+            opengatfs_unmount(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK ||
             !nvme_filesystem_session_resources_released()) {
-            kernel_test_fail("native phip ext4 update did not commit cleanly");
+            kernel_test_fail("native opengat ext4 update did not commit cleanly");
         }
         console_write(
-            "Phipia: signed HTTPS package update synchronized reboot phase\n");
+            "OpenGAT: signed HTTPS package update synchronized reboot phase\n");
         cpu_out8(UINT16_C(0x0064), UINT8_C(0xFE));
         kernel_test_fail("platform reset did not restart QEMU");
     }
     if (service.generation != 2U ||
-        native_process_launch("PHIP.MAN", &proof) != NATIVE_PROCESS_OK ||
+        native_process_launch("OPENGAT.MAN", &proof) != NATIVE_PROCESS_OK ||
         !proof.exited || proof.faulted || proof.exit_status != 21 ||
         !proof.resources_released || !native_process_resources_released() ||
-        !native_phip_authority_is_canonical(database, sizeof(database),
+        !native_opengat_authority_is_canonical(database, sizeof(database),
             &service) || service.generation != 2U) {
-        kernel_test_fail("native phip signed rollback was not refused cleanly");
+        kernel_test_fail("native opengat signed rollback was not refused cleanly");
     }
-    if (phipfs_truncate(PHIPFS_VOLUME_DATA, damaged_manifest, UINT64_C(1)) !=
-            PHIPFS_STATUS_OK ||
-        phipfs_sync(PHIPFS_VOLUME_DATA) != PHIPFS_STATUS_OK ||
+    if (opengatfs_truncate(OPENGATFS_VOLUME_DATA, damaged_manifest, UINT64_C(1)) !=
+            OPENGATFS_STATUS_OK ||
+        opengatfs_sync(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK ||
         package_service_snapshot(database, sizeof(database), &database_bytes,
             &service) != PACKAGE_SERVICE_STATUS_INCOMPLETE ||
         database_bytes != 0U || service.journal_present ||
         service.live_file_handles != 0U || service.live_allocations != 0U) {
-        kernel_test_fail("native phip damaged generation was not quarantined");
+        kernel_test_fail("native opengat damaged generation was not quarantined");
     }
     console_write(
-        "Phipia: damaged package generation quarantined before repair passed\n");
-    if (native_process_launch("PHIPREP.MAN", &proof) != NATIVE_PROCESS_OK ||
+        "OpenGAT: damaged package generation quarantined before repair passed\n");
+    if (native_process_launch("OPENGATR.MAN", &proof) != NATIVE_PROCESS_OK ||
         !proof.exited || proof.faulted || proof.exit_status != 0 ||
         !proof.resources_released || proof.peak_handles < 3U ||
         proof.syscall_count < 20U || proof.thread_switches == 0U ||
         !native_process_resources_released() ||
-        !native_phip_authority_is_canonical(database, sizeof(database),
+        !native_opengat_authority_is_canonical(database, sizeof(database),
             &service) || service.generation != 3U ||
         native_process_launch_installed(repaired_manifest, &proof) !=
             NATIVE_PROCESS_OK ||
         !proof.exited || proof.faulted || proof.exit_status != 0 ||
         !proof.resources_released || proof.syscall_count < 12U ||
         proof.thread_switches == 0U || !native_process_resources_released() ||
-        phipfs_stat_path(PHIPFS_VOLUME_DATA, state_path, &output) !=
-            PHIPFS_STATUS_OK || output.directory ||
+        opengatfs_stat_path(OPENGATFS_VOLUME_DATA, state_path, &output) !=
+            OPENGATFS_STATUS_OK || output.directory ||
         output.size != sizeof(bytes) ||
-        phipfs_open(PHIPFS_VOLUME_DATA, state_path,
-            PHIPFS_ACCESS_READ, &file) != PHIPFS_STATUS_OK ||
-        phipfs_read(file, bytes, sizeof(bytes), &read_bytes) !=
-            PHIPFS_STATUS_OK || read_bytes != sizeof(bytes)) {
-        kernel_test_fail("native phip authenticated repair did not launch");
+        opengatfs_open(OPENGATFS_VOLUME_DATA, state_path,
+            OPENGATFS_ACCESS_READ, &file) != OPENGATFS_STATUS_OK ||
+        opengatfs_read(file, bytes, sizeof(bytes), &read_bytes) !=
+            OPENGATFS_STATUS_OK || read_bytes != sizeof(bytes)) {
+        kernel_test_fail("native opengat authenticated repair did not launch");
     }
     for (size_t index = 0U; index < sizeof(bytes); ++index) {
         matches = matches && bytes[index] == expected[index];
     }
-    if (phipfs_close(file) != PHIPFS_STATUS_OK || !matches ||
-        phipfs_sync(PHIPFS_VOLUME_DATA) != PHIPFS_STATUS_OK ||
-        phipfs_unmount(PHIPFS_VOLUME_DATA) != PHIPFS_STATUS_OK ||
+    if (opengatfs_close(file) != OPENGATFS_STATUS_OK || !matches ||
+        opengatfs_sync(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK ||
+        opengatfs_unmount(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK ||
         !nvme_filesystem_session_resources_released()) {
-        kernel_test_fail("native phip upstream SDL launch did not cleanly sync");
+        kernel_test_fail("native opengat upstream SDL launch did not cleanly sync");
     }
     console_write(
-        "Phipia: damaged SDL package repaired authenticated and launched from writable ext4 passed\n");
+        "OpenGAT: damaged SDL package repaired authenticated and launched from writable ext4 passed\n");
     console_write("ST NETWORK production path bounded and recoverable\n");
     kernel_test_pass();
 }
@@ -6096,19 +6039,19 @@ _Noreturn void kernel_test_complete_boot_ledger(
     kernel_test_pass();
 }
 
-static uint32_t phipia_proof_pixel(uint32_t x, uint32_t y)
+static uint32_t opengat_proof_pixel(uint32_t x, uint32_t y)
 {
     uint32_t pixel = 0U;
     struct surface *surface = screen_surface();
 
     if (surface == NULL ||
         surface_read_pixel(surface, x, y, &pixel) != SURFACE_STATUS_OK) {
-        kernel_test_fail("Phipia cached-surface pixel read failed");
+        kernel_test_fail("OpenGAT cached-surface pixel read failed");
     }
     return pixel;
 }
 
-static void phipia_proof_process_ui(const char *failure)
+static void opengat_proof_process_ui(const char *failure)
 {
     enum ui_status status = ui_process_events();
 
@@ -6120,22 +6063,7 @@ static void phipia_proof_process_ui(const char *failure)
     }
 }
 
-static void phipia_proof_settle_ui(const char *failure)
-{
-    if (!ui_animation_active()) {
-        return;
-    }
-    if (timer_sleep_ns(UI_ANIM_DEFAULT_OPEN_NS + UI_ANIM_FRAME_NS) !=
-            TIMER_STATUS_OK) {
-        kernel_test_fail(failure);
-    }
-    phipia_proof_process_ui(failure);
-    if (ui_animation_active()) {
-        kernel_test_fail(failure);
-    }
-}
-
-static void phipia_proof_inject_pointer(
+static void opengat_proof_inject_pointer(
     uint8_t flags,
     int32_t delta_x,
     int32_t delta_y,
@@ -6159,10 +6087,10 @@ static void phipia_proof_inject_pointer(
     if (status != POINTER_STATUS_OK) {
         kernel_test_fail(failure);
     }
-    phipia_proof_process_ui(failure);
+    opengat_proof_process_ui(failure);
 }
 
-static void phipia_proof_move_pointer(
+static void opengat_proof_move_pointer(
     uint32_t target_x,
     uint32_t target_y,
     const char *failure
@@ -6188,80 +6116,13 @@ static void phipia_proof_move_pointer(
         } else if (delta_y < -127) {
             delta_y = -127;
         }
-        phipia_proof_inject_pointer(0U, delta_x, delta_y, failure);
+        opengat_proof_inject_pointer(0U, delta_x, delta_y, failure);
     }
-    kernel_test_fail("Phipia cursor did not reach its UI target");
+    kernel_test_fail("OpenGAT cursor did not reach its UI target");
 }
 
-static void phipia_proof_click_taskbar_item(
-    size_t item_index,
-    enum ui_panel_id expected_panel
-)
+_Noreturn void kernel_test_complete_opengat_proof(void)
 {
-    struct ui_rect bounds;
-    struct taskbar_counters counters;
-    const struct ui_state *ui;
-    uint32_t title_width;
-
-    if (taskbar_app_bounds(item_index, &bounds) != TASKBAR_STATUS_OK ||
-            bounds.width == 0U || bounds.height == 0U) {
-        kernel_test_fail("Phipia taskbar application bounds are unavailable");
-    }
-    counters = taskbar_get_counters();
-    const uint32_t target_x = bounds.x + bounds.width / 2U;
-    const uint32_t target_y = bounds.y + bounds.height / 2U;
-    phipia_proof_move_pointer(target_x, target_y,
-        "Phipia real pointer movement failed");
-    if (taskbar_get_counters().hover_changes <= counters.hover_changes) {
-        kernel_test_fail("Phipia taskbar hover state is incorrect");
-    }
-
-    phipia_proof_inject_pointer(UINT8_C(0x01), 0, 0,
-        "Phipia pointer press failed");
-    phipia_proof_inject_pointer(0U, 0, 0,
-        "Phipia pointer release failed");
-    ui = ui_get_state();
-    if (ui->active_panel != expected_panel ||
-            phipia_proof_pixel(target_x, target_y) == 0U) {
-        kernel_test_fail("Phipia taskbar activation is incorrect");
-    }
-    if (ui_font_text_width(ui_panel_name(expected_panel), &title_width) !=
-            UI_FONT_STATUS_OK || title_width == 0U) {
-        kernel_test_fail("Phipia panel title width is unavailable");
-    }
-}
-
-static void phipia_proof_click_point(
-    uint32_t target_x,
-    uint32_t target_y,
-    const char *failure
-)
-{
-    phipia_proof_move_pointer(target_x, target_y, failure);
-    phipia_proof_inject_pointer(UINT8_C(0x01), 0, 0, failure);
-    phipia_proof_inject_pointer(0U, 0, 0, failure);
-}
-
-_Noreturn void kernel_test_complete_phipia_proof(void)
-{
-    static const enum ui_element_id ids[UI_DOCK_ITEM_COUNT] = {
-        UI_ELEMENT_DOCK_FILES, UI_ELEMENT_DOCK_TERMINAL,
-        UI_ELEMENT_DOCK_NOTES, UI_ELEMENT_DOCK_MEDIA_EDITOR,
-        UI_ELEMENT_DOCK_CAMERA, UI_ELEMENT_DOCK_CANVAS,
-        UI_ELEMENT_DOCK_STORE,
-        UI_ELEMENT_DOCK_SETTINGS
-    };
-    static const enum ui_action actions[UI_DOCK_ITEM_COUNT] = {
-        UI_ACTION_OPEN_FILES, UI_ACTION_OPEN_TERMINAL,
-        UI_ACTION_OPEN_NOTES, UI_ACTION_OPEN_MEDIA_EDITOR,
-        UI_ACTION_OPEN_CAMERA, UI_ACTION_OPEN_CANVAS,
-        UI_ACTION_OPEN_STORE,
-        UI_ACTION_OPEN_SETTINGS
-    };
-    static const enum ui_panel_id panels[UI_DOCK_ITEM_COUNT] = {
-        UI_PANEL_FILES, UI_PANEL_TERMINAL, UI_PANEL_NOTES, UI_PANEL_MEDIA_EDITOR,
-        UI_PANEL_CAMERA, UI_PANEL_PAINT, UI_PANEL_STORE, UI_PANEL_SETTINGS
-    };
     const struct boot_ledger *ledger = boot_ledger_installed();
     const struct boot_stage_receipt *font;
     const struct boot_stage_receipt *layout;
@@ -6271,21 +6132,20 @@ _Noreturn void kernel_test_complete_phipia_proof(void)
     const struct boot_stage_receipt *wc;
     const struct ui_state *ui = ui_get_state();
     const struct ui_render_counters initial_renders = ui->renders;
-    struct ui_point trail_probe;
-    uint32_t dock_rim;
-    uint32_t dock_rim_x;
-    uint32_t dock_rim_y;
-    uint32_t trail_under;
     struct ui_proof proof;
     enum ui_status proof_status;
+    struct keyboard_event keyboard = {
+        .scancode = 0x01U, .pressed = true, .shift = false,
+        .control = false, .alt = false, .character = '\0'
+    };
 
-    if (active_scenario != KERNEL_TEST_PHIPIA_PROOF) {
-        kernel_test_fail("Phipia completion used outside its scenario");
+    if (active_scenario != KERNEL_TEST_OPENGAT_PROOF) {
+        kernel_test_fail("OpenGAT completion used outside its scenario");
     }
     if (ledger == NULL || !ledger->validated || !ledger->executed ||
-        ledger->status != BOOT_LEDGER_STATUS_OK || ledger->degraded ||
-        !boot_ledger_fingerprint_valid(ledger)) {
-        kernel_test_fail("Phipia installed ledger is invalid");
+            ledger->status != BOOT_LEDGER_STATUS_OK || ledger->degraded ||
+            !boot_ledger_fingerprint_valid(ledger)) {
+        kernel_test_fail("OpenGAT installed ledger is invalid");
     }
     font = boot_ledger_receipt_for(ledger, BOOT_STAGE_UI_FONT);
     layout = boot_ledger_receipt_for(ledger, BOOT_STAGE_UI_LAYOUT);
@@ -6294,278 +6154,109 @@ _Noreturn void kernel_test_complete_phipia_proof(void)
     activation = boot_ledger_receipt_for(ledger,
         BOOT_STAGE_DESKTOP_ACTIVATION);
     proof_receipt = boot_ledger_receipt_for(ledger,
-        BOOT_STAGE_PHIPIA_INSTALLED_PROOF);
+        BOOT_STAGE_OPENGAT_INSTALLED_PROOF);
     wc = boot_ledger_receipt_for(ledger, BOOT_STAGE_FRAMEBUFFER_WC);
     if (font == NULL || layout == NULL || construction == NULL ||
-        activation == NULL || proof_receipt == NULL || wc == NULL ||
-        font->result != BOOT_RECEIPT_RAN ||
-        layout->result != BOOT_RECEIPT_RAN ||
-        construction->result != BOOT_RECEIPT_RAN ||
-        activation->result != BOOT_RECEIPT_RAN ||
-        proof_receipt->result != BOOT_RECEIPT_RAN ||
-        wc->result != BOOT_RECEIPT_RAN) {
-        kernel_test_fail("Phipia required stage receipt is missing");
-    }
-    if (wc->sequence >= construction->sequence ||
-        wc->sequence >= activation->sequence ||
-        construction->sequence >= activation->sequence ||
-        activation->sequence >= proof_receipt->sequence) {
-        kernel_test_fail("Phipia desktop present preceded its WC proof");
+            activation == NULL || proof_receipt == NULL || wc == NULL ||
+            font->result != BOOT_RECEIPT_RAN ||
+            layout->result != BOOT_RECEIPT_RAN ||
+            construction->result != BOOT_RECEIPT_RAN ||
+            activation->result != BOOT_RECEIPT_RAN ||
+            proof_receipt->result != BOOT_RECEIPT_RAN ||
+            wc->result != BOOT_RECEIPT_RAN ||
+            wc->sequence >= construction->sequence ||
+            construction->sequence >= activation->sequence ||
+            activation->sequence >= proof_receipt->sequence) {
+        kernel_test_fail("OpenGAT required desktop receipt is invalid");
     }
     if (!boot_ledger_has_capability(ledger,
             BOOT_CAPABILITY_UI_FONT_VERIFIED) ||
-        !boot_ledger_has_capability(ledger,
-            BOOT_CAPABILITY_UI_LAYOUT_VALIDATED) ||
-        !boot_ledger_has_capability(ledger,
-            BOOT_CAPABILITY_DESKTOP_SHELL_ACTIVATED) ||
-        !boot_ledger_has_capability(ledger,
-            BOOT_CAPABILITY_PHIPIA_INSTALLED_PROOF_COMPLETE)) {
-        kernel_test_fail("Phipia installed capability is missing");
+            !boot_ledger_has_capability(ledger,
+                BOOT_CAPABILITY_UI_LAYOUT_VALIDATED) ||
+            !boot_ledger_has_capability(ledger,
+                BOOT_CAPABILITY_DESKTOP_SHELL_ACTIVATED) ||
+            !boot_ledger_has_capability(ledger,
+                BOOT_CAPABILITY_OPENGAT_INSTALLED_PROOF_COMPLETE)) {
+        kernel_test_fail("OpenGAT installed desktop capability is missing");
     }
     if (!ui->active || !ui->pointer_present || !ui->ledger_pass ||
-        !pointer_is_present() || ui->layout.surface.width != 1024U ||
-        ui->layout.surface.height != 768U) {
-        kernel_test_fail("Phipia installed UI state is incomplete");
+            !pointer_is_present() || ui->layout.surface.width != 1024U ||
+            ui->layout.surface.height != 768U ||
+            ui_layout_validate(&ui->layout) != UI_STATUS_OK) {
+        kernel_test_fail("OpenGAT installed desktop state is incomplete");
     }
-    for (size_t index = 0U; index < UI_DOCK_ITEM_COUNT; ++index) {
-        const struct ui_dock_item *item = &ui->layout.dock_items[index];
-
-        if (item->id != ids[index] || item->action != actions[index] ||
-            item->panel != panels[index]) {
-            kernel_test_fail("Phipia dock typed action is incorrect");
-        }
+    if (opengat_proof_pixel(512U, 250U) == 0U ||
+            opengat_proof_pixel(512U, 767U) == 0U) {
+        kernel_test_fail("OpenGAT wallpaper or panel is not integrated");
     }
 
-    const uint32_t wallpaper_probe = phipia_proof_pixel(512U, 250U);
-    if (wallpaper_probe == 0U) {
-        kernel_test_fail("Phipia wallpaper probe is empty");
-    }
-    if (phipia_proof_pixel(ui->layout.menu_bar.x,
-            ui->layout.menu_bar.y) == wallpaper_probe) {
-        kernel_test_fail("Phipia menu bar is not integrated");
-    }
-    /*
-     * The native 3D shelf has a centre-hot blended specular line rather than
-     * the old flat white rectangle.  Derive its back edge from the resting
-     * icon baseline and prove the line is visibly distinct on both sides.
-     */
-    dock_rim_x = ui->layout.surface.width / 2U;
-    dock_rim_y = ui->layout.dock_items[0U].icon_bounds.y +
-        ui->layout.dock_items[0U].icon_bounds.height;
-    if (dock_rim_y == 0U || dock_rim_y + 1U >=
-            ui->layout.surface.height) {
-        kernel_test_fail("Phipia dock rim geometry is invalid");
-    }
-    dock_rim = phipia_proof_pixel(dock_rim_x, dock_rim_y);
-    if (dock_rim == 0U ||
-        dock_rim == phipia_proof_pixel(dock_rim_x, dock_rim_y - 1U) ||
-        dock_rim == phipia_proof_pixel(dock_rim_x, dock_rim_y + 1U)) {
-        kernel_test_fail("Phipia dock rim is not integrated");
+    opengat_proof_move_pointer(200U, 160U,
+        "OpenGAT cursor did not move over the new desktop");
+    if (ui_get_state()->renders.cursor_moves <= initial_renders.cursor_moves) {
+        kernel_test_fail("OpenGAT cursor movement was not recorded");
     }
 
-    trail_under = phipia_proof_pixel(20U, 100U);
-    phipia_proof_move_pointer(20U, 100U,
-        "Phipia cursor trail probe movement failed");
-    ui = ui_get_state();
-    trail_probe = ui->pointer;
-    if (phipia_proof_pixel((uint32_t)trail_probe.x,
-            (uint32_t)trail_probe.y) == trail_under) {
-        kernel_test_fail("Phipia cursor trail probe is not visible");
-    }
-
-    /* Exercise the launcher a person can actually see: open the taskbar's
-     * search box, launch Store as the best match, reopen it, then filter and
-     * launch Paint. */
-    {
-        struct ui_rect first_app;
-        const struct ui_rect bar = taskbar_bounds();
-        struct keyboard_event search_key = {
-            .scancode = 0x1CU, .pressed = true, .shift = false,
-            .control = false, .character = '\0'
-        };
-        uint32_t search_x;
-        uint32_t search_y;
-
-        if (taskbar_app_bounds(0U, &first_app) != TASKBAR_STATUS_OK ||
-                first_app.x <= bar.x + 48U || bar.height == 0U) {
-            kernel_test_fail("Phipia taskbar search geometry is unavailable");
-        }
-        search_x = bar.x + 48U + (first_app.x - (bar.x + 48U)) / 2U;
-        search_y = bar.y + bar.height / 2U;
-        phipia_proof_click_point(search_x, search_y,
-            "Phipia taskbar search did not open");
-        if (!taskbar_search_panel_open()) {
-            kernel_test_fail("Phipia taskbar search is not open");
-        }
-        static const char store_query[] = "store";
-        for (size_t index = 0U; index < sizeof(store_query) - 1U; ++index) {
-            search_key.scancode = 0U;
-            search_key.character = store_query[index];
-            if (ui_handle_keyboard(&search_key) != UI_STATUS_OK) {
-                kernel_test_fail("Phipia Store search failed");
-            }
-        }
-        phipia_proof_process_ui("Phipia Store search draw failed");
-        search_key.scancode = 0x1CU;
-        search_key.character = '\0';
-        if (ui_handle_keyboard(&search_key) != UI_STATUS_OK) {
-            kernel_test_fail("Phipia Store search activation failed");
-        }
-        phipia_proof_process_ui("Phipia Store search activation draw failed");
-        if (ui_get_state()->active_panel != UI_PANEL_STORE) {
-            kernel_test_fail("Phipia search chose the wrong Store app");
-        }
-        phipia_proof_settle_ui(
-            "Phipia Store search animation did not settle");
-        {
-            struct ui_rect action;
-            char manifest[13U];
-
-            if (store_primary_action_bounds(&action) != STORE_STATUS_OK ||
-                    action.width == 0U || action.height == 0U) {
-                kernel_test_fail("Phipia Store package action is unavailable");
-            }
-            phipia_proof_click_point(action.x + action.width / 2U,
-                action.y + action.height / 2U,
-                "Phipia Store package action did not activate");
-            if (!ui_application_launch_dequeue(manifest, sizeof(manifest)) ||
-                    manifest[0] != 'P' || manifest[1] != 'H' ||
-                    manifest[2] != 'I' || manifest[3] != 'P' ||
-                    manifest[4] != '.' || manifest[5] != 'M' ||
-                    manifest[6] != 'A' || manifest[7] != 'N' ||
-                    manifest[8] != '\0') {
-                kernel_test_fail(
-                    "Phipia Store did not queue its signed package client");
-            }
-            console_serial_write(
-                "ST PHIPIA STORE signed package action passed\n");
-        }
-        phipia_proof_click_point(search_x, search_y,
-            "Phipia taskbar search did not reopen");
-        if (!taskbar_search_panel_open()) {
-            kernel_test_fail("Phipia taskbar search did not reopen");
-        }
-        static const char paint_query[] = "paint";
-        for (size_t index = 0U; index < sizeof(paint_query) - 1U; ++index) {
-            search_key.scancode = 0U;
-            search_key.character = paint_query[index];
-            if (ui_handle_keyboard(&search_key) != UI_STATUS_OK) {
-                kernel_test_fail("Phipia Paint search failed");
-            }
-        }
-        phipia_proof_process_ui("Phipia Paint search draw failed");
-        search_key.scancode = 0x1CU;
-        search_key.character = '\0';
-        if (ui_handle_keyboard(&search_key) != UI_STATUS_OK) {
-            kernel_test_fail("Phipia Paint search activation failed");
-        }
-        phipia_proof_process_ui("Phipia Paint search activation draw failed");
-        char manifest[13U];
-        if (ui_get_state()->active_panel != UI_PANEL_PAINT ||
-                ui_application_launch_dequeue(manifest, sizeof(manifest))) {
-            kernel_test_fail("Phipia search chose the wrong Paint app");
-        }
-        phipia_proof_settle_ui(
-            "Phipia Paint search animation did not settle");
-    }
-
-    for (size_t index = 0U; index < UI_DOCK_ITEM_COUNT; ++index) {
-        const enum ui_panel_id expected_panel = panels[index];
-
-        phipia_proof_click_taskbar_item(index, expected_panel);
-        console_serial_write("ST PHIPIA TASKBAR app ");
-        console_serial_write_u64(index);
-        console_serial_write(" active\n");
-        phipia_proof_settle_ui(
-            "Phipia taskbar application animation did not settle");
-        console_serial_write("ST PHIPIA TASKBAR app ");
-        console_serial_write_u64(index);
-        console_serial_write(" settled\n");
-        ui = ui_get_state();
-    }
-    console_serial_write("ST PHIPIA TASKBAR applications passed\n");
-    if (trail_probe.x < 0 || trail_probe.y < 0 ||
-        phipia_proof_pixel((uint32_t)trail_probe.x,
-            (uint32_t)trail_probe.y) != trail_under ||
-        ui->renders.cursor_moves <= initial_renders.cursor_moves ||
-        ui->renders.damage_rectangles <= initial_renders.damage_rectangles) {
-        kernel_test_fail("Phipia cursor damage left a trail");
-    }
-
-    struct keyboard_event keyboard = {
-        .scancode = 0x01U, .pressed = true, .shift = false, .character = '\0'
-    };
     if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("Phipia keyboard panel close failed");
+        kernel_test_fail("OpenGAT focused window did not close");
     }
-    phipia_proof_process_ui("Phipia keyboard panel close draw failed");
-    phipia_proof_settle_ui(
-        "Phipia keyboard panel close animation did not settle");
-    console_serial_write("ST PHIPIA TASKBAR close passed\n");
+    opengat_proof_process_ui("OpenGAT close redraw failed");
     keyboard.scancode = 0x0FU;
     if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("Phipia keyboard focus-next failed");
+        kernel_test_fail("OpenGAT keyboard focus-next failed");
     }
-    phipia_proof_process_ui("Phipia keyboard focus-next draw failed");
+    opengat_proof_process_ui("OpenGAT focus-next redraw failed");
     if (ui_get_state()->focus != UI_ELEMENT_DOCK_TERMINAL) {
-        kernel_test_fail("Phipia keyboard focus-next chose wrong item");
+        kernel_test_fail("OpenGAT keyboard focus-next chose wrong app");
     }
     keyboard.shift = true;
     if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("Phipia keyboard focus-previous failed");
+        kernel_test_fail("OpenGAT keyboard focus-previous failed");
     }
-    phipia_proof_process_ui("Phipia keyboard focus-previous draw failed");
+    opengat_proof_process_ui("OpenGAT focus-previous redraw failed");
     if (ui_get_state()->focus != UI_ELEMENT_DOCK_FILES) {
-        kernel_test_fail("Phipia keyboard focus-previous chose wrong item");
+        kernel_test_fail("OpenGAT keyboard focus-previous chose wrong app");
     }
     keyboard.scancode = 0x1CU;
     keyboard.shift = false;
     if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("Phipia keyboard activation failed");
+        kernel_test_fail("OpenGAT keyboard activation failed");
     }
-    phipia_proof_process_ui("Phipia keyboard activation draw failed");
-    phipia_proof_settle_ui(
-        "Phipia keyboard activation animation did not settle");
+    opengat_proof_process_ui("OpenGAT application redraw failed");
     if (ui_get_state()->active_panel != UI_PANEL_FILES) {
-        kernel_test_fail("Phipia keyboard activation chose wrong panel");
+        kernel_test_fail("OpenGAT Files window did not open");
     }
-    console_serial_write("ST PHIPIA TASKBAR keyboard passed\n");
+    console_serial_write("ST OPENGAT DE keyboard and pointer passed\n");
 
     if (!boot_plan_pointer_absence_self_test()) {
-        kernel_test_fail("Phipia pointer-absence synthetic plan failed");
+        kernel_test_fail("OpenGAT pointer-absence synthetic plan failed");
     }
     proof_status = ui_verify_installed(&proof);
     if (proof_status != UI_STATUS_OK) {
         kernel_test_fail(ui_installed_proof_failure());
     }
     if (proof.width != 1024U || proof.height != 768U ||
-        proof.dock_items != UI_DOCK_ITEM_COUNT ||
-        proof.ledger_fingerprint != ledger->fingerprint ||
-        proof.render_hash == 0U) {
-        kernel_test_fail("Phipia final installed shape is inconsistent");
-    }
-    if (proof.events == 0U || proof.panels < 3U ||
-        proof.cursor_moves == 0U || proof.damage_rectangles == 0U ||
-        proof.glyphs == 0U) {
-        kernel_test_fail("Phipia final interaction counters are incomplete");
+            proof.dock_items != UI_DOCK_ITEM_COUNT ||
+            proof.ledger_fingerprint != ledger->fingerprint ||
+            proof.render_hash == 0U || proof.events == 0U ||
+            proof.panels == 0U || proof.cursor_moves == 0U ||
+            proof.damage_rectangles == 0U || proof.glyphs == 0U) {
+        kernel_test_fail("OpenGAT final desktop proof is inconsistent");
     }
 
-    console_write("ST PHIPIA_PROOF geometry ");
+    console_write("ST OPENGAT_PROOF geometry ");
     console_write_u64(proof.width);
     console_putc('x');
     console_write_u64(proof.height);
-    console_write(" dock ");
+    console_write(" apps ");
     console_write_u64(proof.dock_items);
     console_write(" events ");
     console_write_u64(proof.events);
-    console_write(" panels ");
+    console_write(" windows ");
     console_write_u64(proof.panels);
     console_write(" cursor ");
     console_write_u64(proof.cursor_moves);
     console_write(" damage ");
     console_write_u64(proof.damage_rectangles);
-    console_write(" glyphs ");
-    console_write_u64(proof.glyphs);
     console_write(" fingerprint ");
     console_write_hex(proof.ledger_fingerprint);
     console_putc('\n');
@@ -6718,7 +6409,7 @@ _Noreturn void kernel_test_complete_nvme(void)
 _Noreturn void kernel_test_complete_filesystem(void)
 {
     static const uint8_t expected_name[FAT16_CANONICAL_NAME_BYTES] =
-        {'P', 'H', 'I', 'P', 'I', 'A', ' ', ' ', 'B', 'I', 'N'};
+        {'O', 'P', 'E', 'N', 'G', 'A', 'T', ' ', 'B', 'I', 'N'};
     const struct boot_ledger *ledger = boot_ledger_installed();
     const struct boot_stage_receipt *foundation;
     const struct boot_stage_receipt *receipt;
@@ -6852,7 +6543,7 @@ _Noreturn void kernel_test_complete_linux_abi(void)
     if (proof.file_bytes != LINUX_ABI_IMAGE_BYTES ||
         proof.program_headers != 5U ||
         proof.load_segments != 4U || proof.file_clusters != 9U ||
-        proof.stdout_bytes != 7U || proof.syscall_count != 9U ||
+        proof.stdout_bytes != 8U || proof.syscall_count != 9U ||
         proof.distinct_syscalls != 7U || proof.exit_status != 0U ||
         proof.robustness_tests != LINUX_ABI_CONTROLLED_ROBUSTNESS_TESTS ||
         !proof.ring_three || !proof.private_address_space ||
@@ -7044,7 +6735,7 @@ static bool inject_keyboard_ctrl_d(void)
     return true;
 }
 
-static bool focus_phipia_proof_terminal(void)
+static bool focus_opengat_proof_terminal(void)
 {
     if (ui_get_state()->active_panel == UI_PANEL_TERMINAL) {
         return true;
@@ -7057,13 +6748,13 @@ static bool focus_phipia_proof_terminal(void)
             return false;
         }
         shell_process_keyboard_events();
-        phipia_proof_process_ui(
+        opengat_proof_process_ui(
             "interactive terminal focus-next processing failed");
         if (!inject_keyboard_byte(UINT8_C(0x8F))) {
             return false;
         }
         shell_process_keyboard_events();
-        phipia_proof_process_ui(
+        opengat_proof_process_ui(
             "interactive terminal focus release processing failed");
     }
     if (ui_get_state()->focus != UI_ELEMENT_DOCK_TERMINAL) {
@@ -7073,26 +6764,26 @@ static bool focus_phipia_proof_terminal(void)
         return false;
     }
     shell_process_keyboard_events();
-    phipia_proof_process_ui(
+    opengat_proof_process_ui(
         "interactive terminal activation processing failed");
     if (!inject_keyboard_byte(UINT8_C(0x9C))) {
         return false;
     }
     shell_process_keyboard_events();
-    phipia_proof_process_ui(
+    opengat_proof_process_ui(
         "interactive terminal activation release processing failed");
     return ui_get_state()->active_panel == UI_PANEL_TERMINAL;
 }
 
-static bool installed_phipia_proof_ready(void)
+static bool installed_test_runtime_ready(void)
 {
     const struct boot_ledger *ledger = boot_ledger_installed();
 
     return ledger != NULL && ledger->validated && ledger->executed &&
-        ledger->status == BOOT_LEDGER_STATUS_OK && !ledger->degraded &&
+        ledger->status == BOOT_LEDGER_STATUS_OK &&
         boot_ledger_fingerprint_valid(ledger) &&
         boot_ledger_has_capability(ledger,
-            BOOT_CAPABILITY_PHIPIA_INSTALLED_PROOF_COMPLETE) &&
+            BOOT_CAPABILITY_BOOT_PROOFS_COMPLETE) &&
         boot_ledger_has_capability(ledger,
             BOOT_CAPABILITY_LINUX_SYSCALL_CPU_FOUNDATION_AVAILABLE) &&
         boot_ledger_has_capability(ledger,
@@ -7103,7 +6794,7 @@ static bool installed_phipia_proof_ready(void)
             BOOT_CAPABILITY_LINUX_CAT_IMAGE_STDIN_FOUNDATION_AVAILABLE);
 }
 
-_Noreturn void kernel_test_complete_phipia_proof_userland(void)
+_Noreturn void kernel_test_complete_opengat_proof_userland(void)
 {
     const struct shell_state before = shell_get_state();
     const uint32_t echo_before =
@@ -7113,20 +6804,20 @@ _Noreturn void kernel_test_complete_phipia_proof_userland(void)
     struct linux_abi_proof_result echo;
     struct linux_uname_abi_proof_result uname;
 
-    if (active_scenario != KERNEL_TEST_PHIPIA_PROOF_USERLAND ||
-        !installed_phipia_proof_ready() || !shell_is_active()) {
-        kernel_test_fail("Phipia userspace prerequisites are incomplete");
+    if (active_scenario != KERNEL_TEST_OPENGAT_PROOF_USERLAND ||
+        !installed_test_runtime_ready() || !shell_is_active()) {
+        kernel_test_fail("OpenGAT userspace prerequisites are incomplete");
     }
     cpu_interrupt_enable();
     console_write("\n");
-    console_write("phip> ");
+    console_write("opengat$ ");
     if (!feed_shell_line("linux unsupported") ||
         !feed_shell_line("echo native") ||
         !feed_shell_line("linux echo") ||
         !feed_shell_line("linux uname") ||
         !feed_shell_line("linux echo") ||
         !feed_shell_line("linux uname")) {
-        kernel_test_fail("Phipia shell input injection was refused");
+        kernel_test_fail("OpenGAT shell input injection was refused");
     }
     echo = linux_abi_get_proof_result();
     uname = linux_uname_abi_get_proof_result();
@@ -7137,7 +6828,7 @@ _Noreturn void kernel_test_complete_phipia_proof_userland(void)
             echo_before + 2U ||
         linux_userland_completed(LINUX_USERLAND_PROFILE_UNAME) !=
             uname_before + 2U ||
-        echo.file_bytes != LINUX_ABI_IMAGE_BYTES || echo.stdout_bytes != 7U ||
+        echo.file_bytes != LINUX_ABI_IMAGE_BYTES || echo.stdout_bytes != 8U ||
         echo.syscall_count != 9U || !echo.ring_three ||
         !echo.private_address_space || !echo.real_syscall_instruction ||
         !echo.stdout_valid || !echo.exit_zero || !echo.teardown_complete ||
@@ -7147,27 +6838,27 @@ _Noreturn void kernel_test_complete_phipia_proof_userland(void)
         !uname.real_syscall_instruction || !uname.uts_copy_valid ||
         !uname.stdout_valid || !uname.exit_zero || !uname.teardown_complete ||
         !linux_userland_resources_released() || !cpu_interrupts_enabled()) {
-        kernel_test_fail("Phipia userspace relaunch contract failed");
+        kernel_test_fail("OpenGAT userspace relaunch contract failed");
     }
-    console_write("\nST PHIPIA_PROOF_USERLAND shell production echo 2 uname 2 ");
+    console_write("\nST OPENGAT_PROOF_USERLAND shell production echo 2 uname 2 ");
     console_write("invalid-profile recovered CPL3 SYSCALL stdout exact exit 0 ");
     console_write("teardown clean prompt restored\n");
     kernel_test_pass();
 }
 
-_Noreturn void kernel_test_complete_phipia_proof_userland_absent(void)
+_Noreturn void kernel_test_complete_opengat_proof_userland_absent(void)
 {
     const struct shell_state before = shell_get_state();
     const uint32_t echo_before =
         linux_userland_completed(LINUX_USERLAND_PROFILE_ECHO);
 
-    if (active_scenario != KERNEL_TEST_PHIPIA_PROOF_USERLAND_ABSENT ||
-        !installed_phipia_proof_ready() || !shell_is_active()) {
+    if (active_scenario != KERNEL_TEST_OPENGAT_PROOF_USERLAND_ABSENT ||
+        !installed_test_runtime_ready() || !shell_is_active()) {
         kernel_test_fail("absent-volume userspace prerequisites are incomplete");
     }
     cpu_interrupt_enable();
     console_write("\n");
-    console_write("phip> ");
+    console_write("opengat$ ");
     if (!feed_shell_line("linux echo") ||
         !feed_shell_line("echo still usable") ||
         shell_get_state().commands != before.commands + 2U ||
@@ -7177,12 +6868,12 @@ _Noreturn void kernel_test_complete_phipia_proof_userland_absent(void)
         !linux_userland_resources_released() || !cpu_interrupts_enabled()) {
         kernel_test_fail("absent userspace volume did not recover cleanly");
     }
-    console_write("\nST PHIPIA_PROOF_USERLAND_ABSENT concise refusal prompt usable ");
+    console_write("\nST OPENGAT_PROOF_USERLAND_ABSENT concise refusal prompt usable ");
     console_write("teardown clean\n");
     kernel_test_pass();
 }
 
-_Noreturn void kernel_test_complete_phipia_proof_userland_interactive(void)
+_Noreturn void kernel_test_complete_opengat_proof_userland_interactive(void)
 {
     const struct shell_state before = shell_get_state();
     const uint32_t cat_before =
@@ -7191,18 +6882,18 @@ _Noreturn void kernel_test_complete_phipia_proof_userland_interactive(void)
     uint64_t second_generation;
     struct linux_cat_abi_proof_result proof;
 
-    if (active_scenario != KERNEL_TEST_PHIPIA_PROOF_USERLAND_INTERACTIVE ||
-        !installed_phipia_proof_ready() || !shell_is_active() ||
+    if (active_scenario != KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE ||
+        !installed_test_runtime_ready() || !shell_is_active() ||
         !keyboard_is_initialized()) {
         kernel_test_fail("interactive userspace prerequisites are incomplete");
     }
     cpu_interrupt_enable();
     shell_process_keyboard_events();
-    if (!focus_phipia_proof_terminal()) {
+    if (!focus_opengat_proof_terminal()) {
         kernel_test_fail("interactive scenario could not focus Terminal");
     }
     console_write("\n");
-    console_write("phip> ");
+    console_write("opengat$ ");
 
     if (!inject_keyboard_text("linux cat\n") ||
         !linux_userland_foreground_waiting()) {
@@ -7247,13 +6938,13 @@ _Noreturn void kernel_test_complete_phipia_proof_userland_interactive(void)
         !cpu_interrupts_enabled()) {
         kernel_test_fail("interactive cat proof is inconsistent");
     }
-    console_write("\nST PHIPIA_PROOF_USERLAND_INTERACTIVE cat 2 keyboard IRQ ");
+    console_write("\nST OPENGAT_PROOF_USERLAND_INTERACTIVE cat 2 keyboard IRQ ");
     console_write("read SYSCALL copy-out resume write SYSCALL stdout exact ");
     console_write("EOF exit 0 teardown clean fresh generation prompt restored\n");
     kernel_test_pass();
 }
 
-_Noreturn void kernel_test_complete_phipia_proof_userland_interactive_absent(
+_Noreturn void kernel_test_complete_opengat_proof_userland_interactive_absent(
     void
 )
 {
@@ -7265,18 +6956,18 @@ _Noreturn void kernel_test_complete_phipia_proof_userland_interactive_absent(
     struct linux_abi_proof_result echo;
 
     if (active_scenario !=
-            KERNEL_TEST_PHIPIA_PROOF_USERLAND_INTERACTIVE_ABSENT ||
-        !installed_phipia_proof_ready() || !shell_is_active() ||
+            KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE_ABSENT ||
+        !installed_test_runtime_ready() || !shell_is_active() ||
         !keyboard_is_initialized()) {
         kernel_test_fail("interactive absent-profile prerequisites incomplete");
     }
     cpu_interrupt_enable();
     shell_process_keyboard_events();
-    if (!focus_phipia_proof_terminal()) {
+    if (!focus_opengat_proof_terminal()) {
         kernel_test_fail("absent scenario could not focus Terminal");
     }
     console_write("\n");
-    console_write("phip> ");
+    console_write("opengat$ ");
     if (!inject_keyboard_text("linux cat\n") ||
         linux_userland_foreground_waiting() ||
         !linux_userland_resources_released() ||
@@ -7290,13 +6981,13 @@ _Noreturn void kernel_test_complete_phipia_proof_userland_interactive_absent(
         linux_userland_completed(LINUX_USERLAND_PROFILE_CAT) != cat_before ||
         linux_userland_completed(LINUX_USERLAND_PROFILE_ECHO) !=
             echo_before + 1U ||
-        echo.file_bytes != LINUX_ABI_IMAGE_BYTES || echo.stdout_bytes != 7U ||
+        echo.file_bytes != LINUX_ABI_IMAGE_BYTES || echo.stdout_bytes != 8U ||
         !echo.ring_three || !echo.real_syscall_instruction ||
         !echo.stdout_valid || !echo.exit_zero || !echo.teardown_complete ||
         !linux_userland_resources_released() || !cpu_interrupts_enabled()) {
         kernel_test_fail("missing cat profile recovery proof is inconsistent");
     }
-    console_write("\nST PHIPIA_PROOF_USERLAND_INTERACTIVE_ABSENT cat missing ");
+    console_write("\nST OPENGAT_PROOF_USERLAND_INTERACTIVE_ABSENT cat missing ");
     console_write("echo valid keyboard IRQ refusal recoverable teardown clean ");
     console_write("prompt usable\n");
     kernel_test_pass();
@@ -7309,24 +7000,24 @@ static bool fat32_read_file(
     size_t *file_bytes
 )
 {
-    phipfs_handle handle;
-    struct phipfs_stat stat;
+    opengatfs_handle handle;
+    struct opengatfs_stat stat;
     size_t read_bytes = 0U;
-    enum phipfs_status status;
+    enum opengatfs_status status;
 
     if (path == NULL || buffer == NULL || file_bytes == NULL ||
-        phipfs_stat_path(PHIPFS_VOLUME_DATA, path, &stat) != PHIPFS_STATUS_OK ||
+        opengatfs_stat_path(OPENGATFS_VOLUME_DATA, path, &stat) != OPENGATFS_STATUS_OK ||
         stat.directory || stat.size > capacity ||
-        phipfs_open(PHIPFS_VOLUME_DATA, path, PHIPFS_ACCESS_READ, &handle) !=
-            PHIPFS_STATUS_OK) {
+        opengatfs_open(OPENGATFS_VOLUME_DATA, path, OPENGATFS_ACCESS_READ, &handle) !=
+            OPENGATFS_STATUS_OK) {
         return false;
     }
-    status = phipfs_read(handle, buffer, capacity, &read_bytes);
-    if (phipfs_close(handle) != PHIPFS_STATUS_OK) {
+    status = opengatfs_read(handle, buffer, capacity, &read_bytes);
+    if (opengatfs_close(handle) != OPENGATFS_STATUS_OK) {
         return false;
     }
     *file_bytes = read_bytes;
-    return status == PHIPFS_STATUS_OK && read_bytes == stat.size;
+    return status == OPENGATFS_STATUS_OK && read_bytes == stat.size;
 }
 
 static bool fat32_file_equals(
@@ -7358,16 +7049,16 @@ static bool fat32_file_equals(
 static void fat32_feed(const char *line)
 {
     if (!feed_shell_line(line)) {
-        kernel_test_fail("Phipia refused a FAT32 command line");
+        kernel_test_fail("OpenGAT refused a FAT32 command line");
     }
 }
 
 static void fat32_require_base(bool data_required)
 {
-    struct phipfs_drive_info system = phipfs_drive(PHIPFS_VOLUME_SYSTEM);
-    struct phipfs_drive_info data = phipfs_drive(PHIPFS_VOLUME_DATA);
+    struct opengatfs_drive_info system = opengatfs_drive(OPENGATFS_VOLUME_SYSTEM);
+    struct opengatfs_drive_info data = opengatfs_drive(OPENGATFS_VOLUME_DATA);
 
-    if (!installed_phipia_proof_ready() || !shell_is_active() ||
+    if (!installed_test_runtime_ready() || !shell_is_active() ||
         !system.present || !system.healthy || !system.mounted ||
         !system.read_only || system.volume_id != FAT32_SYSTEM_VOLUME_ID ||
         (data_required && (!data.present || !data.healthy || !data.mounted ||
@@ -7415,7 +7106,7 @@ static void fat32_data_scenario(void)
 static void fat32_nested_scenario(void)
 {
     static const uint8_t expected[] = "nested\n";
-    struct phipfs_stat stat;
+    struct opengatfs_stat stat;
 
     fat32_require_base(true);
     fat32_feed("mkdir projects");
@@ -7427,8 +7118,8 @@ static void fat32_nested_scenario(void)
     fat32_feed("cd ..");
     if (!fat32_file_equals("projects/cuts/notes.txt", expected,
             sizeof(expected) - 1U) ||
-        phipfs_stat_path(PHIPFS_VOLUME_DATA, "projects/cuts", &stat) !=
-            PHIPFS_STATUS_OK || !stat.directory) {
+        opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "projects/cuts", &stat) !=
+            OPENGATFS_STATUS_OK || !stat.directory) {
         kernel_test_fail("nested FAT32 traversal changed");
     }
     console_write("\nST FAT32 NESTED dot dotdot traversal enumeration exact\n");
@@ -7436,7 +7127,7 @@ static void fat32_nested_scenario(void)
 
 static void fat32_growth_scenario(void)
 {
-    struct phipfs_stat stat;
+    struct opengatfs_stat stat;
     uint8_t buffer[1024];
     size_t bytes = 0U;
 
@@ -7446,8 +7137,8 @@ static void fat32_growth_scenario(void)
         fat32_feed("append growth.bin \"0123456789012345678901234567890123456789012345678901234567890123456789\"");
     }
     fat32_feed("stat growth.bin");
-    if (phipfs_stat_path(PHIPFS_VOLUME_DATA, "growth.bin", &stat) !=
-            PHIPFS_STATUS_OK || stat.size != 568U || stat.cluster_count != 2U ||
+    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "growth.bin", &stat) !=
+            OPENGATFS_STATUS_OK || stat.size != 568U || stat.cluster_count != 2U ||
         !fat32_read_file("growth.bin", buffer, sizeof(buffer), &bytes) ||
         bytes != stat.size) {
         kernel_test_fail("multi-cluster FAT32 growth changed");
@@ -7471,7 +7162,7 @@ static void fat32_random_scenario(void)
 
 static void fat32_truncate_scenario(void)
 {
-    struct phipfs_stat stat;
+    struct opengatfs_stat stat;
     uint8_t buffer[800];
     size_t bytes = 0U;
 
@@ -7480,8 +7171,8 @@ static void fat32_truncate_scenario(void)
     fat32_feed("truncate trim.bin 648");
     fat32_feed("writeat trim.bin 0 \"prefix\"");
     fat32_feed("truncate trim.bin 100");
-    if (phipfs_stat_path(PHIPFS_VOLUME_DATA, "trim.bin", &stat) !=
-            PHIPFS_STATUS_OK || stat.size != 100U || stat.cluster_count != 1U) {
+    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "trim.bin", &stat) !=
+            OPENGATFS_STATUS_OK || stat.size != 100U || stat.cluster_count != 1U) {
         kernel_test_fail("FAT32 truncation did not release its tail");
     }
     fat32_feed("truncate trim.bin 700");
@@ -7500,27 +7191,27 @@ static void fat32_truncate_scenario(void)
 static void fat32_rename_scenario(void)
 {
     static const uint8_t expected[] = "move me\n";
-    struct phipfs_stat stat;
+    struct opengatfs_stat stat;
 
     fat32_require_base(true);
     fat32_feed("mkdir a");
     fat32_feed("mkdir b");
     fat32_feed("mkdir a/child");
-    if (phipfs_rename(PHIPFS_VOLUME_DATA, "a", "a/child/a") !=
-            PHIPFS_STATUS_PATH) {
+    if (opengatfs_rename(OPENGATFS_VOLUME_DATA, "a", "a/child/a") !=
+            OPENGATFS_STATUS_PATH) {
         kernel_test_fail("FAT32 accepted a directory move into itself");
     }
     fat32_feed("write a/note.txt \"move me\"");
     fat32_feed("mv a/note.txt b/moved.txt");
     fat32_feed("mv b archive");
     fat32_feed("touch conflict.txt");
-    if (phipfs_rename(PHIPFS_VOLUME_DATA, "conflict.txt",
-            "archive/moved.txt") != PHIPFS_STATUS_EXISTS) {
+    if (opengatfs_rename(OPENGATFS_VOLUME_DATA, "conflict.txt",
+            "archive/moved.txt") != OPENGATFS_STATUS_EXISTS) {
         kernel_test_fail("FAT32 rename conflict was not rejected");
     }
     fat32_feed("ls archive");
-    if (phipfs_stat_path(PHIPFS_VOLUME_DATA, "a/note.txt", &stat) !=
-            PHIPFS_STATUS_NOT_FOUND ||
+    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "a/note.txt", &stat) !=
+            OPENGATFS_STATUS_NOT_FOUND ||
         !fat32_file_equals("archive/moved.txt", expected,
             sizeof(expected) - 1U)) {
         kernel_test_fail("FAT32 rename or move changed ownership");
@@ -7530,22 +7221,22 @@ static void fat32_rename_scenario(void)
 
 static void fat32_delete_scenario(void)
 {
-    struct phipfs_stat first;
-    struct phipfs_stat second;
+    struct opengatfs_stat first;
+    struct opengatfs_stat second;
 
     fat32_require_base(true);
     fat32_feed("write first.bin \"one\"");
-    if (phipfs_stat_path(PHIPFS_VOLUME_DATA, "first.bin", &first) !=
-            PHIPFS_STATUS_OK) {
+    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "first.bin", &first) !=
+            OPENGATFS_STATUS_OK) {
         kernel_test_fail("FAT32 deletion setup failed");
     }
     fat32_feed("rm first.bin");
     fat32_feed("write second.bin \"two\"");
     fat32_feed("mkdir kept");
     fat32_feed("write kept/live.txt \"live\"");
-    if (phipfs_stat_path(PHIPFS_VOLUME_DATA, "second.bin", &second) !=
-            PHIPFS_STATUS_OK || first.first_cluster != second.first_cluster ||
-        phipfs_rmdir(PHIPFS_VOLUME_DATA, "kept") != PHIPFS_STATUS_NOT_EMPTY) {
+    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "second.bin", &second) !=
+            OPENGATFS_STATUS_OK || first.first_cluster != second.first_cluster ||
+        opengatfs_rmdir(OPENGATFS_VOLUME_DATA, "kept") != OPENGATFS_STATUS_NOT_EMPTY) {
         kernel_test_fail("FAT32 deletion did not reuse or protect ownership");
     }
     fat32_feed("rm kept/live.txt");
@@ -7555,22 +7246,22 @@ static void fat32_delete_scenario(void)
 
 static void fat32_full_scenario(void)
 {
-    struct phipfs_stat stat;
+    struct opengatfs_stat stat;
 
     fat32_require_base(true);
-    if (phipfs_drive(PHIPFS_VOLUME_DATA).free_bytes != 0U) {
+    if (opengatfs_drive(OPENGATFS_VOLUME_DATA).free_bytes != 0U) {
         kernel_test_fail("full FAT32 fixture retained free clusters");
     }
     fat32_feed("write recovery.txt \"blocked\"");
-    if (phipfs_stat_path(PHIPFS_VOLUME_DATA, "recovery.txt", &stat) !=
-            PHIPFS_STATUS_OK || stat.size != 0U) {
+    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "recovery.txt", &stat) !=
+            OPENGATFS_STATUS_OK || stat.size != 0U) {
         kernel_test_fail("full-volume refusal exposed partial contents");
     }
     fat32_feed("rm tiny.bin");
     fat32_feed("write recovery.txt \"recovered\"");
     fat32_feed("sync");
-    if (phipfs_stat_path(PHIPFS_VOLUME_DATA, "recovery.txt", &stat) !=
-            PHIPFS_STATUS_OK || stat.size != 10U) {
+    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "recovery.txt", &stat) !=
+            OPENGATFS_STATUS_OK || stat.size != 10U) {
         kernel_test_fail("full FAT32 volume did not recover after deletion");
     }
     console_write("\nST FAT32 FULL refusal no leak deletion recovered\n");
@@ -7578,7 +7269,7 @@ static void fat32_full_scenario(void)
 
 static void fat32_unavailable_scenario(bool corrupt)
 {
-    struct phipfs_drive_info data = phipfs_drive(PHIPFS_VOLUME_DATA);
+    struct opengatfs_drive_info data = opengatfs_drive(OPENGATFS_VOLUME_DATA);
     const uint32_t before =
         linux_userland_completed(LINUX_USERLAND_PROFILE_ECHO);
 
@@ -7600,26 +7291,26 @@ static void fat32_unavailable_scenario(bool corrupt)
 static void fat32_persistence_scenario(void)
 {
     static const uint8_t expected[] = "first cut\nsecond line\n";
-    struct phipfs_stat stat;
-    enum phipfs_status status;
+    struct opengatfs_stat stat;
+    enum opengatfs_status status;
 
     fat32_require_base(true);
-    status = phipfs_stat_path(PHIPFS_VOLUME_DATA, "projects/notes.txt", &stat);
-    if (status == PHIPFS_STATUS_NOT_FOUND) {
+    status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "projects/notes.txt", &stat);
+    if (status == OPENGATFS_STATUS_NOT_FOUND) {
         fat32_feed("mkdir projects");
         fat32_feed("write projects/notes.txt \"first cut\"");
         fat32_feed("append projects/notes.txt \"second line\"");
         fat32_feed("sync");
         if (!fat32_file_equals("projects/notes.txt", expected,
                 sizeof(expected) - 1U) ||
-            phipfs_unmount(PHIPFS_VOLUME_DATA) != PHIPFS_STATUS_OK) {
+            opengatfs_unmount(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK) {
             kernel_test_fail("clean persistence write phase failed");
         }
         console_write("\nST FAT32 PERSISTENCE synchronized reboot phase\n");
         cpu_out8(UINT16_C(0x0064), UINT8_C(0xFE));
         kernel_test_fail("platform reset did not restart QEMU");
     }
-    if (status != PHIPFS_STATUS_OK ||
+    if (status != OPENGATFS_STATUS_OK ||
         !fat32_file_equals("projects/notes.txt", expected,
             sizeof(expected) - 1U)) {
         kernel_test_fail("clean reboot did not retain FAT32 contents");
@@ -7660,16 +7351,16 @@ static void fat32_cache_scenario(void)
 
 static void fat32_immutable_scenario(void)
 {
-    phipfs_handle handle;
+    opengatfs_handle handle;
     const uint32_t before =
         linux_userland_completed(LINUX_USERLAND_PROFILE_ECHO);
 
     fat32_require_base(true);
     fat32_feed("linux echo");
-    if (phipfs_create(PHIPFS_VOLUME_SYSTEM, "ATTACK.TXT") !=
-            PHIPFS_STATUS_READ_ONLY ||
-        phipfs_open(PHIPFS_VOLUME_SYSTEM, "BUSYBOX", PHIPFS_ACCESS_WRITE,
-            &handle) != PHIPFS_STATUS_READ_ONLY ||
+    if (opengatfs_create(OPENGATFS_VOLUME_SYSTEM, "ATTACK.TXT") !=
+            OPENGATFS_STATUS_READ_ONLY ||
+        opengatfs_open(OPENGATFS_VOLUME_SYSTEM, "BUSYBOX", OPENGATFS_ACCESS_WRITE,
+            &handle) != OPENGATFS_STATUS_READ_ONLY ||
         linux_userland_completed(LINUX_USERLAND_PROFILE_ECHO) != before + 1U) {
         kernel_test_fail("immutable FAT32 system volume accepted a write");
     }
@@ -7678,37 +7369,37 @@ static void fat32_immutable_scenario(void)
 
 static void fat32_handles_scenario(void)
 {
-    phipfs_handle handles[PHIPFS_MAX_HANDLES];
-    phipfs_handle extra;
+    opengatfs_handle handles[OPENGATFS_MAX_HANDLES];
+    opengatfs_handle extra;
     size_t bytes = 0U;
     uint8_t byte = 0U;
 
     fat32_require_base(true);
     fat32_feed("write handle.txt \"generation\"");
-    if (phipfs_open(PHIPFS_VOLUME_DATA, "handle.txt", PHIPFS_ACCESS_READ,
-            &handles[0]) != PHIPFS_STATUS_OK ||
-        phipfs_write(handles[0], &byte, 1U, &bytes) != PHIPFS_STATUS_ACCESS ||
-        phipfs_read(handles[0], NULL, 1U, &bytes) !=
-            PHIPFS_STATUS_INVALID_ARGUMENT ||
-        phipfs_unlink(PHIPFS_VOLUME_DATA, "handle.txt") != PHIPFS_STATUS_BUSY ||
-        phipfs_close(handles[0]) != PHIPFS_STATUS_OK ||
-        phipfs_close(handles[0]) != PHIPFS_STATUS_STALE_HANDLE ||
-        phipfs_read(handles[0], &byte, 1U, &bytes) !=
-            PHIPFS_STATUS_STALE_HANDLE) {
+    if (opengatfs_open(OPENGATFS_VOLUME_DATA, "handle.txt", OPENGATFS_ACCESS_READ,
+            &handles[0]) != OPENGATFS_STATUS_OK ||
+        opengatfs_write(handles[0], &byte, 1U, &bytes) != OPENGATFS_STATUS_ACCESS ||
+        opengatfs_read(handles[0], NULL, 1U, &bytes) !=
+            OPENGATFS_STATUS_INVALID_ARGUMENT ||
+        opengatfs_unlink(OPENGATFS_VOLUME_DATA, "handle.txt") != OPENGATFS_STATUS_BUSY ||
+        opengatfs_close(handles[0]) != OPENGATFS_STATUS_OK ||
+        opengatfs_close(handles[0]) != OPENGATFS_STATUS_STALE_HANDLE ||
+        opengatfs_read(handles[0], &byte, 1U, &bytes) !=
+            OPENGATFS_STATUS_STALE_HANDLE) {
         kernel_test_fail("FAT32 handle generation controls changed");
     }
-    for (size_t index = 0U; index < PHIPFS_MAX_HANDLES; ++index) {
-        if (phipfs_open(PHIPFS_VOLUME_DATA, "handle.txt", PHIPFS_ACCESS_READ,
-                &handles[index]) != PHIPFS_STATUS_OK) {
+    for (size_t index = 0U; index < OPENGATFS_MAX_HANDLES; ++index) {
+        if (opengatfs_open(OPENGATFS_VOLUME_DATA, "handle.txt", OPENGATFS_ACCESS_READ,
+                &handles[index]) != OPENGATFS_STATUS_OK) {
             kernel_test_fail("FAT32 handle table filled early");
         }
     }
-    if (phipfs_open(PHIPFS_VOLUME_DATA, "handle.txt", PHIPFS_ACCESS_READ,
-            &extra) != PHIPFS_STATUS_NO_HANDLES) {
+    if (opengatfs_open(OPENGATFS_VOLUME_DATA, "handle.txt", OPENGATFS_ACCESS_READ,
+            &extra) != OPENGATFS_STATUS_NO_HANDLES) {
         kernel_test_fail("FAT32 handle table exceeded its fixed bound");
     }
-    for (size_t index = 0U; index < PHIPFS_MAX_HANDLES; ++index) {
-        if (phipfs_close(handles[index]) != PHIPFS_STATUS_OK) {
+    for (size_t index = 0U; index < OPENGATFS_MAX_HANDLES; ++index) {
+        if (opengatfs_close(handles[index]) != OPENGATFS_STATUS_OK) {
             kernel_test_fail("FAT32 handle teardown leaked ownership");
         }
     }
@@ -7722,7 +7413,7 @@ _Noreturn void kernel_test_complete_fat32(void)
         kernel_test_fail("FAT32 completion used outside its scenario");
     }
     cpu_interrupt_enable();
-    console_write("\nphip> ");
+    console_write("\nopengat$ ");
     switch (active_scenario) {
     case KERNEL_TEST_FAT32_SYSTEM: fat32_system_scenario(); break;
     case KERNEL_TEST_FAT32_DATA: fat32_data_scenario(); break;
@@ -7752,7 +7443,7 @@ _Noreturn void kernel_test_complete_fat32(void)
 #define NETWORK_TEST_HTTP UINT32_C(0x0A000214)
 
 static const uint8_t network_welcome[] =
-    "hello from the Phipia network\n";
+    "hello from the OpenGAT network\n";
 
 static void network_require_device(void)
 {
@@ -7816,7 +7507,7 @@ static void network_syscall_http_download_scenario(void)
     const uint64_t response_address = request_address + UINT64_C(256);
     const uint64_t url_address = request_address + UINT64_C(512);
     const uint64_t path_address = request_address + UINT64_C(640);
-    static const char url[] = "http://phipia.test/welcome.txt";
+    static const char url[] = "http://opengat.test/welcome.txt";
     static const char destination[] = "HTTPLEN.TXT";
     uintptr_t executable_frame = 0U;
     uintptr_t data_frame = 0U;
@@ -7888,14 +7579,32 @@ static void network_syscall_http_download_scenario(void)
     if (restore_interrupts) {
         cpu_interrupt_enable();
     }
-    if (network_syscall_register(&space, UINT64_C(0x210),
-            &authenticator) != NETWORK_SYSCALL_STATUS_OK ||
+    const enum network_syscall_status register_status =
+        network_syscall_register(&space, UINT64_C(0x210), &authenticator);
+    const enum network_syscall_status dispatch_status =
+        register_status == NETWORK_SYSCALL_STATUS_OK ?
         network_syscall_dispatch(&authenticator, request_address,
-            response_address) != NETWORK_SYSCALL_STATUS_OK ||
+            response_address) : register_status;
+
+    if (register_status != NETWORK_SYSCALL_STATUS_OK ||
+        dispatch_status != NETWORK_SYSCALL_STATUS_OK ||
         response->boundary_status != NETWORK_SYSCALL_STATUS_OK ||
         response->network_status != NETWORK_STATUS_OK ||
         response->http_status != 200U ||
         response->value != sizeof(network_welcome) - 1U) {
+        console_write("OpenGAT: network syscall register ");
+        console_write(network_syscall_status_string(register_status));
+        console_write(" dispatch ");
+        console_write(network_syscall_status_string(dispatch_status));
+        console_write(" boundary ");
+        console_write(network_syscall_status_string(response->boundary_status));
+        console_write(" network ");
+        console_write(network_status_string(response->network_status));
+        console_write(" HTTP ");
+        console_write_u64(response->http_status);
+        console_write(" bytes ");
+        console_write_u64(response->value);
+        console_putc('\n');
         kernel_test_fail("network syscall HTTP operation failed");
     }
     network_syscall_process_terminated(&authenticator);
@@ -8020,7 +7729,7 @@ static void network_tcp_connect_close(bool expect_reset)
 #define NETWORK_TEST_LISTEN_PORT UINT16_C(7777)
 #define NETWORK_TEST_CLOSED_PORT UINT16_C(7778)
 
-static const uint8_t network_listen_request[] = "PHIPIA LISTEN\n";
+static const uint8_t network_listen_request[] = "OPENGAT LISTEN\n";
 static const uint8_t network_refusal_notice[] = "REFUSED";
 
 static network_handle network_announce_port(
@@ -8032,10 +7741,10 @@ static network_handle network_announce_port(
     network_handle knock;
     uint8_t message[6];
 
-    message[0] = (uint8_t)'P';
-    message[1] = (uint8_t)'H';
-    message[2] = (uint8_t)'I';
-    message[3] = (uint8_t)'P';
+    message[0] = (uint8_t)'O';
+    message[1] = (uint8_t)'G';
+    message[2] = (uint8_t)'T';
+    message[3] = (uint8_t)'1';
     message[4] = (uint8_t)(announced >> 8U);
     message[5] = (uint8_t)announced;
     if (network_udp_open(NETWORK_TEST_OWNER, &knock) != NETWORK_STATUS_OK ||
@@ -8359,7 +8068,7 @@ static void network_download(const char *destination)
 
     network_require_dhcp();
     if (network_http_download(NETWORK_TEST_OWNER,
-            "http://phipia.test/welcome.txt", destination, false,
+            "http://opengat.test/welcome.txt", destination, false,
             UINT64_C(15000000000), &result) != NETWORK_STATUS_OK ||
         !result.synchronized || result.status_code != 200U ||
         !fat32_file_equals(destination, network_welcome,
@@ -8469,7 +8178,7 @@ _Noreturn void kernel_test_complete_network(void)
         uint32_t address;
 
         network_require_dhcp();
-        if (network_resolve("phipia.test", &address,
+        if (network_resolve("opengat.test", &address,
                 NETWORK_DEFAULT_OPERATION_TIMEOUT_NS) != NETWORK_STATUS_OK ||
             address != NETWORK_TEST_HTTP) {
             kernel_test_fail("DNS resolution did not return fixture address");
@@ -8481,7 +8190,7 @@ _Noreturn void kernel_test_complete_network(void)
         enum network_status status;
 
         network_require_dhcp();
-        status = network_resolve("phipia.test", &address,
+        status = network_resolve("opengat.test", &address,
             UINT64_C(1000000000));
         if (status != NETWORK_STATUS_TIMEOUT &&
             status != NETWORK_STATUS_DNS_FAILURE &&
@@ -8519,32 +8228,32 @@ _Noreturn void kernel_test_complete_network(void)
     }
     case KERNEL_TEST_NETWORK_HTTP_CHUNKED:
         network_http_download_scenario(
-            "http://phipia.test/welcome.txt", "HTTPCHNK.TXT", true, 0U);
+            "http://opengat.test/welcome.txt", "HTTPCHNK.TXT", true, 0U);
         break;
     case KERNEL_TEST_NETWORK_HTTP_REDIRECT:
         network_http_download_scenario(
-            "http://phipia.test/start", "HTTPREDR.TXT", false, 1U);
+            "http://opengat.test/start", "HTTPREDR.TXT", false, 1U);
         break;
     case KERNEL_TEST_NETWORK_HTTP_MALFORMED: {
         struct network_http_result result;
-        struct phipfs_stat stat;
+        struct opengatfs_stat stat;
 
         fat32_require_base(true);
         network_require_dhcp();
         if (network_http_download(NETWORK_TEST_OWNER,
-                "http://phipia.test/welcome.txt", "BADHTTP.TXT", false,
+                "http://opengat.test/welcome.txt", "BADHTTP.TXT", false,
                 UINT64_C(5000000000), &result) == NETWORK_STATUS_OK ||
-            phipfs_stat_path(PHIPFS_VOLUME_DATA, "BADHTTP.TXT", &stat) !=
-                PHIPFS_STATUS_NOT_FOUND) {
+            opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "BADHTTP.TXT", &stat) !=
+                OPENGATFS_STATUS_NOT_FOUND) {
             kernel_test_fail("malformed HTTP response was accepted");
         }
         break;
     }
     case KERNEL_TEST_NETWORK_HTTP_NESTED:
         fat32_require_base(true);
-        if (phipfs_mkdir(PHIPFS_VOLUME_DATA, "DOWNLDS") != PHIPFS_STATUS_OK &&
-            phipfs_stat_path(PHIPFS_VOLUME_DATA, "DOWNLDS",
-                &(struct phipfs_stat){0}) != PHIPFS_STATUS_OK) {
+        if (opengatfs_mkdir(OPENGATFS_VOLUME_DATA, "DOWNLDS") != OPENGATFS_STATUS_OK &&
+            opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "DOWNLDS",
+                &(struct opengatfs_stat){0}) != OPENGATFS_STATUS_OK) {
             kernel_test_fail("download directory was not available");
         }
         network_download("DOWNLDS/WELCOME.TXT");
@@ -8561,7 +8270,7 @@ _Noreturn void kernel_test_complete_network(void)
         fat32_require_base(true);
         network_require_dhcp();
         status = network_http_download(NETWORK_TEST_OWNER,
-            "http://phipia.test/welcome.txt", "full.txt", false,
+            "http://opengat.test/welcome.txt", "full.txt", false,
             UINT64_C(5000000000), &result);
         if (status != NETWORK_STATUS_TOO_LARGE &&
             status != NETWORK_STATUS_FILESYSTEM) {
@@ -8599,14 +8308,14 @@ _Noreturn void kernel_test_complete_network(void)
         break;
     }
     case KERNEL_TEST_NETWORK_SYSTEM_IMMUTABLE: {
-        phipfs_handle handle;
+        opengatfs_handle handle;
 
         fat32_require_base(true);
         network_http_download_scenario(
-            "http://phipia.test/welcome.txt", "IMMUTABL.TXT",
+            "http://opengat.test/welcome.txt", "IMMUTABL.TXT",
             false, 0U);
-        if (phipfs_open(PHIPFS_VOLUME_SYSTEM, "BUSYBOX", PHIPFS_ACCESS_WRITE,
-                &handle) != PHIPFS_STATUS_READ_ONLY) {
+        if (opengatfs_open(OPENGATFS_VOLUME_SYSTEM, "BUSYBOX", OPENGATFS_ACCESS_WRITE,
+                &handle) != OPENGATFS_STATUS_READ_ONLY) {
             kernel_test_fail("networking weakened the immutable system volume");
         }
         break;
@@ -8634,13 +8343,13 @@ _Noreturn void kernel_test_complete_network(void)
         network_linux_cat_twice();
         break;
     case KERNEL_TEST_NETWORK_FILES: {
-        struct phipfs_list_entry entries[4];
+        struct opengatfs_list_entry entries[4];
         size_t count = 0U;
 
         fat32_require_base(true);
         network_require_dhcp();
-        if (phipfs_list(PHIPFS_VOLUME_DATA, ".", entries, 4U, &count) !=
-                PHIPFS_STATUS_OK || ui_flush() != UI_STATUS_OK) {
+        if (opengatfs_list(OPENGATFS_VOLUME_DATA, ".", entries, 4U, &count) !=
+                OPENGATFS_STATUS_OK || ui_flush() != UI_STATUS_OK) {
             kernel_test_fail("networking regressed Files");
         }
         break;
@@ -8653,29 +8362,22 @@ _Noreturn void kernel_test_complete_network(void)
             kernel_test_fail("networking regressed Notes");
         }
         break;
-    case KERNEL_TEST_NETWORK_MEDIA_EDITOR:
-        fat32_require_base(true);
-        network_require_dhcp();
-        if (!ui_is_active() || ui_flush() != UI_STATUS_OK) {
-            kernel_test_fail("networking regressed Media Editor");
-        }
-        break;
     case KERNEL_TEST_NETWORK_PERSISTENCE: {
-        struct phipfs_stat stat;
-        enum phipfs_status status;
+        struct opengatfs_stat stat;
+        enum opengatfs_status status;
 
         fat32_require_base(true);
-        status = phipfs_stat_path(PHIPFS_VOLUME_DATA, "network.txt", &stat);
-        if (status == PHIPFS_STATUS_NOT_FOUND) {
+        status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "network.txt", &stat);
+        if (status == OPENGATFS_STATUS_NOT_FOUND) {
             network_download("network.txt");
-            if (phipfs_unmount(PHIPFS_VOLUME_DATA) != PHIPFS_STATUS_OK) {
+            if (opengatfs_unmount(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK) {
                 kernel_test_fail("network download did not unmount cleanly");
             }
             console_write("\nST NETWORK PERSISTENCE synchronized reboot phase\n");
             cpu_out8(UINT16_C(0x0064), UINT8_C(0xFE));
             kernel_test_fail("platform reset did not restart QEMU");
         }
-        if (status != PHIPFS_STATUS_OK ||
+        if (status != OPENGATFS_STATUS_OK ||
             !fat32_file_equals("network.txt", network_welcome,
                 sizeof(network_welcome) - 1U)) {
             kernel_test_fail("network download did not persist after reboot");
@@ -9370,8 +9072,8 @@ const char *kernel_test_scenario_name(enum kernel_test_scenario scenario)
         return "device-windows";
     case KERNEL_TEST_BOOT_LEDGER:
         return "boot-ledger";
-    case KERNEL_TEST_PHIPIA_PROOF:
-        return "phipia-proof";
+    case KERNEL_TEST_OPENGAT_PROOF:
+        return "opengat-proof";
     case KERNEL_TEST_DEVICE_SUBSTRATE:
         return "device-substrate";
     case KERNEL_TEST_XHCI:
@@ -9386,14 +9088,14 @@ const char *kernel_test_scenario_name(enum kernel_test_scenario scenario)
         return "linux-abi";
     case KERNEL_TEST_LINUX_ABI_UNAME:
         return "linux-abi-uname";
-    case KERNEL_TEST_PHIPIA_PROOF_USERLAND:
-        return "phipia-proof-userland";
-    case KERNEL_TEST_PHIPIA_PROOF_USERLAND_ABSENT:
-        return "phipia-proof-userland-absent";
-    case KERNEL_TEST_PHIPIA_PROOF_USERLAND_INTERACTIVE:
-        return "phipia-proof-userland-interactive";
-    case KERNEL_TEST_PHIPIA_PROOF_USERLAND_INTERACTIVE_ABSENT:
-        return "phipia-proof-userland-interactive-absent";
+    case KERNEL_TEST_OPENGAT_PROOF_USERLAND:
+        return "opengat-proof-userland";
+    case KERNEL_TEST_OPENGAT_PROOF_USERLAND_ABSENT:
+        return "opengat-proof-userland-absent";
+    case KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE:
+        return "opengat-proof-userland-interactive";
+    case KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE_ABSENT:
+        return "opengat-proof-userland-interactive-absent";
     case KERNEL_TEST_FAT32_SYSTEM:
         return "fat32-system";
     case KERNEL_TEST_FAT32_DATA:
@@ -9486,8 +9188,6 @@ const char *kernel_test_scenario_name(enum kernel_test_scenario scenario)
         return "network-files";
     case KERNEL_TEST_NETWORK_NOTES:
         return "network-notes";
-    case KERNEL_TEST_NETWORK_MEDIA_EDITOR:
-        return "network-media-editor";
     case KERNEL_TEST_NETWORK_PERSISTENCE:
         return "network-persistence";
     case KERNEL_TEST_NETWORK_SOCKET_ISOLATION:
@@ -9516,8 +9216,6 @@ const char *kernel_test_scenario_name(enum kernel_test_scenario scenario)
         return "native-lua";
     case KERNEL_TEST_NATIVE_SQLITE:
         return "native-sqlite";
-    case KERNEL_TEST_NATIVE_CANVAS:
-        return "native-canvas";
     case KERNEL_TEST_NATIVE_NETWORK:
         return "network-native";
     case KERNEL_TEST_NATIVE_RUST:
@@ -9540,8 +9238,8 @@ const char *kernel_test_scenario_name(enum kernel_test_scenario scenario)
         return "native-dynamic";
     case KERNEL_TEST_NATIVE_HTTPS:
         return "native-https";
-    case KERNEL_TEST_NATIVE_PHIP:
-        return "native-phip";
+    case KERNEL_TEST_NATIVE_OPENGAT:
+        return "native-opengat";
     case KERNEL_TEST_EXT4_RECOVERY:
         return "ext4-recovery";
     case KERNEL_TEST_INVALID:

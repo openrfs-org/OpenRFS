@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 .section .text, "ax", @progbits
-.macro PHIPIA_STUB name, count
+.macro OPENGAT_STUB name, count
 .global \name
 .type \name, @function
 \name:
@@ -27,11 +27,11 @@
     ret
 .size \name, . - \name
 .endm
-PHIPIA_STUB phipia_syscall0, 0
-PHIPIA_STUB phipia_syscall1, 1
-PHIPIA_STUB phipia_syscall2, 2
-PHIPIA_STUB phipia_syscall3, 3
-PHIPIA_STUB phipia_syscall4, 4
-PHIPIA_STUB phipia_syscall5, 5
-PHIPIA_STUB phipia_syscall6, 6
+OPENGAT_STUB opengat_syscall0, 0
+OPENGAT_STUB opengat_syscall1, 1
+OPENGAT_STUB opengat_syscall2, 2
+OPENGAT_STUB opengat_syscall3, 3
+OPENGAT_STUB opengat_syscall4, 4
+OPENGAT_STUB opengat_syscall5, 5
+OPENGAT_STUB opengat_syscall6, 6
 .section .note.GNU-stack, "", @progbits

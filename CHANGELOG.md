@@ -2,23 +2,15 @@
 
 # Changelog
 
-## Phipia
+## Unreleased
 
-- Replaced the former shell presentation with the Phipia desktop and the
-  canonical Phipia identity.
-- Added the six-application 3D Dock with magnification, reflections, tooltips,
-  launch feedback, and light and dark shelf colours.
-- Added overlapping movable windows with focus, stacking, close controls, and
-  spring opening animation.
-- Added fourteen photographic desktops and a functional Settings application.
-- Added Files and Notes over the writable FAT32 data volume.
-- Added the Camera application and double-buffered frame-provider interface.
-  The default QEMU profile reports that no camera is connected.
-- Added the native Media Editor window with BMP import, timeline editing, project
-  persistence, and BMP export.
-- Updated the vendored Media Editor source to commit
-  `034ba9336f6dee3cd5a524a42b740b41013ca852`.
-- Added high-resolution screenshots and a 25-second QEMU demonstration.
+- Renamed the operating system, public interfaces, SDK, tools, packages,
+  workflows, and documentation to OpenGAT.
+- Changed normal boot to clear the display and stop at the bare `opengat$` command prompt.
+- Added persistent first-user creation and authenticated `starty` desktop
+  launch.
+- Replaced the visual identity with the supplied OpenGAT G mark, a restrained
+  grey wallpaper, and a matching desktop palette.
 
 ## 2.2.0
 

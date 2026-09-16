@@ -1,7 +1,0 @@
-/build/
-/target/
-/image/target/
-__pycache__/
-*.pyc
-*.swp
-*~

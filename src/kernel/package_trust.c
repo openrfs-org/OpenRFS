@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#include <phipia/package_trust.h>
+#include <opengat/package_trust.h>
 
 #include <monocypher-ed25519.h>
 
@@ -8,7 +8,7 @@
 #define TRUST_RECORD_STATUS_REVOKED UINT16_C(2)
 
 static const uint8_t trust_table_magic[8] = {
-    'P', 'H', 'I', 'P', 'K', 'E', 'Y', '1'
+    'O', 'G', 'T', 'K', 'E', 'Y', '0', '1'
 };
 
 static const uint8_t field_prime[32] = {

@@ -16,10 +16,10 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
-    "phipia_repository_for_guest_test", ROOT / "tools" / "phipia-repository.py"
+    "opengat_repository_for_guest_test", ROOT / "tools" / "opengat-repository.py"
 )
 if SPEC is None or SPEC.loader is None:
-    raise RuntimeError("could not load the Phipia repository tool")
+    raise RuntimeError("could not load the OpenGAT repository tool")
 REPOSITORY = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(REPOSITORY)
 PACKAGE = REPOSITORY.PACKAGE
@@ -42,7 +42,7 @@ def package_spec(identifier: str, name: str, *,
         "identifier": identifier,
         "name": name,
         "version": version,
-        "publisher": "Phipia Package Test",
+        "publisher": "OpenGAT Package Test",
         "capabilities": ["console"],
         "dependencies": dependencies or [],
         "conflicts": [],
@@ -71,7 +71,7 @@ def repository_spec(packages: list[dict[str, Any]], *,
                     repository_version: int = 42) -> dict[str, Any]:
     return {
         "format": 1,
-        "repository": "org.phipia.main",
+        "repository": "org.opengat.main",
         "repository_version": repository_version,
         "generated_at": GENERATED,
         "expires_at": EXPIRES,
@@ -94,34 +94,34 @@ def main() -> int:
             "[CONTROL_TEST]"
         )
     if not PACKAGE.ed25519_available():
-        if os.environ.get("PHIPIA_REQUIRE_ED25519") == "1":
+        if os.environ.get("OPENGAT_REQUIRE_ED25519") == "1":
             raise AssertionError("Python Ed25519 support is required")
-        print("Phipia guest package-manager tests skipped: Ed25519 unavailable")
+        print("OpenGAT guest package-manager tests skipped: Ed25519 unavailable")
         return 0
 
     root_public = PACKAGE._ed25519_public_bytes_from_private(ROOT_SEED)
     publisher_public = PACKAGE._ed25519_public_bytes_from_private(PUBLISHER_SEED)
     publisher_key_id = hashlib.sha256(publisher_public).hexdigest()
     dependency = [{
-        "identifier": "org.phipia.lib",
+        "identifier": "org.opengat.lib",
         "constraint": ">=1.0.0,<2.0.0",
     }]
     library = PACKAGE.build_package_v3(
-        package_spec("org.phipia.lib", "Proof Library"),
+        package_spec("org.opengat.lib", "Proof Library"),
         ({"path": "lib/libproof.so.1", "kind": "library",
           "soname": "libproof.so.1", "payload": b"\x7fELFproof-library"},),
         PUBLISHER_SEED,
     )
     application = PACKAGE.build_package_v3(
-        package_spec("org.phipia.app", "Proof Application", dependencies=dependency),
+        package_spec("org.opengat.app", "Proof Application", dependencies=dependency),
         ({"path": "bin/proof-app", "kind": "executable",
           "payload": b"\x7fELFproof-application"},),
         PUBLISHER_SEED,
     )
     main_packages = [
-        repository_package("org.phipia.app", "1.0.0", application,
+        repository_package("org.opengat.app", "1.0.0", application,
                            publisher_key_id, dependencies=dependency),
-        repository_package("org.phipia.lib", "1.0.0", library,
+        repository_package("org.opengat.lib", "1.0.0", library,
                            publisher_key_id, provides=[{
                                "identifier": "virtual.proof",
                                "version": "1.0.0",
@@ -129,27 +129,27 @@ def main() -> int:
     ]
     main_index = REPOSITORY.build_repository(repository_spec(main_packages), ROOT_SEED)
     replacement_dependency = [{
-        "identifier": "org.phipia.newlib",
+        "identifier": "org.opengat.newlib",
         "constraint": "^2.0.0",
     }]
     replacement_library = PACKAGE.build_package_v3(
-        package_spec("org.phipia.newlib", "Replacement Library", version="2.0.0"),
+        package_spec("org.opengat.newlib", "Replacement Library", version="2.0.0"),
         ({"path": "lib/libnew.so.2", "kind": "library",
           "soname": "libnew.so.2", "payload": b"\x7fELFreplacement-library"},),
         PUBLISHER_SEED,
     )
     replacement_application = PACKAGE.build_package_v3(
-        package_spec("org.phipia.app", "Proof Application", version="2.0.0",
+        package_spec("org.opengat.app", "Proof Application", version="2.0.0",
                      dependencies=replacement_dependency),
         ({"path": "bin/proof-app", "kind": "executable",
           "payload": b"\x7fELFupdated-application"},),
         PUBLISHER_SEED,
     )
     update_index = REPOSITORY.build_repository(repository_spec([
-        repository_package("org.phipia.app", "2.0.0", replacement_application,
+        repository_package("org.opengat.app", "2.0.0", replacement_application,
                            publisher_key_id,
                            dependencies=replacement_dependency),
-        repository_package("org.phipia.newlib", "2.0.0", replacement_library,
+        repository_package("org.opengat.newlib", "2.0.0", replacement_library,
                            publisher_key_id),
     ], repository_version=43), ROOT_SEED)
     trusted_root = {hashlib.sha256(root_public).hexdigest(): root_public}
@@ -165,45 +165,45 @@ def main() -> int:
         name, "1.0.0", version, publisher_key_id
     )
     cycle = REPOSITORY.build_repository(repository_spec([
-        {**dummy("org.phipia.a"), "dependencies": [
-            {"identifier": "org.phipia.b", "constraint": "*"}]},
-        {**dummy("org.phipia.b"), "dependencies": [
-            {"identifier": "org.phipia.a", "constraint": "*"}]},
+        {**dummy("org.opengat.a"), "dependencies": [
+            {"identifier": "org.opengat.b", "constraint": "*"}]},
+        {**dummy("org.opengat.b"), "dependencies": [
+            {"identifier": "org.opengat.a", "constraint": "*"}]},
     ]), ROOT_SEED)
     conflict = REPOSITORY.build_repository(repository_spec([
-        {**dummy("org.phipia.conflict-app"), "dependencies": [
-            {"identifier": "org.phipia.conflict-lib", "constraint": "*"}]},
-        {**dummy("org.phipia.conflict-lib"), "conflicts": [
-            {"identifier": "org.phipia.conflict-app", "constraint": "*"}]},
+        {**dummy("org.opengat.conflict-app"), "dependencies": [
+            {"identifier": "org.opengat.conflict-lib", "constraint": "*"}]},
+        {**dummy("org.opengat.conflict-lib"), "conflicts": [
+            {"identifier": "org.opengat.conflict-app", "constraint": "*"}]},
     ]), ROOT_SEED)
     ambiguous = REPOSITORY.build_repository(repository_spec([
-        {**dummy("org.phipia.ambiguous-app"), "dependencies": [
+        {**dummy("org.opengat.ambiguous-app"), "dependencies": [
             {"identifier": "virtual.renderer", "constraint": "*"}]},
-        {**dummy("org.phipia.renderer-a"), "provides": [
+        {**dummy("org.opengat.renderer-a"), "provides": [
             {"identifier": "virtual.renderer", "version": "1.0.0"}]},
-        {**dummy("org.phipia.renderer-b"), "provides": [
+        {**dummy("org.opengat.renderer-b"), "provides": [
             {"identifier": "virtual.renderer", "version": "1.0.0"}]},
     ]), ROOT_SEED)
     unsatisfied = REPOSITORY.build_repository(repository_spec([
-        {**dummy("org.phipia.unsatisfied"), "dependencies": [
-            {"identifier": "org.phipia.missing", "constraint": "*"}]},
+        {**dummy("org.opengat.unsatisfied"), "dependencies": [
+            {"identifier": "org.opengat.missing", "constraint": "*"}]},
     ]), ROOT_SEED)
     backtrack = REPOSITORY.build_repository(repository_spec([
-        repository_package("org.phipia.backtrack", "1.0.0", b"old-app",
+        repository_package("org.opengat.backtrack", "1.0.0", b"old-app",
                            publisher_key_id, dependencies=[
-                               {"identifier": "org.phipia.old-lib",
+                               {"identifier": "org.opengat.old-lib",
                                 "constraint": "^1.0.0"}]),
-        repository_package("org.phipia.backtrack", "2.0.0", b"new-app",
+        repository_package("org.opengat.backtrack", "2.0.0", b"new-app",
                            publisher_key_id, dependencies=[
-                               {"identifier": "org.phipia.new-lib",
+                               {"identifier": "org.opengat.new-lib",
                                 "constraint": "^2.0.0"}]),
-        dummy("org.phipia.old-lib"),
+        dummy("org.opengat.old-lib"),
     ]), ROOT_SEED)
     chain_packages = []
     for index in range(66):
-        identifier = f"org.phipia.chain{index:02d}"
+        identifier = f"org.opengat.chain{index:02d}"
         dependencies = [] if index == 65 else [{
-            "identifier": f"org.phipia.chain{index + 1:02d}",
+            "identifier": f"org.opengat.chain{index + 1:02d}",
             "constraint": "*",
         }]
         chain_packages.append({**dummy(identifier), "dependencies": dependencies})
@@ -237,7 +237,7 @@ def main() -> int:
                 [sys.argv[2], *paths[:5], *paths[11:14]], check=True
             )
     print(
-        "Phipia guest package-manager host tests passed: real signed bytes, "
+        "OpenGAT guest package-manager host tests passed: real signed bytes, "
         "bounded parser/planner/builder, update pruning, trust refusals"
     )
     return 0

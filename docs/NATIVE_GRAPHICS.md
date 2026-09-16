@@ -8,13 +8,11 @@ xRGB8888 content up to 1280×720. Success returns a window handle, an event-queu
 handle, and a process-local RW/NX surface address with explicit width, height,
 and byte stride.
 
-The application owns only content pixels. Phipia owns chrome, focus, stacking,
-movement, close/maximize/minimize controls, Dock behavior, animation, and
-composition. A maximized native surface is scaled into the larger content
-area and pointer coordinates are mapped back into its original geometry. The
-same compositor snapshots a completed native window for the bounded Dock genie
-animation; the process surface remains unchanged and is never writable by the
-animation path. The surface is never a mapping of physical framebuffer memory.
+The application owns only content pixels. OpenGAT owns the frame, focus,
+stacking, composition, and input routing. The process surface remains unchanged
+by desktop drawing and is never a mapping of physical framebuffer memory. The
+current lightweight adapter keeps native windows at their assigned geometry;
+move, maximize, and minimize interactions are not part of this desktop revision.
 Presentation names
 one to eight checked damage rectangles. The kernel copies only bounded damaged
 rows into the compositor shadow and accounts presented pixels; there is no
@@ -29,5 +27,5 @@ Pointer capture is explicit and ends on release, close, fault, or process exit.
 
 Applications use `WAIT_READABLE` on the queue. Waiting parks the native thread,
 so another application continues rendering while input is absent. Closing the
-window or queue invalidates that handle immediately; the surface and Phipia
+window or queue invalidates that handle immediately; the surface and OpenGAT
 slot disappear when both object references are gone or during process cleanup.

@@ -3,7 +3,7 @@
 # Reproducible BusyBox proof inputs
 
 BusyBox and musl are separate userspace works. Neither is copied into or linked
-with Phipia's GPL-3.0-only kernel. Their source, configurations, licenses,
+with OpenGAT's GPL-3.0-only kernel. Their source, configurations, licenses,
 traces, and build records remain distinct release materials.
 
 ## Pinned source inputs
@@ -46,7 +46,7 @@ source archives remain byte-identical.
 
 | Profile | Executable | Size | Executable SHA-256 | FAT16 fixture SHA-256 |
 | --- | --- | ---: | --- | --- |
-| v0.8.0 | `echo PHIPIA` | 33,584 | `B308F2CAD5B5CD0EEB92A622DEC8D71C1A08F628A22CDC5BCDE2B98B53220746` | `79EE482967A1979C34DCFC87B68813C5DA79B27292362DDA890839B6263FF821` |
+| v0.8.0 | `echo OPENGAT` | 33,584 | `B308F2CAD5B5CD0EEB92A622DEC8D71C1A08F628A22CDC5BCDE2B98B53220746` | `79EE482967A1979C34DCFC87B68813C5DA79B27292362DDA890839B6263FF821` |
 | v0.9.0 | `uname -s` | 38,368 | `389AD6B13804EB7307BA589C8E8A7C702F91302005A7C5FC6E9E99124FCEAF43` | `CDB8E920F06AC93F63E73854FC5A6A63CDBCC7DCEDBBFB62325C7EC4B408AD36` |
 | v1.1.0 | `cat` | 38,632 | `8191596A22778B575942895071A2E50CCEEE0F82F4D88B6D986584CE0914FC3E` | composed v1.1.0 volume |
 
@@ -55,18 +55,18 @@ dynamic section, runtime relocation, PIE, shared object, or RWX segment. Their
 exact syscall traces and allowlists are committed beside the configurations.
 
 Version 1.1.0 places all three exact executables in one 16 MiB read-only FAT16
-volume. `tools/make-phipia-proof-userland.py` rebuilds every byte, independently
+volume. `tools/make-opengat-proof-userland.py` rebuilds every byte, independently
 verifies each file and root entry, runs negative mutations, and pins the volume
 SHA-256 to
-`C2A2B2FEC703C654E1260EF07A91FF1DD7808F8D83734C0D7AFD3967525B34B9`.
+`234289FCC58E498AA18A68B5BFF00E9F81940211CAAF2507B81CB65155EBE975`.
 The same builder preserves the v1.0.0 echo/uname-only image byte-for-byte as the
 v1.1.0 missing-cat negative fixture with SHA-256
-`F7DB823EE1CB7FF2A05E7020DB0F4502656B9950EFBBE79E23ED0EA755FC8478`.
+`CE3BD25E1776291D18D0CC75F044DD040243A5DB2CD50C902F747F35E76C5F3D`.
 
 Version 2.0.0 places those same executable bytes in the deterministic immutable
 FAT32 system image. `tools/fat32_image.py` verifies each filename, size, digest,
 and complete allocation chain independently. The system image SHA-256 is
-`A88A44BE394AEFB6D5B7729A6378F4D180E214D60EB6035B3425C6C724936F04`.
+`5B1DFECE4BF0C5A14769B95FDEFB3B06E55D0C2FF64BE4875B296239BA1181ED`.
 The historical FAT16 images and checksums above remain release contracts.
 
 ## Release requirement
