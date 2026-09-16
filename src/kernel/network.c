@@ -3858,8 +3858,8 @@ static bool download_sibling_paths(
     const size_t length = string_length_bounded(destination, OPENGATFS_MAX_PATH);
     size_t slash = SIZE_MAX;
     size_t prefix;
-    static const char temp_name[] = "OPENGATDL.TMP";
-    static const char backup_name[] = "OPENGATDL.BAK";
+    static const char temp_name[] = "OGATDL.TMP";
+    static const char backup_name[] = "OGATDL.BAK";
 
     for (size_t index = 0U; index < length; ++index) {
         if (destination[index] == '/') {

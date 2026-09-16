@@ -5844,7 +5844,7 @@ _Noreturn void kernel_test_complete_native_opengat(void)
     }
     console_write(
         "OpenGAT: damaged package generation quarantined before repair passed\n");
-    if (native_process_launch("OPENGATREP.MAN", &proof) != NATIVE_PROCESS_OK ||
+    if (native_process_launch("OPENGATR.MAN", &proof) != NATIVE_PROCESS_OK ||
         !proof.exited || proof.faulted || proof.exit_status != 0 ||
         !proof.resources_released || proof.peak_handles < 3U ||
         proof.syscall_count < 20U || proof.thread_switches == 0U ||
@@ -7579,14 +7579,32 @@ static void network_syscall_http_download_scenario(void)
     if (restore_interrupts) {
         cpu_interrupt_enable();
     }
-    if (network_syscall_register(&space, UINT64_C(0x210),
-            &authenticator) != NETWORK_SYSCALL_STATUS_OK ||
+    const enum network_syscall_status register_status =
+        network_syscall_register(&space, UINT64_C(0x210), &authenticator);
+    const enum network_syscall_status dispatch_status =
+        register_status == NETWORK_SYSCALL_STATUS_OK ?
         network_syscall_dispatch(&authenticator, request_address,
-            response_address) != NETWORK_SYSCALL_STATUS_OK ||
+            response_address) : register_status;
+
+    if (register_status != NETWORK_SYSCALL_STATUS_OK ||
+        dispatch_status != NETWORK_SYSCALL_STATUS_OK ||
         response->boundary_status != NETWORK_SYSCALL_STATUS_OK ||
         response->network_status != NETWORK_STATUS_OK ||
         response->http_status != 200U ||
         response->value != sizeof(network_welcome) - 1U) {
+        console_write("OpenGAT: network syscall register ");
+        console_write(network_syscall_status_string(register_status));
+        console_write(" dispatch ");
+        console_write(network_syscall_status_string(dispatch_status));
+        console_write(" boundary ");
+        console_write(network_syscall_status_string(response->boundary_status));
+        console_write(" network ");
+        console_write(network_status_string(response->network_status));
+        console_write(" HTTP ");
+        console_write_u64(response->http_status);
+        console_write(" bytes ");
+        console_write_u64(response->value);
+        console_putc('\n');
         kernel_test_fail("network syscall HTTP operation failed");
     }
     network_syscall_process_terminated(&authenticator);
@@ -7723,8 +7741,8 @@ static network_handle network_announce_port(
     network_handle knock;
     uint8_t message[6];
 
-    message[0] = (uint8_t)'T';
-    message[1] = (uint8_t)'R';
+    message[0] = (uint8_t)'O';
+    message[1] = (uint8_t)'G';
     message[2] = (uint8_t)'T';
     message[3] = (uint8_t)'1';
     message[4] = (uint8_t)(announced >> 8U);
