@@ -94,7 +94,7 @@ jobs:
                           | awk '{print toupper($1)}'
                   )
                   test "$fixture_sha" = \
-                      4B6072C4762E3D59B372CCB0FB83C47F901E2FC1E465C45C438CFD2A6BCD3528
+                      A34664FB5A9A4D125E3AEF5AB655046C88937F88D8159BD773AD225D8B4617CA
                   scenario_count=$(
                       sed -n '/^TEST_SCENARIOS :=/,/^TEST_TARGETS :=/p' Makefile \
                           | sed '$d; s/^TEST_SCENARIOS :=//; s/\\//g' \

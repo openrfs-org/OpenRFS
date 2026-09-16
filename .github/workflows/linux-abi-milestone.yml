@@ -203,7 +203,7 @@ jobs:
                           | awk '{print toupper($1)}'
                   )
                   test "$fixture_sha" = \
-                      CDB8E920F06AC93F63E73854FC5A6A63CDBCC7DCEDBBFB62325C7EC4B408AD36
+                      4A1A3DFA5A649FD7CBFF700CB51693AEDE274147CD39794AD2158CFC937736E9
                   {
                       printf 'OpenGAT v0.9.0 deterministic Linux uname fixture\n'
                       printf 'logical sectors / bytes: 4096 / 4096\n'
