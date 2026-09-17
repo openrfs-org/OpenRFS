@@ -17,7 +17,8 @@
  * each is its own increment.
  *
  * The claim it makes is narrow and completely checkable without looking at a
- * screen, which matters because CONTRIBUTING.md says screenshots are not proof:
+ * screen, which matters because the README contribution policy says screenshots
+ * are not proof:
  * for every visible coordinate, the colour written there is the colour read
  * back, and no coordinate aliases another.
  */

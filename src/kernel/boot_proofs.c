@@ -1448,7 +1448,8 @@ void prove_threads(void)
 /*
  * Put the picture on the screen, and prove every pixel of it.
  *
- * CONTRIBUTING.md says screenshots are not proof, and this is the first layer
+ * The README contribution policy says screenshots are not proof, and this is
+ * the first layer
  * where that is a temptation rather than a slogan: a framebuffer looks right
  * long before it is right. So the colour of each pixel is a function of its
  * coordinates, and every one is read back. A pitch mistaken for a width shears
