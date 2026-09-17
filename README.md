@@ -121,6 +121,14 @@
 
 <p align="center"><samp><strong>openrfs$</strong></samp></p>
 
+<p align="center"><samp>Open the keyboard-driven installer configuration preview:</samp></p>
+
+<p align="center"><samp>openrfs$ install</samp></p>
+
+<p align="center"><samp>The preview covers keymap, hostname, components, disk layout, networking, timezone, startup policy, kernel hardening, and account choices. Arrow keys move, Enter accepts, Escape goes back, and F1 opens contextual help.</samp></p>
+
+<p align="center"><samp>The preview does not partition, format, or copy files to a disk. Its final boundary states this on screen and keeps Back selected by default. A real installer backend still requires bounded storage transactions, read-back verification, and recovery.</samp></p>
+
 <p align="center"><samp>Create the local account:</samp></p>
 
 <p align="center"><samp>openrfs$ useradd alice</samp></p>

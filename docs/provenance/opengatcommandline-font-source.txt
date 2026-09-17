@@ -1,0 +1,11 @@
+DejaVu Sans Mono
+----------------
+Files   /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf
+        /usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf
+Licence DejaVu Fonts License (Bitstream Vera derivative).  Free to use,
+        redistribute and modify.  Not a Microsoft or Apple face.
+
+The TTF is NOT committed.  tools/make-font.py rasterises it to
+src/orfs_font.h at 9x18 and records the source file's sha256 in the
+generated header, so the glyphs in the repository can always be traced
+back to the exact file they came from.

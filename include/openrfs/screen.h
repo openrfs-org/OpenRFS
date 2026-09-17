@@ -76,6 +76,15 @@ enum screen_status screen_putc(char character);
 
 enum screen_status screen_write(const char *text);
 
+
+/* Draw a fixed text grid with VGA-style attributes in one presentation. */
+enum screen_status screen_draw_text_grid(
+    const char *characters,
+    const uint8_t *attributes,
+    uint32_t columns,
+    uint32_t rows
+);
+
 /* Clear the screen and return the cursor to the origin. */
 enum screen_status screen_clear(void);
 

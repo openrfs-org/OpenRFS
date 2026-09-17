@@ -12,6 +12,7 @@
 #include <openrfs/framebuffer.h>
 #include <openrfs/fat32_fs.h>
 #include <openrfs/heap.h>
+#include <openrfs/installer_ui.h>
 #include <openrfs/keyboard.h>
 #include <openrfs/linux_userland.h>
 #include <openrfs/linux_syscall.h>
@@ -190,6 +191,7 @@ static void print_size(uint64_t bytes)
 static void command_help(void)
 {
     console_write("  help      this list\n");
+    console_write("  install   open the installer configuration preview\n");
     console_write("  useradd NAME  create the first local user\n");
     console_write("  starty    authenticate and start the OpenRFS desktop\n");
     console_write("  echo      print the rest of the line\n");
@@ -221,6 +223,15 @@ static void command_help(void)
     console_write("  threads   scheduler counters\n");
     console_write("  ledger    typed boot record\n");
     console_write("  version   what this is\n");
+}
+
+static void command_install(const char *arguments)
+{
+    if (arguments[0] != '\0') {
+        console_write("install: this command takes no arguments\n");
+        return;
+    }
+    installer_ui_begin();
 }
 
 static void command_echo(const char *arguments)
@@ -1579,6 +1590,8 @@ enum shell_status shell_execute(const char *text)
 
     if (matches(text, "help")) {
         command_help();
+    } else if (matches(text, "install")) {
+        command_install(arguments_of(text));
     } else if (matches(text, "useradd")) {
         command_useradd(arguments_of(text));
     } else if (matches(text, "starty")) {
@@ -1837,7 +1850,8 @@ enum shell_status shell_feed(char character)
         state.length = 0U;
         status = shell_execute(line);
         if (linux_userland_foreground_waiting() ||
-                authentication.prompt != AUTHENTICATION_NONE) {
+                authentication.prompt != AUTHENTICATION_NONE ||
+                installer_ui_is_active()) {
             return status;
         }
         write_prompt_restored();
@@ -1911,7 +1925,12 @@ void shell_process_keyboard_events(void)
         ui_keyboard_operational = ui_is_active();
         ui_keyboard_decided = true;
     }
+    installer_ui_pump();
     while (keyboard_read(&event) == KEYBOARD_STATUS_OK) {
+        if (installer_ui_is_active()) {
+            installer_ui_handle_keyboard(&event);
+            continue;
+        }
         if (foreground_handle_event(&event)) {
             continue;
         }
