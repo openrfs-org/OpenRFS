@@ -43,7 +43,7 @@ jobs:
                   make verify
                   git diff --check
                   test "$(sha256sum build/userspace/openrfs-userland-no-cat-fat16.raw | awk '{print toupper($1)}')" = \
-                      CE3BD25E1776291D18D0CC75F044DD040243A5DB2CD50C902F747F35E76C5F3D
+                      B2AA321D73954E110BA914254E798832684C4F1F7051D63FB4C18AE0CF848E51
             - name: Rebuild and trace both measured profiles twice
               shell: bash
               run: |
@@ -166,7 +166,7 @@ jobs:
                       printf 'FAT: LBA 1-2; root: LBA 3, 128 entries\n'
                       printf 'BUSYBOX: clusters 2-10, 33584 bytes\n'
                       printf 'UNAMEBOX: clusters 11-20, 38368 bytes\n'
-                      printf 'volume SHA-256: CE3BD25E1776291D18D0CC75F044DD040243A5DB2CD50C902F747F35E76C5F3D\n'
+                      printf 'volume SHA-256: B2AA321D73954E110BA914254E798832684C4F1F7051D63FB4C18AE0CF848E51\n'
                   } >"$release/userspace-volume-layout.txt"
                   {
                       printf 'Positive: linux echo and linux uname each completed twice through OpenRFS.\n'

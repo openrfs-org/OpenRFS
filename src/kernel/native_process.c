@@ -2712,8 +2712,8 @@ static enum native_process_status load_process(
      */
     if (manifest_bytes[0] != 'O' || manifest_bytes[1] != 'P' ||
             manifest_bytes[2] != 'E' || manifest_bytes[3] != 'N' ||
-            manifest_bytes[4] != 'G' || manifest_bytes[5] != 'A' ||
-            manifest_bytes[6] != 'T' || manifest_bytes[7] != '1') {
+            manifest_bytes[4] != 'R' || manifest_bytes[5] != 'F' ||
+            manifest_bytes[6] != 'S' || manifest_bytes[7] != '1') {
         return NATIVE_PROCESS_IMAGE_REFUSED;
     }
     executable_length = bounded_length(manifest_bytes + 112U, 16U);
