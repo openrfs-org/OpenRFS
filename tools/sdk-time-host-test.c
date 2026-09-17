@@ -3,30 +3,30 @@
 #include <stdint.h>
 #include <time.h>
 
-#include <opengat/runtime.h>
+#include <openrfs/runtime.h>
 
 _Thread_local int errno;
 
 static long realtime_value = INT64_C(1709251198);
 static uint64_t monotonic_value = UINT64_C(1234567890123);
 
-long opengat_realtime_seconds(void)
+long openrfs_realtime_seconds(void)
 {
     return realtime_value;
 }
 
-uint64_t opengat_monotonic_ns(void)
+uint64_t openrfs_monotonic_ns(void)
 {
     return monotonic_value;
 }
 
-long opengat_sleep_until(uint64_t deadline_ns)
+long openrfs_sleep_until(uint64_t deadline_ns)
 {
     monotonic_value = deadline_ns;
     return 0;
 }
 
-int opengat_result(long result)
+int openrfs_result(long result)
 {
     if (result < 0) {
         errno = (int)-result;
@@ -88,7 +88,7 @@ int main(void)
     if (gmtime_r(&epoch, &broken) != NULL || errno != ERANGE) {
         return 8;
     }
-    realtime_value = -OPENGAT_EIO;
+    realtime_value = -OPENRFS_EIO;
     errno = 0;
     return time(NULL) == (time_t)-1 && errno == EIO ? 0 : 9;
 }

@@ -1,19 +1,19 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#include <opengat/de/shell.h>
+#include <openrfs/de/shell.h>
 
-#include <opengat/de/files.h>
-#include <opengat/de/font.h>
-#include <opengat/de/packages.h>
-#include <opengat/de/menu.h>
-#include <opengat/de/theme.h>
-#include <opengat/de/panel.h>
-#include <opengat/de/window.h>
-#include <opengat/de/settings.h>
-#include <opengat/de/taskmgr.h>
-#include <opengat/de/terminal.h>
+#include <openrfs/de/files.h>
+#include <openrfs/de/font.h>
+#include <openrfs/de/packages.h>
+#include <openrfs/de/menu.h>
+#include <openrfs/de/theme.h>
+#include <openrfs/de/panel.h>
+#include <openrfs/de/window.h>
+#include <openrfs/de/settings.h>
+#include <openrfs/de/taskmgr.h>
+#include <openrfs/de/terminal.h>
 
-static struct opengat_surface *canvas;
-static struct opengat_rect shell_screen;
+static struct openrfs_surface *canvas;
+static struct openrfs_rect shell_screen;
 static uint32_t shell_desktop;
 static bool menu_open;
 static bool volume_open;
@@ -23,10 +23,10 @@ static bool volume_muted;
 static bool context_open;
 static uint32_t context_x;
 static uint32_t context_y;
-static uint32_t context_node = OPENGAT_FILES_MAX_NODES;
+static uint32_t context_node = OPENRFS_FILES_MAX_NODES;
 
 static bool rename_open;
-static char rename_text[OPENGAT_FILES_NAME_BYTES];
+static char rename_text[OPENRFS_FILES_NAME_BYTES];
 static uint32_t rename_length;
 static char rename_error[48];
 
@@ -40,10 +40,10 @@ static uint32_t run_length;
 static char run_error[64];
 
 static struct {
-    char title[OPENGAT_SHELL_NOTE_BYTES];
-    char body[OPENGAT_SHELL_NOTE_BYTES];
+    char title[OPENRFS_SHELL_NOTE_BYTES];
+    char body[OPENRFS_SHELL_NOTE_BYTES];
     uint32_t life;
-} notes[OPENGAT_SHELL_MAX_NOTES];
+} notes[OPENRFS_SHELL_MAX_NOTES];
 static uint32_t note_count;
 
 static char tip_text[48];
@@ -55,7 +55,7 @@ static uint32_t tip_y;
 static bool resizing;
 static uint32_t resize_slot;
 static uint32_t resize_edges;
-static struct opengat_rect resize_from;
+static struct openrfs_rect resize_from;
 static uint32_t resize_ox;
 static uint32_t resize_oy;
 
@@ -74,10 +74,10 @@ static uint32_t switcher_at;
 #define DESKTOP_CELL_W 86U
 #define DESKTOP_CELL_H 74U
 #define DESKTOP_MARGIN 8U
-static uint32_t desktop_folder = OPENGAT_FILES_MAX_NODES;
-static struct opengat_window windows[OPENGAT_SHELL_MAX_WINDOWS];
-static enum opengat_shell_app apps[OPENGAT_SHELL_MAX_WINDOWS];
-static bool used[OPENGAT_SHELL_MAX_WINDOWS];
+static uint32_t desktop_folder = OPENRFS_FILES_MAX_NODES;
+static struct openrfs_window windows[OPENRFS_SHELL_MAX_WINDOWS];
+static enum openrfs_shell_app apps[OPENRFS_SHELL_MAX_WINDOWS];
+static bool used[OPENRFS_SHELL_MAX_WINDOWS];
 
 /*
  * THE STACK, TOP LAST.  Drawing walks it forwards and hit-testing walks
@@ -86,7 +86,7 @@ static bool used[OPENGAT_SHELL_MAX_WINDOWS];
  * array rather than as a z field per window means the two can never
  * disagree.
  */
-static uint32_t stack[OPENGAT_SHELL_MAX_WINDOWS];
+static uint32_t stack[OPENRFS_SHELL_MAX_WINDOWS];
 static uint32_t stack_depth;
 
 /* Where a drag started, and what it is moving. */
@@ -100,14 +100,14 @@ static uint32_t drag_dy;
 static bool dragging_entry;
 static uint32_t drag_node;
 
-static const char *const TITLES[OPENGAT_APP_COUNT] = {
-    "OpenGAT Files", "user@opengat: ~", "OpenGAT Task Manager",
-    "OpenGAT Desktop Settings", "OpenGAT DE Package Manager"
+static const char *const TITLES[OPENRFS_APP_COUNT] = {
+    "OpenRFS Files", "user@openrfs: ~", "OpenRFS Task Manager",
+    "OpenRFS Desktop Settings", "OpenRFS DE Package Manager"
 };
 
-static void set_title(struct opengat_window *window, const char *text)
+static void set_title(struct openrfs_window *window, const char *text)
 {
-    opengat_window_set_title(window, text);
+    openrfs_window_set_title(window, text);
 }
 
 static void stack_remove(uint32_t slot)
@@ -129,12 +129,12 @@ static void stack_remove(uint32_t slot)
 static void stack_raise(uint32_t slot)
 {
     stack_remove(slot);
-    if (stack_depth < OPENGAT_SHELL_MAX_WINDOWS) {
+    if (stack_depth < OPENRFS_SHELL_MAX_WINDOWS) {
         stack[stack_depth++] = slot;
     }
 }
 
-void opengat_shell_reset(struct opengat_surface *surface)
+void openrfs_shell_reset(struct openrfs_surface *surface)
 {
     uint32_t at;
 
@@ -163,22 +163,22 @@ void opengat_shell_reset(struct opengat_surface *surface)
     stack_depth = 0U;
     dragging = false;
     dragging_entry = false;
-    for (at = 0U; at < OPENGAT_SHELL_MAX_WINDOWS; ++at) {
+    for (at = 0U; at < OPENRFS_SHELL_MAX_WINDOWS; ++at) {
         used[at] = false;
     }
 }
 
-void opengat_shell_set_screen(struct opengat_rect screen)
+void openrfs_shell_set_screen(struct openrfs_rect screen)
 {
     shell_screen = screen;
 }
 
-void opengat_shell_set_desktop(uint32_t desktop)
+void openrfs_shell_set_desktop(uint32_t desktop)
 {
     uint32_t at;
 
     shell_desktop = desktop;
-    (void)opengat_panel_set_desktop(desktop, 2U);
+    (void)openrfs_panel_set_desktop(desktop, 2U);
     /*
      * Focus has to land on this desktop.  Leaving it on a window you
      * can no longer see means the next keystroke goes somewhere
@@ -190,23 +190,23 @@ void opengat_shell_set_desktop(uint32_t desktop)
 
         if (used[slot] && !windows[slot].minimised &&
                 windows[slot].desktop == desktop) {
-            opengat_shell_focus(slot);
+            openrfs_shell_focus(slot);
             return;
         }
     }
-    for (at = 0U; at < OPENGAT_SHELL_MAX_WINDOWS; ++at) {
+    for (at = 0U; at < OPENRFS_SHELL_MAX_WINDOWS; ++at) {
         windows[at].active = false;
     }
 }
 
-uint32_t opengat_shell_desktop(void)
+uint32_t openrfs_shell_desktop(void)
 {
     return shell_desktop;
 }
 
-void opengat_shell_send_to_desktop(uint32_t slot, uint32_t desktop)
+void openrfs_shell_send_to_desktop(uint32_t slot, uint32_t desktop)
 {
-    if (slot >= OPENGAT_SHELL_MAX_WINDOWS || !used[slot]) {
+    if (slot >= OPENRFS_SHELL_MAX_WINDOWS || !used[slot]) {
         return;
     }
     windows[slot].desktop = desktop;
@@ -217,21 +217,21 @@ static void copy_note(char *out, const char *text)
     uint32_t at = 0U;
 
     while (text != NULL && text[at] != '\0' &&
-            at + 1U < OPENGAT_SHELL_NOTE_BYTES) {
+            at + 1U < OPENRFS_SHELL_NOTE_BYTES) {
         out[at] = text[at];
         ++at;
     }
     out[at] = '\0';
 }
 
-void opengat_shell_notify(const char *title, const char *body)
+void openrfs_shell_notify(const char *title, const char *body)
 {
     uint32_t at;
 
     /* Full means the OLDEST goes, not the newest refused: the thing that
      * just happened is the thing worth saying. */
-    if (note_count == OPENGAT_SHELL_MAX_NOTES) {
-        for (at = 1U; at < OPENGAT_SHELL_MAX_NOTES; ++at) {
+    if (note_count == OPENRFS_SHELL_MAX_NOTES) {
+        for (at = 1U; at < OPENRFS_SHELL_MAX_NOTES; ++at) {
             notes[at - 1U] = notes[at];
         }
         --note_count;
@@ -242,22 +242,22 @@ void opengat_shell_notify(const char *title, const char *body)
     ++note_count;
 }
 
-uint32_t opengat_shell_note_count(void)
+uint32_t openrfs_shell_note_count(void)
 {
     return note_count;
 }
 
-const char *opengat_shell_note_title(uint32_t at)
+const char *openrfs_shell_note_title(uint32_t at)
 {
     return at < note_count ? notes[at].title : "";
 }
 
-const char *opengat_shell_note_body(uint32_t at)
+const char *openrfs_shell_note_body(uint32_t at)
 {
     return at < note_count ? notes[at].body : "";
 }
 
-void opengat_shell_tick(void)
+void openrfs_shell_tick(void)
 {
     uint32_t at = 0U;
 
@@ -276,29 +276,29 @@ void opengat_shell_tick(void)
         }
         ++at;
     }
-    if (tip_text[0] != '\0' && tip_rested < OPENGAT_SHELL_TIP_TICKS) {
+    if (tip_text[0] != '\0' && tip_rested < OPENRFS_SHELL_TIP_TICKS) {
         ++tip_rested;
     }
 }
 
-bool opengat_shell_tip_visible(void)
+bool openrfs_shell_tip_visible(void)
 {
-    return tip_text[0] != '\0' && tip_rested >= OPENGAT_SHELL_TIP_TICKS;
+    return tip_text[0] != '\0' && tip_rested >= OPENRFS_SHELL_TIP_TICKS;
 }
 
-const char *opengat_shell_tip_text(void)
+const char *openrfs_shell_tip_text(void)
 {
     return tip_text;
 }
 
-struct opengat_rect opengat_shell_tip_bounds(void)
+struct openrfs_rect openrfs_shell_tip_bounds(void)
 {
-    struct opengat_rect box = { 0U, 0U, 0U, 0U };
+    struct openrfs_rect box = { 0U, 0U, 0U, 0U };
 
-    if (!opengat_shell_tip_visible()) {
+    if (!openrfs_shell_tip_visible()) {
         return box;
     }
-    box.width = opengat_font_width(tip_text) + 14U;
+    box.width = openrfs_font_width(tip_text) + 14U;
     box.height = 20U;
     box.x = tip_x > box.width / 2U ? tip_x - box.width / 2U : 0U;
     if (box.x + box.width > shell_screen.x + shell_screen.width) {
@@ -310,7 +310,7 @@ struct opengat_rect opengat_shell_tip_bounds(void)
     return box;
 }
 
-bool opengat_shell_menu_open(void)
+bool openrfs_shell_menu_open(void)
 {
     return menu_open;
 }
@@ -319,24 +319,24 @@ static const char *const CONTEXT_LABELS[CONTEXT_ROWS] = {
     "Open", "Rename", "Delete", "Properties"
 };
 
-bool opengat_shell_context_open(void)
+bool openrfs_shell_context_open(void)
 {
     return context_open;
 }
 
-uint32_t opengat_shell_context_row_count(void)
+uint32_t openrfs_shell_context_row_count(void)
 {
     return CONTEXT_ROWS;
 }
 
-const char *opengat_shell_context_row(uint32_t at)
+const char *openrfs_shell_context_row(uint32_t at)
 {
     return at < CONTEXT_ROWS ? CONTEXT_LABELS[at] : "";
 }
 
-struct opengat_rect opengat_shell_context_bounds(void)
+struct openrfs_rect openrfs_shell_context_bounds(void)
 {
-    struct opengat_rect box;
+    struct openrfs_rect box;
 
     box.width = CONTEXT_W;
     box.height = CONTEXT_ROWS * CONTEXT_ROW_H + 8U;
@@ -348,82 +348,82 @@ struct opengat_rect opengat_shell_context_bounds(void)
         box.x = shell_screen.x + shell_screen.width - box.width;
     }
     if (box.y + box.height >
-            shell_screen.y + shell_screen.height - OPENGAT_PANEL_HEIGHT) {
+            shell_screen.y + shell_screen.height - OPENRFS_PANEL_HEIGHT) {
         box.y = shell_screen.y + shell_screen.height -
-            OPENGAT_PANEL_HEIGHT - box.height;
+            OPENRFS_PANEL_HEIGHT - box.height;
     }
     return box;
 }
 
-uint32_t opengat_shell_context_node(void)
+uint32_t openrfs_shell_context_node(void)
 {
     return context_node;
 }
 
-bool opengat_shell_rename_open(void)
+bool openrfs_shell_rename_open(void)
 {
     return rename_open;
 }
 
-const char *opengat_shell_rename_text(void)
+const char *openrfs_shell_rename_text(void)
 {
     return rename_text;
 }
 
-const char *opengat_shell_rename_error(void)
+const char *openrfs_shell_rename_error(void)
 {
     return rename_error;
 }
 
-bool opengat_shell_run_open(void)
+bool openrfs_shell_run_open(void)
 {
     return run_open;
 }
 
-const char *opengat_shell_run_text(void)
+const char *openrfs_shell_run_text(void)
 {
     return run_text;
 }
 
-const char *opengat_shell_run_error(void)
+const char *openrfs_shell_run_error(void)
 {
     return run_error;
 }
 
-bool opengat_shell_switcher_open(void)
+bool openrfs_shell_switcher_open(void)
 {
     return switcher_open;
 }
 
-uint32_t opengat_shell_switcher_at(void)
+uint32_t openrfs_shell_switcher_at(void)
 {
     return switcher_at;
 }
 
 /* ------------------------------------------------------ the root window */
 
-void opengat_shell_set_desktop_folder(uint32_t folder)
+void openrfs_shell_set_desktop_folder(uint32_t folder)
 {
     desktop_folder = folder;
 }
 
-uint32_t opengat_shell_desktop_icon_count(void)
+uint32_t openrfs_shell_desktop_icon_count(void)
 {
-    if (desktop_folder >= OPENGAT_FILES_MAX_NODES) {
+    if (desktop_folder >= OPENRFS_FILES_MAX_NODES) {
         return DESKTOP_STANDARD;
     }
-    return DESKTOP_STANDARD + opengat_files_child_count(desktop_folder);
+    return DESKTOP_STANDARD + openrfs_files_child_count(desktop_folder);
 }
 
-bool opengat_shell_desktop_icon_bounds(uint32_t at, struct opengat_rect *out)
+bool openrfs_shell_desktop_icon_bounds(uint32_t at, struct openrfs_rect *out)
 {
     uint32_t rows;
 
-    if (out == NULL || at >= opengat_shell_desktop_icon_count()) {
+    if (out == NULL || at >= openrfs_shell_desktop_icon_count()) {
         return false;
     }
-    rows = (shell_screen.height > OPENGAT_PANEL_HEIGHT + DESKTOP_MARGIN) ?
-        (shell_screen.height - OPENGAT_PANEL_HEIGHT - DESKTOP_MARGIN) /
+    rows = (shell_screen.height > OPENRFS_PANEL_HEIGHT + DESKTOP_MARGIN) ?
+        (shell_screen.height - OPENRFS_PANEL_HEIGHT - DESKTOP_MARGIN) /
             DESKTOP_CELL_H : 1U;
     if (rows == 0U) {
         rows = 1U;
@@ -439,7 +439,7 @@ bool opengat_shell_desktop_icon_bounds(uint32_t at, struct opengat_rect *out)
     return true;
 }
 
-void opengat_shell_draw_desktop(void)
+void openrfs_shell_draw_desktop(void)
 {
     static const char *const STANDARD[DESKTOP_STANDARD] = {
         "user-home", "user-trash"
@@ -449,37 +449,37 @@ void opengat_shell_draw_desktop(void)
     };
     uint32_t at;
 
-    if (!opengat_surface_valid(canvas)) {
+    if (!openrfs_surface_valid(canvas)) {
         return;
     }
-    for (at = 0U; at < opengat_shell_desktop_icon_count(); ++at) {
-        struct opengat_rect cell;
+    for (at = 0U; at < openrfs_shell_desktop_icon_count(); ++at) {
+        struct openrfs_rect cell;
         const char *mark;
         const char *label;
 
-        if (!opengat_shell_desktop_icon_bounds(at, &cell)) {
+        if (!openrfs_shell_desktop_icon_bounds(at, &cell)) {
             continue;
         }
         if (at < DESKTOP_STANDARD) {
             mark = STANDARD[at];
             label = LABELS[at];
         } else {
-            uint32_t node = opengat_files_child(desktop_folder,
+            uint32_t node = openrfs_files_child(desktop_folder,
                                               at - DESKTOP_STANDARD);
 
-            if (node >= OPENGAT_FILES_MAX_NODES) {
+            if (node >= OPENRFS_FILES_MAX_NODES) {
                 continue;
             }
-            mark = opengat_files_node_mark(node);
-            label = opengat_files_node_name(node);
+            mark = openrfs_files_node_mark(node);
+            label = openrfs_files_node_name(node);
         }
-        opengat_files_draw_icon_at(canvas, cell, mark, 48U,
+        openrfs_files_draw_icon_at(canvas, cell, mark, 48U,
             cell.x + (cell.width - 48U) / 2U, cell.y + 4U);
         {
-            uint32_t width = opengat_font_width(label);
+            uint32_t width = openrfs_font_width(label);
 
             /*
-             * the OpenGAT desktop profile is desktop_fg=#ffffff with
+             * the OpenRFS desktop profile is desktop_fg=#ffffff with
              * desktop_shadow=#000000: white ink over a dark halo, which
              * is what keeps a label readable over a wallpaper that is
              * light in one place and dark in another.  The halo is drawn
@@ -490,44 +490,44 @@ void opengat_shell_draw_desktop(void)
                 (cell.width - width) / 2U : 0U);
             uint32_t base = cell.y + 48U + 16U;
 
-            opengat_font_draw(canvas, cell, pen + 1U, base, label,
+            openrfs_font_draw(canvas, cell, pen + 1U, base, label,
                             0x000000U);
-            opengat_font_draw(canvas, cell, pen, base + 1U, label,
+            openrfs_font_draw(canvas, cell, pen, base + 1U, label,
                             0x000000U);
-            opengat_font_draw(canvas, cell, pen, base, label, 0xFFFFFFU);
+            openrfs_font_draw(canvas, cell, pen, base, label, 0xFFFFFFU);
         }
     }
 }
 
-bool opengat_shell_volume_open(void)
+bool openrfs_shell_volume_open(void)
 {
     return volume_open;
 }
 
-uint32_t opengat_shell_volume(void)
+uint32_t openrfs_shell_volume(void)
 {
     return volume_muted ? 0U : volume_level;
 }
 
-struct opengat_rect opengat_shell_screen(void)
+struct openrfs_rect openrfs_shell_screen(void)
 {
     return shell_screen;
 }
 
-uint32_t opengat_shell_open(enum opengat_shell_app app, struct opengat_rect at)
+uint32_t openrfs_shell_open(enum openrfs_shell_app app, struct openrfs_rect at)
 {
     uint32_t slot;
 
-    if ((uint32_t)app >= OPENGAT_APP_COUNT) {
-        return OPENGAT_SHELL_MAX_WINDOWS;
+    if ((uint32_t)app >= OPENRFS_APP_COUNT) {
+        return OPENRFS_SHELL_MAX_WINDOWS;
     }
-    for (slot = 0U; slot < OPENGAT_SHELL_MAX_WINDOWS; ++slot) {
+    for (slot = 0U; slot < OPENRFS_SHELL_MAX_WINDOWS; ++slot) {
         if (!used[slot]) {
             break;
         }
     }
-    if (slot == OPENGAT_SHELL_MAX_WINDOWS) {
-        return OPENGAT_SHELL_MAX_WINDOWS;
+    if (slot == OPENRFS_SHELL_MAX_WINDOWS) {
+        return OPENRFS_SHELL_MAX_WINDOWS;
     }
     used[slot] = true;
     apps[slot] = app;
@@ -538,13 +538,13 @@ uint32_t opengat_shell_open(enum opengat_shell_app app, struct opengat_rect at)
     windows[slot].desktop = shell_desktop;
     set_title(&windows[slot], TITLES[app]);
     stack_raise(slot);
-    opengat_shell_focus(slot);
+    openrfs_shell_focus(slot);
     return slot;
 }
 
-bool opengat_shell_close(uint32_t slot)
+bool openrfs_shell_close(uint32_t slot)
 {
-    if (slot >= OPENGAT_SHELL_MAX_WINDOWS || !used[slot]) {
+    if (slot >= OPENRFS_SHELL_MAX_WINDOWS || !used[slot]) {
         return false;
     }
     used[slot] = false;
@@ -552,33 +552,33 @@ bool opengat_shell_close(uint32_t slot)
     /* Focus falls to whatever is now on top, not to nothing: a desktop
      * with windows open and none focused is a state nobody asked for. */
     if (stack_depth != 0U) {
-        opengat_shell_focus(stack[stack_depth - 1U]);
+        openrfs_shell_focus(stack[stack_depth - 1U]);
     }
     return true;
 }
 
-uint32_t opengat_shell_window_count(void)
+uint32_t openrfs_shell_window_count(void)
 {
     return stack_depth;
 }
 
-struct opengat_window *opengat_shell_window(uint32_t slot)
+struct openrfs_window *openrfs_shell_window(uint32_t slot)
 {
-    if (slot >= OPENGAT_SHELL_MAX_WINDOWS || !used[slot]) {
+    if (slot >= OPENRFS_SHELL_MAX_WINDOWS || !used[slot]) {
         return NULL;
     }
     return &windows[slot];
 }
 
-enum opengat_shell_app opengat_shell_app_of(uint32_t slot)
+enum openrfs_shell_app openrfs_shell_app_of(uint32_t slot)
 {
-    if (slot >= OPENGAT_SHELL_MAX_WINDOWS || !used[slot]) {
-        return OPENGAT_APP_COUNT;
+    if (slot >= OPENRFS_SHELL_MAX_WINDOWS || !used[slot]) {
+        return OPENRFS_APP_COUNT;
     }
     return apps[slot];
 }
 
-uint32_t opengat_shell_at(uint32_t x, uint32_t y)
+uint32_t openrfs_shell_at(uint32_t x, uint32_t y)
 {
     uint32_t at = stack_depth;
 
@@ -588,37 +588,37 @@ uint32_t opengat_shell_at(uint32_t x, uint32_t y)
 
         if (!windows[slot].minimised &&
                 windows[slot].desktop == shell_desktop &&
-                opengat_rect_contains(windows[slot].frame, x, y)) {
+                openrfs_rect_contains(windows[slot].frame, x, y)) {
             return slot;
         }
     }
-    return OPENGAT_SHELL_MAX_WINDOWS;
+    return OPENRFS_SHELL_MAX_WINDOWS;
 }
 
-uint32_t opengat_shell_focused(void)
+uint32_t openrfs_shell_focused(void)
 {
     uint32_t slot;
 
     if (stack_depth == 0U) {
-        return OPENGAT_SHELL_MAX_WINDOWS;
+        return OPENRFS_SHELL_MAX_WINDOWS;
     }
     slot = stack[stack_depth - 1U];
     if (!used[slot] || !windows[slot].active || windows[slot].minimised ||
             windows[slot].desktop != shell_desktop) {
-        return OPENGAT_SHELL_MAX_WINDOWS;
+        return OPENRFS_SHELL_MAX_WINDOWS;
     }
     return slot;
 }
 
-void opengat_shell_focus(uint32_t slot)
+void openrfs_shell_focus(uint32_t slot)
 {
     uint32_t at;
 
-    if (slot >= OPENGAT_SHELL_MAX_WINDOWS || !used[slot]) {
+    if (slot >= OPENRFS_SHELL_MAX_WINDOWS || !used[slot]) {
         return;
     }
     stack_raise(slot);
-    for (at = 0U; at < OPENGAT_SHELL_MAX_WINDOWS; ++at) {
+    for (at = 0U; at < OPENRFS_SHELL_MAX_WINDOWS; ++at) {
         windows[at].active = used[at] && at == slot;
     }
 }
@@ -627,10 +627,10 @@ void opengat_shell_focus(uint32_t slot)
  * pixels and a pointer is not that accurate, so the box is grown by two
  * on every side.  The DRAWN mark is still the mark - this widens what
  * answers, not what is shown. */
-static bool button_box(uint32_t slot, enum opengat_window_button which,
-    struct opengat_rect *out)
+static bool button_box(uint32_t slot, enum openrfs_window_button which,
+    struct openrfs_rect *out)
 {
-    if (!opengat_window_button_bounds(&windows[slot], which, out)) {
+    if (!openrfs_window_button_bounds(&windows[slot], which, out)) {
         return false;
     }
     out->x = out->x > 2U ? out->x - 2U : 0U;
@@ -642,9 +642,9 @@ static bool button_box(uint32_t slot, enum opengat_window_button which,
 
 /* Maximise fills the work area - the screen above the panel - and never
  * the panel itself, or the bar is under the window that covers it. */
-static void toggle_maximise(uint32_t slot, struct opengat_rect screen)
+static void toggle_maximise(uint32_t slot, struct openrfs_rect screen)
 {
-    struct opengat_window *window = &windows[slot];
+    struct openrfs_window *window = &windows[slot];
 
     if (window->maximised) {
         window->frame = window->restore;
@@ -655,40 +655,40 @@ static void toggle_maximise(uint32_t slot, struct opengat_rect screen)
     window->frame.x = screen.x;
     window->frame.y = screen.y;
     window->frame.width = screen.width;
-    window->frame.height = screen.height > OPENGAT_PANEL_HEIGHT ?
-        screen.height - OPENGAT_PANEL_HEIGHT : screen.height;
+    window->frame.height = screen.height > OPENRFS_PANEL_HEIGHT ?
+        screen.height - OPENRFS_PANEL_HEIGHT : screen.height;
     window->maximised = true;
 }
 
-static bool handle_client(uint32_t slot, const struct opengat_event *event)
+static bool handle_client(uint32_t slot, const struct openrfs_event *event)
 {
-    struct opengat_rect client = opengat_window_client(&windows[slot]);
+    struct openrfs_rect client = openrfs_window_client(&windows[slot]);
     uint32_t at;
 
     switch (apps[slot]) {
-    case OPENGAT_APP_TASKMGR: {
-        struct opengat_rect box;
+    case OPENRFS_APP_TASKMGR: {
+        struct openrfs_rect box;
 
         /* A press on a column header sorts by it. */
-        for (at = 0U; at < OPENGAT_TASKMGR_COLUMNS; ++at) {
-            struct opengat_rect head;
+        for (at = 0U; at < OPENRFS_TASKMGR_COLUMNS; ++at) {
+            struct openrfs_rect head;
 
-            if (!opengat_taskmgr_header_bounds(&windows[slot],
-                    (enum opengat_taskmgr_column)at, &head)) {
+            if (!openrfs_taskmgr_header_bounds(&windows[slot],
+                    (enum openrfs_taskmgr_column)at, &head)) {
                 continue;
             }
-            if (opengat_rect_contains(head, event->x, event->y)) {
-                opengat_taskmgr_sort((enum opengat_taskmgr_column)at);
+            if (openrfs_rect_contains(head, event->x, event->y)) {
+                openrfs_taskmgr_sort((enum openrfs_taskmgr_column)at);
                 return true;
             }
         }
         /* End Task, before the rows: it sits over the list's own area
          * and a press on it must not also pick a row underneath. */
-        if (opengat_taskmgr_end_button(&windows[slot], &box) &&
-                opengat_rect_contains(box, event->x, event->y)) {
-            uint32_t pid = opengat_taskmgr_selected_pid();
+        if (openrfs_taskmgr_end_button(&windows[slot], &box) &&
+                openrfs_rect_contains(box, event->x, event->y)) {
+            uint32_t pid = openrfs_taskmgr_selected_pid();
 
-            if (!opengat_taskmgr_end_selected()) {
+            if (!openrfs_taskmgr_end_selected()) {
                 return false;
             }
             /*
@@ -705,70 +705,70 @@ static bool handle_client(uint32_t slot, const struct opengat_event *event)
              * notice because slot 0 is usually something you would not
              * think to end.
              */
-            if (pid >= OPENGAT_SHELL_FIRST_PID &&
-                    pid - OPENGAT_SHELL_FIRST_PID <
-                        OPENGAT_SHELL_MAX_WINDOWS &&
-                    used[pid - OPENGAT_SHELL_FIRST_PID]) {
-                (void)opengat_shell_close(pid - OPENGAT_SHELL_FIRST_PID);
+            if (pid >= OPENRFS_SHELL_FIRST_PID &&
+                    pid - OPENRFS_SHELL_FIRST_PID <
+                        OPENRFS_SHELL_MAX_WINDOWS &&
+                    used[pid - OPENRFS_SHELL_FIRST_PID]) {
+                (void)openrfs_shell_close(pid - OPENRFS_SHELL_FIRST_PID);
             }
-            opengat_shell_notify("Task Manager", "Task ended");
+            openrfs_shell_notify("Task Manager", "Task ended");
             return true;
         }
-        for (at = 0U; at < OPENGAT_TASKMGR_MAX_ROWS; ++at) {
-            struct opengat_rect row;
+        for (at = 0U; at < OPENRFS_TASKMGR_MAX_ROWS; ++at) {
+            struct openrfs_rect row;
 
-            if (!opengat_taskmgr_row_bounds(&windows[slot], at, &row)) {
+            if (!openrfs_taskmgr_row_bounds(&windows[slot], at, &row)) {
                 break;
             }
-            if (opengat_rect_contains(row, event->x, event->y)) {
-                opengat_taskmgr_select(at);
+            if (openrfs_rect_contains(row, event->x, event->y)) {
+                openrfs_taskmgr_select(at);
                 return true;
             }
         }
         return false;
     }
-    case OPENGAT_APP_SETTINGS:
-        for (at = 0U; at < opengat_settings_page_count(); ++at) {
-            struct opengat_rect tab;
+    case OPENRFS_APP_SETTINGS:
+        for (at = 0U; at < openrfs_settings_page_count(); ++at) {
+            struct openrfs_rect tab;
 
-            if (!opengat_settings_tab_bounds(&windows[slot], at, &tab)) {
+            if (!openrfs_settings_tab_bounds(&windows[slot], at, &tab)) {
                 continue;
             }
-            if (opengat_rect_contains(tab, event->x, event->y)) {
-                opengat_settings_select(at);
+            if (openrfs_rect_contains(tab, event->x, event->y)) {
+                openrfs_settings_select(at);
                 return true;
             }
         }
         /* And the rows on the page you are looking at. */
-        for (at = 0U; at < OPENGAT_SETTINGS_MAX_ROWS; ++at) {
-            struct opengat_rect row;
+        for (at = 0U; at < OPENRFS_SETTINGS_MAX_ROWS; ++at) {
+            struct openrfs_rect row;
 
-            if (!opengat_settings_row_bounds(&windows[slot], at, &row)) {
+            if (!openrfs_settings_row_bounds(&windows[slot], at, &row)) {
                 break;
             }
-            if (opengat_rect_contains(row, event->x, event->y)) {
-                return opengat_settings_press(opengat_settings_selected(),
+            if (openrfs_rect_contains(row, event->x, event->y)) {
+                return openrfs_settings_press(openrfs_settings_selected(),
                                             at);
             }
         }
         return false;
-    case OPENGAT_APP_FILES:
-        for (at = 0U; at < opengat_files_child_count(opengat_files_here());
+    case OPENRFS_APP_FILES:
+        for (at = 0U; at < openrfs_files_child_count(openrfs_files_here());
                 ++at) {
-            struct opengat_rect cell;
+            struct openrfs_rect cell;
             uint32_t node;
 
-            if (!opengat_files_entry_bounds(&windows[slot], at, &cell)) {
+            if (!openrfs_files_entry_bounds(&windows[slot], at, &cell)) {
                 continue;
             }
-            if (!opengat_rect_contains(cell, event->x, event->y)) {
+            if (!openrfs_rect_contains(cell, event->x, event->y)) {
                 continue;
             }
-            node = opengat_files_child(opengat_files_here(), at);
+            node = openrfs_files_child(openrfs_files_here(), at);
             if (event->secondary) {
                 /* pcmanfm selects what you right-clicked before opening
                  * the menu, so the menu is unambiguously about it. */
-                opengat_files_select(node, false);
+                openrfs_files_select(node, false);
                 context_open = true;
                 context_node = node;
                 context_x = event->x;
@@ -781,33 +781,33 @@ static bool handle_client(uint32_t slot, const struct opengat_event *event)
                 /* Opening a FILE is not opening a folder, and pretending
                  * it is would be the file manager lying about what it
                  * did.  Only a folder opens. */
-                (void)opengat_files_open(node);
+                (void)openrfs_files_open(node);
                 return true;
             }
-            opengat_files_select(node,
-                (event->modifiers & OPENGAT_MOD_CTRL) != 0U);
+            openrfs_files_select(node,
+                (event->modifiers & OPENRFS_MOD_CTRL) != 0U);
             return true;
         }
-        if (opengat_rect_contains(client, event->x, event->y)) {
-            opengat_files_clear_selection();
+        if (openrfs_rect_contains(client, event->x, event->y)) {
+            openrfs_files_clear_selection();
             return true;
         }
         return false;
-    case OPENGAT_APP_PACKAGES:
-        for (at = 0U; at < opengat_packages_count(); ++at) {
-            struct opengat_rect row;
+    case OPENRFS_APP_PACKAGES:
+        for (at = 0U; at < openrfs_packages_count(); ++at) {
+            struct openrfs_rect row;
 
             row.x = client.x;
             row.y = client.y + 30U + at * 19U;
             row.width = client.width;
             row.height = 19U;
-            if (opengat_rect_contains(row, event->x, event->y)) {
-                opengat_packages_select(at);
+            if (openrfs_rect_contains(row, event->x, event->y)) {
+                openrfs_packages_select(at);
                 return true;
             }
         }
         return false;
-    case OPENGAT_APP_TERMINAL:
+    case OPENRFS_APP_TERMINAL:
     default:
         return false;
     }
@@ -819,18 +819,18 @@ static bool handle_client(uint32_t slot, const struct opengat_event *event)
  * button belongs to a window, because it is the only place that knows
  * windows exist.
  */
-static const enum opengat_shell_app LAUNCHER_APPS[3] = {
-    OPENGAT_APP_FILES, OPENGAT_APP_PACKAGES, OPENGAT_APP_TERMINAL
+static const enum openrfs_shell_app LAUNCHER_APPS[3] = {
+    OPENRFS_APP_FILES, OPENRFS_APP_PACKAGES, OPENRFS_APP_TERMINAL
 };
 
 /* Where the volume slider sits: above the icon, the way lxpanel's does. */
-static struct opengat_rect shell_volume_bounds(void)
+static struct openrfs_rect shell_volume_bounds(void)
 {
-    struct opengat_rect box = { 0U, 0U, 0U, 0U };
-    struct opengat_rect icon;
+    struct openrfs_rect box = { 0U, 0U, 0U, 0U };
+    struct openrfs_rect icon;
 
-    if (opengat_panel_plugin_bounds(shell_screen, OPENGAT_PANEL_PLUGIN_VOLUME,
-            &icon) != OPENGAT_PANEL_STATUS_OK) {
+    if (openrfs_panel_plugin_bounds(shell_screen, OPENRFS_PANEL_PLUGIN_VOLUME,
+            &icon) != OPENRFS_PANEL_STATUS_OK) {
         return box;
     }
     box.width = 26U;
@@ -843,26 +843,26 @@ static struct opengat_rect shell_volume_bounds(void)
 
 /* Which row of the open menu a y coordinate is on.  Rules are shorter
  * than rows, so this walks them rather than dividing. */
-static uint32_t shell_menu_row(struct opengat_rect box, uint32_t y)
+static uint32_t shell_menu_row(struct openrfs_rect box, uint32_t y)
 {
     uint32_t top = box.y + 4U;
     uint32_t at;
 
-    for (at = 0U; at < opengat_menu_row_count(); ++at) {
-        uint32_t height = opengat_menu_row_is_rule(at) ? 7U : 20U;
+    for (at = 0U; at < openrfs_menu_row_count(); ++at) {
+        uint32_t height = openrfs_menu_row_is_rule(at) ? 7U : 20U;
 
         if (y >= top && y < top + height) {
             return at;
         }
         top += height;
     }
-    return opengat_menu_row_count();
+    return openrfs_menu_row_count();
 }
 
 static bool shell_menu_pick(uint32_t row)
 {
-    struct opengat_rect where = { 240U, 180U, 560U, 360U };
-    const char *label = opengat_menu_row_label(row);
+    struct openrfs_rect where = { 240U, 180U, 560U, 360U };
+    const char *label = openrfs_menu_row_label(row);
 
     if (label == NULL) {
         return false;
@@ -871,20 +871,20 @@ static bool shell_menu_pick(uint32_t row)
      * menu built from what is installed cannot pick the wrong thing when
      * its rows move. */
     if (label[0] == 'L') {           /* Leafpad */
-        return opengat_shell_open(OPENGAT_APP_SETTINGS, where) <
-            OPENGAT_SHELL_MAX_WINDOWS;
+        return openrfs_shell_open(OPENRFS_APP_SETTINGS, where) <
+            OPENRFS_SHELL_MAX_WINDOWS;
     }
     if (label[0] == 'G') {           /* Galculator */
-        return opengat_shell_open(OPENGAT_APP_TASKMGR, where) <
-            OPENGAT_SHELL_MAX_WINDOWS;
+        return openrfs_shell_open(OPENRFS_APP_TASKMGR, where) <
+            OPENRFS_SHELL_MAX_WINDOWS;
     }
     if (label[0] == 'S') {           /* System Tools */
-        return opengat_shell_open(OPENGAT_APP_PACKAGES, where) <
-            OPENGAT_SHELL_MAX_WINDOWS;
+        return openrfs_shell_open(OPENRFS_APP_PACKAGES, where) <
+            OPENRFS_SHELL_MAX_WINDOWS;
     }
     if (label[0] == 'A') {           /* Accessories / Archiver */
-        return opengat_shell_open(OPENGAT_APP_FILES, where) <
-            OPENGAT_SHELL_MAX_WINDOWS;
+        return openrfs_shell_open(OPENRFS_APP_FILES, where) <
+            OPENRFS_SHELL_MAX_WINDOWS;
     }
     if (label[0] == 'R') {           /* Run... */
         run_open = true;
@@ -933,10 +933,10 @@ static uint32_t switcher_list(uint32_t *out, uint32_t capacity)
  */
 static uint32_t edges_at(uint32_t slot, uint32_t x, uint32_t y)
 {
-    struct opengat_rect frame = windows[slot].frame;
+    struct openrfs_rect frame = windows[slot].frame;
     uint32_t edges = 0U;
 
-    if (!opengat_rect_contains(frame, x, y)) {
+    if (!openrfs_rect_contains(frame, x, y)) {
         return 0U;
     }
     if (x < frame.x + RESIZE_GRIP) {
@@ -963,8 +963,8 @@ static uint32_t edges_at(uint32_t slot, uint32_t x, uint32_t y)
  */
 static void resize_to(uint32_t x, uint32_t y)
 {
-    struct opengat_window *window = &windows[resize_slot];
-    struct opengat_rect frame = resize_from;
+    struct openrfs_window *window = &windows[resize_slot];
+    struct openrfs_rect frame = resize_from;
     int32_t dx = (int32_t)x - (int32_t)resize_ox;
     int32_t dy = (int32_t)y - (int32_t)resize_oy;
 
@@ -1009,14 +1009,14 @@ static void resize_to(uint32_t x, uint32_t y)
  */
 static bool shell_context_pick(uint32_t row)
 {
-    if (context_node >= OPENGAT_FILES_MAX_NODES) {
+    if (context_node >= OPENRFS_FILES_MAX_NODES) {
         return false;
     }
     switch (row) {
     case 0U:     /* Open */
-        return opengat_files_open(context_node);
+        return openrfs_files_open(context_node);
     case 1U: {   /* Rename */
-        const char *name = opengat_files_node_name(context_node);
+        const char *name = openrfs_files_node_name(context_node);
         uint32_t at = 0U;
 
         rename_open = true;
@@ -1032,8 +1032,8 @@ static bool shell_context_pick(uint32_t row)
         return true;
     }
     case 2U: {   /* Delete */
-        char body[OPENGAT_SHELL_NOTE_BYTES];
-        const char *name = opengat_files_node_name(context_node);
+        char body[OPENRFS_SHELL_NOTE_BYTES];
+        const char *name = openrfs_files_node_name(context_node);
         uint32_t at = 0U;
 
         while (name[at] != '\0' && at + 12U < sizeof(body)) {
@@ -1041,8 +1041,8 @@ static bool shell_context_pick(uint32_t row)
             ++at;
         }
         body[at] = '\0';
-        if (!opengat_files_remove(context_node)) {
-            opengat_shell_notify("Files", "That cannot be deleted");
+        if (!openrfs_files_remove(context_node)) {
+            openrfs_shell_notify("Files", "That cannot be deleted");
             return true;
         }
         {
@@ -1054,7 +1054,7 @@ static bool shell_context_pick(uint32_t row)
             }
             body[at] = '\0';
         }
-        opengat_shell_notify("Files", body);
+        openrfs_shell_notify("Files", body);
         return true;
     }
     default:
@@ -1064,7 +1064,7 @@ static bool shell_context_pick(uint32_t row)
 
 static bool shell_rename_go(void)
 {
-    if (!opengat_files_rename(context_node, rename_text)) {
+    if (!openrfs_files_rename(context_node, rename_text)) {
         static const char REFUSED[] = "That name is taken or not a name";
         uint32_t at = 0U;
 
@@ -1086,15 +1086,15 @@ static bool shell_run_go(void)
 {
     static const struct {
         const char *name;
-        enum opengat_shell_app app;
+        enum openrfs_shell_app app;
     } RUNNABLE[5] = {
-        { "pcmanfm", OPENGAT_APP_FILES },
-        { "lxterminal", OPENGAT_APP_TERMINAL },
-        { "lxtask", OPENGAT_APP_TASKMGR },
-        { "lxappearance", OPENGAT_APP_SETTINGS },
-        { "packages", OPENGAT_APP_PACKAGES }
+        { "pcmanfm", OPENRFS_APP_FILES },
+        { "lxterminal", OPENRFS_APP_TERMINAL },
+        { "lxtask", OPENRFS_APP_TASKMGR },
+        { "lxappearance", OPENRFS_APP_SETTINGS },
+        { "packages", OPENRFS_APP_PACKAGES }
     };
-    struct opengat_rect where = { 260U, 200U, 560U, 360U };
+    struct openrfs_rect where = { 260U, 200U, 560U, 360U };
     uint32_t at;
     uint32_t byte;
 
@@ -1109,8 +1109,8 @@ static bool shell_run_go(void)
             run_length = 0U;
             run_text[0] = '\0';
             run_error[0] = '\0';
-            return opengat_shell_open(RUNNABLE[at].app, where) <
-                OPENGAT_SHELL_MAX_WINDOWS;
+            return openrfs_shell_open(RUNNABLE[at].app, where) <
+                OPENRFS_SHELL_MAX_WINDOWS;
         }
     }
     /* Stays OPEN and says why, because closing on a name it could not
@@ -1133,69 +1133,69 @@ static bool shell_run_go(void)
     return true;
 }
 
-static bool shell_panel_press(struct opengat_panel_hit hit)
+static bool shell_panel_press(struct openrfs_panel_hit hit)
 {
-    struct opengat_rect where = { 220U, 160U, 560U, 360U };
+    struct openrfs_rect where = { 220U, 160U, 560U, 360U };
 
     switch (hit.kind) {
-    case OPENGAT_PANEL_HIT_LAUNCHER:
+    case OPENRFS_PANEL_HIT_LAUNCHER:
         if (hit.index >= 3U) {
             return false;
         }
-        return opengat_shell_open(LAUNCHER_APPS[hit.index], where) <
-            OPENGAT_SHELL_MAX_WINDOWS;
-    case OPENGAT_PANEL_HIT_TASK:
-        if (hit.index >= OPENGAT_SHELL_MAX_WINDOWS || !used[hit.index]) {
+        return openrfs_shell_open(LAUNCHER_APPS[hit.index], where) <
+            OPENRFS_SHELL_MAX_WINDOWS;
+    case OPENRFS_PANEL_HIT_TASK:
+        if (hit.index >= OPENRFS_SHELL_MAX_WINDOWS || !used[hit.index]) {
             return false;
         }
         /* Pressing the button of the window that already has focus
          * MINIMISES it, which is what a taskbar does - otherwise the
          * button has nothing to say for the focused window. */
-        if (opengat_shell_focused() == hit.index &&
+        if (openrfs_shell_focused() == hit.index &&
                 !windows[hit.index].minimised) {
             windows[hit.index].minimised = true;
             return true;
         }
         windows[hit.index].minimised = false;
-        opengat_shell_focus(hit.index);
+        openrfs_shell_focus(hit.index);
         return true;
-    case OPENGAT_PANEL_HIT_PAGER:
+    case OPENRFS_PANEL_HIT_PAGER:
         if (hit.index >= 2U) {
             return false;
         }
-        opengat_shell_set_desktop(hit.index);
+        openrfs_shell_set_desktop(hit.index);
         return true;
-    case OPENGAT_PANEL_HIT_WINCMD: {
+    case OPENRFS_PANEL_HIT_WINCMD: {
         /* Show the desktop: minimise everything, or put it all back if
          * everything is already down. */
         bool any_up = false;
         uint32_t at;
 
-        for (at = 0U; at < OPENGAT_SHELL_MAX_WINDOWS; ++at) {
+        for (at = 0U; at < OPENRFS_SHELL_MAX_WINDOWS; ++at) {
             if (used[at] && !windows[at].minimised) {
                 any_up = true;
             }
         }
-        for (at = 0U; at < OPENGAT_SHELL_MAX_WINDOWS; ++at) {
+        for (at = 0U; at < OPENRFS_SHELL_MAX_WINDOWS; ++at) {
             if (used[at]) {
                 windows[at].minimised = any_up;
             }
         }
         return true;
     }
-    case OPENGAT_PANEL_HIT_MENU:
+    case OPENRFS_PANEL_HIT_MENU:
         /* A second press on the button that opened it CLOSES it, which
          * is what every menu button does and the thing that is missing
          * when a menu can only be dismissed by clicking away. */
         menu_open = !menu_open;
         volume_open = false;
         return true;
-    case OPENGAT_PANEL_HIT_VOLUME:
+    case OPENRFS_PANEL_HIT_VOLUME:
         volume_open = !volume_open;
         menu_open = false;
         return true;
-    case OPENGAT_PANEL_HIT_CLOCK:
-    case OPENGAT_PANEL_HIT_NONE:
+    case OPENRFS_PANEL_HIT_CLOCK:
+    case OPENRFS_PANEL_HIT_NONE:
     default:
         /* Reported so the press does not fall through to a window
          * underneath.  The clock opens a calendar in lxpanel and there
@@ -1205,16 +1205,16 @@ static bool shell_panel_press(struct opengat_panel_hit hit)
     }
 }
 
-bool opengat_shell_handle(const struct opengat_event *event)
+bool openrfs_shell_handle(const struct openrfs_event *event)
 {
     uint32_t slot;
-    struct opengat_rect title;
-    struct opengat_rect close;
+    struct openrfs_rect title;
+    struct openrfs_rect close;
 
     if (event == NULL) {
         return false;
     }
-    if (event->kind == OPENGAT_EVENT_KEY) {
+    if (event->kind == OPENRFS_EVENT_KEY) {
         /*
          * THE RUN BOX TAKES THE KEYBOARD while it is open, which is what
          * a modal dialog IS.  Without this, typing into it would also
@@ -1222,17 +1222,17 @@ bool opengat_shell_handle(const struct opengat_event *event)
          * like a picture stuck to the screen.
          */
         if (rename_open) {
-            if (event->special == OPENGAT_KEY_ESCAPE) {
+            if (event->special == OPENRFS_KEY_ESCAPE) {
                 rename_open = false;
                 return true;
             }
-            if (event->special == OPENGAT_KEY_BACKSPACE) {
+            if (event->special == OPENRFS_KEY_BACKSPACE) {
                 if (rename_length != 0U) {
                     rename_text[--rename_length] = '\0';
                 }
                 return true;
             }
-            if (event->special == OPENGAT_KEY_ENTER) {
+            if (event->special == OPENRFS_KEY_ENTER) {
                 return shell_rename_go();
             }
             if (event->key >= 32 && event->key <= 126 &&
@@ -1245,17 +1245,17 @@ bool opengat_shell_handle(const struct opengat_event *event)
             return false;
         }
         if (run_open) {
-            if (event->special == OPENGAT_KEY_ESCAPE) {
+            if (event->special == OPENRFS_KEY_ESCAPE) {
                 run_open = false;
                 return true;
             }
-            if (event->special == OPENGAT_KEY_BACKSPACE) {
+            if (event->special == OPENRFS_KEY_BACKSPACE) {
                 if (run_length != 0U) {
                     run_text[--run_length] = '\0';
                 }
                 return true;
             }
-            if (event->special == OPENGAT_KEY_ENTER) {
+            if (event->special == OPENRFS_KEY_ENTER) {
                 return shell_run_go();
             }
             if (event->key >= 32 && event->key <= 126 &&
@@ -1273,10 +1273,10 @@ bool opengat_shell_handle(const struct opengat_event *event)
          * commits the choice, which is how the real one works and why
          * tabbing twice goes two windows back rather than one.
          */
-        if (event->special == OPENGAT_KEY_TAB &&
-                (event->modifiers & OPENGAT_MOD_ALT) != 0U) {
-            uint32_t order[OPENGAT_SHELL_MAX_WINDOWS];
-            uint32_t live = switcher_list(order, OPENGAT_SHELL_MAX_WINDOWS);
+        if (event->special == OPENRFS_KEY_TAB &&
+                (event->modifiers & OPENRFS_MOD_ALT) != 0U) {
+            uint32_t order[OPENRFS_SHELL_MAX_WINDOWS];
+            uint32_t live = switcher_list(order, OPENRFS_SHELL_MAX_WINDOWS);
 
             if (live == 0U) {
                 return false;
@@ -1290,73 +1290,73 @@ bool opengat_shell_handle(const struct opengat_event *event)
             return true;
         }
         if (switcher_open && event->special == 0U && event->key == 0 &&
-                (event->modifiers & OPENGAT_MOD_ALT) == 0U) {
+                (event->modifiers & OPENRFS_MOD_ALT) == 0U) {
             /* Alt came up: commit to whatever is under the marker. */
-            uint32_t order[OPENGAT_SHELL_MAX_WINDOWS];
-            uint32_t live = switcher_list(order, OPENGAT_SHELL_MAX_WINDOWS);
+            uint32_t order[OPENRFS_SHELL_MAX_WINDOWS];
+            uint32_t live = switcher_list(order, OPENRFS_SHELL_MAX_WINDOWS);
 
             switcher_open = false;
             if (switcher_at < live) {
                 windows[order[switcher_at]].minimised = false;
-                opengat_shell_focus(order[switcher_at]);
+                openrfs_shell_focus(order[switcher_at]);
             }
             return true;
         }
-        slot = opengat_shell_focused();
+        slot = openrfs_shell_focused();
 
-        if (slot >= OPENGAT_SHELL_MAX_WINDOWS) {
+        if (slot >= OPENRFS_SHELL_MAX_WINDOWS) {
             return false;
         }
         /* A-F4 closes the FOCUSED window, which is the one the keyboard
          * is talking to - not the one under the pointer. */
-        if (event->special == OPENGAT_KEY_F4 &&
-                (event->modifiers & OPENGAT_MOD_ALT) != 0U) {
-            return opengat_shell_close(slot);
+        if (event->special == OPENRFS_KEY_F4 &&
+                (event->modifiers & OPENRFS_MOD_ALT) != 0U) {
+            return openrfs_shell_close(slot);
         }
         /*
          * Ctrl+X/C/V reach the FOCUSED file manager.  They are handled
          * here rather than in files.c because the clipboard is a
          * desktop-wide thing: copy in one window, paste in another.
          */
-        if (apps[slot] == OPENGAT_APP_FILES &&
-                (event->modifiers & OPENGAT_MOD_CTRL) != 0U) {
+        if (apps[slot] == OPENRFS_APP_FILES &&
+                (event->modifiers & OPENRFS_MOD_CTRL) != 0U) {
             if (event->key == 'c' || event->key == 'x') {
-                return opengat_files_copy_selection(event->key == 'x');
+                return openrfs_files_copy_selection(event->key == 'x');
             }
             if (event->key == 'v') {
                 uint32_t moved =
-                    opengat_files_paste_into(opengat_files_here());
+                    openrfs_files_paste_into(openrfs_files_here());
 
                 if (moved == 0U) {
                     return false;
                 }
-                opengat_shell_notify("Files",
+                openrfs_shell_notify("Files",
                     moved == 1U ? "1 item pasted" : "items pasted");
                 return true;
             }
             if (event->key == 'a') {
-                opengat_files_select_all();
+                openrfs_files_select_all();
                 return true;
             }
         }
-        if (apps[slot] == OPENGAT_APP_TERMINAL) {
-            if (event->special == OPENGAT_KEY_ENTER) {
-                opengat_terminal_enter();
+        if (apps[slot] == OPENRFS_APP_TERMINAL) {
+            if (event->special == OPENRFS_KEY_ENTER) {
+                openrfs_terminal_enter();
                 return true;
             }
-            if (event->special == OPENGAT_KEY_BACKSPACE) {
-                opengat_terminal_backspace();
+            if (event->special == OPENRFS_KEY_BACKSPACE) {
+                openrfs_terminal_backspace();
                 return true;
             }
             if (event->key != 0) {
-                opengat_terminal_type(event->key);
+                openrfs_terminal_type(event->key);
                 return true;
             }
         }
         return false;
     }
 
-    if (event->kind == OPENGAT_EVENT_POINTER_MOVE) {
+    if (event->kind == OPENRFS_EVENT_POINTER_MOVE) {
         if (resizing) {
             resize_to(event->x, event->y);
             return true;
@@ -1368,28 +1368,28 @@ bool opengat_shell_handle(const struct opengat_event *event)
              * rests - which is what makes it a tip rather than something
              * that flashes as the mouse crosses the bar.
              */
-            struct opengat_panel_hit over =
-                opengat_panel_hit(shell_screen, event->x, event->y);
+            struct openrfs_panel_hit over =
+                openrfs_panel_hit(shell_screen, event->x, event->y);
             const char *label = "";
 
             switch (over.kind) {
-            case OPENGAT_PANEL_HIT_MENU:
+            case OPENRFS_PANEL_HIT_MENU:
                 label = "Applications";
                 break;
-            case OPENGAT_PANEL_HIT_LAUNCHER:
+            case OPENRFS_PANEL_HIT_LAUNCHER:
                 label = over.index == 0U ? "File Manager" :
                     (over.index == 1U ? "Package Manager" : "Terminal");
                 break;
-            case OPENGAT_PANEL_HIT_WINCMD:
+            case OPENRFS_PANEL_HIT_WINCMD:
                 label = "Show the desktop";
                 break;
-            case OPENGAT_PANEL_HIT_PAGER:
+            case OPENRFS_PANEL_HIT_PAGER:
                 label = "Workspace";
                 break;
-            case OPENGAT_PANEL_HIT_VOLUME:
+            case OPENRFS_PANEL_HIT_VOLUME:
                 label = "Volume";
                 break;
-            case OPENGAT_PANEL_HIT_CLOCK:
+            case OPENRFS_PANEL_HIT_CLOCK:
                 label = "Clock";
                 break;
             default:
@@ -1430,37 +1430,37 @@ bool opengat_shell_handle(const struct opengat_event *event)
         return true;
     }
 
-    if (event->kind == OPENGAT_EVENT_POINTER_UP) {
+    if (event->kind == OPENRFS_EVENT_POINTER_UP) {
         bool was = dragging || resizing;
 
         dragging = false;
         resizing = false;
         if (dragging_entry) {
-            uint32_t over = opengat_shell_at(event->x, event->y);
+            uint32_t over = openrfs_shell_at(event->x, event->y);
 
             dragging_entry = false;
-            if (over < OPENGAT_SHELL_MAX_WINDOWS &&
-                    apps[over] == OPENGAT_APP_FILES) {
+            if (over < OPENRFS_SHELL_MAX_WINDOWS &&
+                    apps[over] == OPENRFS_APP_FILES) {
                 uint32_t at;
 
                 for (at = 0U;
-                        at < opengat_files_child_count(opengat_files_here());
+                        at < openrfs_files_child_count(openrfs_files_here());
                         ++at) {
-                    struct opengat_rect cell;
+                    struct openrfs_rect cell;
                     uint32_t target;
 
-                    if (!opengat_files_entry_bounds(&windows[over], at,
+                    if (!openrfs_files_entry_bounds(&windows[over], at,
                                                   &cell)) {
                         continue;
                     }
-                    if (!opengat_rect_contains(cell, event->x, event->y)) {
+                    if (!openrfs_rect_contains(cell, event->x, event->y)) {
                         continue;
                     }
-                    target = opengat_files_child(opengat_files_here(), at);
-                    /* opengat_files_move() refuses every bad case itself -
+                    target = openrfs_files_child(openrfs_files_here(), at);
+                    /* openrfs_files_move() refuses every bad case itself -
                      * onto a file, onto its own folder, into itself - so
                      * this does not have to know which they are. */
-                    return opengat_files_move(drag_node, target);
+                    return openrfs_files_move(drag_node, target);
                 }
             }
         }
@@ -1475,9 +1475,9 @@ bool opengat_shell_handle(const struct opengat_event *event)
      * clicking on the thing you clicked on.
      */
     if (context_open) {
-        struct opengat_rect box = opengat_shell_context_bounds();
+        struct openrfs_rect box = openrfs_shell_context_bounds();
 
-        if (opengat_rect_contains(box, event->x, event->y)) {
+        if (openrfs_rect_contains(box, event->x, event->y)) {
             uint32_t row = (event->y - box.y - 4U) / CONTEXT_ROW_H;
 
             context_open = false;
@@ -1487,14 +1487,14 @@ bool opengat_shell_handle(const struct opengat_event *event)
         /* fall through, so the press still lands where it landed */
     }
     if (menu_open) {
-        struct opengat_rect button;
-        struct opengat_rect box;
+        struct openrfs_rect button;
+        struct openrfs_rect box;
 
-        if (opengat_panel_plugin_bounds(shell_screen,
-                OPENGAT_PANEL_PLUGIN_MENU, &button) ==
-                OPENGAT_PANEL_STATUS_OK) {
-            box = opengat_menu_bounds(shell_screen, button);
-            if (opengat_rect_contains(box, event->x, event->y)) {
+        if (openrfs_panel_plugin_bounds(shell_screen,
+                OPENRFS_PANEL_PLUGIN_MENU, &button) ==
+                OPENRFS_PANEL_STATUS_OK) {
+            box = openrfs_menu_bounds(shell_screen, button);
+            if (openrfs_rect_contains(box, event->x, event->y)) {
                 uint32_t row = shell_menu_row(box, event->y);
 
                 menu_open = false;
@@ -1507,27 +1507,27 @@ bool opengat_shell_handle(const struct opengat_event *event)
              * menu button that does nothing: the first version of this
              * did exactly that and the harness caught it.
              */
-            if (opengat_rect_contains(button, event->x, event->y)) {
-                return shell_panel_press((struct opengat_panel_hit){
-                    OPENGAT_PANEL_HIT_MENU, 0U });
+            if (openrfs_rect_contains(button, event->x, event->y)) {
+                return shell_panel_press((struct openrfs_panel_hit){
+                    OPENRFS_PANEL_HIT_MENU, 0U });
             }
         }
         menu_open = false;
         /* fall through: the press still lands where it landed */
     }
     if (volume_open) {
-        struct opengat_rect slider = shell_volume_bounds();
-        struct opengat_rect icon;
+        struct openrfs_rect slider = shell_volume_bounds();
+        struct openrfs_rect icon;
 
         /* The same rule as the menu: a press on the icon is the toggle. */
-        if (opengat_panel_plugin_bounds(shell_screen,
-                OPENGAT_PANEL_PLUGIN_VOLUME, &icon) ==
-                OPENGAT_PANEL_STATUS_OK &&
-                opengat_rect_contains(icon, event->x, event->y)) {
-            return shell_panel_press((struct opengat_panel_hit){
-                OPENGAT_PANEL_HIT_VOLUME, 0U });
+        if (openrfs_panel_plugin_bounds(shell_screen,
+                OPENRFS_PANEL_PLUGIN_VOLUME, &icon) ==
+                OPENRFS_PANEL_STATUS_OK &&
+                openrfs_rect_contains(icon, event->x, event->y)) {
+            return shell_panel_press((struct openrfs_panel_hit){
+                OPENRFS_PANEL_HIT_VOLUME, 0U });
         }
-        if (opengat_rect_contains(slider, event->x, event->y)) {
+        if (openrfs_rect_contains(slider, event->x, event->y)) {
             /* The slider runs bottom to top, so a press near its foot is
              * quiet and near its head is loud. */
             uint32_t from_top = event->y - slider.y;
@@ -1535,7 +1535,7 @@ bool opengat_shell_handle(const struct opengat_event *event)
             volume_level = slider.height > 0U ?
                 100U - (from_top * 100U / slider.height) : 0U;
             volume_muted = volume_level == 0U;
-            (void)opengat_panel_set_volume(volume_level, volume_muted);
+            (void)openrfs_panel_set_volume(volume_level, volume_muted);
             return true;
         }
         volume_open = false;
@@ -1549,34 +1549,34 @@ bool opengat_shell_handle(const struct opengat_event *event)
      * control that does not do what it is drawn as.
      */
     {
-        struct opengat_panel_hit hit =
-            opengat_panel_hit(shell_screen, event->x, event->y);
+        struct openrfs_panel_hit hit =
+            openrfs_panel_hit(shell_screen, event->x, event->y);
 
-        if (hit.kind != OPENGAT_PANEL_HIT_NONE) {
+        if (hit.kind != OPENRFS_PANEL_HIT_NONE) {
             return shell_panel_press(hit);
         }
     }
 
-    slot = opengat_shell_at(event->x, event->y);
-    if (slot >= OPENGAT_SHELL_MAX_WINDOWS) {
+    slot = openrfs_shell_at(event->x, event->y);
+    if (slot >= OPENRFS_SHELL_MAX_WINDOWS) {
         return false;
     }
     /* Whatever else the press does, it RAISES: that is what clicking a
      * window means, and doing it before anything else means the rest of
      * this function is always talking about the window on top. */
-    opengat_shell_focus(slot);
+    openrfs_shell_focus(slot);
 
-    if (button_box(slot, OPENGAT_WINDOW_CLOSE, &close) &&
-            opengat_rect_contains(close, event->x, event->y)) {
-        return opengat_shell_close(slot);
+    if (button_box(slot, OPENRFS_WINDOW_CLOSE, &close) &&
+            openrfs_rect_contains(close, event->x, event->y)) {
+        return openrfs_shell_close(slot);
     }
-    if (button_box(slot, OPENGAT_WINDOW_MAXIMISE, &close) &&
-            opengat_rect_contains(close, event->x, event->y)) {
+    if (button_box(slot, OPENRFS_WINDOW_MAXIMISE, &close) &&
+            openrfs_rect_contains(close, event->x, event->y)) {
         toggle_maximise(slot, shell_screen);
         return true;
     }
-    if (button_box(slot, OPENGAT_WINDOW_MINIMISE, &close) &&
-            opengat_rect_contains(close, event->x, event->y)) {
+    if (button_box(slot, OPENRFS_WINDOW_MINIMISE, &close) &&
+            openrfs_rect_contains(close, event->x, event->y)) {
         windows[slot].minimised = true;
         /* Focus goes to whatever is now the top VISIBLE window, not to
          * the one that just went away. */
@@ -1587,7 +1587,7 @@ bool opengat_shell_handle(const struct opengat_event *event)
                 uint32_t under = stack[--at];
 
                 if (used[under] && !windows[under].minimised) {
-                    opengat_shell_focus(under);
+                    openrfs_shell_focus(under);
                     break;
                 }
             }
@@ -1613,8 +1613,8 @@ bool opengat_shell_handle(const struct opengat_event *event)
             return true;
         }
     }
-    title = opengat_window_title(&windows[slot]);
-    if (opengat_rect_contains(title, event->x, event->y)) {
+    title = openrfs_window_title(&windows[slot]);
+    if (openrfs_rect_contains(title, event->x, event->y)) {
         dragging = true;
         drag_slot = slot;
         drag_dx = event->x - windows[slot].frame.x;
@@ -1632,7 +1632,7 @@ bool opengat_shell_handle(const struct opengat_event *event)
  * A taskbar carrying a button for a window that closed is the same bug as
  * a button that does nothing, wearing a different coat.
  */
-static const char *const APP_ICONS[OPENGAT_APP_COUNT] = {
+static const char *const APP_ICONS[OPENRFS_APP_COUNT] = {
     "file-manager", "terminal", "gtk-preferences", "gtk-preferences",
     "gtk-preferences"
 };
@@ -1641,37 +1641,37 @@ static void sync_panel(void)
 {
     uint32_t at;
 
-    for (at = 0U; at < OPENGAT_SHELL_MAX_WINDOWS &&
-            at < OPENGAT_PANEL_MAX_TASKS; ++at) {
-        struct opengat_panel_task task;
+    for (at = 0U; at < OPENRFS_SHELL_MAX_WINDOWS &&
+            at < OPENRFS_PANEL_MAX_TASKS; ++at) {
+        struct openrfs_panel_task task;
         uint32_t byte = 0U;
 
         if (!used[at]) {
-            (void)opengat_panel_clear_task(at);
+            (void)openrfs_panel_clear_task(at);
             continue;
         }
         /* The bar shows THIS desktop's windows, which is what
          * ShowAllDesks=0 in the panel's own profile asks for. */
         task.icon = APP_ICONS[apps[at]];
-        task.active = opengat_shell_focused() == at &&
+        task.active = openrfs_shell_focused() == at &&
             !windows[at].minimised;
         task.minimised = windows[at].minimised;
         task.desktop = windows[at].desktop;
         while (windows[at].title[byte] != '\0' &&
-                byte + 1U < OPENGAT_PANEL_LABEL_BYTES) {
+                byte + 1U < OPENRFS_PANEL_LABEL_BYTES) {
             task.label[byte] = windows[at].title[byte];
             ++byte;
         }
         task.label[byte] = '\0';
-        (void)opengat_panel_set_task(at, &task);
+        (void)openrfs_panel_set_task(at, &task);
     }
 }
 
-void opengat_shell_draw(void)
+void openrfs_shell_draw(void)
 {
     uint32_t at;
 
-    if (!opengat_surface_valid(canvas)) {
+    if (!openrfs_surface_valid(canvas)) {
         return;
     }
     sync_panel();
@@ -1684,22 +1684,22 @@ void opengat_shell_draw(void)
                 windows[slot].desktop != shell_desktop) {
             continue;
         }
-        opengat_window_draw(canvas, &windows[slot]);
+        openrfs_window_draw(canvas, &windows[slot]);
         switch (apps[slot]) {
-        case OPENGAT_APP_FILES:
-            opengat_files_draw(canvas, &windows[slot]);
+        case OPENRFS_APP_FILES:
+            openrfs_files_draw(canvas, &windows[slot]);
             break;
-        case OPENGAT_APP_TERMINAL:
-            opengat_terminal_draw(canvas, &windows[slot]);
+        case OPENRFS_APP_TERMINAL:
+            openrfs_terminal_draw(canvas, &windows[slot]);
             break;
-        case OPENGAT_APP_TASKMGR:
-            opengat_taskmgr_draw(canvas, &windows[slot]);
+        case OPENRFS_APP_TASKMGR:
+            openrfs_taskmgr_draw(canvas, &windows[slot]);
             break;
-        case OPENGAT_APP_SETTINGS:
-            opengat_settings_draw(canvas, &windows[slot]);
+        case OPENRFS_APP_SETTINGS:
+            openrfs_settings_draw(canvas, &windows[slot]);
             break;
-        case OPENGAT_APP_PACKAGES:
-            opengat_packages_draw(canvas, &windows[slot]);
+        case OPENRFS_APP_PACKAGES:
+            openrfs_packages_draw(canvas, &windows[slot]);
             break;
         default:
             break;
@@ -1712,116 +1712,116 @@ void opengat_shell_draw(void)
  * belong on top of everything including the panel that opened them, and
  * drawing them with the stack would put a window over an open menu.
  */
-void opengat_shell_draw_overlays(void)
+void openrfs_shell_draw_overlays(void)
 {
-    struct opengat_rect button;
+    struct openrfs_rect button;
 
-    if (!opengat_surface_valid(canvas)) {
+    if (!openrfs_surface_valid(canvas)) {
         return;
     }
-    if (menu_open && opengat_panel_plugin_bounds(shell_screen,
-            OPENGAT_PANEL_PLUGIN_MENU, &button) == OPENGAT_PANEL_STATUS_OK) {
-        opengat_menu_draw(canvas, shell_screen, button);
+    if (menu_open && openrfs_panel_plugin_bounds(shell_screen,
+            OPENRFS_PANEL_PLUGIN_MENU, &button) == OPENRFS_PANEL_STATUS_OK) {
+        openrfs_menu_draw(canvas, shell_screen, button);
     }
     if (volume_open) {
-        struct opengat_rect box = shell_volume_bounds();
+        struct openrfs_rect box = shell_volume_bounds();
         uint32_t lit;
         uint32_t at;
 
         if (box.height == 0U) {
             return;
         }
-        opengat_surface_fill(canvas, box, box, OPENGAT_BG);
+        openrfs_surface_fill(canvas, box, box, OPENRFS_BG);
         for (at = 0U; at < box.width; ++at) {
-            opengat_surface_plot(canvas, box, box.x + at, box.y,
-                               OPENGAT_LINE);
-            opengat_surface_plot(canvas, box, box.x + at,
-                               box.y + box.height - 1U, OPENGAT_LINE);
+            openrfs_surface_plot(canvas, box, box.x + at, box.y,
+                               OPENRFS_LINE);
+            openrfs_surface_plot(canvas, box, box.x + at,
+                               box.y + box.height - 1U, OPENRFS_LINE);
         }
         for (at = 0U; at < box.height; ++at) {
-            opengat_surface_plot(canvas, box, box.x, box.y + at,
-                               OPENGAT_LINE);
-            opengat_surface_plot(canvas, box, box.x + box.width - 1U,
-                               box.y + at, OPENGAT_LINE);
+            openrfs_surface_plot(canvas, box, box.x, box.y + at,
+                               OPENRFS_LINE);
+            openrfs_surface_plot(canvas, box, box.x + box.width - 1U,
+                               box.y + at, OPENRFS_LINE);
         }
         /* The trough, and the level filled from the BOTTOM: a slider
          * that fills downwards reads as the amount you have lost. */
         {
-            struct opengat_rect trough;
+            struct openrfs_rect trough;
 
             trough.x = box.x + box.width / 2U - 2U;
             trough.y = box.y + 8U;
             trough.width = 4U;
             trough.height = box.height > 16U ? box.height - 16U : 0U;
-            opengat_surface_fill(canvas, box, trough, OPENGAT_BASE);
-            lit = trough.height * opengat_shell_volume() / 100U;
+            openrfs_surface_fill(canvas, box, trough, OPENRFS_BASE);
+            lit = trough.height * openrfs_shell_volume() / 100U;
             {
-                struct opengat_rect fill;
+                struct openrfs_rect fill;
 
                 fill.x = trough.x;
                 fill.width = trough.width;
                 fill.height = lit;
                 fill.y = trough.y + trough.height - lit;
-                opengat_surface_fill(canvas, box, fill, OPENGAT_SEL_BG);
+                openrfs_surface_fill(canvas, box, fill, OPENRFS_SEL_BG);
             }
         }
     }
     if (run_open) {
-        struct opengat_rect box;
-        struct opengat_rect field;
+        struct openrfs_rect box;
+        struct openrfs_rect field;
         uint32_t at;
 
         box.width = 300U;
         box.height = run_error[0] != '\0' ? 96U : 78U;
         box.x = shell_screen.x + (shell_screen.width - box.width) / 2U;
         box.y = shell_screen.y + shell_screen.height / 3U;
-        opengat_surface_fill(canvas, box, box, OPENGAT_BG);
+        openrfs_surface_fill(canvas, box, box, OPENRFS_BG);
         for (at = 0U; at < box.width; ++at) {
-            opengat_surface_plot(canvas, box, box.x + at, box.y,
-                               OPENGAT_LINE);
-            opengat_surface_plot(canvas, box, box.x + at,
-                               box.y + box.height - 1U, OPENGAT_LINE);
+            openrfs_surface_plot(canvas, box, box.x + at, box.y,
+                               OPENRFS_LINE);
+            openrfs_surface_plot(canvas, box, box.x + at,
+                               box.y + box.height - 1U, OPENRFS_LINE);
         }
         for (at = 0U; at < box.height; ++at) {
-            opengat_surface_plot(canvas, box, box.x, box.y + at,
-                               OPENGAT_LINE);
-            opengat_surface_plot(canvas, box, box.x + box.width - 1U,
-                               box.y + at, OPENGAT_LINE);
+            openrfs_surface_plot(canvas, box, box.x, box.y + at,
+                               OPENRFS_LINE);
+            openrfs_surface_plot(canvas, box, box.x + box.width - 1U,
+                               box.y + at, OPENRFS_LINE);
         }
-        opengat_font_draw(canvas, box, box.x + 12U, box.y + 22U,
-                        "Run:", OPENGAT_FG);
+        openrfs_font_draw(canvas, box, box.x + 12U, box.y + 22U,
+                        "Run:", OPENRFS_FG);
         field.x = box.x + 12U;
         field.y = box.y + 30U;
         field.width = box.width - 24U;
         field.height = 22U;
-        opengat_surface_fill(canvas, box, field, OPENGAT_BASE);
+        openrfs_surface_fill(canvas, box, field, OPENRFS_BASE);
         for (at = 0U; at < field.width; ++at) {
-            opengat_surface_plot(canvas, box, field.x + at, field.y,
-                               OPENGAT_LINE);
+            openrfs_surface_plot(canvas, box, field.x + at, field.y,
+                               OPENRFS_LINE);
         }
         for (at = 0U; at < field.height; ++at) {
-            opengat_surface_plot(canvas, box, field.x, field.y + at,
-                               OPENGAT_LINE);
+            openrfs_surface_plot(canvas, box, field.x, field.y + at,
+                               OPENRFS_LINE);
         }
-        opengat_font_draw(canvas, field, field.x + 5U, field.y + 15U,
-                        run_text, OPENGAT_TEXT);
+        openrfs_font_draw(canvas, field, field.x + 5U, field.y + 15U,
+                        run_text, OPENRFS_TEXT);
         {
             /* A caret after the text, so the box looks like it is
              * taking the keyboard - which it is. */
-            uint32_t pen = field.x + 5U + opengat_font_width(run_text);
-            struct opengat_rect caret = { pen, field.y + 4U, 1U, 14U };
+            uint32_t pen = field.x + 5U + openrfs_font_width(run_text);
+            struct openrfs_rect caret = { pen, field.y + 4U, 1U, 14U };
 
-            opengat_surface_fill(canvas, field, caret, OPENGAT_TEXT);
+            openrfs_surface_fill(canvas, field, caret, OPENRFS_TEXT);
         }
         if (run_error[0] != '\0') {
-            opengat_font_draw(canvas, box, box.x + 12U, box.y + 74U,
-                            run_error, OPENGAT_TEXT);
+            openrfs_font_draw(canvas, box, box.x + 12U, box.y + 74U,
+                            run_error, OPENRFS_TEXT);
         }
     }
     if (switcher_open) {
-        struct opengat_rect box;
-        uint32_t order[OPENGAT_SHELL_MAX_WINDOWS];
-        uint32_t live = switcher_list(order, OPENGAT_SHELL_MAX_WINDOWS);
+        struct openrfs_rect box;
+        uint32_t order[OPENRFS_SHELL_MAX_WINDOWS];
+        uint32_t live = switcher_list(order, OPENRFS_SHELL_MAX_WINDOWS);
         uint32_t at;
 
         if (live == 0U) {
@@ -1831,34 +1831,34 @@ void opengat_shell_draw_overlays(void)
         box.height = 12U + live * 20U;
         box.x = shell_screen.x + (shell_screen.width - box.width) / 2U;
         box.y = shell_screen.y + (shell_screen.height - box.height) / 2U;
-        opengat_surface_fill(canvas, box, box, OPENGAT_BG);
+        openrfs_surface_fill(canvas, box, box, OPENRFS_BG);
         for (at = 0U; at < box.width; ++at) {
-            opengat_surface_plot(canvas, box, box.x + at, box.y,
-                               OPENGAT_LINE);
-            opengat_surface_plot(canvas, box, box.x + at,
-                               box.y + box.height - 1U, OPENGAT_LINE);
+            openrfs_surface_plot(canvas, box, box.x + at, box.y,
+                               OPENRFS_LINE);
+            openrfs_surface_plot(canvas, box, box.x + at,
+                               box.y + box.height - 1U, OPENRFS_LINE);
         }
         for (at = 0U; at < box.height; ++at) {
-            opengat_surface_plot(canvas, box, box.x, box.y + at,
-                               OPENGAT_LINE);
-            opengat_surface_plot(canvas, box, box.x + box.width - 1U,
-                               box.y + at, OPENGAT_LINE);
+            openrfs_surface_plot(canvas, box, box.x, box.y + at,
+                               OPENRFS_LINE);
+            openrfs_surface_plot(canvas, box, box.x + box.width - 1U,
+                               box.y + at, OPENRFS_LINE);
         }
         /* In the same order the keys walk, so the marker is on the
          * window Alt+Tab will actually commit to. */
         for (at = 0U; at < live; ++at) {
-            struct opengat_rect row;
+            struct openrfs_rect row;
 
             row.x = box.x + 3U;
             row.y = box.y + 6U + at * 20U;
             row.width = box.width - 6U;
             row.height = 20U;
             if (at == switcher_at) {
-                opengat_surface_fill(canvas, box, row, OPENGAT_SEL_BG);
+                openrfs_surface_fill(canvas, box, row, OPENRFS_SEL_BG);
             }
-            opengat_font_draw(canvas, row, row.x + 6U, row.y + 14U,
+            openrfs_font_draw(canvas, row, row.x + 6U, row.y + 14U,
                 windows[order[at]].title,
-                at == switcher_at ? OPENGAT_SEL_FG : OPENGAT_FG);
+                at == switcher_at ? OPENRFS_SEL_FG : OPENRFS_FG);
         }
     }
     /*
@@ -1870,32 +1870,32 @@ void opengat_shell_draw_overlays(void)
         uint32_t at;
 
         for (at = 0U; at < note_count; ++at) {
-            struct opengat_rect box;
+            struct openrfs_rect box;
             uint32_t edge;
 
             box.width = 220U;
             box.height = 46U;
             box.x = shell_screen.x + shell_screen.width - box.width - 10U;
             box.y = shell_screen.y + shell_screen.height -
-                OPENGAT_PANEL_HEIGHT - 8U -
+                OPENRFS_PANEL_HEIGHT - 8U -
                 (note_count - at) * (box.height + 6U);
-            opengat_surface_fill(canvas, box, box, OPENGAT_BG);
+            openrfs_surface_fill(canvas, box, box, OPENRFS_BG);
             for (edge = 0U; edge < box.width; ++edge) {
-                opengat_surface_plot(canvas, box, box.x + edge, box.y,
-                                   OPENGAT_LINE);
-                opengat_surface_plot(canvas, box, box.x + edge,
-                                   box.y + box.height - 1U, OPENGAT_LINE);
+                openrfs_surface_plot(canvas, box, box.x + edge, box.y,
+                                   OPENRFS_LINE);
+                openrfs_surface_plot(canvas, box, box.x + edge,
+                                   box.y + box.height - 1U, OPENRFS_LINE);
             }
             for (edge = 0U; edge < box.height; ++edge) {
-                opengat_surface_plot(canvas, box, box.x, box.y + edge,
-                                   OPENGAT_LINE);
-                opengat_surface_plot(canvas, box, box.x + box.width - 1U,
-                                   box.y + edge, OPENGAT_LINE);
+                openrfs_surface_plot(canvas, box, box.x, box.y + edge,
+                                   OPENRFS_LINE);
+                openrfs_surface_plot(canvas, box, box.x + box.width - 1U,
+                                   box.y + edge, OPENRFS_LINE);
             }
-            opengat_font_draw(canvas, box, box.x + 10U, box.y + 18U,
-                            notes[at].title, OPENGAT_FG);
-            opengat_font_draw(canvas, box, box.x + 10U, box.y + 34U,
-                            notes[at].body, OPENGAT_TEXT);
+            openrfs_font_draw(canvas, box, box.x + 10U, box.y + 18U,
+                            notes[at].title, OPENRFS_FG);
+            openrfs_font_draw(canvas, box, box.x + 10U, box.y + 34U,
+                            notes[at].body, OPENRFS_TEXT);
         }
     }
     /*
@@ -1906,107 +1906,107 @@ void opengat_shell_draw_overlays(void)
      * widget background is how a tip stops looking like a tip.
      */
     if (context_open) {
-        struct opengat_rect box = opengat_shell_context_bounds();
+        struct openrfs_rect box = openrfs_shell_context_bounds();
         uint32_t at;
 
-        opengat_surface_fill(canvas, box, box, OPENGAT_BG);
+        openrfs_surface_fill(canvas, box, box, OPENRFS_BG);
         for (at = 0U; at < box.width; ++at) {
-            opengat_surface_plot(canvas, box, box.x + at, box.y,
-                               OPENGAT_LINE);
-            opengat_surface_plot(canvas, box, box.x + at,
-                               box.y + box.height - 1U, OPENGAT_LINE);
+            openrfs_surface_plot(canvas, box, box.x + at, box.y,
+                               OPENRFS_LINE);
+            openrfs_surface_plot(canvas, box, box.x + at,
+                               box.y + box.height - 1U, OPENRFS_LINE);
         }
         for (at = 0U; at < box.height; ++at) {
-            opengat_surface_plot(canvas, box, box.x, box.y + at,
-                               OPENGAT_LINE);
-            opengat_surface_plot(canvas, box, box.x + box.width - 1U,
-                               box.y + at, OPENGAT_LINE);
+            openrfs_surface_plot(canvas, box, box.x, box.y + at,
+                               OPENRFS_LINE);
+            openrfs_surface_plot(canvas, box, box.x + box.width - 1U,
+                               box.y + at, OPENRFS_LINE);
         }
         for (at = 0U; at < CONTEXT_ROWS; ++at) {
             /* Properties is DIMMED rather than left out: the menu keeps
              * pcmanfm's shape and nothing in it pretends to work. */
-            opengat_font_draw(canvas, box, box.x + 10U,
+            openrfs_font_draw(canvas, box, box.x + 10U,
                 box.y + 4U + at * CONTEXT_ROW_H + 14U,
                 CONTEXT_LABELS[at],
-                at == 3U ? OPENGAT_LINE : OPENGAT_FG);
+                at == 3U ? OPENRFS_LINE : OPENRFS_FG);
         }
     }
     if (rename_open) {
-        struct opengat_rect box;
-        struct opengat_rect field;
+        struct openrfs_rect box;
+        struct openrfs_rect field;
         uint32_t at;
 
         box.width = 280U;
         box.height = rename_error[0] != '\0' ? 96U : 78U;
         box.x = shell_screen.x + (shell_screen.width - box.width) / 2U;
         box.y = shell_screen.y + shell_screen.height / 3U;
-        opengat_surface_fill(canvas, box, box, OPENGAT_BG);
+        openrfs_surface_fill(canvas, box, box, OPENRFS_BG);
         for (at = 0U; at < box.width; ++at) {
-            opengat_surface_plot(canvas, box, box.x + at, box.y,
-                               OPENGAT_LINE);
-            opengat_surface_plot(canvas, box, box.x + at,
-                               box.y + box.height - 1U, OPENGAT_LINE);
+            openrfs_surface_plot(canvas, box, box.x + at, box.y,
+                               OPENRFS_LINE);
+            openrfs_surface_plot(canvas, box, box.x + at,
+                               box.y + box.height - 1U, OPENRFS_LINE);
         }
         for (at = 0U; at < box.height; ++at) {
-            opengat_surface_plot(canvas, box, box.x, box.y + at,
-                               OPENGAT_LINE);
-            opengat_surface_plot(canvas, box, box.x + box.width - 1U,
-                               box.y + at, OPENGAT_LINE);
+            openrfs_surface_plot(canvas, box, box.x, box.y + at,
+                               OPENRFS_LINE);
+            openrfs_surface_plot(canvas, box, box.x + box.width - 1U,
+                               box.y + at, OPENRFS_LINE);
         }
-        opengat_font_draw(canvas, box, box.x + 12U, box.y + 22U,
-                        "Rename to:", OPENGAT_FG);
+        openrfs_font_draw(canvas, box, box.x + 12U, box.y + 22U,
+                        "Rename to:", OPENRFS_FG);
         field.x = box.x + 12U;
         field.y = box.y + 30U;
         field.width = box.width - 24U;
         field.height = 22U;
-        opengat_surface_fill(canvas, box, field, OPENGAT_BASE);
+        openrfs_surface_fill(canvas, box, field, OPENRFS_BASE);
         for (at = 0U; at < field.width; ++at) {
-            opengat_surface_plot(canvas, box, field.x + at, field.y,
-                               OPENGAT_LINE);
+            openrfs_surface_plot(canvas, box, field.x + at, field.y,
+                               OPENRFS_LINE);
         }
         for (at = 0U; at < field.height; ++at) {
-            opengat_surface_plot(canvas, box, field.x, field.y + at,
-                               OPENGAT_LINE);
+            openrfs_surface_plot(canvas, box, field.x, field.y + at,
+                               OPENRFS_LINE);
         }
-        opengat_font_draw(canvas, field, field.x + 5U, field.y + 15U,
-                        rename_text, OPENGAT_TEXT);
+        openrfs_font_draw(canvas, field, field.x + 5U, field.y + 15U,
+                        rename_text, OPENRFS_TEXT);
         {
-            uint32_t pen = field.x + 5U + opengat_font_width(rename_text);
-            struct opengat_rect caret = { pen, field.y + 4U, 1U, 14U };
+            uint32_t pen = field.x + 5U + openrfs_font_width(rename_text);
+            struct openrfs_rect caret = { pen, field.y + 4U, 1U, 14U };
 
-            opengat_surface_fill(canvas, field, caret, OPENGAT_TEXT);
+            openrfs_surface_fill(canvas, field, caret, OPENRFS_TEXT);
         }
         if (rename_error[0] != '\0') {
-            opengat_font_draw(canvas, box, box.x + 12U, box.y + 74U,
-                            rename_error, OPENGAT_TEXT);
+            openrfs_font_draw(canvas, box, box.x + 12U, box.y + 74U,
+                            rename_error, OPENRFS_TEXT);
         }
     }
-    if (opengat_shell_tip_visible()) {
-        struct opengat_rect box = opengat_shell_tip_bounds();
+    if (openrfs_shell_tip_visible()) {
+        struct openrfs_rect box = openrfs_shell_tip_bounds();
         uint32_t edge;
 
-        opengat_surface_fill(canvas, box, box, 0xF5F5B5U);
+        openrfs_surface_fill(canvas, box, box, 0xF5F5B5U);
         for (edge = 0U; edge < box.width; ++edge) {
-            opengat_surface_plot(canvas, box, box.x + edge, box.y,
+            openrfs_surface_plot(canvas, box, box.x + edge, box.y,
                                0x000000U);
-            opengat_surface_plot(canvas, box, box.x + edge,
+            openrfs_surface_plot(canvas, box, box.x + edge,
                                box.y + box.height - 1U, 0x000000U);
         }
         for (edge = 0U; edge < box.height; ++edge) {
-            opengat_surface_plot(canvas, box, box.x, box.y + edge,
+            openrfs_surface_plot(canvas, box, box.x, box.y + edge,
                                0x000000U);
-            opengat_surface_plot(canvas, box, box.x + box.width - 1U,
+            openrfs_surface_plot(canvas, box, box.x + box.width - 1U,
                                box.y + edge, 0x000000U);
         }
-        opengat_font_draw(canvas, box, box.x + 7U, box.y + 14U,
+        openrfs_font_draw(canvas, box, box.x + 7U, box.y + 14U,
                         tip_text, 0x000000U);
     }
 }
 
-uint32_t opengat_shell_run(opengat_event_source next, opengat_present_fn redraw,
+uint32_t openrfs_shell_run(openrfs_event_source next, openrfs_present_fn redraw,
     void *context)
 {
-    struct opengat_event event;
+    struct openrfs_event event;
     uint32_t handled = 0U;
 
     if (next == NULL) {
@@ -2018,7 +2018,7 @@ uint32_t opengat_shell_run(opengat_event_source next, opengat_present_fn redraw,
         redraw(context);
     }
     while (next(&event, context)) {
-        if (!opengat_shell_handle(&event)) {
+        if (!openrfs_shell_handle(&event)) {
             continue;
         }
         ++handled;
@@ -2037,70 +2037,70 @@ uint32_t opengat_shell_run(opengat_event_source next, opengat_present_fn redraw,
  *   - does clicking a window raise it, so the next click lands there?
  *   - when a window closes, does focus go somewhere real?
  */
-bool opengat_shell_self_test(void)
+bool openrfs_shell_self_test(void)
 {
-    struct opengat_event press;
+    struct openrfs_event press;
     uint32_t lower;
     uint32_t upper;
 
-    opengat_shell_reset(canvas);
-    opengat_shell_set_screen((struct opengat_rect){ 0U, 0U, 1280U, 800U });
-    lower = opengat_shell_open(OPENGAT_APP_TASKMGR,
-        (struct opengat_rect){ 100U, 100U, 300U, 200U });
-    upper = opengat_shell_open(OPENGAT_APP_TERMINAL,
-        (struct opengat_rect){ 200U, 150U, 300U, 200U });
-    if (lower >= OPENGAT_SHELL_MAX_WINDOWS ||
-            upper >= OPENGAT_SHELL_MAX_WINDOWS) {
+    openrfs_shell_reset(canvas);
+    openrfs_shell_set_screen((struct openrfs_rect){ 0U, 0U, 1280U, 800U });
+    lower = openrfs_shell_open(OPENRFS_APP_TASKMGR,
+        (struct openrfs_rect){ 100U, 100U, 300U, 200U });
+    upper = openrfs_shell_open(OPENRFS_APP_TERMINAL,
+        (struct openrfs_rect){ 200U, 150U, 300U, 200U });
+    if (lower >= OPENRFS_SHELL_MAX_WINDOWS ||
+            upper >= OPENRFS_SHELL_MAX_WINDOWS) {
         return false;
     }
     /* Opened second, so it is on top and focused. */
-    if (opengat_shell_focused() != upper) {
+    if (openrfs_shell_focused() != upper) {
         return false;
     }
     /* A point inside BOTH frames belongs to the upper one. */
-    if (opengat_shell_at(250U, 200U) != upper) {
+    if (openrfs_shell_at(250U, 200U) != upper) {
         return false;
     }
     /* A point inside only the lower one belongs to it. */
-    if (opengat_shell_at(120U, 120U) != lower) {
+    if (openrfs_shell_at(120U, 120U) != lower) {
         return false;
     }
     /* Clicking the lower one raises it, and then the overlap is ITS. */
-    press.kind = OPENGAT_EVENT_POINTER_DOWN;
+    press.kind = OPENRFS_EVENT_POINTER_DOWN;
     press.x = 120U;
     press.y = 120U;
     press.modifiers = 0U;
     press.key = 0;
     press.special = 0U;
     press.double_click = false;
-    if (!opengat_shell_handle(&press)) {
+    if (!openrfs_shell_handle(&press)) {
         return false;
     }
-    if (opengat_shell_focused() != lower) {
+    if (openrfs_shell_focused() != lower) {
         return false;
     }
-    if (opengat_shell_at(250U, 200U) != lower) {
+    if (openrfs_shell_at(250U, 200U) != lower) {
         return false;
     }
     /* Closing the focused one leaves focus on something real. */
-    if (!opengat_shell_close(lower)) {
+    if (!openrfs_shell_close(lower)) {
         return false;
     }
-    if (opengat_shell_focused() != upper) {
+    if (openrfs_shell_focused() != upper) {
         return false;
     }
-    if (opengat_shell_window_count() != 1U) {
+    if (openrfs_shell_window_count() != 1U) {
         return false;
     }
     /* Closing the last one leaves nothing focused, and says so rather
      * than returning a slot that is not open. */
-    if (!opengat_shell_close(upper)) {
+    if (!openrfs_shell_close(upper)) {
         return false;
     }
-    if (opengat_shell_focused() != OPENGAT_SHELL_MAX_WINDOWS) {
+    if (openrfs_shell_focused() != OPENRFS_SHELL_MAX_WINDOWS) {
         return false;
     }
-    if (opengat_shell_window(upper) != NULL) {
+    if (openrfs_shell_window(upper) != NULL) {
         return false;
     }
 
@@ -2110,26 +2110,26 @@ bool opengat_shell_self_test(void)
      * both were pictures until the panel got a hit test.
      */
     {
-        struct opengat_panel_hit hit;
+        struct openrfs_panel_hit hit;
         uint32_t opened;
 
-        opengat_shell_reset(canvas);
+        openrfs_shell_reset(canvas);
         /* The self-test may run before a surface exists, so it says what
          * the screen is rather than inferring it from one.  Without this
          * the work area is nought by nought and "maximised" means a
          * window of no size - which is what the first run of this found. */
-        opengat_shell_set_screen((struct opengat_rect){ 0U, 0U, 1280U, 800U });
-        (void)opengat_panel_initialize();
-        hit.kind = OPENGAT_PANEL_HIT_LAUNCHER;
+        openrfs_shell_set_screen((struct openrfs_rect){ 0U, 0U, 1280U, 800U });
+        (void)openrfs_panel_initialize();
+        hit.kind = OPENRFS_PANEL_HIT_LAUNCHER;
         hit.index = 0U;
         if (!shell_panel_press(hit)) {
             return false;
         }
-        if (opengat_shell_window_count() != 1U) {
+        if (openrfs_shell_window_count() != 1U) {
             return false;
         }
-        opened = opengat_shell_focused();
-        if (opengat_shell_app_of(opened) != OPENGAT_APP_FILES) {
+        opened = openrfs_shell_focused();
+        if (openrfs_shell_app_of(opened) != OPENRFS_APP_FILES) {
             return false;
         }
         /* A launcher index the bar does not have opens nothing rather
@@ -2138,11 +2138,11 @@ bool opengat_shell_self_test(void)
         if (shell_panel_press(hit)) {
             return false;
         }
-        if (opengat_shell_window_count() != 1U) {
+        if (openrfs_shell_window_count() != 1U) {
             return false;
         }
         /* The focused window's own task button minimises it. */
-        hit.kind = OPENGAT_PANEL_HIT_TASK;
+        hit.kind = OPENRFS_PANEL_HIT_TASK;
         hit.index = opened;
         if (!shell_panel_press(hit)) {
             return false;
@@ -2151,9 +2151,9 @@ bool opengat_shell_self_test(void)
             return false;
         }
         /* A minimised window is not under the pointer any more. */
-        if (opengat_shell_at(windows[opened].frame.x + 5U,
+        if (openrfs_shell_at(windows[opened].frame.x + 5U,
                 windows[opened].frame.y + 5U) <
-                OPENGAT_SHELL_MAX_WINDOWS) {
+                OPENRFS_SHELL_MAX_WINDOWS) {
             return false;
         }
         /* And pressing it again brings it back. */
@@ -2165,18 +2165,18 @@ bool opengat_shell_self_test(void)
         }
         /* A pager press changes the shell's visible workspace and focus,
          * not only the panel's highlighted cell. */
-        hit.kind = OPENGAT_PANEL_HIT_PAGER;
+        hit.kind = OPENRFS_PANEL_HIT_PAGER;
         hit.index = 1U;
-        if (!shell_panel_press(hit) || opengat_shell_desktop() != 1U ||
-                opengat_shell_focused() != OPENGAT_SHELL_MAX_WINDOWS) {
+        if (!shell_panel_press(hit) || openrfs_shell_desktop() != 1U ||
+                openrfs_shell_focused() != OPENRFS_SHELL_MAX_WINDOWS) {
             return false;
         }
         hit.index = 2U;
         if (shell_panel_press(hit)) {
             return false;
         }
-        opengat_shell_set_desktop(0U);
-        if (opengat_shell_focused() != opened) {
+        openrfs_shell_set_desktop(0U);
+        if (openrfs_shell_focused() != opened) {
             return false;
         }
         /* Maximise fills the work area and stops at the panel. */
@@ -2185,13 +2185,13 @@ bool opengat_shell_self_test(void)
             return false;
         }
         if (windows[opened].frame.y + windows[opened].frame.height +
-                OPENGAT_PANEL_HEIGHT != shell_screen.height) {
+                OPENRFS_PANEL_HEIGHT != shell_screen.height) {
             return false;
         }
         /* And unmaximising puts it back where it was, not somewhere
          * plausible. */
         {
-            struct opengat_rect was = windows[opened].restore;
+            struct openrfs_rect was = windows[opened].restore;
 
             toggle_maximise(opened, shell_screen);
             if (windows[opened].frame.x != was.x ||
@@ -2202,6 +2202,6 @@ bool opengat_shell_self_test(void)
             }
         }
     }
-    opengat_shell_reset(canvas);
+    openrfs_shell_reset(canvas);
     return true;
 }

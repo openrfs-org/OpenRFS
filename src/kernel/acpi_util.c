@@ -3,13 +3,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/acpi_util.h>
-#include <opengat/boot.h>
+#include <openrfs/acpi_util.h>
+#include <openrfs/boot.h>
 
 bool acpi_span_is_early_mapped(uint64_t address, uint64_t length)
 {
-    return address < OPENGAT_EARLY_PHYSICAL_LIMIT &&
-        length <= OPENGAT_EARLY_PHYSICAL_LIMIT - address;
+    return address < OPENRFS_EARLY_PHYSICAL_LIMIT &&
+        length <= OPENRFS_EARLY_PHYSICAL_LIMIT - address;
 }
 
 uint8_t acpi_byte_sum(const void *data, size_t size)

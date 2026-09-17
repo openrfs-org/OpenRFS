@@ -1,20 +1,20 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* One private static BusyBox cat process and reverse-order teardown. */
 
-#include <opengat/linux_cat.h>
+#include <openrfs/linux_cat.h>
 
-#include <opengat/console.h>
-#include <opengat/cpu.h>
-#include <opengat/dma.h>
-#include <opengat/filesystem.h>
-#include <opengat/fat32.h>
-#include <opengat/interrupt_vector.h>
-#include <opengat/linux_elf64.h>
-#include <opengat/linux_syscall.h>
-#include <opengat/memory.h>
-#include <opengat/msix.h>
-#include <opengat/paging.h>
-#include <opengat/pci_resource.h>
+#include <openrfs/console.h>
+#include <openrfs/cpu.h>
+#include <openrfs/dma.h>
+#include <openrfs/filesystem.h>
+#include <openrfs/fat32.h>
+#include <openrfs/interrupt_vector.h>
+#include <openrfs/linux_elf64.h>
+#include <openrfs/linux_syscall.h>
+#include <openrfs/memory.h>
+#include <openrfs/msix.h>
+#include <openrfs/paging.h>
+#include <openrfs/pci_resource.h>
 
 #define LINUX_ARGUMENT_BYTES 12U
 #define LINUX_INITIAL_STACK_WORDS 9U
@@ -1071,7 +1071,7 @@ bool linux_cat_image_stdin_foundation_self_test(size_t *completed_tests)
         return false;
     }
     *completed_tests = 0U;
-    if (opengat_linux_cat_elf64_self_test() !=
+    if (openrfs_linux_cat_elf64_self_test() !=
             LINUX_CAT_ELF64_PARSER_ROBUSTNESS_CONTROLS) {
         return false;
     }
@@ -1245,7 +1245,7 @@ static enum linux_cat_abi_status linux_attempt(
         (fat32_file && (runtime.file.read_count == 0U ||
             runtime.file.msix_completion_count != runtime.file.read_count))) {
         if (filesystem_status != FILESYSTEM_STATUS_CONTROLLED_FAILURE) {
-            console_write("OpenGAT: Linux cat filesystem unexpected ");
+            console_write("OpenRFS: Linux cat filesystem unexpected ");
             console_write(filesystem_status_string(filesystem_status));
             console_write(" boundary ");
             console_write_u64(filesystem_failure_boundary(failure_point));
@@ -1268,7 +1268,7 @@ static enum linux_cat_abi_status linux_attempt(
         status = failure_status(failure_point);
         goto cleanup;
     }
-    if (opengat_linux_cat_elf64_parse(runtime.elf_bytes,
+    if (openrfs_linux_cat_elf64_parse(runtime.elf_bytes,
             sizeof(runtime.elf_bytes), &runtime.image) !=
             LINUX_ELF64_STATUS_OK || !validated_placement(&runtime.image)) {
         status = LINUX_CAT_ABI_STATUS_ELF;

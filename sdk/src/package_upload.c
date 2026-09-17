@@ -1,54 +1,54 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#include <opengat/package_upload.h>
+#include <openrfs/package_upload.h>
 
-#include <opengat/runtime.h>
+#include <openrfs/runtime.h>
 #include <string.h>
 
-long opengat_package_upload_open(void)
+long openrfs_package_upload_open(void)
 {
-    return opengat_syscall0(OPENGAT_SYS_PACKAGE_UPLOAD_OPEN);
+    return openrfs_syscall0(OPENRFS_SYS_PACKAGE_UPLOAD_OPEN);
 }
 
-long opengat_package_upload_write(
-    opengat_handle_t upload,
+long openrfs_package_upload_write(
+    openrfs_handle_t upload,
     const void *bytes,
     size_t byte_count
 )
 {
-    const struct opengat_package_upload_write_request request = {
-        sizeof(request), OPENGAT_ABI_VERSION, upload,
+    const struct openrfs_package_upload_write_request request = {
+        sizeof(request), OPENRFS_ABI_VERSION, upload,
         (uint64_t)(uintptr_t)bytes, (uint32_t)byte_count, 0U
     };
 
     if ((bytes == NULL && byte_count != 0U) ||
-        byte_count > OPENGAT_PACKAGE_UPLOAD_WRITE_MAX) {
-        return -OPENGAT_EINVAL;
+        byte_count > OPENRFS_PACKAGE_UPLOAD_WRITE_MAX) {
+        return -OPENRFS_EINVAL;
     }
-    return opengat_syscall1(OPENGAT_SYS_PACKAGE_UPLOAD_WRITE,
+    return openrfs_syscall1(OPENRFS_SYS_PACKAGE_UPLOAD_WRITE,
         (uint64_t)(uintptr_t)&request);
 }
 
-long opengat_package_upload_seal(
-    opengat_handle_t upload,
+long openrfs_package_upload_seal(
+    openrfs_handle_t upload,
     uint64_t expected_bytes,
-    const uint8_t expected_sha256[OPENGAT_PACKAGE_UPLOAD_SHA256_BYTES],
-    struct opengat_package_upload_report *report
+    const uint8_t expected_sha256[OPENRFS_PACKAGE_UPLOAD_SHA256_BYTES],
+    struct openrfs_package_upload_report *report
 )
 {
-    struct opengat_package_upload_seal_request request;
+    struct openrfs_package_upload_seal_request request;
 
     if (expected_sha256 == NULL || report == NULL || expected_bytes == 0U ||
-        expected_bytes > OPENGAT_PACKAGE_UPLOAD_MAX_BYTES) {
-        return -OPENGAT_EINVAL;
+        expected_bytes > OPENRFS_PACKAGE_UPLOAD_MAX_BYTES) {
+        return -OPENRFS_EINVAL;
     }
     (void)memset(&request, 0, sizeof(request));
     request.size = sizeof(request);
-    request.version = OPENGAT_ABI_VERSION;
+    request.version = OPENRFS_ABI_VERSION;
     request.handle = upload;
     request.expected_bytes = expected_bytes;
     (void)memcpy(request.expected_sha256, expected_sha256,
         sizeof(request.expected_sha256));
-    long status = opengat_syscall1(OPENGAT_SYS_PACKAGE_UPLOAD_SEAL,
+    long status = openrfs_syscall1(OPENRFS_SYS_PACKAGE_UPLOAD_SEAL,
         (uint64_t)(uintptr_t)&request);
 
     report->actual_bytes = request.actual_bytes;
@@ -58,7 +58,7 @@ long opengat_package_upload_seal(
     return status;
 }
 
-long opengat_package_upload_close(opengat_handle_t upload)
+long openrfs_package_upload_close(openrfs_handle_t upload)
 {
-    return opengat_handle_close(upload);
+    return openrfs_handle_close(upload);
 }

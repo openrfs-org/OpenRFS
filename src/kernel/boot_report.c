@@ -15,30 +15,30 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/acpi.h>
-#include <opengat/apic.h>
-#include <opengat/apic_timer.h>
-#include <opengat/boot.h>
-#include <opengat/clock.h>
-#include <opengat/console.h>
-#include <opengat/cpu.h>
-#include <opengat/framebuffer.h>
-#include <opengat/heap.h>
-#include <opengat/interrupts.h>
-#include <opengat/logo.h>
-#include <opengat/ioapic.h>
-#include <opengat/memory.h>
-#include <opengat/paging.h>
-#include <opengat/pci.h>
-#include <opengat/pic.h>
-#include <opengat/pit.h>
-#include <opengat/pm_timer.h>
-#include <opengat/self_test.h>
-#include <opengat/test.h>
-#include <opengat/thread.h>
-#include <opengat/timer.h>
-#include <opengat/tsc.h>
-#include <opengat/boot_stages.h>
+#include <openrfs/acpi.h>
+#include <openrfs/apic.h>
+#include <openrfs/apic_timer.h>
+#include <openrfs/boot.h>
+#include <openrfs/clock.h>
+#include <openrfs/console.h>
+#include <openrfs/cpu.h>
+#include <openrfs/framebuffer.h>
+#include <openrfs/heap.h>
+#include <openrfs/interrupts.h>
+#include <openrfs/logo.h>
+#include <openrfs/ioapic.h>
+#include <openrfs/memory.h>
+#include <openrfs/paging.h>
+#include <openrfs/pci.h>
+#include <openrfs/pic.h>
+#include <openrfs/pit.h>
+#include <openrfs/pm_timer.h>
+#include <openrfs/self_test.h>
+#include <openrfs/test.h>
+#include <openrfs/thread.h>
+#include <openrfs/timer.h>
+#include <openrfs/tsc.h>
+#include <openrfs/boot_stages.h>
 
 /*
  * A loader may name itself with an arbitrarily long string. The transcript is a
@@ -48,7 +48,7 @@
 
 void report_boot_information(const struct boot_information *context)
 {
-    console_write("OpenGAT: boot loader: ");
+    console_write("OpenRFS: boot loader: ");
 
     if (context->boot_loader_name == NULL) {
         console_write("unnamed");
@@ -68,41 +68,41 @@ void report_boot_information(const struct boot_information *context)
 
     console_putc('\n');
 
-    console_write("OpenGAT: memory map entries: ");
+    console_write("OpenRFS: memory map entries: ");
     console_write_u64(context->memory_map_entry_count);
     console_putc('\n');
 
-    console_write("OpenGAT: reported usable bytes: ");
+    console_write("OpenRFS: reported usable bytes: ");
     console_write_u64(context->reported_usable_bytes);
     console_putc('\n');
 
-    console_write("OpenGAT: highest reported address: ");
+    console_write("OpenRFS: highest reported address: ");
     console_write_hex(context->highest_reported_address);
     console_putc('\n');
 }
 
 void report_allocator(const struct frame_allocator_stats *stats)
 {
-    console_write("OpenGAT: allocatable frames: ");
+    console_write("OpenRFS: allocatable frames: ");
     console_write_u64(stats->allocatable_frames);
     console_putc('\n');
 
-    console_write("OpenGAT: free frames: ");
+    console_write("OpenRFS: free frames: ");
     console_write_u64(stats->free_frames);
     console_putc('\n');
 
-    console_write("OpenGAT: reserved frames: ");
+    console_write("OpenRFS: reserved frames: ");
     console_write_u64(stats->reserved_frames);
     console_putc('\n');
 
-    console_write("OpenGAT: highest allocatable address: ");
+    console_write("OpenRFS: highest allocatable address: ");
     console_write_hex(stats->highest_allocatable_address);
     console_putc('\n');
 }
 
 void report_acpi_root(const struct acpi_root *root)
 {
-    console_write("OpenGAT: ACPI ");
+    console_write("OpenRFS: ACPI ");
     console_write(acpi_root_kind_string(root->kind));
     console_write(" at ");
     console_write_hex(root->physical_address);
@@ -113,7 +113,7 @@ void report_acpi_root(const struct acpi_root *root)
 
 void report_acpi_madt(const struct acpi_madt *madt)
 {
-    console_write("OpenGAT: ACPI MADT at ");
+    console_write("OpenRFS: ACPI MADT at ");
     console_write_hex(madt->physical_address);
     console_write(" local APIC ");
     console_write_hex(madt->local_apic_address);
@@ -121,7 +121,7 @@ void report_acpi_madt(const struct acpi_madt *madt)
     console_write_hex(madt->flags);
     console_putc('\n');
 
-    console_write("OpenGAT: ACPI root entries: ");
+    console_write("OpenRFS: ACPI root entries: ");
     console_write_u64(madt->root_entry_count);
     console_write(" MADT OEM ");
     console_write_n(madt->oem_id, 6U);
@@ -132,7 +132,7 @@ void report_acpi_madt(const struct acpi_madt *madt)
 
 void report_acpi_fadt(const struct acpi_fadt *fadt)
 {
-    console_write("OpenGAT: ACPI FADT at ");
+    console_write("OpenRFS: ACPI FADT at ");
     console_write_hex(fadt->physical_address);
     console_write(" revision ");
     console_write_u64(fadt->revision);
@@ -143,7 +143,7 @@ void report_acpi_fadt(const struct acpi_fadt *fadt)
 
 void report_pm_timer(const struct pm_timer_state *pm_timer)
 {
-    console_write("OpenGAT: ACPI PM timer port ");
+    console_write("OpenRFS: ACPI PM timer port ");
     console_write_hex(pm_timer->port);
     console_write(" width ");
     console_write_u64(pm_timer->counter_bits);
@@ -153,7 +153,7 @@ void report_pm_timer(const struct pm_timer_state *pm_timer)
 }
 
 /*
- * The one firmware table OpenGAT reads whose absence is not a fault. A machine
+ * The one firmware table OpenRFS reads whose absence is not a fault. A machine
  * with no PCI Express host bridge publishes no MCFG, and configuration space is
  * still reachable through the I/O ports the PCI specification has always
  * defined, so absence is reported and boot continues.
@@ -161,11 +161,11 @@ void report_pm_timer(const struct pm_timer_state *pm_timer)
 void report_acpi_mcfg(const struct acpi_mcfg *mcfg, bool present)
 {
     if (!present) {
-        console_write("OpenGAT: ACPI MCFG absent\n");
+        console_write("OpenRFS: ACPI MCFG absent\n");
         return;
     }
 
-    console_write("OpenGAT: ACPI MCFG at ");
+    console_write("OpenRFS: ACPI MCFG at ");
     console_write_hex(mcfg->physical_address);
     console_write(" windows ");
     console_write_u64(mcfg->allocation_count);
@@ -175,7 +175,7 @@ void report_acpi_mcfg(const struct acpi_mcfg *mcfg, bool present)
         const struct acpi_ecam_allocation *allocation =
             &mcfg->allocations[index];
 
-        console_write("OpenGAT: ACPI ECAM segment ");
+        console_write("OpenRFS: ACPI ECAM segment ");
         console_write_u64(allocation->segment);
         console_write(" base ");
         console_write_hex(allocation->base_address);
@@ -191,7 +191,7 @@ void report_acpi_mcfg(const struct acpi_mcfg *mcfg, bool present)
 
 void report_acpi_topology(const struct acpi_topology *topology)
 {
-    console_write("OpenGAT: ACPI local APIC base ");
+    console_write("OpenRFS: ACPI local APIC base ");
     console_write_hex(topology->local_apic_address);
 
     if (topology->local_apic_address_overridden) {
@@ -200,7 +200,7 @@ void report_acpi_topology(const struct acpi_topology *topology)
 
     console_putc('\n');
 
-    console_write("OpenGAT: ACPI processors: ");
+    console_write("OpenRFS: ACPI processors: ");
     console_write_u64(topology->local_apic_count);
     console_write(" enabled ");
     console_write_u64(topology->enabled_processor_count);
@@ -213,7 +213,7 @@ void report_acpi_topology(const struct acpi_topology *topology)
     for (size_t index = 0; index < topology->io_apic_count; ++index) {
         const struct acpi_io_apic *io_apic = &topology->io_apics[index];
 
-        console_write("OpenGAT: ACPI I/O APIC id ");
+        console_write("OpenRFS: ACPI I/O APIC id ");
         console_write_u64(io_apic->identifier);
         console_write(" at ");
         console_write_hex(io_apic->address);
@@ -226,7 +226,7 @@ void report_acpi_topology(const struct acpi_topology *topology)
         const struct acpi_interrupt_override *override =
             &topology->interrupt_overrides[index];
 
-        console_write("OpenGAT: ACPI override ISA IRQ ");
+        console_write("OpenRFS: ACPI override ISA IRQ ");
         console_write_u64(override->source);
         console_write(" to GSI ");
         console_write_u64(override->global_system_interrupt);
@@ -238,7 +238,7 @@ void report_acpi_topology(const struct acpi_topology *topology)
 
 void report_apic(const struct apic_state *apic)
 {
-    console_write("OpenGAT: local APIC id ");
+    console_write("OpenRFS: local APIC id ");
     console_write_u64(apic->id);
     console_write(" version ");
     console_write_hex(apic->version);
@@ -248,11 +248,11 @@ void report_apic(const struct apic_state *apic)
     console_write_hex(apic->base_address);
     console_putc('\n');
 
-    console_write("OpenGAT: local APIC legacy routing ");
+    console_write("OpenRFS: local APIC legacy routing ");
     console_write(apic->legacy_interrupts_routed ? "LINT0 ExtINT" : "masked");
     console_putc('\n');
 
-    console_write("OpenGAT: local APIC EOI-broadcast suppression ");
+    console_write("OpenRFS: local APIC EOI-broadcast suppression ");
     console_write(
         apic->eoi_broadcast_suppression_supported ? "supported" : "unsupported"
     );
@@ -266,7 +266,7 @@ void report_ioapic(const struct ioapic_state *ioapic)
     for (size_t index = 0; index < ioapic->count; ++index) {
         const struct ioapic_unit *unit = &ioapic->units[index];
 
-        console_write("OpenGAT: I/O APIC id ");
+        console_write("OpenRFS: I/O APIC id ");
         console_write_u64(unit->identifier);
         console_write(" version ");
         console_write_hex(unit->version);

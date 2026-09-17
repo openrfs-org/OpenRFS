@@ -1,5 +1,5 @@
 {
-  "name": "OpenGAT Native Audio Refusal",
+  "name": "OpenRFS Native Audio Refusal",
   "identifier": "AUDIONO",
   "executable": "AUDIONO.APP",
   "abi_version": 1,

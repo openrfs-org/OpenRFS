@@ -42,8 +42,8 @@ static SDL_AudioDevice *open_devices[16];
 
 /* Available audio drivers */
 static const AudioBootStrap *const bootstrap[] = {
-#ifdef SDL_AUDIO_DRIVER_OPENGAT
-    &OPENGATAUDIO_bootstrap,
+#ifdef SDL_AUDIO_DRIVER_OPENRFS
+    &OPENRFSAUDIO_bootstrap,
 #endif
 #ifdef SDL_AUDIO_DRIVER_PULSEAUDIO
     &PULSEAUDIO_bootstrap,

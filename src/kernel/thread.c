@@ -3,14 +3,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/clock.h>
-#include <opengat/console.h>
-#include <opengat/cpu.h>
-#include <opengat/heap.h>
-#include <opengat/memory.h>
-#include <opengat/paging.h>
-#include <opengat/thread.h>
-#include <opengat/timer.h>
+#include <openrfs/clock.h>
+#include <openrfs/console.h>
+#include <openrfs/cpu.h>
+#include <openrfs/heap.h>
+#include <openrfs/memory.h>
+#include <openrfs/paging.h>
+#include <openrfs/thread.h>
+#include <openrfs/timer.h>
 
 /*
  * Single-core thread scheduler. Scheduling begins cooperatively and becomes

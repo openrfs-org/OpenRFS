@@ -3,8 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/cpu.h>
-#include <opengat/wall_clock.h>
+#include <openrfs/cpu.h>
+#include <openrfs/wall_clock.h>
 
 #define RTC_INDEX_PORT UINT16_C(0x70)
 #define RTC_DATA_PORT UINT16_C(0x71)

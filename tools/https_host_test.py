@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Exercise OpenGAT's bounded HTTPS client against offline TLS peers."""
+"""Exercise OpenRFS's bounded HTTPS client against offline TLS peers."""
 
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = ROOT / "tests" / "fixtures" / "tls"
-HOSTNAME = "repo.opengat.test"
-BODY = b"hello from the OpenGAT HTTPS peer\n"
+HOSTNAME = "repo.openrfs.test"
+BODY = b"hello from the OpenRFS HTTPS peer\n"
 
 HTTPS_OK = 0
 HTTPS_TIMEOUT = 8
@@ -198,7 +198,7 @@ def main() -> int:
         ("trusted-stream", "valid", HOSTNAME, "stream-success", HTTPS_OK),
         ("stream-sink-refusal", "valid", HOSTNAME,
          "stream-refusal", HTTPS_BODY_WRITE),
-        ("hostname-mismatch", "valid", "wrong.opengat.test", "success", HTTPS_HOSTNAME),
+        ("hostname-mismatch", "valid", "wrong.openrfs.test", "success", HTTPS_HOSTNAME),
         ("expired", "expired", HOSTNAME, "success", HTTPS_CERTIFICATE_TIME),
         ("not-yet-valid", "future", HOSTNAME, "success", HTTPS_CERTIFICATE_TIME),
         ("untrusted-root", "untrusted", HOSTNAME, "success", HTTPS_AUTHENTICATION),
@@ -221,7 +221,7 @@ def main() -> int:
     ]
     for case in cases:
         run_case(binary, *case)
-    print("OpenGAT HTTPS host tests passed: authenticated bounded download and named refusals")
+    print("OpenRFS HTTPS host tests passed: authenticated bounded download and named refusals")
     return 0
 
 

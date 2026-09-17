@@ -28,9 +28,9 @@
 #ifndef SDL_platform_h_
 #define SDL_platform_h_
 
-#if defined(__opengat__) || defined(__OPENGAT__)
-#undef __OPENGAT__
-#define __OPENGAT__ 1
+#if defined(__openrfs__) || defined(__OPENRFS__)
+#undef __OPENRFS__
+#define __OPENRFS__ 1
 #endif
 
 #if defined(_AIX)

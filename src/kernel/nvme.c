@@ -11,16 +11,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/clock.h>
-#include <opengat/cpu.h>
-#include <opengat/dma.h>
-#include <opengat/fat16.h>
-#include <opengat/interrupt_vector.h>
-#include <opengat/memory.h>
-#include <opengat/msix.h>
-#include <opengat/nvme.h>
-#include <opengat/pci.h>
-#include <opengat/pci_resource.h>
+#include <openrfs/clock.h>
+#include <openrfs/cpu.h>
+#include <openrfs/dma.h>
+#include <openrfs/fat16.h>
+#include <openrfs/interrupt_vector.h>
+#include <openrfs/memory.h>
+#include <openrfs/msix.h>
+#include <openrfs/nvme.h>
+#include <openrfs/pci.h>
+#include <openrfs/pci_resource.h>
 
 #define NVME_REG_CAP UINT64_C(0x00)
 #define NVME_REG_VS UINT64_C(0x08)
@@ -145,8 +145,8 @@ _Static_assert(sizeof(struct nvme_submission_entry) ==
     NVME_SUBMISSION_ENTRY_BYTES, "NVMe SQE must be 64 bytes");
 _Static_assert(sizeof(struct nvme_completion_entry) ==
     NVME_COMPLETION_ENTRY_BYTES, "NVMe CQE must be 16 bytes");
-_Static_assert(OPENGAT_PAGE_SIZE == NVME_BLOCK_BYTES,
-    "the bounded fixture uses OpenGAT's one 4 KiB DMA page");
+_Static_assert(OPENRFS_PAGE_SIZE == NVME_BLOCK_BYTES,
+    "the bounded fixture uses OpenRFS's one 4 KiB DMA page");
 
 static struct nvme_read_proof installed_proof;
 static uint64_t controller_generation;
@@ -594,7 +594,7 @@ static enum nvme_status validate_queue_geometry(
     uint64_t required;
     uint64_t end;
 
-    if ((base & (OPENGAT_PAGE_SIZE - 1U)) != 0U || depth < 2U ||
+    if ((base & (OPENRFS_PAGE_SIZE - 1U)) != 0U || depth < 2U ||
         !multiply_checked((uint64_t)depth, entry_bytes, &required) ||
         required > allocation_length || !add_checked(base, required, &end) ||
         end <= base) {
@@ -646,7 +646,7 @@ static enum nvme_status allocate_dma(
 {
     const struct dma_request request = {
         .page_count = page_count,
-        .alignment = OPENGAT_PAGE_SIZE,
+        .alignment = OPENRFS_PAGE_SIZE,
         .maximum_physical_address = UINT64_MAX
     };
 
@@ -681,7 +681,7 @@ static enum nvme_status prepare_dma(struct nvme_runtime *controller)
     fill_bytes(controller->read.dma.cpu_address,
         controller->read.dma.byte_length, NVME_SENTINEL);
     controller->read.data_offset =
-        (uint64_t)NVME_READ_DATA_PAGE * OPENGAT_PAGE_SIZE;
+        (uint64_t)NVME_READ_DATA_PAGE * OPENRFS_PAGE_SIZE;
     controller->read.data_length = NVME_BLOCK_BYTES;
     controller->read.state = NVME_DMA_CPU_OWNED;
     controller->admin.submission_state = NVME_DMA_CPU_OWNED;
@@ -791,10 +791,10 @@ static enum nvme_status validate_prp(
     if (allocation == NULL || !allocation->active || length == 0U ||
         !add_checked(offset, length, &end) || end > allocation->byte_length ||
         !add_checked(physical_of(allocation), offset, &address) ||
-        (address & (OPENGAT_PAGE_SIZE - 1U)) != 0U ||
-        length > OPENGAT_PAGE_SIZE ||
-        (address & ~(OPENGAT_PAGE_SIZE - 1U)) !=
-            ((address + length - 1U) & ~(OPENGAT_PAGE_SIZE - 1U))) {
+        (address & (OPENRFS_PAGE_SIZE - 1U)) != 0U ||
+        length > OPENRFS_PAGE_SIZE ||
+        (address & ~(OPENRFS_PAGE_SIZE - 1U)) !=
+            ((address + length - 1U) & ~(OPENRFS_PAGE_SIZE - 1U))) {
         return NVME_STATUS_PRP_INVALID;
     }
     return NVME_STATUS_OK;
@@ -2355,11 +2355,11 @@ bool nvme_foundation_self_test(size_t *completed_tests)
     }
     /* 5: malformed, misaligned and overflowing Admin queues reject. */
     if (!test_record(validate_queue_geometry(UINT64_C(0x1001),
-            OPENGAT_PAGE_SIZE, NVME_SUBMISSION_ENTRY_BYTES,
+            OPENRFS_PAGE_SIZE, NVME_SUBMISSION_ENTRY_BYTES,
             NVME_QUEUE_DEPTH, NVME_STATUS_ADMIN_QUEUE_INVALID) ==
                 NVME_STATUS_ADMIN_QUEUE_INVALID &&
         validate_queue_geometry(UINT64_MAX - 4095U,
-            OPENGAT_PAGE_SIZE * 2U, NVME_SUBMISSION_ENTRY_BYTES, 128U,
+            OPENRFS_PAGE_SIZE * 2U, NVME_SUBMISSION_ENTRY_BYTES, 128U,
             NVME_STATUS_ADMIN_QUEUE_INVALID) ==
                 NVME_STATUS_ADMIN_QUEUE_INVALID, &completed)) {
         return false;
@@ -2368,7 +2368,7 @@ bool nvme_foundation_self_test(size_t *completed_tests)
     if (!test_record(validate_queue_geometry(UINT64_C(0x2000), 16U,
             NVME_COMPLETION_ENTRY_BYTES, NVME_QUEUE_DEPTH,
             NVME_STATUS_IO_QUEUE_INVALID) == NVME_STATUS_IO_QUEUE_INVALID &&
-        validate_queue_geometry(UINT64_C(0x2000), OPENGAT_PAGE_SIZE,
+        validate_queue_geometry(UINT64_C(0x2000), OPENRFS_PAGE_SIZE,
             NVME_COMPLETION_ENTRY_BYTES, SIZE_MAX,
             NVME_STATUS_IO_QUEUE_INVALID) == NVME_STATUS_IO_QUEUE_INVALID,
             &completed)) {
@@ -2462,16 +2462,16 @@ bool nvme_foundation_self_test(size_t *completed_tests)
     struct dma_allocation synthetic_dma = {
         .frames = {.physical_base = UINT64_C(0x1000), .active = true},
         .cpu_address = identify_namespace_data,
-        .byte_length = OPENGAT_PAGE_SIZE * 2U,
+        .byte_length = OPENRFS_PAGE_SIZE * 2U,
         .owner = DMA_OWNER_CPU,
         .active = true
     };
-    if (!test_record(validate_prp(&synthetic_dma, OPENGAT_PAGE_SIZE,
-            OPENGAT_PAGE_SIZE) == NVME_STATUS_OK &&
-        validate_prp(&synthetic_dma, OPENGAT_PAGE_SIZE - 4U, 8U) ==
+    if (!test_record(validate_prp(&synthetic_dma, OPENRFS_PAGE_SIZE,
+            OPENRFS_PAGE_SIZE) == NVME_STATUS_OK &&
+        validate_prp(&synthetic_dma, OPENRFS_PAGE_SIZE - 4U, 8U) ==
             NVME_STATUS_PRP_INVALID &&
-        validate_prp(&synthetic_dma, OPENGAT_PAGE_SIZE * 2U,
-            OPENGAT_PAGE_SIZE) == NVME_STATUS_PRP_INVALID, &completed)) {
+        validate_prp(&synthetic_dma, OPENRFS_PAGE_SIZE * 2U,
+            OPENRFS_PAGE_SIZE) == NVME_STATUS_PRP_INVALID, &completed)) {
         return false;
     }
     /* 14: phase, CID, SQID and status mismatches never report success. */
@@ -3358,7 +3358,7 @@ const char *nvme_status_string(enum nvme_status status)
     case NVME_STATUS_UNSUPPORTED_COMMAND_SET:
         return "NVMe controller lacks the NVM command set";
     case NVME_STATUS_UNSUPPORTED_PAGE_SIZE:
-        return "NVMe controller cannot use OpenGAT's page size";
+        return "NVMe controller cannot use OpenRFS's page size";
     case NVME_STATUS_UNSUPPORTED_VERSION:
         return "NVMe controller version is unsupported";
     case NVME_STATUS_DISABLE_TIMEOUT:

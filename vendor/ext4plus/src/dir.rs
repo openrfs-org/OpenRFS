@@ -803,7 +803,7 @@ impl Dir {
 
     /// Remove an empty, single-block directory entry and return its freed block.
     ///
-    /// OpenGAT uses the returned physical block to require the matching JBD2
+    /// OpenRFS uses the returned physical block to require the matching JBD2
     /// revocation before checkpointing the inode, bitmap, counter, and parent
     /// directory updates. The operation validates everything that can fail
     /// before changing the filesystem through its configured writer.

@@ -3,8 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/package_generation.h>
-#include <opengat/package_state.h>
+#include <openrfs/package_generation.h>
+#include <openrfs/package_state.h>
 
 #define OLD_DATABASE_BYTES PACKAGE_STATE_DATABASE_HEADER_BYTES
 #define NEW_PACKAGE_COUNT 2U
@@ -158,7 +158,7 @@ static void database_header(
     uint32_t file_count
 )
 {
-    put_magic(database, "OGTDB001");
+    put_magic(database, "ORFSDB01");
     put_u16(database + 8U, 1U);
     put_u16(database + 10U, PACKAGE_STATE_DATABASE_HEADER_BYTES);
     put_u64(database + 16U, byte_count);
@@ -203,7 +203,7 @@ static void build_new_database(uint8_t database[NEW_DATABASE_BYTES])
     application_file = database + NEW_FILE_OFFSET;
     library_file = application_file + PACKAGE_STATE_DATABASE_FILE_RECORD_BYTES;
 
-    put_text(application, 64U, "org.opengat.app");
+    put_text(application, 64U, "org.openrfs.app");
     put_text(application + 64U, 64U, "1.0.0");
     digest_text("application package", application + 128U);
     digest_text("publisher public key", application + 160U);
@@ -212,7 +212,7 @@ static void build_new_database(uint8_t database[NEW_DATABASE_BYTES])
     put_u32(application + 200U, 1U);
     put_u32(application + 204U, 1U);
 
-    put_text(library, 64U, "org.opengat.lib");
+    put_text(library, 64U, "org.openrfs.lib");
     put_text(library + 64U, 64U, "1.0.0");
     digest_text("library package", library + 128U);
     digest_text("publisher public key", library + 160U);
@@ -221,9 +221,9 @@ static void build_new_database(uint8_t database[NEW_DATABASE_BYTES])
     put_u32(library + 200U, 0U);
     put_u32(library + 204U, 1U);
 
-    put_text(edge, 64U, "org.opengat.lib");
+    put_text(edge, 64U, "org.openrfs.lib");
     put_text(edge + 64U, 56U, "^1.0.0");
-    put_text(edge + 120U, 64U, "org.opengat.lib");
+    put_text(edge + 120U, 64U, "org.openrfs.lib");
 
     put_text(application_file, 128U, "bin/app");
     put_u32(application_file + 128U, 0U);
@@ -250,7 +250,7 @@ static void build_authority(
 {
     uint8_t digest[PACKAGE_STATE_SHA256_BYTES];
     clear_bytes(authority, PACKAGE_STATE_AUTHORITY_BYTES);
-    put_magic(authority, "OGTGN001");
+    put_magic(authority, "ORFSGN01");
     put_u16(authority + 8U, 1U);
     put_u16(authority + 10U, PACKAGE_STATE_AUTHORITY_BYTES);
     put_u64(authority + 16U, get_u64(database + 24U));
@@ -282,7 +282,7 @@ static void build_journal(
 )
 {
     clear_bytes(journal, PACKAGE_STATE_JOURNAL_BYTES);
-    put_magic(journal, "OGTTX001");
+    put_magic(journal, "ORFSTX01");
     put_u16(journal + 8U, 1U);
     put_u16(journal + 10U, PACKAGE_STATE_JOURNAL_BYTES);
     put_u16(journal + 16U, PACKAGE_STATE_OPERATION_INSTALL);
@@ -296,7 +296,7 @@ static void build_journal(
         old_database, OLD_DATABASE_BYTES, journal + 64U);
     (void)package_state_sha256(
         new_database, NEW_DATABASE_BYTES, journal + 96U);
-    put_text(journal + 160U, 64U, "org.opengat.app");
+    put_text(journal + 160U, 64U, "org.openrfs.app");
     rehash_journal(journal);
 }
 
@@ -337,12 +337,12 @@ static int test_parsers_and_mutations(
     const uint8_t journal[PACKAGE_STATE_JOURNAL_BYTES]
 )
 {
-    /* Independently emitted by opengat-transaction.py for this exact state. */
+    /* Independently emitted by openrfs-transaction.py for this exact state. */
     static const uint8_t canonical_database_sha256[PACKAGE_STATE_SHA256_BYTES] = {
-        0x37U, 0x83U, 0x9cU, 0x5eU, 0x94U, 0x6eU, 0xc0U, 0xa3U,
-        0xe7U, 0xc6U, 0x3fU, 0x0cU, 0xf3U, 0xf9U, 0xf9U, 0xb0U,
-        0x0dU, 0xf8U, 0xa5U, 0xc9U, 0xf4U, 0x76U, 0x1cU, 0x1fU,
-        0xb3U, 0xccU, 0x75U, 0xffU, 0xe5U, 0x20U, 0x65U, 0x03U
+        0x33U, 0x3cU, 0xd7U, 0x9aU, 0x7bU, 0xd9U, 0x00U, 0x69U,
+        0xc8U, 0xf0U, 0x48U, 0xeaU, 0x03U, 0xe8U, 0xefU, 0x09U,
+        0x49U, 0xf8U, 0xb4U, 0x71U, 0x85U, 0x9fU, 0x40U, 0xaaU,
+        0x43U, 0x82U, 0x17U, 0x6cU, 0xe0U, 0xefU, 0x52U, 0xbeU
     };
     struct package_state_database_view database_view;
     struct package_state_package_view package_view;
@@ -367,7 +367,7 @@ static int test_parsers_and_mutations(
         package_view.package_index == 0U && package_view.explicit_root &&
         package_view.dependency_start == 0U && package_view.dependency_count == 1U &&
         package_view.file_count == 1U &&
-        state_text_is(&package_view.identifier, "org.opengat.app") &&
+        state_text_is(&package_view.identifier, "org.openrfs.app") &&
         state_text_is(&package_view.version, "1.0.0") &&
         package_state_database_package(&database_view, 2U, &package_view) ==
             PACKAGE_STATE_STATUS_TABLE && package_view.database == NULL, 46);
@@ -375,9 +375,9 @@ static int test_parsers_and_mutations(
             &dependency_view) == PACKAGE_STATE_STATUS_OK &&
         dependency_view.database == &database_view &&
         dependency_view.dependency_index == 0U &&
-        state_text_is(&dependency_view.requested, "org.opengat.lib") &&
+        state_text_is(&dependency_view.requested, "org.openrfs.lib") &&
         state_text_is(&dependency_view.constraint, "^1.0.0") &&
-        state_text_is(&dependency_view.provider, "org.opengat.lib") &&
+        state_text_is(&dependency_view.provider, "org.openrfs.lib") &&
         package_state_database_dependency(&database_view, 1U,
             &dependency_view) == PACKAGE_STATE_STATUS_TABLE &&
         dependency_view.database == NULL, 47);
@@ -423,13 +423,13 @@ static int test_parsers_and_mutations(
         PACKAGE_STATE_STATUS_FILE, 16);
 
     copy_bytes(changed, new_database, sizeof(changed));
-    put_text(changed + NEW_EDGE_OFFSET + 120U, 64U, "org.opengat.missing");
+    put_text(changed + NEW_EDGE_OFFSET + 120U, 64U, "org.openrfs.missing");
     finalize_database(changed, sizeof(changed));
     CHECK(package_state_database_parse(changed, sizeof(changed), &database_view) ==
         PACKAGE_STATE_STATUS_DEPENDENCY, 17);
 
     copy_bytes(changed, new_database, sizeof(changed));
-    put_text(changed + NEW_EDGE_OFFSET + 120U, 64U, "org.opengat.app");
+    put_text(changed + NEW_EDGE_OFFSET + 120U, 64U, "org.openrfs.app");
     finalize_database(changed, sizeof(changed));
     CHECK(package_state_database_parse(changed, sizeof(changed), &database_view) ==
         PACKAGE_STATE_STATUS_DEPENDENCY, 26);
@@ -505,7 +505,7 @@ static int test_encoders(
     const uint8_t journal[PACKAGE_STATE_JOURNAL_BYTES]
 )
 {
-    static const uint8_t target[] = "org.opengat.app";
+    static const uint8_t target[] = "org.openrfs.app";
     struct package_state_database_view old_view;
     struct package_state_database_view new_view;
     struct package_state_database_view invalid_view;
@@ -576,16 +576,16 @@ static int test_generation_encoder(
     digest_text("app", application_file);
     digest_text("lib", library_file);
     packages[0] = (struct package_generation_package){
-        state_text("org.opengat.app"), state_text("1.0.0"),
+        state_text("org.openrfs.app"), state_text("1.0.0"),
         application_package, publisher, true, 0U, 1U, 1U
     };
     packages[1] = (struct package_generation_package){
-        state_text("org.opengat.lib"), state_text("1.0.0"),
+        state_text("org.openrfs.lib"), state_text("1.0.0"),
         library_package, publisher, false, 1U, 0U, 1U
     };
     dependencies[0] = (struct package_generation_dependency){
-        state_text("org.opengat.lib"), state_text("^1.0.0"),
-        state_text("org.opengat.lib")
+        state_text("org.openrfs.lib"), state_text("^1.0.0"),
+        state_text("org.openrfs.lib")
     };
     files[0] = (struct package_generation_file){
         state_text("bin/app"), 0U, 1U, 0555U, 3U, application_file,
@@ -616,12 +616,12 @@ static int test_generation_encoder(
             PACKAGE_STATE_STATUS_MISMATCH && view.bytes == NULL, 58);
     files[0].length = 3U;
 
-    packages[0].identifier = state_text("org.opengat.lib");
+    packages[0].identifier = state_text("org.openrfs.lib");
     encoded[0] = 1U;
     CHECK(package_generation_encode(&spec, encoded, sizeof(encoded), &view) ==
             PACKAGE_STATE_STATUS_PACKAGE && all_zero(encoded, sizeof(encoded)) &&
         view.bytes == NULL, 52);
-    packages[0].identifier = state_text("org.opengat.app");
+    packages[0].identifier = state_text("org.openrfs.app");
     files[1].path = files[0].path;
     encoded[0] = 1U;
     CHECK(package_generation_encode(&spec, encoded, sizeof(encoded), &view) ==

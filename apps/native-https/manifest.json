@@ -1,5 +1,5 @@
 {
-  "name": "OpenGAT Native HTTPS Proof",
+  "name": "OpenRFS Native HTTPS Proof",
   "identifier": "HTTPSAPP",
   "executable": "HTTPS.APP",
   "data_namespace": "HTTPSAPP",

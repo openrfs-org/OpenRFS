@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * The pointer.  See include/opengat/cursor.h for what this is, what it is
+ * The pointer.  See include/openrfs/cursor.h for what this is, what it is
  * not, and the two Windows cursors it does not draw.
  */
 
-#include <opengat/cursor.h>
+#include <openrfs/cursor.h>
 
-#include <opengat/clock.h>
-#include <opengat/framebuffer.h>
+#include <openrfs/clock.h>
+#include <openrfs/framebuffer.h>
 
 #include "cursor_art.h"
 

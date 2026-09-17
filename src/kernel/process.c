@@ -4,17 +4,17 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/cpu.h>
-#include <opengat/dma.h>
-#include <opengat/elf64.h>
-#include <opengat/filesystem.h>
-#include <opengat/interrupt_vector.h>
-#include <opengat/interrupts.h>
-#include <opengat/memory.h>
-#include <opengat/msix.h>
-#include <opengat/paging.h>
-#include <opengat/pci_resource.h>
-#include <opengat/process.h>
+#include <openrfs/cpu.h>
+#include <openrfs/dma.h>
+#include <openrfs/elf64.h>
+#include <openrfs/filesystem.h>
+#include <openrfs/interrupt_vector.h>
+#include <openrfs/interrupts.h>
+#include <openrfs/memory.h>
+#include <openrfs/msix.h>
+#include <openrfs/paging.h>
+#include <openrfs/pci_resource.h>
+#include <openrfs/process.h>
 
 #define PROCESS_EXPECTED_RETURN_RIP (ELF64_ENTRY_ADDRESS + UINT64_C(7))
 #define PROCESS_SENTINEL_BYTES 32U
@@ -500,7 +500,7 @@ bool process_address_space_foundation_self_test(size_t *completed_tests)
 
 bool process_elf64_foundation_self_test(size_t *completed_tests)
 {
-    const uint32_t completed = opengat_elf64_self_test();
+    const uint32_t completed = openrfs_elf64_self_test();
 
     if (completed_tests == NULL) {
         return false;
@@ -569,7 +569,7 @@ static enum process_status process_attempt(
         status = failure_status(failure_point);
         goto cleanup;
     }
-    if (opengat_elf64_parse(runtime.elf_bytes, sizeof(runtime.elf_bytes),
+    if (openrfs_elf64_parse(runtime.elf_bytes, sizeof(runtime.elf_bytes),
             &runtime.image) != ELF64_STATUS_OK) {
         status = PROCESS_STATUS_ELF_PARSER;
         goto cleanup;

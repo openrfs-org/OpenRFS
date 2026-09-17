@@ -167,7 +167,7 @@ impl BitmapHandle {
             (usize_from_u32(inodes_per_group).checked_add(7).unwrap()) / 8
         } else {
             // Linux ext4_block_bitmap_csum_set() hashes exactly
-            // EXT4_CLUSTERS_PER_GROUP / 8 bytes. OpenGAT rejects bigalloc,
+            // EXT4_CLUSTERS_PER_GROUP / 8 bytes. OpenRFS rejects bigalloc,
             // so one cluster is one block and the remaining bitmap-block
             // padding must not contribute to this checksum.
             usize_from_u32(ext4.0.superblock.blocks_per_group().get()) / 8

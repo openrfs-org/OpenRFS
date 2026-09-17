@@ -35,10 +35,10 @@ This has known limitations due to features needing to be additive, but it should
 - Lack of write support for journaling, although journaling can be read. It is recommended to disable journaling when using this library.
 - Limited extended attribute (xattr) support. Small xattrs can be read and written when they fit in the inode body. Writing external xattr blocks is not supported yet.
 
-The unmodified ext4plus mutation API does not journal writes. OpenGAT exposes
+The unmodified ext4plus mutation API does not journal writes. OpenRFS exposes
 read-write ext4 through its retained mutation stage and ordered, checksummed
 JBD2 writer over an NVMe Flush fence. That public VFS path has a bounded
-crash-consistency admission, including power-cut tests; see `OPENGAT-PORT.md`
+crash-consistency admission, including power-cut tests; see `OPENRFS-PORT.md`
 for the supported profile and boundary. Direct upstream mutations remain
 outside that admission.
 

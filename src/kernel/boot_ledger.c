@@ -3,24 +3,24 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/boot_ledger.h>
-#include <opengat/device_substrate.h>
-#include <opengat/dma.h>
-#include <opengat/elf64.h>
-#include <opengat/framebuffer.h>
-#include <opengat/filesystem.h>
-#include <opengat/interrupt_vector.h>
-#include <opengat/linux_abi.h>
-#include <opengat/linux_uname.h>
-#include <opengat/msix.h>
-#include <opengat/nvme.h>
-#include <opengat/paging.h>
-#include <opengat/pci_resource.h>
-#include <opengat/pointer.h>
-#include <opengat/process.h>
-#include <opengat/ui.h>
-#include <opengat/ui_font.h>
-#include <opengat/xhci.h>
+#include <openrfs/boot_ledger.h>
+#include <openrfs/device_substrate.h>
+#include <openrfs/dma.h>
+#include <openrfs/elf64.h>
+#include <openrfs/framebuffer.h>
+#include <openrfs/filesystem.h>
+#include <openrfs/interrupt_vector.h>
+#include <openrfs/linux_abi.h>
+#include <openrfs/linux_uname.h>
+#include <openrfs/msix.h>
+#include <openrfs/nvme.h>
+#include <openrfs/paging.h>
+#include <openrfs/pci_resource.h>
+#include <openrfs/pointer.h>
+#include <openrfs/process.h>
+#include <openrfs/ui.h>
+#include <openrfs/ui_font.h>
+#include <openrfs/xhci.h>
 
 #define BOOT_FINGERPRINT_OFFSET UINT64_C(14695981039346656037)
 #define BOOT_FINGERPRINT_PRIME UINT64_C(1099511628211)
@@ -59,13 +59,13 @@ static const char *const stage_names[] = {
     "threading",
     "scheduler",
     "closing boot proofs",
-    "OpenGAT UI font",
+    "OpenRFS UI font",
     "pointer availability decision",
     "pointer availability outcome",
-    "OpenGAT layout",
+    "OpenRFS layout",
     "desktop construction",
     "desktop activation",
-    "OpenGAT installed proof",
+    "OpenRFS installed proof",
     "PCI resource ownership",
     "dynamic interrupt vectors",
     "DMA foundation",
@@ -135,7 +135,7 @@ static const char *const capability_names[] = {
     "UI layout validated",
     "desktop shell available",
     "desktop shell activated",
-    "OpenGAT installed proof complete",
+    "OpenRFS installed proof complete",
     "PCI resource ownership available",
     "dynamic vector foundation available",
     "DMA foundation available",
@@ -1740,7 +1740,7 @@ enum boot_ledger_status boot_ledger_verify_installed(
     }
 
     if (boot_ledger_has_capability(ledger,
-            BOOT_CAPABILITY_OPENGAT_INSTALLED_PROOF_COMPLETE)) {
+            BOOT_CAPABILITY_OPENRFS_INSTALLED_PROOF_COMPLETE)) {
         const struct boot_stage_receipt *font = boot_ledger_receipt_for(ledger,
             BOOT_STAGE_UI_FONT);
         const struct boot_stage_receipt *pointer_decision =
@@ -1755,7 +1755,7 @@ enum boot_ledger_status boot_ledger_verify_installed(
         const struct boot_stage_receipt *activation =
             boot_ledger_receipt_for(ledger, BOOT_STAGE_DESKTOP_ACTIVATION);
         const struct boot_stage_receipt *proof = boot_ledger_receipt_for(ledger,
-            BOOT_STAGE_OPENGAT_INSTALLED_PROOF);
+            BOOT_STAGE_OPENRFS_INSTALLED_PROOF);
         const struct boot_stage_receipt *wc = boot_ledger_receipt_for(ledger,
             BOOT_STAGE_FRAMEBUFFER_WC);
         const struct boot_stage_receipt *closing =
@@ -1772,8 +1772,8 @@ enum boot_ledger_status boot_ledger_verify_installed(
 
         if (font == NULL || font->result != BOOT_RECEIPT_RAN ||
             font->proof_counter_count != 2U ||
-            font->proof_counters[0] != opengat_ui_font_size() ||
-            font->proof_counters[1] != opengat_ui_font_fingerprint() ||
+            font->proof_counters[0] != openrfs_ui_font_size() ||
+            font->proof_counters[1] != openrfs_ui_font_fingerprint() ||
             !ui_font_is_verified() || metrics.width != 16U ||
             metrics.height != 19U || metrics.ascent != 15U ||
             metrics.descent != 4U || metrics.advance != 15U ||
@@ -1834,7 +1834,7 @@ enum boot_ledger_status boot_ledger_verify_installed(
             closing->sequence >= activation->sequence ||
             activation->sequence >= proof->sequence) {
             set_refusal(ledger, BOOT_LEDGER_STATUS_RECEIPT_MISMATCH,
-                BOOT_STAGE_OPENGAT_INSTALLED_PROOF,
+                BOOT_STAGE_OPENRFS_INSTALLED_PROOF,
                 BOOT_CAPABILITY_DESKTOP_SHELL_ACTIVATED);
             return ledger->status;
         }
@@ -1851,8 +1851,8 @@ enum boot_ledger_status boot_ledger_verify_installed(
     } else if (boot_ledger_has_capability(ledger,
             BOOT_CAPABILITY_DESKTOP_SHELL_ACTIVATED)) {
         set_refusal(ledger, BOOT_LEDGER_STATUS_RECEIPT_MISMATCH,
-            BOOT_STAGE_OPENGAT_INSTALLED_PROOF,
-            BOOT_CAPABILITY_OPENGAT_INSTALLED_PROOF_COMPLETE);
+            BOOT_STAGE_OPENRFS_INSTALLED_PROOF,
+            BOOT_CAPABILITY_OPENRFS_INSTALLED_PROOF_COMPLETE);
         return ledger->status;
     }
 

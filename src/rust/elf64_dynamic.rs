@@ -36,7 +36,7 @@ const MAX_RUNTIME_ADDRESS: u64 = 0x0000_8000_0000_0000;
 const MAX_STRING_BYTES: u64 = 1024 * 1024;
 const MAX_ARRAY_ENTRIES: u64 = 256;
 const MAX_TLS_BYTES: u64 = 1024 * 1024;
-const CATALOG_MAGIC: [u8; 8] = *b"OGTDYN01";
+const CATALOG_MAGIC: [u8; 8] = *b"ORFSDY01";
 const CATALOG_HEADER_BYTES: usize = 64;
 const CATALOG_ENTRY_BYTES: usize = 96;
 
@@ -2195,7 +2195,7 @@ pub fn dependency_order(
     Ok(count)
 }
 
-/// Run host-independent ABI and checked-address controls compiled into OpenGAT.
+/// Run host-independent ABI and checked-address controls compiled into OpenRFS.
 #[must_use]
 pub fn self_test() -> u32 {
     if core::mem::size_of::<Name>() != 65

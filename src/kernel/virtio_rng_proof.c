@@ -3,15 +3,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/clock.h>
-#include <opengat/cpu.h>
-#include <opengat/device_substrate.h>
-#include <opengat/dma.h>
-#include <opengat/interrupt_vector.h>
-#include <opengat/interrupts.h>
-#include <opengat/msix.h>
-#include <opengat/pci.h>
-#include <opengat/pci_resource.h>
+#include <openrfs/clock.h>
+#include <openrfs/cpu.h>
+#include <openrfs/device_substrate.h>
+#include <openrfs/dma.h>
+#include <openrfs/interrupt_vector.h>
+#include <openrfs/interrupts.h>
+#include <openrfs/msix.h>
+#include <openrfs/pci.h>
+#include <openrfs/pci_resource.h>
 
 #define VIRTIO_VENDOR_ID UINT16_C(0x1AF4)
 #define VIRTIO_RNG_MODERN_DEVICE_ID UINT16_C(0x1044)
@@ -73,7 +73,7 @@ struct proof_interrupt_context {
 
 static struct device_substrate_proof installed_proof;
 
-_Static_assert(VIRTIO_RNG_BYTES <= OPENGAT_PAGE_SIZE,
+_Static_assert(VIRTIO_RNG_BYTES <= OPENRFS_PAGE_SIZE,
     "VirtIO RNG proof receive buffer exceeds its DMA page");
 
 static uint32_t config_dword(
@@ -419,7 +419,7 @@ enum device_substrate_status device_substrate_prove(
 
     struct dma_request dma_request = {
         .page_count = 1U,
-        .alignment = OPENGAT_PAGE_SIZE,
+        .alignment = OPENRFS_PAGE_SIZE,
         .maximum_physical_address = UINT32_MAX
     };
     if (dma_allocate(&dma_request, &queue_dma) != DMA_STATUS_OK ||

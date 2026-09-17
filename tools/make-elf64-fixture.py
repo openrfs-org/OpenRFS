@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit OpenGAT's exact ELF64 proof payload as an ordinary build file."""
+"""Emit OpenRFS's exact ELF64 proof payload as an ordinary build file."""
 
 from __future__ import annotations
 

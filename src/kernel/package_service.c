@@ -3,10 +3,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/fat32_fs.h>
-#include <opengat/heap.h>
-#include <opengat/package_service.h>
-#include <opengat/package_state.h>
+#include <openrfs/fat32_fs.h>
+#include <openrfs/heap.h>
+#include <openrfs/package_service.h>
+#include <openrfs/package_state.h>
 
 #define FILE_PATH_BYTES 128U
 #define FILE_MODE_OFFSET 136U
@@ -18,7 +18,7 @@
 
 struct service_context {
     struct package_service_report *report;
-    struct opengatfs_list_entry *entries;
+    struct openrfsfs_list_entry *entries;
     uint32_t walk_entries;
 };
 
@@ -147,21 +147,21 @@ static void append_hex32(char *path, size_t capacity, uint32_t value)
 static bool generation_path(
     uint64_t generation,
     const char *suffix,
-    char path[OPENGATFS_MAX_PATH]
+    char path[OPENRFSFS_MAX_PATH]
 )
 {
-    zero_bytes(path, OPENGATFS_MAX_PATH);
-    if (!append_text(path, OPENGATFS_MAX_PATH, GENERATION_PREFIX)) {
+    zero_bytes(path, OPENRFSFS_MAX_PATH);
+    if (!append_text(path, OPENRFSFS_MAX_PATH, GENERATION_PREFIX)) {
         return false;
     }
-    append_hex32(path, OPENGATFS_MAX_PATH, (uint32_t)(generation >> 32U));
-    if (string_length(path, OPENGATFS_MAX_PATH) >= OPENGATFS_MAX_PATH ||
-        !append_text(path, OPENGATFS_MAX_PATH, "/")) {
+    append_hex32(path, OPENRFSFS_MAX_PATH, (uint32_t)(generation >> 32U));
+    if (string_length(path, OPENRFSFS_MAX_PATH) >= OPENRFSFS_MAX_PATH ||
+        !append_text(path, OPENRFSFS_MAX_PATH, "/")) {
         return false;
     }
-    append_hex32(path, OPENGATFS_MAX_PATH, (uint32_t)generation);
-    return string_length(path, OPENGATFS_MAX_PATH) < OPENGATFS_MAX_PATH &&
-        append_text(path, OPENGATFS_MAX_PATH, suffix);
+    append_hex32(path, OPENRFSFS_MAX_PATH, (uint32_t)generation);
+    return string_length(path, OPENRFSFS_MAX_PATH) < OPENRFSFS_MAX_PATH &&
+        append_text(path, OPENRFSFS_MAX_PATH, suffix);
 }
 
 static bool append_span(
@@ -187,18 +187,18 @@ static bool append_span(
 static bool generation_file_path(
     uint64_t generation,
     const struct package_state_text *relative,
-    char path[OPENGATFS_MAX_PATH]
+    char path[OPENRFSFS_MAX_PATH]
 )
 {
     return relative != NULL &&
         generation_path(generation, GENERATION_ROOT_SUFFIX, path) &&
-        append_text(path, OPENGATFS_MAX_PATH, "/") &&
-        append_span(path, OPENGATFS_MAX_PATH, relative->bytes, relative->length);
+        append_text(path, OPENRFSFS_MAX_PATH, "/") &&
+        append_span(path, OPENRFSFS_MAX_PATH, relative->bytes, relative->length);
 }
 
 static enum package_service_status filesystem_failure(
     struct service_context *context,
-    enum opengatfs_status status
+    enum openrfsfs_status status
 )
 {
     context->report->filesystem_status = status;
@@ -256,19 +256,19 @@ static void handle_acquired(struct service_context *context)
 
 static enum package_service_status close_file(
     struct service_context *context,
-    opengatfs_handle handle
+    openrfsfs_handle handle
 )
 {
-    enum opengatfs_status status = opengatfs_close(handle);
+    enum openrfsfs_status status = openrfsfs_close(handle);
 
     --context->report->live_file_handles;
-    return status == OPENGATFS_STATUS_OK ? PACKAGE_SERVICE_STATUS_OK :
+    return status == OPENRFSFS_STATUS_OK ? PACKAGE_SERVICE_STATUS_OK :
         filesystem_failure(context, status);
 }
 
 static enum package_service_status read_open_file(
     struct service_context *context,
-    opengatfs_handle handle,
+    openrfsfs_handle handle,
     uint8_t *destination,
     size_t count
 )
@@ -277,10 +277,10 @@ static enum package_service_status read_open_file(
 
     while (total < count) {
         size_t read_bytes = 0U;
-        enum opengatfs_status status = opengatfs_read(handle, destination + total,
+        enum openrfsfs_status status = openrfsfs_read(handle, destination + total,
             count - total, &read_bytes);
 
-        if (status != OPENGATFS_STATUS_OK) {
+        if (status != OPENRFSFS_STATUS_OK) {
             return filesystem_failure(context, status);
         }
         if (read_bytes == 0U || read_bytes > count - total) {
@@ -291,9 +291,9 @@ static enum package_service_status read_open_file(
     }
     uint8_t extra;
     size_t extra_bytes = 0U;
-    enum opengatfs_status status = opengatfs_read(handle, &extra, 1U, &extra_bytes);
+    enum openrfsfs_status status = openrfsfs_read(handle, &extra, 1U, &extra_bytes);
 
-    if (status != OPENGATFS_STATUS_OK) {
+    if (status != OPENRFSFS_STATUS_OK) {
         return filesystem_failure(context, status);
     }
     if (extra_bytes != 0U) {
@@ -311,24 +311,24 @@ static enum package_service_status read_exact_path(
     bool *present
 )
 {
-    struct opengatfs_stat stat;
-    opengatfs_handle handle;
-    enum opengatfs_status fs_status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA, path,
+    struct openrfsfs_stat stat;
+    openrfsfs_handle handle;
+    enum openrfsfs_status fs_status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, path,
         &stat);
 
     *present = false;
-    if (fs_status == OPENGATFS_STATUS_NOT_FOUND && optional) {
+    if (fs_status == OPENRFSFS_STATUS_NOT_FOUND && optional) {
         return PACKAGE_SERVICE_STATUS_OK;
     }
-    if (fs_status != OPENGATFS_STATUS_OK) {
+    if (fs_status != OPENRFSFS_STATUS_OK) {
         return filesystem_failure(context, fs_status);
     }
     *present = true;
     if (stat.directory || stat.size != (uint64_t)expected) {
         return PACKAGE_SERVICE_STATUS_STATE;
     }
-    fs_status = opengatfs_open(OPENGATFS_VOLUME_DATA, path, OPENGATFS_ACCESS_READ, &handle);
-    if (fs_status != OPENGATFS_STATUS_OK) {
+    fs_status = openrfsfs_open(OPENRFSFS_VOLUME_DATA, path, OPENRFSFS_ACCESS_READ, &handle);
+    if (fs_status != OPENRFSFS_STATUS_OK) {
         return filesystem_failure(context, fs_status);
     }
     handle_acquired(context);
@@ -345,7 +345,7 @@ static bool repository_floor_record_parse(
 )
 {
     static const uint8_t magic[8] = {
-        'O', 'G', 'T', 'R', 'E', 'P', '0', '1'
+        'O', 'R', 'F', 'S', 'R', 'P', '0', '1'
     };
     uint8_t digest[PACKAGE_STATE_SHA256_BYTES];
 
@@ -372,7 +372,7 @@ static bool repository_floor_record_encode(
 )
 {
     static const uint8_t magic[8] = {
-        'O', 'G', 'T', 'R', 'E', 'P', '0', '1'
+        'O', 'R', 'F', 'S', 'R', 'P', '0', '1'
     };
 
     if (repository_version == 0U) {
@@ -412,9 +412,9 @@ static enum package_service_status read_repository_floor_candidate(
 
 static bool entry_name_valid(const char *name)
 {
-    size_t length = string_length(name, OPENGATFS_MAX_COMPONENT_BYTES);
+    size_t length = string_length(name, OPENRFSFS_MAX_COMPONENT_BYTES);
 
-    if (length == 0U || length >= OPENGATFS_MAX_COMPONENT_BYTES ||
+    if (length == 0U || length >= OPENRFSFS_MAX_COMPONENT_BYTES ||
         (length == 1U && name[0] == '.') ||
         (length == 2U && name[0] == '.' && name[1] == '.')) {
         return false;
@@ -433,13 +433,13 @@ static bool entry_name_valid(const char *name)
 static bool child_path(
     const char *parent,
     const char *name,
-    char result[OPENGATFS_MAX_PATH]
+    char result[OPENRFSFS_MAX_PATH]
 )
 {
-    zero_bytes(result, OPENGATFS_MAX_PATH);
-    return append_text(result, OPENGATFS_MAX_PATH, parent) &&
-        append_text(result, OPENGATFS_MAX_PATH, "/") &&
-        append_text(result, OPENGATFS_MAX_PATH, name);
+    zero_bytes(result, OPENRFSFS_MAX_PATH);
+    return append_text(result, OPENRFSFS_MAX_PATH, parent) &&
+        append_text(result, OPENRFSFS_MAX_PATH, "/") &&
+        append_text(result, OPENRFSFS_MAX_PATH, name);
 }
 
 static enum package_service_status count_tree_files(
@@ -450,34 +450,34 @@ static enum package_service_status count_tree_files(
 )
 {
     size_t count = 0U;
-    enum opengatfs_status fs_status;
+    enum openrfsfs_status fs_status;
 
-    if (depth >= OPENGATFS_MAX_DEPTH) {
+    if (depth >= OPENRFSFS_MAX_DEPTH) {
         return PACKAGE_SERVICE_STATUS_NAMESPACE;
     }
-    fs_status = opengatfs_list(OPENGATFS_VOLUME_DATA, path, context->entries,
-        OPENGATFS_MAX_LIST_ENTRIES, &count);
-    if (fs_status == OPENGATFS_STATUS_DIRECTORY_FULL) {
+    fs_status = openrfsfs_list(OPENRFSFS_VOLUME_DATA, path, context->entries,
+        OPENRFSFS_MAX_LIST_ENTRIES, &count);
+    if (fs_status == OPENRFSFS_STATUS_DIRECTORY_FULL) {
         return PACKAGE_SERVICE_STATUS_NAMESPACE;
     }
-    if (fs_status != OPENGATFS_STATUS_OK) {
+    if (fs_status != OPENRFSFS_STATUS_OK) {
         return filesystem_failure(context, fs_status);
     }
     for (size_t index = 0U; index < count; ++index) {
         size_t refreshed = 0U;
 
-        fs_status = opengatfs_list(OPENGATFS_VOLUME_DATA, path, context->entries,
-            OPENGATFS_MAX_LIST_ENTRIES, &refreshed);
-        if (fs_status != OPENGATFS_STATUS_OK) {
-            return fs_status == OPENGATFS_STATUS_DIRECTORY_FULL ?
+        fs_status = openrfsfs_list(OPENRFSFS_VOLUME_DATA, path, context->entries,
+            OPENRFSFS_MAX_LIST_ENTRIES, &refreshed);
+        if (fs_status != OPENRFSFS_STATUS_OK) {
+            return fs_status == OPENRFSFS_STATUS_DIRECTORY_FULL ?
                 PACKAGE_SERVICE_STATUS_NAMESPACE :
                 filesystem_failure(context, fs_status);
         }
         if (refreshed != count) {
             return PACKAGE_SERVICE_STATUS_IMMUTABLE_FILE;
         }
-        struct opengatfs_list_entry entry = context->entries[index];
-        char child[OPENGATFS_MAX_PATH];
+        struct openrfsfs_list_entry entry = context->entries[index];
+        char child[OPENRFSFS_MAX_PATH];
 
         if (!entry_name_valid(entry.name) ||
             ++context->walk_entries > PACKAGE_SERVICE_MAX_TREE_ENTRIES ||
@@ -507,19 +507,19 @@ static enum package_service_status verify_file(
     const uint8_t *record
 )
 {
-    struct opengatfs_stat before;
-    struct opengatfs_stat after;
+    struct openrfsfs_stat before;
+    struct openrfsfs_stat after;
     struct package_state_sha256_context sha;
     uint8_t digest[PACKAGE_STATE_SHA256_BYTES];
     uint8_t buffer[PACKAGE_SERVICE_IO_BYTES];
     uint64_t remaining = read_u64(record + FILE_LENGTH_OFFSET);
     uint32_t mode = read_u32(record + FILE_MODE_OFFSET);
-    opengatfs_handle handle;
-    enum opengatfs_status fs_status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA, path,
+    openrfsfs_handle handle;
+    enum openrfsfs_status fs_status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, path,
         &before);
 
-    if (fs_status != OPENGATFS_STATUS_OK) {
-        return fs_status == OPENGATFS_STATUS_NOT_FOUND ?
+    if (fs_status != OPENRFSFS_STATUS_OK) {
+        return fs_status == OPENRFSFS_STATUS_NOT_FOUND ?
             PACKAGE_SERVICE_STATUS_IMMUTABLE_FILE :
             filesystem_failure(context, fs_status);
     }
@@ -527,8 +527,8 @@ static enum package_service_status verify_file(
         (before.mode != 0U && (before.mode & UINT16_C(0777)) != mode)) {
         return PACKAGE_SERVICE_STATUS_IMMUTABLE_FILE;
     }
-    fs_status = opengatfs_open(OPENGATFS_VOLUME_DATA, path, OPENGATFS_ACCESS_READ, &handle);
-    if (fs_status != OPENGATFS_STATUS_OK) {
+    fs_status = openrfsfs_open(OPENRFSFS_VOLUME_DATA, path, OPENRFSFS_ACCESS_READ, &handle);
+    if (fs_status != OPENRFSFS_STATUS_OK) {
         return filesystem_failure(context, fs_status);
     }
     handle_acquired(context);
@@ -541,8 +541,8 @@ static enum package_service_status verify_file(
             sizeof(buffer);
         size_t read_bytes = 0U;
 
-        fs_status = opengatfs_read(handle, buffer, requested, &read_bytes);
-        if (fs_status != OPENGATFS_STATUS_OK) {
+        fs_status = openrfsfs_read(handle, buffer, requested, &read_bytes);
+        if (fs_status != OPENRFSFS_STATUS_OK) {
             status = filesystem_failure(context, fs_status);
             break;
         }
@@ -558,8 +558,8 @@ static enum package_service_status verify_file(
             state_status == PACKAGE_STATE_STATUS_OK) {
         size_t extra_bytes = 0U;
 
-        fs_status = opengatfs_read(handle, buffer, 1U, &extra_bytes);
-        if (fs_status != OPENGATFS_STATUS_OK) {
+        fs_status = openrfsfs_read(handle, buffer, 1U, &extra_bytes);
+        if (fs_status != OPENRFSFS_STATUS_OK) {
             status = filesystem_failure(context, fs_status);
         } else if (extra_bytes != 0U) {
             status = PACKAGE_SERVICE_STATUS_IMMUTABLE_FILE;
@@ -577,8 +577,8 @@ static enum package_service_status verify_file(
         !equal_bytes(digest, record + FILE_DIGEST_OFFSET, sizeof(digest))) {
         return PACKAGE_SERVICE_STATUS_IMMUTABLE_FILE;
     }
-    fs_status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA, path, &after);
-    if (fs_status != OPENGATFS_STATUS_OK) {
+    fs_status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, path, &after);
+    if (fs_status != OPENRFSFS_STATUS_OK) {
         return filesystem_failure(context, fs_status);
     }
     if (after.directory || after.size != before.size ||
@@ -595,7 +595,7 @@ static enum package_service_status verify_generation_files(
     const struct package_state_database_view *view
 )
 {
-    char root[OPENGATFS_MAX_PATH];
+    char root[OPENRFSFS_MAX_PATH];
     uint32_t actual_files = 0U;
 
     if (!generation_path(view->generation, GENERATION_ROOT_SUFFIX, root)) {
@@ -607,7 +607,7 @@ static enum package_service_status verify_generation_files(
     context->report->tree_entries += context->walk_entries;
     if (status != PACKAGE_SERVICE_STATUS_OK) {
         return status == PACKAGE_SERVICE_STATUS_FILESYSTEM &&
-            context->report->filesystem_status == OPENGATFS_STATUS_NOT_FOUND ?
+            context->report->filesystem_status == OPENRFSFS_STATUS_NOT_FOUND ?
             PACKAGE_SERVICE_STATUS_IMMUTABLE_FILE : status;
     }
     if (actual_files != view->file_count) {
@@ -616,7 +616,7 @@ static enum package_service_status verify_generation_files(
     for (uint32_t index = 0U; index < view->file_count; ++index) {
         const uint8_t *record = view->bytes + view->file_offset +
             (size_t)index * PACKAGE_STATE_DATABASE_FILE_RECORD_BYTES;
-        char path[OPENGATFS_MAX_PATH];
+        char path[OPENRFSFS_MAX_PATH];
         char relative[FILE_PATH_BYTES + 1U];
         size_t length = 0U;
 
@@ -629,8 +629,8 @@ static enum package_service_status verify_generation_files(
         }
         relative[length] = '\0';
         if (!generation_path(view->generation, GENERATION_ROOT_SUFFIX, path) ||
-            !append_text(path, OPENGATFS_MAX_PATH, "/") ||
-            !append_text(path, OPENGATFS_MAX_PATH, relative)) {
+            !append_text(path, OPENRFSFS_MAX_PATH, "/") ||
+            !append_text(path, OPENRFSFS_MAX_PATH, relative)) {
             return PACKAGE_SERVICE_STATUS_NAMESPACE;
         }
         status = verify_file(context, path, record);
@@ -648,20 +648,20 @@ static enum package_service_status load_generation(
     struct loaded_generation *loaded
 )
 {
-    char path[OPENGATFS_MAX_PATH];
-    struct opengatfs_stat stat;
-    enum opengatfs_status fs_status;
+    char path[OPENRFSFS_MAX_PATH];
+    struct openrfsfs_stat stat;
+    enum openrfsfs_status fs_status;
 
     zero_bytes(loaded, sizeof(*loaded));
     if (expected_bytes > PACKAGE_SERVICE_MAX_DATABASE_BYTES ||
         !generation_path(generation, GENERATION_DATABASE_SUFFIX, path)) {
         return PACKAGE_SERVICE_STATUS_RESOURCE;
     }
-    fs_status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA, path, &stat);
-    if (fs_status == OPENGATFS_STATUS_NOT_FOUND) {
+    fs_status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, path, &stat);
+    if (fs_status == OPENRFSFS_STATUS_NOT_FOUND) {
         return PACKAGE_SERVICE_STATUS_OK;
     }
-    if (fs_status != OPENGATFS_STATUS_OK) {
+    if (fs_status != OPENRFSFS_STATUS_OK) {
         return filesystem_failure(context, fs_status);
     }
     loaded->present = true;
@@ -726,15 +726,15 @@ static enum package_service_status ensure_entries(
         return PACKAGE_SERVICE_STATUS_OK;
     }
     return allocate_bytes(context,
-        sizeof(struct opengatfs_list_entry) * OPENGATFS_MAX_LIST_ENTRIES,
+        sizeof(struct openrfsfs_list_entry) * OPENRFSFS_MAX_LIST_ENTRIES,
         (void **)&context->entries);
 }
 
 static enum package_service_status sync_data(struct service_context *context)
 {
-    enum opengatfs_status status = opengatfs_sync(OPENGATFS_VOLUME_DATA);
+    enum openrfsfs_status status = openrfsfs_sync(OPENRFSFS_VOLUME_DATA);
 
-    if (status != OPENGATFS_STATUS_OK) {
+    if (status != OPENRFSFS_STATUS_OK) {
         context->report->filesystem_status = status;
         return PACKAGE_SERVICE_STATUS_DURABILITY;
     }
@@ -757,19 +757,19 @@ static enum package_service_status ensure_directory(
     const char *path
 )
 {
-    struct opengatfs_stat stat;
-    enum opengatfs_status fs_status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA, path,
+    struct openrfsfs_stat stat;
+    enum openrfsfs_status fs_status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, path,
         &stat);
 
-    if (fs_status == OPENGATFS_STATUS_OK) {
+    if (fs_status == OPENRFSFS_STATUS_OK) {
         return stat.directory ? PACKAGE_SERVICE_STATUS_OK :
             PACKAGE_SERVICE_STATUS_NAMESPACE;
     }
-    if (fs_status != OPENGATFS_STATUS_NOT_FOUND) {
+    if (fs_status != OPENRFSFS_STATUS_NOT_FOUND) {
         return filesystem_failure(context, fs_status);
     }
-    fs_status = opengatfs_mkdir(OPENGATFS_VOLUME_DATA, path);
-    return fs_status == OPENGATFS_STATUS_OK ? PACKAGE_SERVICE_STATUS_OK :
+    fs_status = openrfsfs_mkdir(OPENRFSFS_VOLUME_DATA, path);
+    return fs_status == OPENRFSFS_STATUS_OK ? PACKAGE_SERVICE_STATUS_OK :
         filesystem_failure(context, fs_status);
 }
 
@@ -778,10 +778,10 @@ static enum package_service_status ensure_generation_layout(
     uint64_t generation
 )
 {
-    char high[OPENGATFS_MAX_PATH];
-    char generation_directory[OPENGATFS_MAX_PATH];
-    char root[OPENGATFS_MAX_PATH];
-    struct opengatfs_stat stat;
+    char high[OPENRFSFS_MAX_PATH];
+    char generation_directory[OPENRFSFS_MAX_PATH];
+    char root[OPENRFSFS_MAX_PATH];
+    struct openrfsfs_stat stat;
 
     zero_bytes(high, sizeof(high));
     if (!append_text(high, sizeof(high), GENERATION_PREFIX)) {
@@ -793,12 +793,12 @@ static enum package_service_status ensure_generation_layout(
         !generation_path(generation, GENERATION_ROOT_SUFFIX, root)) {
         return PACKAGE_SERVICE_STATUS_NAMESPACE;
     }
-    enum opengatfs_status fs_status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA,
+    enum openrfsfs_status fs_status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA,
         generation_directory, &stat);
-    if (fs_status == OPENGATFS_STATUS_OK) {
+    if (fs_status == OPENRFSFS_STATUS_OK) {
         return PACKAGE_SERVICE_STATUS_STATE;
     }
-    if (fs_status != OPENGATFS_STATUS_NOT_FOUND) {
+    if (fs_status != OPENRFSFS_STATUS_NOT_FOUND) {
         return filesystem_failure(context, fs_status);
     }
     enum package_service_status status = ensure_directory(context,
@@ -824,7 +824,7 @@ static enum package_service_status ensure_file_parents(
     const struct package_state_text *relative
 )
 {
-    char root[OPENGATFS_MAX_PATH];
+    char root[OPENRFSFS_MAX_PATH];
 
     if (relative == NULL ||
         !generation_path(generation, GENERATION_ROOT_SUFFIX, root)) {
@@ -832,7 +832,7 @@ static enum package_service_status ensure_file_parents(
     }
     for (size_t index = 0U; index < relative->length; ++index) {
         if (relative->bytes[index] == (uint8_t)'/') {
-            char parent[OPENGATFS_MAX_PATH];
+            char parent[OPENRFSFS_MAX_PATH];
 
             zero_bytes(parent, sizeof(parent));
             if (!append_text(parent, sizeof(parent), root) ||
@@ -852,7 +852,7 @@ static enum package_service_status ensure_file_parents(
 
 static enum package_service_status write_handle_bytes(
     struct service_context *context,
-    opengatfs_handle handle,
+    openrfsfs_handle handle,
     const uint8_t *bytes,
     size_t count
 )
@@ -863,10 +863,10 @@ static enum package_service_status write_handle_bytes(
         size_t chunk = count - total < PACKAGE_SERVICE_TRANSACTION_BYTES ?
             count - total : PACKAGE_SERVICE_TRANSACTION_BYTES;
         size_t written = 0U;
-        enum opengatfs_status fs_status = opengatfs_write(handle, bytes + total,
+        enum openrfsfs_status fs_status = openrfsfs_write(handle, bytes + total,
             chunk, &written);
 
-        if (fs_status != OPENGATFS_STATUS_OK) {
+        if (fs_status != OPENRFSFS_STATUS_OK) {
             return filesystem_failure(context, fs_status);
         }
         if (written == 0U || written > chunk) {
@@ -885,20 +885,20 @@ static enum package_service_status write_new_file(
     size_t count
 )
 {
-    opengatfs_handle handle;
-    enum opengatfs_status fs_status;
+    openrfsfs_handle handle;
+    enum openrfsfs_status fs_status;
 
     if (bytes == NULL && count != 0U) {
         return PACKAGE_SERVICE_STATUS_NULL_ARGUMENT;
     }
-    fs_status = opengatfs_create(OPENGATFS_VOLUME_DATA, path);
-    if (fs_status != OPENGATFS_STATUS_OK) {
+    fs_status = openrfsfs_create(OPENRFSFS_VOLUME_DATA, path);
+    if (fs_status != OPENRFSFS_STATUS_OK) {
         return filesystem_failure(context, fs_status);
     }
-    fs_status = opengatfs_open(OPENGATFS_VOLUME_DATA, path, OPENGATFS_ACCESS_WRITE,
+    fs_status = openrfsfs_open(OPENRFSFS_VOLUME_DATA, path, OPENRFSFS_ACCESS_WRITE,
         &handle);
-    if (fs_status != OPENGATFS_STATUS_OK) {
-        (void)opengatfs_unlink(OPENGATFS_VOLUME_DATA, path);
+    if (fs_status != OPENRFSFS_STATUS_OK) {
+        (void)openrfsfs_unlink(OPENRFSFS_VOLUME_DATA, path);
         return filesystem_failure(context, fs_status);
     }
     handle_acquired(context);
@@ -910,7 +910,7 @@ static enum package_service_status write_new_file(
         status = close_status;
     }
     if (status != PACKAGE_SERVICE_STATUS_OK) {
-        (void)opengatfs_unlink(OPENGATFS_VOLUME_DATA, path);
+        (void)openrfsfs_unlink(OPENRFSFS_VOLUME_DATA, path);
     }
     return status;
 }
@@ -920,9 +920,9 @@ static enum package_service_status unlink_optional(
     const char *path
 )
 {
-    enum opengatfs_status status = opengatfs_unlink(OPENGATFS_VOLUME_DATA, path);
+    enum openrfsfs_status status = openrfsfs_unlink(OPENRFSFS_VOLUME_DATA, path);
 
-    return status == OPENGATFS_STATUS_OK || status == OPENGATFS_STATUS_NOT_FOUND ?
+    return status == OPENRFSFS_STATUS_OK || status == OPENRFSFS_STATUS_NOT_FOUND ?
         PACKAGE_SERVICE_STATUS_OK : filesystem_failure(context, status);
 }
 
@@ -967,11 +967,11 @@ static enum package_service_status promote_repository_floor_new(
     if (status != PACKAGE_SERVICE_STATUS_OK) {
         return status;
     }
-    enum opengatfs_status fs_status = opengatfs_rename(OPENGATFS_VOLUME_DATA,
+    enum openrfsfs_status fs_status = openrfsfs_rename(OPENRFSFS_VOLUME_DATA,
         PACKAGE_SERVICE_REPOSITORY_FLOOR_NEW_PATH,
         PACKAGE_SERVICE_REPOSITORY_FLOOR_PATH);
 
-    if (fs_status != OPENGATFS_STATUS_OK) {
+    if (fs_status != OPENRFSFS_STATUS_OK) {
         return filesystem_failure(context, fs_status);
     }
     ++context->report->rename_count;
@@ -1065,8 +1065,8 @@ static bool same_file_metadata(
 
 static bool path_components(
     const struct package_state_text *path,
-    uint8_t starts[OPENGATFS_MAX_DEPTH],
-    uint8_t lengths[OPENGATFS_MAX_DEPTH],
+    uint8_t starts[OPENRFSFS_MAX_DEPTH],
+    uint8_t lengths[OPENRFSFS_MAX_DEPTH],
     uint32_t *count
 )
 {
@@ -1078,7 +1078,7 @@ static bool path_components(
             continue;
         }
         if (index == start || index - start > UINT8_MAX ||
-            *count == OPENGATFS_MAX_DEPTH) {
+            *count == OPENRFSFS_MAX_DEPTH) {
             return false;
         }
         starts[*count] = (uint8_t)start;
@@ -1093,20 +1093,20 @@ static bool staging_namespace_bounded(
     const struct package_generation_spec *spec
 )
 {
-    uint16_t child_counts[OPENGATFS_MAX_DEPTH] = { 0U };
-    uint8_t previous_starts[OPENGATFS_MAX_DEPTH];
-    uint8_t previous_lengths[OPENGATFS_MAX_DEPTH];
+    uint16_t child_counts[OPENRFSFS_MAX_DEPTH] = { 0U };
+    uint8_t previous_starts[OPENRFSFS_MAX_DEPTH];
+    uint8_t previous_lengths[OPENRFSFS_MAX_DEPTH];
     uint32_t previous_count = 0U;
 
     for (uint32_t index = 0U; index < spec->file_count; ++index) {
-        uint8_t starts[OPENGATFS_MAX_DEPTH];
-        uint8_t lengths[OPENGATFS_MAX_DEPTH];
-        char full_path[OPENGATFS_MAX_PATH];
+        uint8_t starts[OPENRFSFS_MAX_DEPTH];
+        uint8_t lengths[OPENRFSFS_MAX_DEPTH];
+        char full_path[OPENRFSFS_MAX_PATH];
         uint32_t count;
         uint32_t common = 0U;
 
         if (!path_components(&spec->files[index].path, starts, lengths,
-                &count) || count > OPENGATFS_MAX_DEPTH - 5U ||
+                &count) || count > OPENRFSFS_MAX_DEPTH - 5U ||
             !generation_file_path(spec->generation, &spec->files[index].path,
                 full_path)) {
             return false;
@@ -1131,7 +1131,7 @@ static bool staging_namespace_bounded(
                 child_counts[depth] = 1U;
             }
         } else {
-            if (++child_counts[common] > OPENGATFS_MAX_LIST_ENTRIES) {
+            if (++child_counts[common] > OPENRFSFS_MAX_LIST_ENTRIES) {
                 return false;
             }
             for (uint32_t depth = common + 1U; depth < count; ++depth) {
@@ -1159,12 +1159,12 @@ static enum package_service_status write_generation_file(
         &builder->file_sources[index];
     struct package_state_sha256_context sha;
     uint8_t digest[PACKAGE_STATE_SHA256_BYTES];
-    char destination[OPENGATFS_MAX_PATH];
-    opengatfs_handle output;
-    opengatfs_handle input = 0U;
+    char destination[OPENRFSFS_MAX_PATH];
+    openrfsfs_handle output;
+    openrfsfs_handle input = 0U;
     uint64_t remaining = file->length;
     enum package_service_status status;
-    enum opengatfs_status fs_status;
+    enum openrfsfs_status fs_status;
 
     status = ensure_file_parents(context, builder->spec.generation,
         &file->path);
@@ -1179,7 +1179,7 @@ static enum package_service_status write_generation_file(
         }
     } else if (source->kind == PACKAGE_BUILDER_FILE_SOURCE_INSTALLED) {
         struct package_state_file_view old_file;
-        char old_path[OPENGATFS_MAX_PATH];
+        char old_path[OPENRFSFS_MAX_PATH];
 
         if (base == NULL || package_state_database_file(base,
                 source->file_index, &old_file) != PACKAGE_STATE_STATUS_OK ||
@@ -1189,25 +1189,25 @@ static enum package_service_status write_generation_file(
                 &old_file.path, old_path)) {
             return PACKAGE_SERVICE_STATUS_STATE;
         }
-        fs_status = opengatfs_open(OPENGATFS_VOLUME_DATA, old_path, OPENGATFS_ACCESS_READ,
+        fs_status = openrfsfs_open(OPENRFSFS_VOLUME_DATA, old_path, OPENRFSFS_ACCESS_READ,
             &input);
-        if (fs_status != OPENGATFS_STATUS_OK) {
+        if (fs_status != OPENRFSFS_STATUS_OK) {
             return filesystem_failure(context, fs_status);
         }
         handle_acquired(context);
     } else {
         return PACKAGE_SERVICE_STATUS_STATE;
     }
-    fs_status = opengatfs_create_mode(OPENGATFS_VOLUME_DATA, destination,
+    fs_status = openrfsfs_create_mode(OPENRFSFS_VOLUME_DATA, destination,
         (uint16_t)file->mode);
-    if (fs_status != OPENGATFS_STATUS_OK) {
+    if (fs_status != OPENRFSFS_STATUS_OK) {
         status = filesystem_failure(context, fs_status);
         goto close_input;
     }
-    fs_status = opengatfs_open(OPENGATFS_VOLUME_DATA, destination,
-        OPENGATFS_ACCESS_WRITE, &output);
-    if (fs_status != OPENGATFS_STATUS_OK) {
-        (void)opengatfs_unlink(OPENGATFS_VOLUME_DATA, destination);
+    fs_status = openrfsfs_open(OPENRFSFS_VOLUME_DATA, destination,
+        OPENRFSFS_ACCESS_WRITE, &output);
+    if (fs_status != OPENRFSFS_STATUS_OK) {
+        (void)openrfsfs_unlink(OPENRFSFS_VOLUME_DATA, destination);
         status = filesystem_failure(context, fs_status);
         goto close_input;
     }
@@ -1228,8 +1228,8 @@ static enum package_service_status write_generation_file(
         if (source->payload == NULL) {
             size_t read_bytes = 0U;
 
-            fs_status = opengatfs_read(input, buffer, chunk, &read_bytes);
-            if (fs_status != OPENGATFS_STATUS_OK) {
+            fs_status = openrfsfs_read(input, buffer, chunk, &read_bytes);
+            if (fs_status != OPENRFSFS_STATUS_OK) {
                 status = filesystem_failure(context, fs_status);
                 break;
             }
@@ -1254,8 +1254,8 @@ static enum package_service_status write_generation_file(
         uint8_t extra;
         size_t extra_bytes = 0U;
 
-        fs_status = opengatfs_read(input, &extra, 1U, &extra_bytes);
-        if (fs_status != OPENGATFS_STATUS_OK) {
+        fs_status = openrfsfs_read(input, &extra, 1U, &extra_bytes);
+        if (fs_status != OPENRFSFS_STATUS_OK) {
             status = filesystem_failure(context, fs_status);
         } else if (extra_bytes != 0U) {
             status = PACKAGE_SERVICE_STATUS_IMMUTABLE_FILE;
@@ -1278,7 +1278,7 @@ close_output:
         }
     }
     if (status != PACKAGE_SERVICE_STATUS_OK) {
-        (void)opengatfs_unlink(OPENGATFS_VOLUME_DATA, destination);
+        (void)openrfsfs_unlink(OPENRFSFS_VOLUME_DATA, destination);
     }
 close_input:
     if (input != 0U) {
@@ -1299,22 +1299,22 @@ static enum package_service_status write_authority_file(
     const uint8_t authority[PACKAGE_STATE_AUTHORITY_BYTES]
 )
 {
-    enum opengatfs_status fs_status = opengatfs_unlink(OPENGATFS_VOLUME_DATA,
+    enum openrfsfs_status fs_status = openrfsfs_unlink(OPENRFSFS_VOLUME_DATA,
         PACKAGE_SERVICE_AUTHORITY_NEW_PATH);
 
-    if (fs_status != OPENGATFS_STATUS_OK && fs_status != OPENGATFS_STATUS_NOT_FOUND) {
+    if (fs_status != OPENRFSFS_STATUS_OK && fs_status != OPENRFSFS_STATUS_NOT_FOUND) {
         return filesystem_failure(context, fs_status);
     }
-    fs_status = opengatfs_create(OPENGATFS_VOLUME_DATA,
+    fs_status = openrfsfs_create(OPENRFSFS_VOLUME_DATA,
         PACKAGE_SERVICE_AUTHORITY_NEW_PATH);
-    if (fs_status != OPENGATFS_STATUS_OK) {
+    if (fs_status != OPENRFSFS_STATUS_OK) {
         return filesystem_failure(context, fs_status);
     }
-    opengatfs_handle handle;
-    fs_status = opengatfs_open(OPENGATFS_VOLUME_DATA,
-        PACKAGE_SERVICE_AUTHORITY_NEW_PATH, OPENGATFS_ACCESS_WRITE, &handle);
-    if (fs_status != OPENGATFS_STATUS_OK) {
-        (void)opengatfs_unlink(OPENGATFS_VOLUME_DATA,
+    openrfsfs_handle handle;
+    fs_status = openrfsfs_open(OPENRFSFS_VOLUME_DATA,
+        PACKAGE_SERVICE_AUTHORITY_NEW_PATH, OPENRFSFS_ACCESS_WRITE, &handle);
+    if (fs_status != OPENRFSFS_STATUS_OK) {
+        (void)openrfsfs_unlink(OPENRFSFS_VOLUME_DATA,
             PACKAGE_SERVICE_AUTHORITY_NEW_PATH);
         return filesystem_failure(context, fs_status);
     }
@@ -1325,9 +1325,9 @@ static enum package_service_status write_authority_file(
     while (total < PACKAGE_STATE_AUTHORITY_BYTES) {
         size_t written = 0U;
 
-        fs_status = opengatfs_write(handle, authority + total,
+        fs_status = openrfsfs_write(handle, authority + total,
             PACKAGE_STATE_AUTHORITY_BYTES - total, &written);
-        if (fs_status != OPENGATFS_STATUS_OK) {
+        if (fs_status != OPENRFSFS_STATUS_OK) {
             status = filesystem_failure(context, fs_status);
             break;
         }
@@ -1343,7 +1343,7 @@ static enum package_service_status write_authority_file(
         status = close_status;
     }
     if (status != PACKAGE_SERVICE_STATUS_OK) {
-        (void)opengatfs_unlink(OPENGATFS_VOLUME_DATA,
+        (void)openrfsfs_unlink(OPENRFSFS_VOLUME_DATA,
             PACKAGE_SERVICE_AUTHORITY_NEW_PATH);
         return status;
     }
@@ -1355,7 +1355,7 @@ static enum package_service_status replace_authority(
     const uint8_t authority[PACKAGE_STATE_AUTHORITY_BYTES]
 )
 {
-    struct opengatfs_stat stat;
+    struct openrfsfs_stat stat;
     enum package_service_status status = write_authority_file(context,
         authority);
     bool had_current;
@@ -1363,45 +1363,45 @@ static enum package_service_status replace_authority(
     if (status != PACKAGE_SERVICE_STATUS_OK) {
         return status;
     }
-    enum opengatfs_status fs_status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA,
+    enum openrfsfs_status fs_status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA,
         PACKAGE_SERVICE_AUTHORITY_PATH, &stat);
-    had_current = fs_status == OPENGATFS_STATUS_OK;
+    had_current = fs_status == OPENRFSFS_STATUS_OK;
     if ((had_current && stat.directory) ||
-        (fs_status != OPENGATFS_STATUS_OK && fs_status != OPENGATFS_STATUS_NOT_FOUND)) {
-        return fs_status == OPENGATFS_STATUS_OK ? PACKAGE_SERVICE_STATUS_STATE :
+        (fs_status != OPENRFSFS_STATUS_OK && fs_status != OPENRFSFS_STATUS_NOT_FOUND)) {
+        return fs_status == OPENRFSFS_STATUS_OK ? PACKAGE_SERVICE_STATUS_STATE :
             filesystem_failure(context, fs_status);
     }
     if (had_current) {
-        fs_status = opengatfs_unlink(OPENGATFS_VOLUME_DATA,
+        fs_status = openrfsfs_unlink(OPENRFSFS_VOLUME_DATA,
             PACKAGE_SERVICE_AUTHORITY_OLD_PATH);
-        if (fs_status != OPENGATFS_STATUS_OK && fs_status != OPENGATFS_STATUS_NOT_FOUND) {
+        if (fs_status != OPENRFSFS_STATUS_OK && fs_status != OPENRFSFS_STATUS_NOT_FOUND) {
             return filesystem_failure(context, fs_status);
         }
-        fs_status = opengatfs_rename(OPENGATFS_VOLUME_DATA,
+        fs_status = openrfsfs_rename(OPENRFSFS_VOLUME_DATA,
             PACKAGE_SERVICE_AUTHORITY_PATH,
             PACKAGE_SERVICE_AUTHORITY_OLD_PATH);
-        if (fs_status != OPENGATFS_STATUS_OK) {
+        if (fs_status != OPENRFSFS_STATUS_OK) {
             return filesystem_failure(context, fs_status);
         }
         ++context->report->rename_count;
         status = sync_data(context);
         if (status != PACKAGE_SERVICE_STATUS_OK) {
-            (void)opengatfs_rename(OPENGATFS_VOLUME_DATA,
+            (void)openrfsfs_rename(OPENRFSFS_VOLUME_DATA,
                 PACKAGE_SERVICE_AUTHORITY_OLD_PATH,
                 PACKAGE_SERVICE_AUTHORITY_PATH);
-            (void)opengatfs_sync(OPENGATFS_VOLUME_DATA);
+            (void)openrfsfs_sync(OPENRFSFS_VOLUME_DATA);
             return status;
         }
     }
-    fs_status = opengatfs_rename(OPENGATFS_VOLUME_DATA,
+    fs_status = openrfsfs_rename(OPENRFSFS_VOLUME_DATA,
         PACKAGE_SERVICE_AUTHORITY_NEW_PATH,
         PACKAGE_SERVICE_AUTHORITY_PATH);
-    if (fs_status != OPENGATFS_STATUS_OK) {
+    if (fs_status != OPENRFSFS_STATUS_OK) {
         if (had_current) {
-            (void)opengatfs_rename(OPENGATFS_VOLUME_DATA,
+            (void)openrfsfs_rename(OPENRFSFS_VOLUME_DATA,
                 PACKAGE_SERVICE_AUTHORITY_OLD_PATH,
                 PACKAGE_SERVICE_AUTHORITY_PATH);
-            (void)opengatfs_sync(OPENGATFS_VOLUME_DATA);
+            (void)openrfsfs_sync(OPENRFSFS_VOLUME_DATA);
         }
         return filesystem_failure(context, fs_status);
     }
@@ -1409,13 +1409,13 @@ static enum package_service_status replace_authority(
     status = sync_data(context);
     if (status != PACKAGE_SERVICE_STATUS_OK) {
         if (had_current) {
-            (void)opengatfs_rename(OPENGATFS_VOLUME_DATA,
+            (void)openrfsfs_rename(OPENRFSFS_VOLUME_DATA,
                 PACKAGE_SERVICE_AUTHORITY_PATH,
                 PACKAGE_SERVICE_AUTHORITY_NEW_PATH);
-            (void)opengatfs_rename(OPENGATFS_VOLUME_DATA,
+            (void)openrfsfs_rename(OPENRFSFS_VOLUME_DATA,
                 PACKAGE_SERVICE_AUTHORITY_OLD_PATH,
                 PACKAGE_SERVICE_AUTHORITY_PATH);
-            (void)opengatfs_sync(OPENGATFS_VOLUME_DATA);
+            (void)openrfsfs_sync(OPENRFSFS_VOLUME_DATA);
         }
         return status;
     }
@@ -1429,14 +1429,14 @@ static enum package_service_status remove_tree(
     uint32_t depth
 )
 {
-    struct opengatfs_stat stat;
-    enum opengatfs_status fs_status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA, path,
+    struct openrfsfs_stat stat;
+    enum openrfsfs_status fs_status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, path,
         &stat);
 
-    if (fs_status == OPENGATFS_STATUS_NOT_FOUND) {
+    if (fs_status == OPENRFSFS_STATUS_NOT_FOUND) {
         return PACKAGE_SERVICE_STATUS_OK;
     }
-    if (fs_status != OPENGATFS_STATUS_OK) {
+    if (fs_status != OPENRFSFS_STATUS_OK) {
         return filesystem_failure(context, fs_status);
     }
     if (!stat.directory) {
@@ -1451,34 +1451,34 @@ static enum package_service_status remove_tree(
             const uint64_t next = stat.size > PACKAGE_SERVICE_CLEANUP_CHUNK ?
                 stat.size - PACKAGE_SERVICE_CLEANUP_CHUNK : 0U;
 
-            fs_status = opengatfs_truncate(OPENGATFS_VOLUME_DATA, path, next);
-            if (fs_status != OPENGATFS_STATUS_OK) {
+            fs_status = openrfsfs_truncate(OPENRFSFS_VOLUME_DATA, path, next);
+            if (fs_status != OPENRFSFS_STATUS_OK) {
                 return filesystem_failure(context, fs_status);
             }
             stat.size = next;
         }
-        fs_status = opengatfs_unlink(OPENGATFS_VOLUME_DATA, path);
-        return fs_status == OPENGATFS_STATUS_OK ? PACKAGE_SERVICE_STATUS_OK :
+        fs_status = openrfsfs_unlink(OPENRFSFS_VOLUME_DATA, path);
+        return fs_status == OPENRFSFS_STATUS_OK ? PACKAGE_SERVICE_STATUS_OK :
             filesystem_failure(context, fs_status);
     }
-    if (depth >= OPENGATFS_MAX_DEPTH) {
+    if (depth >= OPENRFSFS_MAX_DEPTH) {
         return PACKAGE_SERVICE_STATUS_NAMESPACE;
     }
     for (;;) {
         size_t count = 0U;
-        fs_status = opengatfs_list(OPENGATFS_VOLUME_DATA, path, context->entries,
-            OPENGATFS_MAX_LIST_ENTRIES, &count);
-        if (fs_status == OPENGATFS_STATUS_DIRECTORY_FULL) {
+        fs_status = openrfsfs_list(OPENRFSFS_VOLUME_DATA, path, context->entries,
+            OPENRFSFS_MAX_LIST_ENTRIES, &count);
+        if (fs_status == OPENRFSFS_STATUS_DIRECTORY_FULL) {
             return PACKAGE_SERVICE_STATUS_NAMESPACE;
         }
-        if (fs_status != OPENGATFS_STATUS_OK) {
+        if (fs_status != OPENRFSFS_STATUS_OK) {
             return filesystem_failure(context, fs_status);
         }
         if (count == 0U) {
             break;
         }
-        struct opengatfs_list_entry entry = context->entries[0];
-        char child[OPENGATFS_MAX_PATH];
+        struct openrfsfs_list_entry entry = context->entries[0];
+        char child[OPENRFSFS_MAX_PATH];
 
         if (!entry_name_valid(entry.name) ||
             ++context->walk_entries > PACKAGE_SERVICE_MAX_TREE_ENTRIES ||
@@ -1492,8 +1492,8 @@ static enum package_service_status remove_tree(
             return status;
         }
     }
-    fs_status = opengatfs_rmdir(OPENGATFS_VOLUME_DATA, path);
-    return fs_status == OPENGATFS_STATUS_OK ? PACKAGE_SERVICE_STATUS_OK :
+    fs_status = openrfsfs_rmdir(OPENRFSFS_VOLUME_DATA, path);
+    return fs_status == OPENRFSFS_STATUS_OK ? PACKAGE_SERVICE_STATUS_OK :
         filesystem_failure(context, fs_status);
 }
 
@@ -1502,7 +1502,7 @@ static enum package_service_status cleanup_transaction(
     uint64_t discarded_generation
 )
 {
-    char path[OPENGATFS_MAX_PATH];
+    char path[OPENRFSFS_MAX_PATH];
 
     if (!generation_path(discarded_generation, "", path)) {
         return PACKAGE_SERVICE_STATUS_NAMESPACE;
@@ -1513,15 +1513,15 @@ static enum package_service_status cleanup_transaction(
     if (status != PACKAGE_SERVICE_STATUS_OK) {
         return PACKAGE_SERVICE_STATUS_CLEANUP;
     }
-    enum opengatfs_status fs_status = opengatfs_unlink(OPENGATFS_VOLUME_DATA,
+    enum openrfsfs_status fs_status = openrfsfs_unlink(OPENRFSFS_VOLUME_DATA,
         PACKAGE_SERVICE_AUTHORITY_OLD_PATH);
-    if (fs_status != OPENGATFS_STATUS_OK && fs_status != OPENGATFS_STATUS_NOT_FOUND) {
+    if (fs_status != OPENRFSFS_STATUS_OK && fs_status != OPENRFSFS_STATUS_NOT_FOUND) {
         context->report->filesystem_status = fs_status;
         return PACKAGE_SERVICE_STATUS_CLEANUP;
     }
-    fs_status = opengatfs_unlink(OPENGATFS_VOLUME_DATA,
+    fs_status = openrfsfs_unlink(OPENRFSFS_VOLUME_DATA,
         PACKAGE_SERVICE_AUTHORITY_NEW_PATH);
-    if (fs_status != OPENGATFS_STATUS_OK && fs_status != OPENGATFS_STATUS_NOT_FOUND) {
+    if (fs_status != OPENRFSFS_STATUS_OK && fs_status != OPENRFSFS_STATUS_NOT_FOUND) {
         context->report->filesystem_status = fs_status;
         return PACKAGE_SERVICE_STATUS_CLEANUP;
     }
@@ -1529,9 +1529,9 @@ static enum package_service_status cleanup_transaction(
     if (status != PACKAGE_SERVICE_STATUS_OK) {
         return PACKAGE_SERVICE_STATUS_CLEANUP;
     }
-    fs_status = opengatfs_unlink(OPENGATFS_VOLUME_DATA,
+    fs_status = openrfsfs_unlink(OPENRFSFS_VOLUME_DATA,
         PACKAGE_SERVICE_JOURNAL_PATH);
-    if (fs_status != OPENGATFS_STATUS_OK && fs_status != OPENGATFS_STATUS_NOT_FOUND) {
+    if (fs_status != OPENRFSFS_STATUS_OK && fs_status != OPENRFSFS_STATUS_NOT_FOUND) {
         context->report->filesystem_status = fs_status;
         return PACKAGE_SERVICE_STATUS_CLEANUP;
     }
@@ -1566,14 +1566,14 @@ static bool fixed_path_absent(
     enum package_service_status *status
 )
 {
-    struct opengatfs_stat stat;
-    enum opengatfs_status fs_status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA, path,
+    struct openrfsfs_stat stat;
+    enum openrfsfs_status fs_status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, path,
         &stat);
 
-    if (fs_status == OPENGATFS_STATUS_NOT_FOUND) {
+    if (fs_status == OPENRFSFS_STATUS_NOT_FOUND) {
         return true;
     }
-    *status = fs_status == OPENGATFS_STATUS_OK ? PACKAGE_SERVICE_STATUS_STATE :
+    *status = fs_status == OPENRFSFS_STATUS_OK ? PACKAGE_SERVICE_STATUS_STATE :
         filesystem_failure(context, fs_status);
     return false;
 }
@@ -1601,7 +1601,7 @@ static enum package_service_status cleanup_unpublished_prepare(
     uint64_t generation
 )
 {
-    char path[OPENGATFS_MAX_PATH];
+    char path[OPENRFSFS_MAX_PATH];
     enum package_service_status status = ensure_entries(context);
 
     if (status != PACKAGE_SERVICE_STATUS_OK ||
@@ -1614,9 +1614,9 @@ static enum package_service_status cleanup_unpublished_prepare(
     if (status != PACKAGE_SERVICE_STATUS_OK) {
         return PACKAGE_SERVICE_STATUS_CLEANUP;
     }
-    enum opengatfs_status fs_status = opengatfs_unlink(OPENGATFS_VOLUME_DATA,
+    enum openrfsfs_status fs_status = openrfsfs_unlink(OPENRFSFS_VOLUME_DATA,
         PACKAGE_SERVICE_JOURNAL_NEW_PATH);
-    if (fs_status != OPENGATFS_STATUS_OK && fs_status != OPENGATFS_STATUS_NOT_FOUND) {
+    if (fs_status != OPENRFSFS_STATUS_OK && fs_status != OPENRFSFS_STATUS_NOT_FOUND) {
         context->report->filesystem_status = fs_status;
         return PACKAGE_SERVICE_STATUS_CLEANUP;
     }
@@ -1629,7 +1629,7 @@ static enum package_service_status cleanup_unpublished_bootstrap(
     struct service_context *context
 )
 {
-    char path[OPENGATFS_MAX_PATH];
+    char path[OPENRFSFS_MAX_PATH];
     enum package_service_status status = ensure_entries(context);
 
     if (status != PACKAGE_SERVICE_STATUS_OK ||
@@ -1642,9 +1642,9 @@ static enum package_service_status cleanup_unpublished_bootstrap(
     if (status != PACKAGE_SERVICE_STATUS_OK) {
         return PACKAGE_SERVICE_STATUS_CLEANUP;
     }
-    enum opengatfs_status fs_status = opengatfs_unlink(OPENGATFS_VOLUME_DATA,
+    enum openrfsfs_status fs_status = openrfsfs_unlink(OPENRFSFS_VOLUME_DATA,
         PACKAGE_SERVICE_AUTHORITY_NEW_PATH);
-    if (fs_status != OPENGATFS_STATUS_OK && fs_status != OPENGATFS_STATUS_NOT_FOUND) {
+    if (fs_status != OPENRFSFS_STATUS_OK && fs_status != OPENRFSFS_STATUS_NOT_FOUND) {
         context->report->filesystem_status = fs_status;
         return PACKAGE_SERVICE_STATUS_CLEANUP;
     }
@@ -1669,7 +1669,7 @@ static enum package_service_status prepare_internal(
     uint8_t authority[PACKAGE_STATE_AUTHORITY_BYTES];
     uint8_t journal[PACKAGE_STATE_JOURNAL_BYTES];
     uint8_t journal_check[PACKAGE_STATE_JOURNAL_BYTES];
-    char database_path[OPENGATFS_MAX_PATH];
+    char database_path[OPENRFSFS_MAX_PATH];
     uint64_t required_space;
     bool authority_present = false;
     bool published = false;
@@ -1747,7 +1747,7 @@ static enum package_service_status prepare_internal(
         }
         required_space += builder->files[index].length;
     }
-    if (required_space > opengatfs_drive(OPENGATFS_VOLUME_DATA).free_bytes) {
+    if (required_space > openrfsfs_drive(OPENRFSFS_VOLUME_DATA).free_bytes) {
         return PACKAGE_SERVICE_STATUS_RESOURCE;
     }
     journal_spec = (struct package_state_journal_spec){
@@ -1807,11 +1807,11 @@ static enum package_service_status prepare_internal(
         status = sync_data(context);
     }
     if (status == PACKAGE_SERVICE_STATUS_OK) {
-        enum opengatfs_status fs_status = opengatfs_rename(OPENGATFS_VOLUME_DATA,
+        enum openrfsfs_status fs_status = openrfsfs_rename(OPENRFSFS_VOLUME_DATA,
             PACKAGE_SERVICE_JOURNAL_NEW_PATH,
             PACKAGE_SERVICE_JOURNAL_PATH);
 
-        if (fs_status != OPENGATFS_STATUS_OK) {
+        if (fs_status != OPENRFSFS_STATUS_OK) {
             status = filesystem_failure(context, fs_status);
         } else {
             ++context->report->rename_count;
@@ -1844,7 +1844,7 @@ static enum package_service_status bootstrap_internal(
     const struct package_builder_workspace *builder = request->builder;
     struct package_state_database_view target;
     uint8_t authority[PACKAGE_STATE_AUTHORITY_BYTES];
-    char database_path[OPENGATFS_MAX_PATH];
+    char database_path[OPENRFSFS_MAX_PATH];
     uint64_t required_space;
     bool published = false;
     enum package_service_status status = PACKAGE_SERVICE_STATUS_OK;
@@ -1881,7 +1881,7 @@ static enum package_service_status bootstrap_internal(
         return status;
     }
     {
-        char generation[OPENGATFS_MAX_PATH];
+        char generation[OPENRFSFS_MAX_PATH];
 
         if (!generation_path(1U, "", generation) ||
             !fixed_path_absent(context, generation, &status)) {
@@ -1899,7 +1899,7 @@ static enum package_service_status bootstrap_internal(
         }
         required_space += builder->files[index].length;
     }
-    if (required_space > opengatfs_drive(OPENGATFS_VOLUME_DATA).free_bytes) {
+    if (required_space > openrfsfs_drive(OPENRFSFS_VOLUME_DATA).free_bytes) {
         return PACKAGE_SERVICE_STATUS_RESOURCE;
     }
     context->report->state_status = package_state_authority_encode(&target,
@@ -1939,11 +1939,11 @@ static enum package_service_status bootstrap_internal(
     }
     if (status == PACKAGE_SERVICE_STATUS_OK) {
         context->report->prepared = true;
-        enum opengatfs_status fs_status = opengatfs_rename(OPENGATFS_VOLUME_DATA,
+        enum openrfsfs_status fs_status = openrfsfs_rename(OPENRFSFS_VOLUME_DATA,
             PACKAGE_SERVICE_AUTHORITY_NEW_PATH,
             PACKAGE_SERVICE_AUTHORITY_PATH);
 
-        if (fs_status != OPENGATFS_STATUS_OK) {
+        if (fs_status != OPENRFSFS_STATUS_OK) {
             status = filesystem_failure(context, fs_status);
         } else {
             ++context->report->rename_count;
@@ -2138,9 +2138,9 @@ static enum package_service_status recover_bootstrap(
         status = PACKAGE_SERVICE_STATUS_STATE;
         goto release;
     }
-    enum opengatfs_status fs_status = opengatfs_rename(OPENGATFS_VOLUME_DATA,
+    enum openrfsfs_status fs_status = openrfsfs_rename(OPENRFSFS_VOLUME_DATA,
         PACKAGE_SERVICE_AUTHORITY_NEW_PATH, PACKAGE_SERVICE_AUTHORITY_PATH);
-    if (fs_status != OPENGATFS_STATUS_OK) {
+    if (fs_status != OPENRFSFS_STATUS_OK) {
         status = filesystem_failure(context, fs_status);
         goto release;
     }
@@ -2177,12 +2177,12 @@ static enum package_service_status cleanup_authority_temporaries(
     };
 
     for (size_t index = 0U; index < sizeof(paths) / sizeof(paths[0]); ++index) {
-        enum opengatfs_status fs_status = opengatfs_unlink(OPENGATFS_VOLUME_DATA,
+        enum openrfsfs_status fs_status = openrfsfs_unlink(OPENRFSFS_VOLUME_DATA,
             paths[index]);
 
-        if (fs_status == OPENGATFS_STATUS_OK) {
+        if (fs_status == OPENRFSFS_STATUS_OK) {
             removed = true;
-        } else if (fs_status != OPENGATFS_STATUS_NOT_FOUND) {
+        } else if (fs_status != OPENRFSFS_STATUS_NOT_FOUND) {
             context->report->filesystem_status = fs_status;
             return PACKAGE_SERVICE_STATUS_CLEANUP;
         }
@@ -2274,17 +2274,17 @@ static enum package_service_status recover_internal(
         goto release;
     }
     {
-        struct opengatfs_stat stat;
-        enum opengatfs_status fs_status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA,
+        struct openrfsfs_stat stat;
+        enum openrfsfs_status fs_status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA,
             PACKAGE_SERVICE_JOURNAL_NEW_PATH, &stat);
 
-        if (fs_status == OPENGATFS_STATUS_OK) {
+        if (fs_status == OPENRFSFS_STATUS_OK) {
             journal_new_present = true;
             if (stat.directory) {
                 status = PACKAGE_SERVICE_STATUS_STATE;
                 goto release;
             }
-        } else if (fs_status != OPENGATFS_STATUS_NOT_FOUND) {
+        } else if (fs_status != OPENRFSFS_STATUS_NOT_FOUND) {
             status = filesystem_failure(context, fs_status);
             goto release;
         }
@@ -2356,10 +2356,10 @@ static enum package_service_status recover_internal(
             if (status != PACKAGE_SERVICE_STATUS_OK) {
                 goto release;
             }
-            enum opengatfs_status fs_status = opengatfs_unlink(OPENGATFS_VOLUME_DATA,
+            enum openrfsfs_status fs_status = openrfsfs_unlink(OPENRFSFS_VOLUME_DATA,
                 PACKAGE_SERVICE_AUTHORITY_OLD_PATH);
-            if (fs_status != OPENGATFS_STATUS_OK &&
-                fs_status != OPENGATFS_STATUS_NOT_FOUND) {
+            if (fs_status != OPENRFSFS_STATUS_OK &&
+                fs_status != OPENRFSFS_STATUS_NOT_FOUND) {
                 context->report->filesystem_status = fs_status;
                 status = PACKAGE_SERVICE_STATUS_CLEANUP;
                 goto release;
@@ -2451,13 +2451,13 @@ enum package_service_status package_service_recover(
         return PACKAGE_SERVICE_STATUS_NULL_ARGUMENT;
     }
     zero_bytes(report, sizeof(*report));
-    report->filesystem_status = OPENGATFS_STATUS_OK;
+    report->filesystem_status = OPENRFSFS_STATUS_OK;
     report->state_status = PACKAGE_STATE_STATUS_OK;
     if (servicing) {
         report->status = PACKAGE_SERVICE_STATUS_BUSY;
         return report->status;
     }
-    struct opengatfs_drive_info drive = opengatfs_drive(OPENGATFS_VOLUME_DATA);
+    struct openrfsfs_drive_info drive = openrfsfs_drive(OPENRFSFS_VOLUME_DATA);
     if (!drive.present || !drive.mounted || !drive.healthy ||
         !heap_is_active()) {
         report->status = PACKAGE_SERVICE_STATUS_UNAVAILABLE;
@@ -2501,13 +2501,13 @@ enum package_service_status package_service_snapshot(
     }
     *output_bytes = 0U;
     zero_bytes(report, sizeof(*report));
-    report->filesystem_status = OPENGATFS_STATUS_OK;
+    report->filesystem_status = OPENRFSFS_STATUS_OK;
     report->state_status = PACKAGE_STATE_STATUS_OK;
     if (servicing) {
         report->status = PACKAGE_SERVICE_STATUS_BUSY;
         return report->status;
     }
-    struct opengatfs_drive_info drive = opengatfs_drive(OPENGATFS_VOLUME_DATA);
+    struct openrfsfs_drive_info drive = openrfsfs_drive(OPENRFSFS_VOLUME_DATA);
     if (!drive.present || !drive.mounted || !drive.healthy ||
         !heap_is_active()) {
         report->status = PACKAGE_SERVICE_STATUS_UNAVAILABLE;
@@ -2538,7 +2538,7 @@ enum package_service_status package_service_snapshot(
             PACKAGE_SERVICE_STATUS_RESOURCE : PACKAGE_SERVICE_STATUS_STATE;
         goto release;
     }
-    char path[OPENGATFS_MAX_PATH];
+    char path[OPENRFSFS_MAX_PATH];
     if (!generation_path(authority_view.generation,
             GENERATION_DATABASE_SUFFIX, path)) {
         status = PACKAGE_SERVICE_STATUS_NAMESPACE;
@@ -2603,13 +2603,13 @@ enum package_service_status package_service_repair_snapshot(
     }
     *output_bytes = 0U;
     zero_bytes(report, sizeof(*report));
-    report->filesystem_status = OPENGATFS_STATUS_OK;
+    report->filesystem_status = OPENRFSFS_STATUS_OK;
     report->state_status = PACKAGE_STATE_STATUS_OK;
     if (servicing) {
         report->status = PACKAGE_SERVICE_STATUS_BUSY;
         return report->status;
     }
-    struct opengatfs_drive_info drive = opengatfs_drive(OPENGATFS_VOLUME_DATA);
+    struct openrfsfs_drive_info drive = openrfsfs_drive(OPENRFSFS_VOLUME_DATA);
     if (!drive.present || !drive.mounted || !drive.healthy ||
         !heap_is_active()) {
         report->status = PACKAGE_SERVICE_STATUS_UNAVAILABLE;
@@ -2643,7 +2643,7 @@ enum package_service_status package_service_repair_snapshot(
             PACKAGE_SERVICE_STATUS_RESOURCE : PACKAGE_SERVICE_STATUS_STATE;
         goto release;
     }
-    char path[OPENGATFS_MAX_PATH];
+    char path[OPENRFSFS_MAX_PATH];
     if (!generation_path(authority_view.generation,
             GENERATION_DATABASE_SUFFIX, path)) {
         status = PACKAGE_SERVICE_STATUS_NAMESPACE;
@@ -2705,13 +2705,13 @@ enum package_service_status package_service_repository_floor_read(
     }
     *repository_floor = 0U;
     zero_bytes(report, sizeof(*report));
-    report->filesystem_status = OPENGATFS_STATUS_OK;
+    report->filesystem_status = OPENRFSFS_STATUS_OK;
     report->state_status = PACKAGE_STATE_STATUS_OK;
     if (servicing) {
         report->status = PACKAGE_SERVICE_STATUS_BUSY;
         return report->status;
     }
-    struct opengatfs_drive_info drive = opengatfs_drive(OPENGATFS_VOLUME_DATA);
+    struct openrfsfs_drive_info drive = openrfsfs_drive(OPENRFSFS_VOLUME_DATA);
     if (!drive.present || !drive.mounted || !drive.healthy ||
         !heap_is_active()) {
         report->status = PACKAGE_SERVICE_STATUS_UNAVAILABLE;
@@ -2745,13 +2745,13 @@ enum package_service_status package_service_repository_floor_advance(
         return PACKAGE_SERVICE_STATUS_NULL_ARGUMENT;
     }
     zero_bytes(report, sizeof(*report));
-    report->filesystem_status = OPENGATFS_STATUS_OK;
+    report->filesystem_status = OPENRFSFS_STATUS_OK;
     report->state_status = PACKAGE_STATE_STATUS_OK;
     if (servicing) {
         report->status = PACKAGE_SERVICE_STATUS_BUSY;
         return report->status;
     }
-    struct opengatfs_drive_info drive = opengatfs_drive(OPENGATFS_VOLUME_DATA);
+    struct openrfsfs_drive_info drive = openrfsfs_drive(OPENRFSFS_VOLUME_DATA);
     if (!drive.present || !drive.mounted || !drive.healthy || drive.read_only ||
         !heap_is_active()) {
         report->status = PACKAGE_SERVICE_STATUS_UNAVAILABLE;
@@ -2781,13 +2781,13 @@ enum package_service_status package_service_prepare(
         return PACKAGE_SERVICE_STATUS_NULL_ARGUMENT;
     }
     zero_bytes(report, sizeof(*report));
-    report->filesystem_status = OPENGATFS_STATUS_OK;
+    report->filesystem_status = OPENRFSFS_STATUS_OK;
     report->state_status = PACKAGE_STATE_STATUS_OK;
     if (servicing) {
         report->status = PACKAGE_SERVICE_STATUS_BUSY;
         return report->status;
     }
-    struct opengatfs_drive_info drive = opengatfs_drive(OPENGATFS_VOLUME_DATA);
+    struct openrfsfs_drive_info drive = openrfsfs_drive(OPENRFSFS_VOLUME_DATA);
     if (!drive.present || !drive.mounted || !drive.healthy || drive.read_only ||
         !heap_is_active()) {
         report->status = PACKAGE_SERVICE_STATUS_UNAVAILABLE;
@@ -2822,13 +2822,13 @@ enum package_service_status package_service_bootstrap(
         return PACKAGE_SERVICE_STATUS_NULL_ARGUMENT;
     }
     zero_bytes(report, sizeof(*report));
-    report->filesystem_status = OPENGATFS_STATUS_OK;
+    report->filesystem_status = OPENRFSFS_STATUS_OK;
     report->state_status = PACKAGE_STATE_STATUS_OK;
     if (servicing) {
         report->status = PACKAGE_SERVICE_STATUS_BUSY;
         return report->status;
     }
-    struct opengatfs_drive_info drive = opengatfs_drive(OPENGATFS_VOLUME_DATA);
+    struct openrfsfs_drive_info drive = openrfsfs_drive(OPENRFSFS_VOLUME_DATA);
     if (!drive.present || !drive.mounted || !drive.healthy || drive.read_only ||
         !heap_is_active()) {
         report->status = PACKAGE_SERVICE_STATUS_UNAVAILABLE;
@@ -2862,13 +2862,13 @@ enum package_service_status package_service_commit(
         return PACKAGE_SERVICE_STATUS_NULL_ARGUMENT;
     }
     zero_bytes(report, sizeof(*report));
-    report->filesystem_status = OPENGATFS_STATUS_OK;
+    report->filesystem_status = OPENRFSFS_STATUS_OK;
     report->state_status = PACKAGE_STATE_STATUS_OK;
     if (servicing) {
         report->status = PACKAGE_SERVICE_STATUS_BUSY;
         return report->status;
     }
-    struct opengatfs_drive_info drive = opengatfs_drive(OPENGATFS_VOLUME_DATA);
+    struct openrfsfs_drive_info drive = openrfsfs_drive(OPENRFSFS_VOLUME_DATA);
     if (!drive.present || !drive.mounted || !drive.healthy || drive.read_only ||
         !heap_is_active()) {
         report->status = PACKAGE_SERVICE_STATUS_UNAVAILABLE;

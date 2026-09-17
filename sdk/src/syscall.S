@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 .section .text, "ax", @progbits
-.macro OPENGAT_STUB name, count
+.macro OPENRFS_STUB name, count
 .global \name
 .type \name, @function
 \name:
@@ -27,11 +27,11 @@
     ret
 .size \name, . - \name
 .endm
-OPENGAT_STUB opengat_syscall0, 0
-OPENGAT_STUB opengat_syscall1, 1
-OPENGAT_STUB opengat_syscall2, 2
-OPENGAT_STUB opengat_syscall3, 3
-OPENGAT_STUB opengat_syscall4, 4
-OPENGAT_STUB opengat_syscall5, 5
-OPENGAT_STUB opengat_syscall6, 6
+OPENRFS_STUB openrfs_syscall0, 0
+OPENRFS_STUB openrfs_syscall1, 1
+OPENRFS_STUB openrfs_syscall2, 2
+OPENRFS_STUB openrfs_syscall3, 3
+OPENRFS_STUB openrfs_syscall4, 4
+OPENRFS_STUB openrfs_syscall5, 5
+OPENRFS_STUB openrfs_syscall6, 6
 .section .note.GNU-stack, "", @progbits

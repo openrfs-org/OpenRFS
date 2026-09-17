@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef OPENGAT_PTHREAD_H
-#define OPENGAT_PTHREAD_H
+#ifndef OPENRFS_PTHREAD_H
+#define OPENRFS_PTHREAD_H
 
 #include <stdint.h>
 
