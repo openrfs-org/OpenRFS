@@ -221,7 +221,7 @@ static void command_help(void)
     console_write("  pci       every function enumeration found\n");
     console_write("  keys      keyboard counters\n");
     console_write("  threads   scheduler counters\n");
-    console_write("  ledger    typed boot record\n");
+    console_write("  ledger    inspect the BT11 typed boot record\n");
     console_write("  version   what this is\n");
 }
 
@@ -1066,11 +1066,11 @@ static void command_ledger(void)
     const struct boot_ledger *ledger = boot_ledger_installed();
 
     if (ledger == NULL || !ledger->executed) {
-        console_write("boot ledger :: unavailable\n");
+        console_write("BT11 boot ledger :: unavailable\n");
         return;
     }
 
-    console_write("boot ledger :: ");
+    console_write("BT11 boot ledger :: ");
     console_write(ledger->degraded ? "DEGRADED" : "PASS");
     console_putc('\n');
     console_write("plan ");

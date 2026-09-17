@@ -153,9 +153,9 @@
 
 <h2 id="architecture" align="center"><samp>Architecture</samp></h2>
 
-<p align="center"><samp>The kernel uses explicit initialization stages and publishes a boot ledger after required foundations are installed.</samp></p>
+<p align="center"><samp>The kernel uses explicit initialization stages and publishes the project-owned BT11 boot ledger after required foundations are installed.</samp></p>
 
-<p align="center"><samp>Boot stages validate their prerequisites before use. Tests inspect the resulting ledger rather than assuming that a printed message proves a subsystem is usable.</samp></p>
+<p align="center"><samp>Boot stages validate their prerequisites before use. Tests inspect the resulting BT11 ledger rather than assuming that a printed message proves a subsystem is usable.</samp></p>
 
 <p align="center"><samp>Project Rust code owns parsers and checked transformations where untrusted bytes cross into typed state. C code owns low-level kernel integration, hardware control, scheduling, and the native syscall boundary. Assembly is limited to architecture entry, context, and boot responsibilities.</samp></p>
 

@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 
 
-PROOF_LINE = b"OpenRFS: Boot Ledger installed proof passed"
+PROOF_LINE = b"OpenRFS: BT11 Boot Ledger installed proof passed"
 USERLAND_LINES = {
     "uname": b"RW USERLAND launch completed successfully uname ordinal 1",
     "cat": b"RW USERLAND launch completed successfully cat ordinal 1",
