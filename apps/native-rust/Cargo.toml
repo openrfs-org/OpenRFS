@@ -1,11 +1,11 @@
 [package]
-name = "opengat-native-rust-proof"
+name = "openrfs-native-rust-proof"
 version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-only"
 
 [dependencies]
-opengat = { path = "../../rust/opengat" }
+openrfs = { path = "../../rust/openrfs" }
 
 [profile.release]
 codegen-units = 1

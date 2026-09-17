@@ -1,20 +1,20 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 
-# SDL 2 on OpenGAT
+# SDL 2 on OpenRFS
 
-OpenGAT carries the official SDL 2.32.10 source and a first-class `__OPENGAT__`
+OpenRFS carries the official SDL 2.32.10 source and a first-class `__OPENRFS__`
 platform backend. It is built reproducibly into the SDK as `libSDL2.a`; public
 headers are installed under `include/SDL2`. Applications include `SDL.h` with
 that directory on their include path and explicitly link the static library.
 
 The backend is not a Linux compatibility shim and does not use SDL's dummy
-video or audio drivers. OpenGAT owns the window surface and receives bounded
+video or audio drivers. OpenRFS owns the window surface and receives bounded
 damage rectangles through the public native window ABI. Input becomes normal
-SDL keyboard, text, pointer, focus, and quit events. Event waits use OpenGAT's
+SDL keyboard, text, pointer, focus, and quit events. Event waits use OpenRFS's
 public multi-handle wait call, while a native timer handle implements SDL's
 wakeup hook without polling.
 
-Audio opens OpenGAT's public PCM service and submits ordinary SDL mixed buffers.
+Audio opens OpenRFS's public PCM service and submits ordinary SDL mixed buffers.
 The accepted profile is 48 kHz, stereo S16 with a bounded 1,024-frame period.
 Capture audio is not supported. Threads use SDK pthreads plus the public futex
 syscalls for SDL synchronization. The monotonic clock backs ticks, performance
@@ -30,7 +30,7 @@ namespace mapping, not an authentication primitive.
 
 The initial port disables dynamic object loading, HIDAPI, haptics, joysticks,
 sensors, capture audio, OpenGL, Vulkan, and hardware render drivers. Thread
-detach blocks until join because OpenGAT ABI v1 cannot reclaim a detached native
+detach blocks until join because OpenRFS ABI v1 cannot reclaim a detached native
 thread safely. These are explicit compatibility gaps, not silent dummy-driver
 fallbacks.
 
@@ -42,14 +42,14 @@ WAV capture when QEMU exposes its WAV backend.
 
 The signed-package lifecycle separately carries SDL's byte-exact upstream
 `testdrawchessboard.c` application from the pinned 2.32.10 release. A small
-OpenGAT harness runs its original event and software-render loop for eight
+OpenRFS harness runs its original event and software-render loop for eight
 bounded frames, writes an exact receipt through `SDL_GetPrefPath()` and
 `SDL_RWops`, synchronizes Data, and exits. The application is downloaded over
 HTTPS, installed and updated as an authenticated package on journaled ext4,
 launched from the authority-selected generation after reboot, and checked for
 a clean process/window/file census and clean `e2fsck` result.
 
-The OpenGAT event pump treats the ABI's empty-queue `-EAGAIN` as normal after it
+The OpenRFS event pump treats the ABI's empty-queue `-EAGAIN` as normal after it
 has drained all pending events. The proof moves the deterministic initial PS/2
 cursor into the SDL client before clicking, so both keyboard and pointer paths
 are observed rather than relying on an ambient host cursor position. Its WAV

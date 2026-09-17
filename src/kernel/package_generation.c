@@ -2,8 +2,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/package_generation.h>
-#include <opengat/package_state.h>
+#include <openrfs/package_generation.h>
+#include <openrfs/package_state.h>
 
 static void clear_bytes(uint8_t *destination, size_t count)
 {
@@ -221,7 +221,7 @@ enum package_state_status package_generation_encode(
 )
 {
     static const uint8_t magic[8] = {
-        'O', 'G', 'T', 'D', 'B', '0', '0', '1'
+        'O', 'R', 'F', 'S', 'D', 'B', '0', '1'
     };
     static const uint8_t architecture[16] = {
         'x', '8', '6', '_', '6', '4', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0

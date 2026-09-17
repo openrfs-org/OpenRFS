@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef OPENGAT_STDIO_H
-#define OPENGAT_STDIO_H
+#ifndef OPENRFS_STDIO_H
+#define OPENRFS_STDIO_H
 
 #include <stdarg.h>
 #include <stddef.h>
@@ -18,7 +18,7 @@
 #define _IOFBF 2
 
 typedef int64_t fpos_t;
-typedef struct opengat_FILE FILE;
+typedef struct openrfs_FILE FILE;
 
 extern FILE *stdin;
 extern FILE *stdout;

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef OPENGAT_SYS_STAT_H
-#define OPENGAT_SYS_STAT_H
+#ifndef OPENRFS_SYS_STAT_H
+#define OPENRFS_SYS_STAT_H
 
 #include <stdint.h>
 typedef uint32_t mode_t;

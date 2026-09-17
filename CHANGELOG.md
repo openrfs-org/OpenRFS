@@ -5,11 +5,11 @@
 ## Unreleased
 
 - Renamed the operating system, public interfaces, SDK, tools, packages,
-  workflows, and documentation to OpenGAT.
-- Changed normal boot to clear the display and stop at the bare `opengat$` command prompt.
+  workflows, and documentation to OpenRFS.
+- Changed normal boot to clear the display and stop at the bare `openrfs$` command prompt.
 - Added persistent first-user creation and authenticated `starty` desktop
   launch.
-- Replaced the visual identity with the supplied OpenGAT G mark, a restrained
+- Replaced the visual identity with the supplied OpenRFS G mark, a restrained
   grey wallpaper, and a matching desktop palette.
 
 ## 2.2.0

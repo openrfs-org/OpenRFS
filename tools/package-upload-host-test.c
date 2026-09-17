@@ -5,9 +5,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <opengat/fat32_fs.h>
-#include <opengat/package_state.h>
-#include <opengat/package_upload.h>
+#include <openrfs/fat32_fs.h>
+#include <openrfs/package_state.h>
+#include <openrfs/package_upload.h>
 
 #define MOCK_FILE_BYTES (256U * 1024U)
 #define NO_WRITE_FAILURE SIZE_MAX
@@ -54,156 +54,156 @@ static int path_index(const char *path)
     return path[at] - '0';
 }
 
-enum opengatfs_status opengatfs_mkdir(enum opengatfs_volume volume, const char *path)
+enum openrfsfs_status openrfsfs_mkdir(enum openrfsfs_volume volume, const char *path)
 {
-    if (volume != OPENGATFS_VOLUME_DATA || path == NULL) {
-        return OPENGATFS_STATUS_INVALID_ARGUMENT;
+    if (volume != OPENRFSFS_VOLUME_DATA || path == NULL) {
+        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
     }
     if (path[0] != 'p' || path[1] != 'k' || path[2] != 'g') {
-        return OPENGATFS_STATUS_PATH;
+        return OPENRFSFS_STATUS_PATH;
     }
     if (directory_present) {
-        return OPENGATFS_STATUS_EXISTS;
+        return OPENRFSFS_STATUS_EXISTS;
     }
     directory_present = true;
-    return OPENGATFS_STATUS_OK;
+    return OPENRFSFS_STATUS_OK;
 }
 
-enum opengatfs_status opengatfs_unlink(enum opengatfs_volume volume, const char *path)
+enum openrfsfs_status openrfsfs_unlink(enum openrfsfs_volume volume, const char *path)
 {
     int index = path_index(path);
 
-    if (volume != OPENGATFS_VOLUME_DATA || index < 0) {
-        return OPENGATFS_STATUS_INVALID_ARGUMENT;
+    if (volume != OPENRFSFS_VOLUME_DATA || index < 0) {
+        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
     }
     if (!files[index].present) {
-        return OPENGATFS_STATUS_NOT_FOUND;
+        return OPENRFSFS_STATUS_NOT_FOUND;
     }
     if (fail_next_unlink) {
         fail_next_unlink = false;
-        return OPENGATFS_STATUS_IO;
+        return OPENRFSFS_STATUS_IO;
     }
     if (files[index].open) {
-        return OPENGATFS_STATUS_BUSY;
+        return OPENRFSFS_STATUS_BUSY;
     }
     files[index].present = false;
     files[index].size = 0U;
     files[index].offset = 0U;
     ++unlink_count;
-    return OPENGATFS_STATUS_OK;
+    return OPENRFSFS_STATUS_OK;
 }
 
-enum opengatfs_status opengatfs_stat_path(enum opengatfs_volume volume,
-    const char *path, struct opengatfs_stat *stat)
+enum openrfsfs_status openrfsfs_stat_path(enum openrfsfs_volume volume,
+    const char *path, struct openrfsfs_stat *stat)
 {
     int index = path_index(path);
 
-    if (volume != OPENGATFS_VOLUME_DATA || index < 0 || stat == NULL) {
-        return OPENGATFS_STATUS_INVALID_ARGUMENT;
+    if (volume != OPENRFSFS_VOLUME_DATA || index < 0 || stat == NULL) {
+        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
     }
     if (!files[index].present) {
-        return OPENGATFS_STATUS_NOT_FOUND;
+        return OPENRFSFS_STATUS_NOT_FOUND;
     }
-    *stat = (struct opengatfs_stat){
+    *stat = (struct openrfsfs_stat){
         .size = files[index].size,
         .directory = false
     };
-    return OPENGATFS_STATUS_OK;
+    return OPENRFSFS_STATUS_OK;
 }
 
-enum opengatfs_status opengatfs_truncate(enum opengatfs_volume volume,
+enum openrfsfs_status openrfsfs_truncate(enum openrfsfs_volume volume,
     const char *path, uint64_t size)
 {
     int index = path_index(path);
 
-    if (volume != OPENGATFS_VOLUME_DATA || index < 0 ||
+    if (volume != OPENRFSFS_VOLUME_DATA || index < 0 ||
             size > MOCK_FILE_BYTES) {
-        return OPENGATFS_STATUS_INVALID_ARGUMENT;
+        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
     }
     if (!files[index].present) {
-        return OPENGATFS_STATUS_NOT_FOUND;
+        return OPENRFSFS_STATUS_NOT_FOUND;
     }
     if (files[index].open) {
-        return OPENGATFS_STATUS_BUSY;
+        return OPENRFSFS_STATUS_BUSY;
     }
     files[index].size = (size_t)size;
     if (files[index].offset > files[index].size) {
         files[index].offset = files[index].size;
     }
     ++truncate_count;
-    return OPENGATFS_STATUS_OK;
+    return OPENRFSFS_STATUS_OK;
 }
 
-enum opengatfs_status opengatfs_sync(enum opengatfs_volume volume)
+enum openrfsfs_status openrfsfs_sync(enum openrfsfs_volume volume)
 {
-    if (volume != OPENGATFS_VOLUME_DATA) {
-        return OPENGATFS_STATUS_INVALID_ARGUMENT;
+    if (volume != OPENRFSFS_VOLUME_DATA) {
+        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
     }
     ++sync_count;
     if (fail_next_sync) {
         fail_next_sync = false;
-        return OPENGATFS_STATUS_IO;
+        return OPENRFSFS_STATUS_IO;
     }
-    return OPENGATFS_STATUS_OK;
+    return OPENRFSFS_STATUS_OK;
 }
 
-enum opengatfs_status opengatfs_create(enum opengatfs_volume volume, const char *path)
+enum openrfsfs_status openrfsfs_create(enum openrfsfs_volume volume, const char *path)
 {
     int index = path_index(path);
 
-    if (volume != OPENGATFS_VOLUME_DATA || index < 0 || !directory_present) {
-        return OPENGATFS_STATUS_INVALID_ARGUMENT;
+    if (volume != OPENRFSFS_VOLUME_DATA || index < 0 || !directory_present) {
+        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
     }
     if (files[index].present) {
-        return OPENGATFS_STATUS_EXISTS;
+        return OPENRFSFS_STATUS_EXISTS;
     }
     files[index] = (struct mock_file){0};
     files[index].present = true;
-    return OPENGATFS_STATUS_OK;
+    return OPENRFSFS_STATUS_OK;
 }
 
-enum opengatfs_status opengatfs_open(
-    enum opengatfs_volume volume,
+enum openrfsfs_status openrfsfs_open(
+    enum openrfsfs_volume volume,
     const char *path,
-    enum opengatfs_access access,
-    opengatfs_handle *handle
+    enum openrfsfs_access access,
+    openrfsfs_handle *handle
 )
 {
     int index = path_index(path);
 
-    if (volume != OPENGATFS_VOLUME_DATA || index < 0 || handle == NULL ||
-        (access != OPENGATFS_ACCESS_READ && access != OPENGATFS_ACCESS_WRITE)) {
-        return OPENGATFS_STATUS_INVALID_ARGUMENT;
+    if (volume != OPENRFSFS_VOLUME_DATA || index < 0 || handle == NULL ||
+        (access != OPENRFSFS_ACCESS_READ && access != OPENRFSFS_ACCESS_WRITE)) {
+        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
     }
     *handle = 0U;
     if (fail_next_open) {
         fail_next_open = false;
-        return OPENGATFS_STATUS_IO;
+        return OPENRFSFS_STATUS_IO;
     }
     if (!files[index].present) {
-        return OPENGATFS_STATUS_NOT_FOUND;
+        return OPENRFSFS_STATUS_NOT_FOUND;
     }
     if (files[index].open) {
-        return OPENGATFS_STATUS_BUSY;
+        return OPENRFSFS_STATUS_BUSY;
     }
     files[index].open = true;
-    files[index].offset = access == OPENGATFS_ACCESS_WRITE ? files[index].size : 0U;
-    *handle = (opengatfs_handle)(index + 1);
-    return OPENGATFS_STATUS_OK;
+    files[index].offset = access == OPENRFSFS_ACCESS_WRITE ? files[index].size : 0U;
+    *handle = (openrfsfs_handle)(index + 1);
+    return OPENRFSFS_STATUS_OK;
 }
 
-enum opengatfs_status opengatfs_close(opengatfs_handle handle)
+enum openrfsfs_status openrfsfs_close(openrfsfs_handle handle)
 {
     if (handle == 0U || handle > PACKAGE_UPLOAD_SLOT_LIMIT ||
         !files[handle - 1U].open) {
-        return OPENGATFS_STATUS_STALE_HANDLE;
+        return OPENRFSFS_STATUS_STALE_HANDLE;
     }
     files[handle - 1U].open = false;
-    return OPENGATFS_STATUS_OK;
+    return OPENRFSFS_STATUS_OK;
 }
 
-enum opengatfs_status opengatfs_write(
-    opengatfs_handle handle,
+enum openrfsfs_status openrfsfs_write(
+    openrfsfs_handle handle,
     const uint8_t *source,
     size_t source_bytes,
     size_t *written_bytes
@@ -212,20 +212,20 @@ enum opengatfs_status opengatfs_write(
     if (written_bytes == NULL || handle == 0U ||
         handle > PACKAGE_UPLOAD_SLOT_LIMIT || !files[handle - 1U].open ||
         (source == NULL && source_bytes != 0U)) {
-        return OPENGATFS_STATUS_INVALID_ARGUMENT;
+        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
     }
     struct mock_file *file = &files[handle - 1U];
     size_t allowed = source_bytes;
 
     *written_bytes = 0U;
     if (file->offset >= write_failure_at) {
-        return OPENGATFS_STATUS_IO;
+        return OPENRFSFS_STATUS_IO;
     }
     if (allowed > write_failure_at - file->offset) {
         allowed = write_failure_at - file->offset;
     }
     if (allowed > MOCK_FILE_BYTES - file->offset) {
-        return OPENGATFS_STATUS_FULL;
+        return OPENRFSFS_STATUS_FULL;
     }
     for (size_t index = 0U; index < allowed; ++index) {
         file->bytes[file->offset + index] = source[index];
@@ -235,11 +235,11 @@ enum opengatfs_status opengatfs_write(
         file->size = file->offset;
     }
     *written_bytes = allowed;
-    return allowed == source_bytes ? OPENGATFS_STATUS_OK : OPENGATFS_STATUS_IO;
+    return allowed == source_bytes ? OPENRFSFS_STATUS_OK : OPENRFSFS_STATUS_IO;
 }
 
-enum opengatfs_status opengatfs_pread(
-    opengatfs_handle handle,
+enum openrfsfs_status openrfsfs_pread(
+    openrfsfs_handle handle,
     uint8_t *destination,
     size_t capacity,
     uint64_t offset,
@@ -249,7 +249,7 @@ enum opengatfs_status opengatfs_pread(
     if (read_bytes == NULL || handle == 0U ||
         handle > PACKAGE_UPLOAD_SLOT_LIMIT || !files[handle - 1U].open ||
         (destination == NULL && capacity != 0U)) {
-        return OPENGATFS_STATUS_INVALID_ARGUMENT;
+        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
     }
     struct mock_file *file = &files[handle - 1U];
     size_t available = offset < file->size ? file->size - (size_t)offset : 0U;
@@ -261,7 +261,7 @@ enum opengatfs_status opengatfs_pread(
         destination[index] = file->bytes[(size_t)offset + index];
     }
     *read_bytes = capacity;
-    return OPENGATFS_STATUS_OK;
+    return OPENRFSFS_STATUS_OK;
 }
 
 static int initialize_test(void)

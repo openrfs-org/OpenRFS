@@ -1,5 +1,5 @@
 {
-  "name": "OpenGAT Native Network Client",
+  "name": "OpenRFS Native Network Client",
   "identifier": "NETAPP",
   "executable": "NETAPP.APP",
   "data_namespace": "NETAPP",
@@ -13,5 +13,5 @@
     "time",
     "network"
   ],
-  "arguments": ["http://opengat.test/welcome.txt"]
+  "arguments": ["http://openrfs.test/welcome.txt"]
 }

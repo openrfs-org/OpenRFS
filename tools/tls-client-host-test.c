@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #define _GNU_SOURCE
-#include <opengat/tls.h>
+#include <openrfs/tls.h>
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -14,8 +14,8 @@
 #include <sys/time.h>
 #include <unistd.h>
 
-#include <opengat/network.h>
-#include <opengat/runtime.h>
+#include <openrfs/network.h>
+#include <openrfs/runtime.h>
 
 #define TEST_DEADLINE_NS UINT64_C(3000000000)
 #define TEST_DN_BYTES 256U
@@ -24,17 +24,17 @@
 /* The host adapter intentionally uses the kernel ABI declarations from
  * include/ while host libc remains ahead of the freestanding SDK headers.
  * Declare the SDK transport entry points that this translation unit mocks. */
-long opengat_dns_resolve(const char *hostname, uint64_t deadline_ns);
-long opengat_stream_open(void);
-long opengat_stream_connect(opengat_handle_t stream,
-    const struct opengat_ipv4_endpoint *endpoint, uint64_t deadline_ns);
-long opengat_stream_read(opengat_handle_t stream, void *buffer, size_t length,
+long openrfs_dns_resolve(const char *hostname, uint64_t deadline_ns);
+long openrfs_stream_open(void);
+long openrfs_stream_connect(openrfs_handle_t stream,
+    const struct openrfs_ipv4_endpoint *endpoint, uint64_t deadline_ns);
+long openrfs_stream_read(openrfs_handle_t stream, void *buffer, size_t length,
     uint64_t deadline_ns);
-long opengat_stream_write(opengat_handle_t stream, const void *buffer,
+long openrfs_stream_write(openrfs_handle_t stream, const void *buffer,
     size_t length, uint64_t deadline_ns);
-long opengat_stream_shutdown(opengat_handle_t stream, uint32_t flags,
+long openrfs_stream_shutdown(openrfs_handle_t stream, uint32_t flags,
     uint64_t deadline_ns);
-long opengat_network_cancel(opengat_handle_t handle);
+long openrfs_network_cancel(openrfs_handle_t handle);
 
 static uint16_t peer_port;
 
@@ -79,17 +79,17 @@ static int wait_fd(int descriptor, short events, uint64_t deadline_ns)
     }
 }
 
-uint64_t opengat_monotonic_ns(void)
+uint64_t openrfs_monotonic_ns(void)
 {
     return host_now_ns();
 }
 
-long opengat_realtime_seconds(void)
+long openrfs_realtime_seconds(void)
 {
     return 1788177600L;
 }
 
-long opengat_random(void *buffer, size_t length)
+long openrfs_random(void *buffer, size_t length)
 {
     uint8_t *bytes = buffer;
 
@@ -102,24 +102,24 @@ long opengat_random(void *buffer, size_t length)
     return (long)length;
 }
 
-long opengat_random_strong(void *buffer, size_t length)
+long openrfs_random_strong(void *buffer, size_t length)
 {
-    return opengat_random(buffer, length);
+    return openrfs_random(buffer, length);
 }
 
-long opengat_dns_resolve(const char *hostname, uint64_t deadline_ns)
+long openrfs_dns_resolve(const char *hostname, uint64_t deadline_ns)
 {
     (void)deadline_ns;
     return hostname != NULL && hostname[0] != '\0' ? INT64_C(0x7f000001) : -1;
 }
 
-long opengat_stream_open(void)
+long openrfs_stream_open(void)
 {
     return socket(AF_INET, SOCK_STREAM, 0);
 }
 
-long opengat_stream_connect(opengat_handle_t stream,
-    const struct opengat_ipv4_endpoint *endpoint, uint64_t deadline_ns)
+long openrfs_stream_connect(openrfs_handle_t stream,
+    const struct openrfs_ipv4_endpoint *endpoint, uint64_t deadline_ns)
 {
     const int descriptor = (int)stream;
     struct sockaddr_in address = {0};
@@ -135,7 +135,7 @@ long opengat_stream_connect(opengat_handle_t stream,
         sizeof(address));
 }
 
-long opengat_stream_read(opengat_handle_t stream, void *buffer, size_t length,
+long openrfs_stream_read(openrfs_handle_t stream, void *buffer, size_t length,
     uint64_t deadline_ns)
 {
     const int descriptor = (int)stream;
@@ -151,7 +151,7 @@ long opengat_stream_read(opengat_handle_t stream, void *buffer, size_t length,
     return count > 0 ? (long)count : -1;
 }
 
-long opengat_stream_write(opengat_handle_t stream, const void *buffer,
+long openrfs_stream_write(openrfs_handle_t stream, const void *buffer,
     size_t length, uint64_t deadline_ns)
 {
     const int descriptor = (int)stream;
@@ -167,7 +167,7 @@ long opengat_stream_write(opengat_handle_t stream, const void *buffer,
     return count > 0 ? (long)count : -1;
 }
 
-long opengat_stream_shutdown(opengat_handle_t stream, uint32_t flags,
+long openrfs_stream_shutdown(openrfs_handle_t stream, uint32_t flags,
     uint64_t deadline_ns)
 {
     (void)flags;
@@ -175,12 +175,12 @@ long opengat_stream_shutdown(opengat_handle_t stream, uint32_t flags,
     return shutdown((int)stream, SHUT_RDWR);
 }
 
-long opengat_network_cancel(opengat_handle_t handle)
+long openrfs_network_cancel(openrfs_handle_t handle)
 {
     return shutdown((int)handle, SHUT_RDWR);
 }
 
-long opengat_handle_close(opengat_handle_t handle)
+long openrfs_handle_close(openrfs_handle_t handle)
 {
     return close((int)handle);
 }
@@ -264,9 +264,9 @@ int main(int argc, char **argv)
     uint8_t modulus[TEST_RSA_BYTES];
     uint8_t exponent[8];
     br_x509_trust_anchor anchor;
-    struct opengat_tls_client *client = NULL;
-    struct opengat_tls_client_config config;
-    enum opengat_tls_status status;
+    struct openrfs_tls_client *client = NULL;
+    struct openrfs_tls_client_config config;
+    enum openrfs_tls_status status;
     char response[2];
     char *end = NULL;
     unsigned long port;
@@ -283,33 +283,33 @@ int main(int argc, char **argv)
     }
     peer_port = (uint16_t)port;
     expected = strtoul(argv[4], &end, 10);
-    if (end == NULL || *end != '\0' || expected > OPENGAT_TLS_CLOSE) {
+    if (end == NULL || *end != '\0' || expected > OPENRFS_TLS_CLOSE) {
         return 2;
     }
     deadline = host_now_ns() + TEST_DEADLINE_NS;
-    config = (struct opengat_tls_client_config){
+    config = (struct openrfs_tls_client_config){
         argv[3], peer_port, 0U, &anchor, 1U, deadline};
-    status = opengat_tls_client_open(&config, &client);
-    if (status != (enum opengat_tls_status)expected) {
+    status = openrfs_tls_client_open(&config, &client);
+    if (status != (enum openrfs_tls_status)expected) {
         fprintf(stderr, "TLS host test: expected %s, got %s\n",
-            opengat_tls_status_string((enum opengat_tls_status)expected),
-            opengat_tls_status_string(status));
+            openrfs_tls_status_string((enum openrfs_tls_status)expected),
+            openrfs_tls_status_string(status));
         if (client != NULL) {
-            (void)opengat_tls_client_close(client, deadline);
+            (void)openrfs_tls_client_close(client, deadline);
         }
         return 1;
     }
-    if (status != OPENGAT_TLS_OK) {
-        printf("TLS refusal: %s\n", opengat_tls_status_string(status));
+    if (status != OPENRFS_TLS_OK) {
+        printf("TLS refusal: %s\n", openrfs_tls_status_string(status));
         return 0;
     }
     if (strcmp(argv[5], "request") != 0 ||
-        opengat_tls_client_write(client, "GET / HTTP/1.0\r\n\r\n", 18U,
+        openrfs_tls_client_write(client, "GET / HTTP/1.0\r\n\r\n", 18U,
             deadline) != 18 ||
-        opengat_tls_client_flush(client, deadline) != OPENGAT_TLS_OK ||
-        opengat_tls_client_read(client, response, sizeof(response), deadline) !=
+        openrfs_tls_client_flush(client, deadline) != OPENRFS_TLS_OK ||
+        openrfs_tls_client_read(client, response, sizeof(response), deadline) !=
             (long)sizeof(response) || memcmp(response, "OK", 2U) != 0 ||
-        opengat_tls_client_close(client, deadline) != OPENGAT_TLS_OK) {
+        openrfs_tls_client_close(client, deadline) != OPENRFS_TLS_OK) {
         fputs("TLS host test: authenticated request/close failed\n", stderr);
         return 1;
     }

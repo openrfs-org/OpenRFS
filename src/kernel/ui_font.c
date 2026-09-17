@@ -3,8 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/surface.h>
-#include <opengat/ui_font.h>
+#include <openrfs/surface.h>
+#include <openrfs/ui_font.h>
 
 #define INTER_WIDTH 16U
 #define INTER_HEIGHT 19U
@@ -17,11 +17,11 @@
 #define INTER_DATA_LENGTH 28975U
 #define INTER_ASSET_LENGTH 28999U
 #define INTER_FINGERPRINT UINT64_C(0xD4CC40D8355E676C)
-#define LABEL_PIXEL_HASH UINT64_C(0x243B241CDCDAC313)
+#define LABEL_PIXEL_HASH UINT64_C(0xD67D99D15F981F46)
 
 static bool verified;
 static struct ui_font_metrics installed_metrics;
-static const char *self_test_failure = "OpenGAT UI font self-test not run";
+static const char *self_test_failure = "OpenRFS UI font self-test not run";
 
 static bool add_u32(uint32_t left, uint32_t right, uint32_t *sum)
 {
@@ -49,14 +49,14 @@ static bool metrics_are_inter(const struct ui_font_metrics *metrics)
 enum ui_font_status ui_font_initialize(void)
 {
     struct ui_font_metrics metrics;
-    const int32_t status = opengat_ui_font_geometry(&metrics);
+    const int32_t status = openrfs_ui_font_geometry(&metrics);
 
     if (status != UI_FONT_STATUS_OK) {
         return (enum ui_font_status)status;
     }
     if (!metrics_are_inter(&metrics) ||
-        opengat_ui_font_size() != INTER_ASSET_LENGTH ||
-        opengat_ui_font_fingerprint() != INTER_FINGERPRINT) {
+        openrfs_ui_font_size() != INTER_ASSET_LENGTH ||
+        openrfs_ui_font_fingerprint() != INTER_FINGERPRINT) {
         return UI_FONT_STATUS_BAD_METRICS;
     }
 
@@ -88,7 +88,7 @@ enum ui_font_status ui_font_text_width(const char *text, uint32_t *width)
 
     for (size_t index = 0U; text[index] != '\0'; ++index) {
         uint32_t advance;
-        const int32_t status = opengat_ui_font_glyph_advance(
+        const int32_t status = openrfs_ui_font_glyph_advance(
             (uint32_t)(unsigned char)text[index], &advance);
 
         if (status != UI_FONT_STATUS_OK) {
@@ -165,7 +165,7 @@ static enum ui_font_status draw_with_metrics(
 
     for (size_t index = 0U; text[index] != '\0'; ++index) {
         const uint32_t code = (uint32_t)(unsigned char)text[index];
-        const int32_t status = opengat_ui_font_glyph(code, bitmap,
+        const int32_t status = openrfs_ui_font_glyph(code, bitmap,
             sizeof(bitmap));
         uint32_t advance;
         int32_t advance_status;
@@ -173,7 +173,7 @@ static enum ui_font_status draw_with_metrics(
         if (status != UI_FONT_STATUS_OK) {
             return (enum ui_font_status)status;
         }
-        advance_status = opengat_ui_font_glyph_advance(code, &advance);
+        advance_status = openrfs_ui_font_glyph_advance(code, &advance);
         if (advance_status != UI_FONT_STATUS_OK) {
             return (enum ui_font_status)advance_status;
         }
@@ -318,23 +318,23 @@ bool ui_font_self_test(void)
     const struct surface_rect whole = { 0U, 0U, 96U, 19U };
     const struct surface_rect short_box = { 0U, 0U, 96U, 18U };
 
-    self_test_failure = "OpenGAT UI font self-test passed";
-    if (opengat_ui_font_self_test() != 1) {
+    self_test_failure = "OpenRFS UI font self-test passed";
+    if (openrfs_ui_font_self_test() != 1) {
         self_test_failure = "UI font bounded parser refusals are incomplete";
         return false;
     }
-    status = opengat_ui_font_geometry(&metrics);
+    status = openrfs_ui_font_geometry(&metrics);
     if (status != UI_FONT_STATUS_OK) {
         self_test_failure = ui_font_status_string((enum ui_font_status)status);
         return false;
     }
     if (!metrics_are_inter(&metrics) ||
-        opengat_ui_font_size() != INTER_ASSET_LENGTH ||
-        opengat_ui_font_fingerprint() != INTER_FINGERPRINT) {
+        openrfs_ui_font_size() != INTER_ASSET_LENGTH ||
+        openrfs_ui_font_fingerprint() != INTER_FINGERPRINT) {
         self_test_failure = "UI font pinned asset metrics or fingerprint changed";
         return false;
     }
-    if (draw_with_metrics(&metrics, &surface, whole, whole, 0U, 15U, "OPENGAT",
+    if (draw_with_metrics(&metrics, &surface, whole, whole, 0U, 15U, "OPENRFS",
             UINT32_C(0x00008E92), UI_FONT_STYLE_REGULAR, NULL) !=
                 UI_FONT_STATUS_OK ||
         pixel_hash(pixels, sizeof(pixels) / sizeof(pixels[0])) !=

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Checked, journaled ext4 operations over OpenGAT's native block boundary.
+//! Checked, journaled ext4 operations over OpenRFS's native block boundary.
 
 extern crate alloc;
 
@@ -137,7 +137,7 @@ struct BlockReadError;
 
 impl Display for BlockReadError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter.write_str("OpenGAT block read failed")
+        formatter.write_str("OpenRFS block read failed")
     }
 }
 
@@ -148,17 +148,17 @@ struct BlockStorageError;
 
 impl Display for BlockStorageError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter.write_str("OpenGAT block write or flush failed")
+        formatter.write_str("OpenRFS block write or flush failed")
     }
 }
 
 impl Error for BlockStorageError {}
 
-struct OpenGATOSReader {
+struct OpenRFSOSReader {
     context: usize,
 }
 
-impl Ext4Read for OpenGATOSReader {
+impl Ext4Read for OpenRFSOSReader {
     fn read(
         &self,
         start_byte: u64,
@@ -172,11 +172,11 @@ impl Ext4Read for OpenGATOSReader {
     }
 }
 
-struct OpenGATOSJournalStorage {
+struct OpenRFSOSJournalStorage {
     context: usize,
 }
 
-impl JournalStorage for OpenGATOSJournalStorage {
+impl JournalStorage for OpenRFSOSJournalStorage {
     type Error = BlockStorageError;
 
     fn write(&mut self, start_byte: u64, bytes: &[u8]) -> Result<(), Self::Error> {
@@ -208,7 +208,7 @@ fn execute_storage_plan(
     context: usize,
     operations: &[JournalCommitOperation],
 ) -> Result<(), Status> {
-    execute_commit_operations(&mut OpenGATOSJournalStorage { context }, operations).map_err(|error| {
+    execute_commit_operations(&mut OpenRFSOSJournalStorage { context }, operations).map_err(|error| {
         match error {
             JournalExecutionError::AddressOverflow => Status::Range,
             JournalExecutionError::Storage(_) => Status::Io,
@@ -222,7 +222,7 @@ fn load_staged_view(
     needs_recovery: bool,
 ) -> Result<(Ext4, Rc<JournalMutationStage>), Status> {
     let stage = Rc::new(
-        JournalMutationStage::new(Box::new(OpenGATOSReader { context }), image_bytes)
+        JournalMutationStage::new(Box::new(OpenRFSOSReader { context }), image_bytes)
             .map_err(|_| Status::Invalid)?,
     );
     let filesystem = if needs_recovery {
@@ -546,10 +546,10 @@ fn validate_namespace(filesystem: &Ext4) -> Result<(), Status> {
     Ok(())
 }
 
-/// Load and validate the exact OpenGAT ext4 profile and reachable namespace.
+/// Load and validate the exact OpenRFS ext4 profile and reachable namespace.
 pub(crate) fn mount(context: usize, media_bytes: u64) -> Result<(Box<Mounted>, Identity), Status> {
     let mut image_bytes = validate_profile(context, media_bytes)?;
-    let mut filesystem = Ext4::load(Box::new(OpenGATOSReader { context })).map_err(map_error)?;
+    let mut filesystem = Ext4::load(Box::new(OpenRFSOSReader { context })).map_err(map_error)?;
     let mut journal = load_journal_inode_map(&filesystem).map_err(map_journal_error)?;
     let mut recovery = RecoveryReport::default();
     let mut recovery_performed = 0u8;
@@ -559,7 +559,7 @@ pub(crate) fn mount(context: usize, media_bytes: u64) -> Result<(Box<Mounted>, I
         drop(journal);
         drop(filesystem);
         image_bytes = validate_profile(context, media_bytes)?;
-        filesystem = Ext4::load(Box::new(OpenGATOSReader { context })).map_err(map_error)?;
+        filesystem = Ext4::load(Box::new(OpenRFSOSReader { context })).map_err(map_error)?;
         journal = load_journal_inode_map(&filesystem).map_err(map_journal_error)?;
         if journal.filesystem_needs_recovery() {
             return Err(Status::Invalid);
@@ -568,7 +568,7 @@ pub(crate) fn mount(context: usize, media_bytes: u64) -> Result<(Box<Mounted>, I
     drop(journal);
     drop(filesystem);
     let stage = Rc::new(
-        JournalMutationStage::new(Box::new(OpenGATOSReader { context }), image_bytes)
+        JournalMutationStage::new(Box::new(OpenRFSOSReader { context }), image_bytes)
             .map_err(|_| Status::Invalid)?,
     );
     let filesystem = Ext4::load_with_writer(Box::new(stage.clone()), Some(Box::new(stage.clone())))

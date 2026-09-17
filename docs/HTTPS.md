@@ -2,17 +2,17 @@
 
 # Bounded native HTTPS profile
 
-`opengat_https_get()` and `opengat_https_get_stream()` are bounded HTTP/1.1
-download operations over OpenGAT's BearSSL TLS 1.2 client. They are Ring 3 SDK
-facilities; they reach the network only through `opengat_dns_resolve()` and the
-OpenGAT stream API. The first fills one caller buffer. The streaming form uses a
+`openrfs_https_get()` and `openrfs_https_get_stream()` are bounded HTTP/1.1
+download operations over OpenRFS's BearSSL TLS 1.2 client. They are Ring 3 SDK
+facilities; they reach the network only through `openrfs_dns_resolve()` and the
+OpenRFS stream API. The first fills one caller buffer. The streaming form uses a
 bounded 4 KiB transfer buffer and requires a sink to accept each complete chunk,
 so repository indexes and packages do not need one contiguous application
 allocation. A short or failed sink write aborts the connection with a distinct
 status; callers can therefore stage to a temporary file, hash, sync, and publish
 only after the complete authenticated response succeeds.
 
-`opengat_package_fetch_stage()` applies that pattern to the Data volume. It
+`openrfs_package_fetch_stage()` applies that pattern to the Data volume. It
 streams into a temporary path while computing SHA-256, optionally requires an
 exact signed length and digest, closes and flushes the temporary file, atomically
 replaces an inert staging path, and flushes the namespace change. Every
@@ -54,15 +54,15 @@ wall clock, entropy and DNS failures, deadline, cancellation, reset before any
 TLS record bytes, authenticated-stream truncation, hostname mismatch,
 certificate-time failure, unknown/bad authentication, TLS handshake/I/O,
 HTTP version/status/header framing, missing/oversized length, short/extra body,
-and close failure. `opengat_https_response` retains the BearSSL and raw OpenGAT
+and close failure. `openrfs_https_response` retains the BearSSL and raw OpenRFS
 transport values for diagnostics.
 
 Every failure after stream creation cancels, shuts down, and closes the stream
 before returning. A reset after TLS record bytes is reported as
-TLS truncation; OpenGAT ABI v1 otherwise exposes orderly TCP closure and reset
+TLS truncation; OpenRFS ABI v1 otherwise exposes orderly TCP closure and reset
 through overlapping stream errors. Cancellation is also available directly
-through `opengat_tls_client_cancel()` on the lower-level client. The synchronous
-`opengat_https_get()` helper does not expose its internal client, so callers
+through `openrfs_tls_client_cancel()` on the lower-level client. The synchronous
+`openrfs_https_get()` helper does not expose its internal client, so callers
 cancel that complete operation through native process termination; teardown
 closes its typed network handles.
 
@@ -92,7 +92,7 @@ The upload is accepted only after its privileged caller-supplied length and
 SHA-256 match and the data-volume flush completes; closing the typed handle
 durably removes the private staging file. This proof uses a fixed expected
 digest. The package controller binds those same upload bytes to an admitted
-signed repository record before installation; the `native-opengat` proof carries
+signed repository record before installation; the `native-openrfs` proof carries
 that path through update, rollback refusal, damage quarantine, and repair.
 `tools/https_network_fixture.py` is its offline raw-Ethernet peer for QEMU's
 dgram backend: it supplies DHCP/ARP/DNS, a TCP peer on 10.0.2.20:443, a Python
@@ -123,7 +123,7 @@ packet audit reconstructs the Ethernet/IP/TCP path, requires TLS 1.2 records on
 port 443, and refuses captures containing the request, HTTP status line, or
 body in plaintext.
 
-This is an in-guest TLS 1.2/HTTPS download over OpenGAT DNS and TCP. The client
+This is an in-guest TLS 1.2/HTTPS download over OpenRFS DNS and TCP. The client
 writes an exact-digest, durably staged inert body to its Data namespace and
 separately proves the non-path-based privileged upload boundary without
 installing or executing it. There is no general

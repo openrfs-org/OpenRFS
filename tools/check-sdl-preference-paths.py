@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keep OpenGAT SDL preference paths tied to their producing apps."""
+"""Keep OpenRFS SDL preference paths tied to their producing apps."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def main() -> int:
     kernel_path = ROOT / "src" / "kernel" / "test.c"
     makefile_path = ROOT / "Makefile"
     backend_path = (
-        ROOT / "vendor" / "sdl2" / "src" / "filesystem" / "opengat"
+        ROOT / "vendor" / "sdl2" / "src" / "filesystem" / "openrfs"
         / "SDL_sysfilesystem.c"
     )
     kernel = kernel_path.read_text(encoding="utf-8")
@@ -42,10 +42,10 @@ def main() -> int:
 
     native_app_path = ROOT / "apps" / "native-sdl" / "main.c"
     native_app = native_app_path.read_text(encoding="utf-8")
-    native_hash = preference_hash("OpenGAT", "SDL proof")
+    native_hash = preference_hash("OpenRFS", "SDL proof")
     require_count(
         native_app,
-        'SDL_GetPrefPath("OpenGAT", "SDL proof")',
+        'SDL_GetPrefPath("OpenRFS", "SDL proof")',
         1,
         native_app_path,
     )
@@ -64,10 +64,10 @@ def main() -> int:
 
     chess_app_path = ROOT / "apps" / "upstream-sdl-chess" / "main.c"
     chess_app = chess_app_path.read_text(encoding="utf-8")
-    chess_hash = preference_hash("OpenGAT", "SDL Chess")
+    chess_hash = preference_hash("OpenRFS", "SDL Chess")
     require_count(
         chess_app,
-        'SDL_GetPrefPath("OpenGAT", "SDL Chess")',
+        'SDL_GetPrefPath("OpenRFS", "SDL Chess")',
         1,
         chess_app_path,
     )
@@ -83,7 +83,7 @@ def main() -> int:
         require_count(makefile, stale, 0, makefile_path)
 
     print(
-        "OpenGAT SDL preference contracts passed: "
+        "OpenRFS SDL preference contracts passed: "
         f"native={native_hash} chess={chess_hash}"
     )
     return 0

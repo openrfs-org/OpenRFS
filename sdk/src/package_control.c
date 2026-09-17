@@ -1,18 +1,18 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#include <opengat/package_control.h>
+#include <openrfs/package_control.h>
 
-#include <opengat/runtime.h>
+#include <openrfs/runtime.h>
 #include <string.h>
 
-static void report_clear(struct opengat_package_control_report *report)
+static void report_clear(struct openrfs_package_control_report *report)
 {
     if (report != NULL) {
         (void)memset(report, 0, sizeof(*report));
     }
 }
 
-static void report_open(struct opengat_package_control_report *report,
-    const struct opengat_package_control_open_request *request)
+static void report_open(struct openrfs_package_control_report *report,
+    const struct openrfs_package_control_open_request *request)
 {
     if (report != NULL) {
         report->repository_version = request->repository_version;
@@ -22,104 +22,104 @@ static void report_open(struct opengat_package_control_report *report,
     }
 }
 
-long opengat_package_control_open_install(
-    opengat_handle_t repository_upload,
+long openrfs_package_control_open_install(
+    openrfs_handle_t repository_upload,
     const char *identifier,
     size_t identifier_bytes,
-    struct opengat_package_control_report *report
+    struct openrfs_package_control_report *report
 )
 {
-    struct opengat_package_control_open_request request;
+    struct openrfs_package_control_open_request request;
 
     report_clear(report);
-    if (repository_upload == OPENGAT_HANDLE_INVALID || identifier == NULL ||
+    if (repository_upload == OPENRFS_HANDLE_INVALID || identifier == NULL ||
         identifier_bytes == 0U ||
-        identifier_bytes >= OPENGAT_PACKAGE_CONTROL_TEXT_BYTES ||
+        identifier_bytes >= OPENRFS_PACKAGE_CONTROL_TEXT_BYTES ||
         report == NULL) {
-        return -OPENGAT_EINVAL;
+        return -OPENRFS_EINVAL;
     }
     (void)memset(&request, 0, sizeof(request));
     request.size = sizeof(request);
-    request.version = OPENGAT_ABI_VERSION;
+    request.version = OPENRFS_ABI_VERSION;
     request.repository_upload = repository_upload;
     request.identifier = (uint64_t)(uintptr_t)identifier;
     request.identifier_bytes = (uint32_t)identifier_bytes;
-    long status = opengat_syscall1(OPENGAT_SYS_PACKAGE_CONTROL_OPEN_INSTALL,
+    long status = openrfs_syscall1(OPENRFS_SYS_PACKAGE_CONTROL_OPEN_INSTALL,
         (uint64_t)(uintptr_t)&request);
 
     report_open(report, &request);
     return status;
 }
 
-long opengat_package_control_open_remove(
+long openrfs_package_control_open_remove(
     const char *identifier,
     size_t identifier_bytes,
-    struct opengat_package_control_report *report
+    struct openrfs_package_control_report *report
 )
 {
-    struct opengat_package_control_open_request request;
+    struct openrfs_package_control_open_request request;
 
     report_clear(report);
     if (identifier == NULL || identifier_bytes == 0U ||
-        identifier_bytes >= OPENGAT_PACKAGE_CONTROL_TEXT_BYTES ||
+        identifier_bytes >= OPENRFS_PACKAGE_CONTROL_TEXT_BYTES ||
         report == NULL) {
-        return -OPENGAT_EINVAL;
+        return -OPENRFS_EINVAL;
     }
     (void)memset(&request, 0, sizeof(request));
     request.size = sizeof(request);
-    request.version = OPENGAT_ABI_VERSION;
+    request.version = OPENRFS_ABI_VERSION;
     request.identifier = (uint64_t)(uintptr_t)identifier;
     request.identifier_bytes = (uint32_t)identifier_bytes;
-    request.flags = OPENGAT_PACKAGE_CONTROL_OPEN_REMOVE;
-    long status = opengat_syscall1(OPENGAT_SYS_PACKAGE_CONTROL_OPEN_INSTALL,
+    request.flags = OPENRFS_PACKAGE_CONTROL_OPEN_REMOVE;
+    long status = openrfs_syscall1(OPENRFS_SYS_PACKAGE_CONTROL_OPEN_INSTALL,
         (uint64_t)(uintptr_t)&request);
 
     report_open(report, &request);
     return status;
 }
 
-long opengat_package_control_open_repair(
-    opengat_handle_t repository_upload,
-    struct opengat_package_control_report *report
+long openrfs_package_control_open_repair(
+    openrfs_handle_t repository_upload,
+    struct openrfs_package_control_report *report
 )
 {
-    struct opengat_package_control_open_request request;
+    struct openrfs_package_control_open_request request;
 
     report_clear(report);
-    if (repository_upload == OPENGAT_HANDLE_INVALID || report == NULL) {
-        return -OPENGAT_EINVAL;
+    if (repository_upload == OPENRFS_HANDLE_INVALID || report == NULL) {
+        return -OPENRFS_EINVAL;
     }
     (void)memset(&request, 0, sizeof(request));
     request.size = sizeof(request);
-    request.version = OPENGAT_ABI_VERSION;
+    request.version = OPENRFS_ABI_VERSION;
     request.repository_upload = repository_upload;
-    request.flags = OPENGAT_PACKAGE_CONTROL_OPEN_REPAIR;
-    long status = opengat_syscall1(OPENGAT_SYS_PACKAGE_CONTROL_OPEN_INSTALL,
+    request.flags = OPENRFS_PACKAGE_CONTROL_OPEN_REPAIR;
+    long status = openrfs_syscall1(OPENRFS_SYS_PACKAGE_CONTROL_OPEN_INSTALL,
         (uint64_t)(uintptr_t)&request);
 
     report_open(report, &request);
     return status;
 }
 
-long opengat_package_control_item(
-    opengat_handle_t control,
+long openrfs_package_control_item(
+    openrfs_handle_t control,
     uint32_t index,
-    struct opengat_package_control_item *item
+    struct openrfs_package_control_item *item
 )
 {
-    struct opengat_package_control_item_request request;
+    struct openrfs_package_control_item_request request;
 
-    if (control == OPENGAT_HANDLE_INVALID || item == NULL ||
-        index >= OPENGAT_PACKAGE_CONTROL_PLAN_MAX) {
-        return -OPENGAT_EINVAL;
+    if (control == OPENRFS_HANDLE_INVALID || item == NULL ||
+        index >= OPENRFS_PACKAGE_CONTROL_PLAN_MAX) {
+        return -OPENRFS_EINVAL;
     }
     (void)memset(item, 0, sizeof(*item));
     (void)memset(&request, 0, sizeof(request));
     request.size = sizeof(request);
-    request.version = OPENGAT_ABI_VERSION;
+    request.version = OPENRFS_ABI_VERSION;
     request.control = control;
     request.index = index;
-    long status = opengat_syscall1(OPENGAT_SYS_PACKAGE_CONTROL_ITEM,
+    long status = openrfs_syscall1(OPENRFS_SYS_PACKAGE_CONTROL_ITEM,
         (uint64_t)(uintptr_t)&request);
 
     if (status != 0) {
@@ -141,28 +141,28 @@ long opengat_package_control_item(
     return 0;
 }
 
-long opengat_package_control_attach(
-    opengat_handle_t control,
+long openrfs_package_control_attach(
+    openrfs_handle_t control,
     uint32_t index,
-    opengat_handle_t package_upload,
-    struct opengat_package_control_report *report
+    openrfs_handle_t package_upload,
+    struct openrfs_package_control_report *report
 )
 {
-    struct opengat_package_control_attach_request request;
+    struct openrfs_package_control_attach_request request;
 
     report_clear(report);
-    if (control == OPENGAT_HANDLE_INVALID ||
-        package_upload == OPENGAT_HANDLE_INVALID ||
-        index >= OPENGAT_PACKAGE_CONTROL_PLAN_MAX || report == NULL) {
-        return -OPENGAT_EINVAL;
+    if (control == OPENRFS_HANDLE_INVALID ||
+        package_upload == OPENRFS_HANDLE_INVALID ||
+        index >= OPENRFS_PACKAGE_CONTROL_PLAN_MAX || report == NULL) {
+        return -OPENRFS_EINVAL;
     }
     (void)memset(&request, 0, sizeof(request));
     request.size = sizeof(request);
-    request.version = OPENGAT_ABI_VERSION;
+    request.version = OPENRFS_ABI_VERSION;
     request.control = control;
     request.index = index;
     request.package_upload = package_upload;
-    long status = opengat_syscall1(OPENGAT_SYS_PACKAGE_CONTROL_ATTACH,
+    long status = openrfs_syscall1(OPENRFS_SYS_PACKAGE_CONTROL_ATTACH,
         (uint64_t)(uintptr_t)&request);
 
     report->attached_count = request.attached_count;
@@ -170,22 +170,22 @@ long opengat_package_control_attach(
     return status;
 }
 
-long opengat_package_control_commit(
-    opengat_handle_t control,
-    struct opengat_package_control_report *report
+long openrfs_package_control_commit(
+    openrfs_handle_t control,
+    struct openrfs_package_control_report *report
 )
 {
-    struct opengat_package_control_commit_request request;
+    struct openrfs_package_control_commit_request request;
 
     report_clear(report);
-    if (control == OPENGAT_HANDLE_INVALID || report == NULL) {
-        return -OPENGAT_EINVAL;
+    if (control == OPENRFS_HANDLE_INVALID || report == NULL) {
+        return -OPENRFS_EINVAL;
     }
     (void)memset(&request, 0, sizeof(request));
     request.size = sizeof(request);
-    request.version = OPENGAT_ABI_VERSION;
+    request.version = OPENRFS_ABI_VERSION;
     request.control = control;
-    long status = opengat_syscall1(OPENGAT_SYS_PACKAGE_CONTROL_COMMIT,
+    long status = openrfs_syscall1(OPENRFS_SYS_PACKAGE_CONTROL_COMMIT,
         (uint64_t)(uintptr_t)&request);
 
     report->generation = request.generation;
@@ -195,7 +195,7 @@ long opengat_package_control_commit(
     return status;
 }
 
-long opengat_package_control_close(opengat_handle_t control)
+long openrfs_package_control_close(openrfs_handle_t control)
 {
-    return opengat_handle_close(control);
+    return openrfs_handle_close(control);
 }

@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#include <opengat/zlib.h>
+#include <openrfs/zlib.h>
 
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-static voidpf opengat_zlib_allocate(voidpf opaque, uInt items, uInt size)
+static voidpf openrfs_zlib_allocate(voidpf opaque, uInt items, uInt size)
 {
     size_t bytes;
 
@@ -17,19 +17,19 @@ static voidpf opengat_zlib_allocate(voidpf opaque, uInt items, uInt size)
     return calloc(bytes == 0U ? 1U : bytes, 1U);
 }
 
-static void opengat_zlib_free(voidpf opaque, voidpf address)
+static void openrfs_zlib_free(voidpf opaque, voidpf address)
 {
     (void)opaque;
     free(address);
 }
 
-int opengat_zlib_stream_prepare(z_streamp stream)
+int openrfs_zlib_stream_prepare(z_streamp stream)
 {
     if (stream == Z_NULL) {
         return -1;
     }
     (void)memset(stream, 0, sizeof(*stream));
-    stream->zalloc = opengat_zlib_allocate;
-    stream->zfree = opengat_zlib_free;
+    stream->zalloc = openrfs_zlib_allocate;
+    stream->zfree = openrfs_zlib_free;
     return 0;
 }

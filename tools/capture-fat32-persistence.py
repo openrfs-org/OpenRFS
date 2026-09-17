@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Capture a real OpenGAT FAT32 create/sync/reboot/read interaction.
+"""Capture a real OpenRFS FAT32 create/sync/reboot/read interaction.
 
 The clean reboot boundary tears down the first emulator after the guest's
 synchronization proof, then starts a second QEMU process on the same data image.
@@ -17,7 +17,7 @@ import zlib
 from pathlib import Path
 
 
-PROOF = b"OpenGAT: Boot Ledger installed proof passed"
+PROOF = b"OpenRFS: Boot Ledger installed proof passed"
 
 
 class Qmp:
@@ -117,7 +117,7 @@ def send_line(qmp, serial, text):
 
 
 def open_terminal(qmp):
-    """Open Terminal through ordinary OpenGAT keyboard focus."""
+    """Open Terminal through ordinary OpenRFS keyboard focus."""
     qmp.hmp("sendkey tab")
     time.sleep(0.10)
     qmp.hmp("sendkey ret")
@@ -190,7 +190,7 @@ def storage_arguments(system, data):
         "read-only=on,auto-read-only=off",
         "-blockdev", "driver=raw,file=system-file,node-name=system-raw,"
         "read-only=on",
-        "-device", "nvme,serial=opengat-system-fat32,drive=system-raw,"
+        "-device", "nvme,serial=openrfs-system-fat32,drive=system-raw,"
         "logical_block_size=512,physical_block_size=512,max_ioqpairs=1,"
         "msix_qsize=1",
         "-blockdev",
@@ -198,7 +198,7 @@ def storage_arguments(system, data):
         "read-only=off,auto-read-only=off",
         "-blockdev", "driver=raw,file=data-file,node-name=data-raw,"
         "read-only=off",
-        "-device", "nvme,serial=opengat-data-fat32,drive=data-raw,"
+        "-device", "nvme,serial=openrfs-data-fat32,drive=data-raw,"
         "logical_block_size=512,physical_block_size=512,max_ioqpairs=1,"
         "msix_qsize=1",
     ]
@@ -253,7 +253,7 @@ def main():
     for destination in (screenshot, video, transcript):
         destination.parent.mkdir(parents=True, exist_ok=True)
 
-    with tempfile.TemporaryDirectory(prefix="opengat-fat32-video-") as temp:
+    with tempfile.TemporaryDirectory(prefix="openrfs-fat32-video-") as temp:
         temp = Path(temp)
         serial = temp / "serial.log"
         second_serial = temp / "serial-second.log"
@@ -266,9 +266,9 @@ def main():
         try:
             qmp = Qmp(port)
             wait_count(serial, PROOF, 1, 60.0)
-            prompt_count = serial.read_bytes().count(b"opengat$ ")
+            prompt_count = serial.read_bytes().count(b"openrfs$ ")
             open_terminal(qmp)
-            wait_count(serial, b"opengat$ ", prompt_count + 1, 15.0)
+            wait_count(serial, b"openrfs$ ", prompt_count + 1, 15.0)
             started = time.monotonic()
             actions = [
                 (0.5, "drives"),
@@ -288,7 +288,7 @@ def main():
                 elapsed = time.monotonic() - started
                 if action_index < len(actions) and elapsed >= actions[action_index][0]:
                     text = actions[action_index][1]
-                    prompt_count = serial.read_bytes().count(b"opengat$ ")
+                    prompt_count = serial.read_bytes().count(b"openrfs$ ")
                     send_line(qmp, serial, text)
                     if text == "reboot":
                         wait_count(serial,
@@ -305,20 +305,20 @@ def main():
                         qmp = Qmp(port)
                         wait_count(second_serial, PROOF, 1, 60.0)
                         prompt_count = second_serial.read_bytes().count(
-                            b"opengat$ ")
+                            b"openrfs$ ")
                         open_terminal(qmp)
-                        wait_count(second_serial, b"opengat$ ",
+                        wait_count(second_serial, b"openrfs$ ",
                             prompt_count + 1, 15.0)
                         prompt_count = second_serial.read_bytes().count(
-                            b"opengat$ ")
+                            b"openrfs$ ")
                         send_line(qmp, second_serial,
                             "read projects/notes.txt")
                         wait_count(second_serial, b"first cut", 1, 15.0)
                         wait_count(second_serial, b"second line", 1, 15.0)
-                        wait_count(second_serial, b"opengat$ ",
+                        wait_count(second_serial, b"openrfs$ ",
                             prompt_count + 1, 15.0)
                     else:
-                        wait_count(serial, b"opengat$ ", prompt_count + 1, 15.0)
+                        wait_count(serial, b"openrfs$ ", prompt_count + 1, 15.0)
                     action_index += 1
                 frame = temp / f"frame-{index:04d}.ppm"
                 screendump(qmp, frame)

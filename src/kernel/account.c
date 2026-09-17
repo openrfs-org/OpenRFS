@@ -3,14 +3,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/account.h>
-#include <opengat/fat32_fs.h>
-#include <opengat/package_state.h>
-#include <opengat/random.h>
+#include <openrfs/account.h>
+#include <openrfs/fat32_fs.h>
+#include <openrfs/package_state.h>
+#include <openrfs/random.h>
 
-#define ACCOUNT_DIRECTORY "OPENGAT"
-#define ACCOUNT_PATH "OPENGAT/LOGIN.DAT"
-#define ACCOUNT_TEMP_PATH "OPENGAT/LOGIN.NEW"
+#define ACCOUNT_DIRECTORY "OPENRFS"
+#define ACCOUNT_PATH "OPENRFS/LOGIN.DAT"
+#define ACCOUNT_TEMP_PATH "OPENRFS/LOGIN.NEW"
 #define ACCOUNT_RECORD_BYTES 124U
 #define ACCOUNT_CHECKSUM_OFFSET 92U
 #define ACCOUNT_SALT_OFFSET 12U
@@ -21,7 +21,7 @@
 #define ACCOUNT_KDF_ROUNDS UINT32_C(32768)
 
 static const uint8_t account_magic[4] = { 'O', 'G', 'A', '1' };
-static const uint8_t account_domain[] = "OpenGAT account password v1";
+static const uint8_t account_domain[] = "OpenRFS account password v1";
 
 static void copy_bytes(uint8_t *destination, const uint8_t *source, size_t length)
 {
@@ -189,34 +189,34 @@ static enum account_status read_record(uint8_t record[ACCOUNT_RECORD_BYTES])
     uint8_t extra = 0U;
     size_t completed = 0U;
     size_t read_bytes = 0U;
-    opengatfs_handle handle;
-    enum opengatfs_status status = opengatfs_open(OPENGATFS_VOLUME_DATA,
-        ACCOUNT_PATH, OPENGATFS_ACCESS_READ, &handle);
+    openrfsfs_handle handle;
+    enum openrfsfs_status status = openrfsfs_open(OPENRFSFS_VOLUME_DATA,
+        ACCOUNT_PATH, OPENRFSFS_ACCESS_READ, &handle);
 
-    if (status == OPENGATFS_STATUS_NOT_FOUND) {
+    if (status == OPENRFSFS_STATUS_NOT_FOUND) {
         return ACCOUNT_STATUS_NOT_CONFIGURED;
     }
-    if (status != OPENGATFS_STATUS_OK) {
-        return status == OPENGATFS_STATUS_NOT_MOUNTED ||
-            status == OPENGATFS_STATUS_ABSENT ?
+    if (status != OPENRFSFS_STATUS_OK) {
+        return status == OPENRFSFS_STATUS_NOT_MOUNTED ||
+            status == OPENRFSFS_STATUS_ABSENT ?
             ACCOUNT_STATUS_STORAGE_UNAVAILABLE : ACCOUNT_STATUS_IO;
     }
-    while (completed < ACCOUNT_RECORD_BYTES && status == OPENGATFS_STATUS_OK) {
-        status = opengatfs_read(handle, record + completed,
+    while (completed < ACCOUNT_RECORD_BYTES && status == OPENRFSFS_STATUS_OK) {
+        status = openrfsfs_read(handle, record + completed,
             ACCOUNT_RECORD_BYTES - completed, &read_bytes);
         if (read_bytes == 0U) {
             break;
         }
         completed += read_bytes;
     }
-    if (status == OPENGATFS_STATUS_OK && completed == ACCOUNT_RECORD_BYTES) {
-        status = opengatfs_read(handle, &extra, 1U, &read_bytes);
+    if (status == OPENRFSFS_STATUS_OK && completed == ACCOUNT_RECORD_BYTES) {
+        status = openrfsfs_read(handle, &extra, 1U, &read_bytes);
     }
-    if (opengatfs_close(handle) != OPENGATFS_STATUS_OK &&
-            status == OPENGATFS_STATUS_OK) {
-        status = OPENGATFS_STATUS_STALE_HANDLE;
+    if (openrfsfs_close(handle) != OPENRFSFS_STATUS_OK &&
+            status == OPENRFSFS_STATUS_OK) {
+        status = OPENRFSFS_STATUS_STALE_HANDLE;
     }
-    if (status != OPENGATFS_STATUS_OK) {
+    if (status != OPENRFSFS_STATUS_OK) {
         return ACCOUNT_STATUS_IO;
     }
     if (completed != ACCOUNT_RECORD_BYTES || read_bytes != 0U) {
@@ -258,53 +258,53 @@ static enum account_status load_record(uint8_t record[ACCOUNT_RECORD_BYTES])
 
 static enum account_status persist_record(const uint8_t record[ACCOUNT_RECORD_BYTES])
 {
-    struct opengatfs_stat stat;
-    opengatfs_handle handle;
+    struct openrfsfs_stat stat;
+    openrfsfs_handle handle;
     size_t written = 0U;
     bool opened = false;
-    enum opengatfs_status status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA,
+    enum openrfsfs_status status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA,
         ACCOUNT_DIRECTORY, &stat);
 
-    if (status == OPENGATFS_STATUS_NOT_FOUND) {
-        status = opengatfs_mkdir(OPENGATFS_VOLUME_DATA, ACCOUNT_DIRECTORY);
-    } else if (status == OPENGATFS_STATUS_OK && !stat.directory) {
+    if (status == OPENRFSFS_STATUS_NOT_FOUND) {
+        status = openrfsfs_mkdir(OPENRFSFS_VOLUME_DATA, ACCOUNT_DIRECTORY);
+    } else if (status == OPENRFSFS_STATUS_OK && !stat.directory) {
         return ACCOUNT_STATUS_STORAGE_CORRUPT;
     }
-    if (status != OPENGATFS_STATUS_OK) {
-        return status == OPENGATFS_STATUS_NOT_MOUNTED ||
-            status == OPENGATFS_STATUS_ABSENT ||
-            status == OPENGATFS_STATUS_READ_ONLY ?
+    if (status != OPENRFSFS_STATUS_OK) {
+        return status == OPENRFSFS_STATUS_NOT_MOUNTED ||
+            status == OPENRFSFS_STATUS_ABSENT ||
+            status == OPENRFSFS_STATUS_READ_ONLY ?
             ACCOUNT_STATUS_STORAGE_UNAVAILABLE : ACCOUNT_STATUS_IO;
     }
-    status = opengatfs_unlink(OPENGATFS_VOLUME_DATA, ACCOUNT_TEMP_PATH);
-    if (status != OPENGATFS_STATUS_OK && status != OPENGATFS_STATUS_NOT_FOUND) {
+    status = openrfsfs_unlink(OPENRFSFS_VOLUME_DATA, ACCOUNT_TEMP_PATH);
+    if (status != OPENRFSFS_STATUS_OK && status != OPENRFSFS_STATUS_NOT_FOUND) {
         return ACCOUNT_STATUS_IO;
     }
-    status = opengatfs_create(OPENGATFS_VOLUME_DATA, ACCOUNT_TEMP_PATH);
-    if (status == OPENGATFS_STATUS_OK) {
-        status = opengatfs_open(OPENGATFS_VOLUME_DATA, ACCOUNT_TEMP_PATH,
-            OPENGATFS_ACCESS_WRITE, &handle);
-        opened = status == OPENGATFS_STATUS_OK;
+    status = openrfsfs_create(OPENRFSFS_VOLUME_DATA, ACCOUNT_TEMP_PATH);
+    if (status == OPENRFSFS_STATUS_OK) {
+        status = openrfsfs_open(OPENRFSFS_VOLUME_DATA, ACCOUNT_TEMP_PATH,
+            OPENRFSFS_ACCESS_WRITE, &handle);
+        opened = status == OPENRFSFS_STATUS_OK;
     }
-    if (status == OPENGATFS_STATUS_OK) {
-        status = opengatfs_write(handle, record, ACCOUNT_RECORD_BYTES, &written);
+    if (status == OPENRFSFS_STATUS_OK) {
+        status = openrfsfs_write(handle, record, ACCOUNT_RECORD_BYTES, &written);
     }
-    if (opened && opengatfs_close(handle) != OPENGATFS_STATUS_OK &&
-            status == OPENGATFS_STATUS_OK) {
-        status = OPENGATFS_STATUS_STALE_HANDLE;
+    if (opened && openrfsfs_close(handle) != OPENRFSFS_STATUS_OK &&
+            status == OPENRFSFS_STATUS_OK) {
+        status = OPENRFSFS_STATUS_STALE_HANDLE;
     }
-    if (status == OPENGATFS_STATUS_OK && written == ACCOUNT_RECORD_BYTES) {
-        status = opengatfs_sync(OPENGATFS_VOLUME_DATA);
+    if (status == OPENRFSFS_STATUS_OK && written == ACCOUNT_RECORD_BYTES) {
+        status = openrfsfs_sync(OPENRFSFS_VOLUME_DATA);
     }
-    if (status == OPENGATFS_STATUS_OK) {
-        status = opengatfs_rename(OPENGATFS_VOLUME_DATA, ACCOUNT_TEMP_PATH,
+    if (status == OPENRFSFS_STATUS_OK) {
+        status = openrfsfs_rename(OPENRFSFS_VOLUME_DATA, ACCOUNT_TEMP_PATH,
             ACCOUNT_PATH);
     }
-    if (status == OPENGATFS_STATUS_OK) {
-        status = opengatfs_sync(OPENGATFS_VOLUME_DATA);
+    if (status == OPENRFSFS_STATUS_OK) {
+        status = openrfsfs_sync(OPENRFSFS_VOLUME_DATA);
     }
-    if (status != OPENGATFS_STATUS_OK || written != ACCOUNT_RECORD_BYTES) {
-        (void)opengatfs_unlink(OPENGATFS_VOLUME_DATA, ACCOUNT_TEMP_PATH);
+    if (status != OPENRFSFS_STATUS_OK || written != ACCOUNT_RECORD_BYTES) {
+        (void)openrfsfs_unlink(OPENRFSFS_VOLUME_DATA, ACCOUNT_TEMP_PATH);
         return ACCOUNT_STATUS_IO;
     }
     return ACCOUNT_STATUS_OK;
@@ -458,10 +458,10 @@ const char *account_status_string(enum account_status status)
         "null account argument",
         "username must start with a letter or number and use only letters, numbers, '-' or '_'",
         "password must contain 8-64 printable characters",
-        "an OpenGAT account already exists",
-        "no OpenGAT account exists",
+        "an OpenRFS account already exists",
+        "no OpenRFS account exists",
         "the writable data volume is unavailable",
-        "the OpenGAT account record is corrupt",
+        "the OpenRFS account record is corrupt",
         "the account salt source is unavailable",
         "account storage failed",
         "invalid username or password"

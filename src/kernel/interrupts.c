@@ -3,16 +3,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/apic.h>
-#include <opengat/console.h>
-#include <opengat/cpu.h>
-#include <opengat/interrupts.h>
-#include <opengat/ioapic.h>
-#include <opengat/interrupt_vector.h>
-#include <opengat/native_process.h>
-#include <opengat/pic.h>
-#include <opengat/thread.h>
-#include <opengat/test.h>
+#include <openrfs/apic.h>
+#include <openrfs/console.h>
+#include <openrfs/cpu.h>
+#include <openrfs/interrupts.h>
+#include <openrfs/ioapic.h>
+#include <openrfs/interrupt_vector.h>
+#include <openrfs/native_process.h>
+#include <openrfs/pic.h>
+#include <openrfs/thread.h>
+#include <openrfs/test.h>
 
 #define IDT_GATE_PRESENT UINT8_C(0x80)
 #define IDT_GATE_INTERRUPT UINT8_C(0x0E)
@@ -284,7 +284,7 @@ static _Noreturn void fatal_interrupt(struct interrupt_frame *frame)
     }
 
     fatal_depth = 1U;
-    console_write("OpenGAT FATAL INTERRUPT\n");
+    console_write("OpenRFS FATAL INTERRUPT\n");
     console_write("  vector=");
     console_write_u64(frame->vector);
     console_write(" name=");

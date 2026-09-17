@@ -1,6 +1,6 @@
 # Command-line accounts and `starty`
 
-OpenGAT boots to the command line. The desktop is not constructed during a
+OpenRFS boots to the command line. The desktop is not constructed during a
 normal boot.
 
 ## Create the first user
@@ -9,8 +9,8 @@ Run `useradd NAME`. Names may contain letters, numbers, `-`, and `_`, must begin
 with a letter or number, and are limited to 31 characters. The shell then asks
 for an 8-64 character password twice without echoing it.
 
-OpenGAT stores one credential record at `OPENGAT/LOGIN.DAT` on the writable data
-volume. The record contains the username, a 128-bit per-install salt from the OpenGAT random source, an
+OpenRFS stores one credential record at `OPENRFS/LOGIN.DAT` on the writable data
+volume. The record contains the username, a 128-bit per-install salt from the OpenRFS random source, an
 iterated SHA-256 password digest, its work factor, and a checksum. The write is
 staged through `LOGIN.NEW`, synchronized, renamed, and synchronized again.
 Account creation is refused when the initialized random source or durable writable

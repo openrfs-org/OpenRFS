@@ -4,7 +4,7 @@
 #include <errno.h>
 #include <stddef.h>
 
-#include <opengat/runtime.h>
+#include <openrfs/runtime.h>
 
 #define TIME_SECONDS_PER_DAY UINT64_C(86400)
 #define TIME_MAX_UNIX_SECONDS INT64_C(253402300799)
@@ -27,7 +27,7 @@ static int days_in_month(int year, int month)
 
 time_t time(time_t *output)
 {
-    const long result = opengat_realtime_seconds();
+    const long result = openrfs_realtime_seconds();
 
     if (result < 0) {
         errno = (int)-result;
@@ -38,7 +38,7 @@ time_t time(time_t *output)
     }
     return (time_t)result;
 }
-clock_t clock(void) { return (clock_t)(opengat_monotonic_ns() / 1000U); }
+clock_t clock(void) { return (clock_t)(openrfs_monotonic_ns() / 1000U); }
 int clock_gettime(int identifier, struct timespec *result)
 {
     uint64_t now;
@@ -49,7 +49,7 @@ int clock_gettime(int identifier, struct timespec *result)
         return -1;
     }
     if (identifier == CLOCK_REALTIME) {
-        realtime = opengat_realtime_seconds();
+        realtime = openrfs_realtime_seconds();
         if (realtime < 0) {
             errno = (int)-realtime;
             return -1;
@@ -62,7 +62,7 @@ int clock_gettime(int identifier, struct timespec *result)
         errno = EINVAL;
         return -1;
     }
-    now = opengat_monotonic_ns();
+    now = openrfs_monotonic_ns();
     result->tv_sec = (time_t)(now / UINT64_C(1000000000));
     result->tv_nsec = (long)(now % UINT64_C(1000000000));
     return 0;
@@ -79,14 +79,14 @@ int nanosleep(const struct timespec *request, struct timespec *remaining)
     }
     interval = (uint64_t)request->tv_sec * UINT64_C(1000000000) +
         (uint64_t)request->tv_nsec;
-    now = opengat_monotonic_ns();
+    now = openrfs_monotonic_ns();
     if (interval > UINT64_MAX - now) {
         errno = EINVAL;
         return -1;
     }
-    result = opengat_sleep_until(now + interval);
+    result = openrfs_sleep_until(now + interval);
     if (remaining != NULL) { remaining->tv_sec = 0; remaining->tv_nsec = 0; }
-    return opengat_result(result);
+    return openrfs_result(result);
 }
 double difftime(time_t end, time_t beginning) { return (double)(end - beginning); }
 
@@ -145,7 +145,7 @@ struct tm *gmtime(const time_t *value)
 
 struct tm *localtime_r(const time_t *value, struct tm *result)
 {
-    /* OpenGAT has no timezone database yet; local civil time is explicitly UTC. */
+    /* OpenRFS has no timezone database yet; local civil time is explicitly UTC. */
     return gmtime_r(value, result);
 }
 

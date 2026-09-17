@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Generate deterministic C planes from preserved OpenGAT panel artwork.
+"""Generate deterministic C planes from preserved OpenRFS panel artwork.
 
 Each source image is cropped to its visible ink, resampled independently for
 all requested sizes, and emitted as separate colour and alpha arrays. JPEG
 inputs with flat backgrounds are keyed from the border inward. PNG alpha is
 preserved.
 
-    python3 tools/make-app-icons.py assets/opengat/panel \
-        src/kernel/de_opengat_panel_art.h --prefix opengat_panel_art \
+    python3 tools/make-app-icons.py assets/openrfs/panel \
+        src/kernel/de_openrfs_panel_art.h --prefix openrfs_panel_art \
         --sizes 16,20,24
 """
 
@@ -32,7 +32,7 @@ SIZES = (16, 24, 32, 48)
 # The Store's bag needed it while the mark on it was the same achromatic
 # near-white as the bag: ink averaging 227 of 255 with a chroma under 2, a
 # shape you had to already know was there on the light taskbar. The bag it
-# carries now has OpenGAT's logo on it in the accent blue, which separates
+# carries now has OpenRFS's logo on it in the accent blue, which separates
 # itself, and stretching that blue only drove it towards navy. So the entry
 # is gone, and this table is empty until artwork arrives that needs it.
 INK_CONTRAST = {}
@@ -228,7 +228,7 @@ def build(source, target, prefix, sizes, only):
     if not names:
         raise SystemExit(f"no artwork in {source}")
 
-    # OpenGAT's framebuffer reports channel positions at boot; QEMU's adaptors
+    # OpenRFS's framebuffer reports channel positions at boot; QEMU's adaptors
     # report 0x00RRGGBB and the preview pins that, so the planes are baked in
     # that order and the caller recomposes if a device ever differs.
     def pack(red, green, blue):
@@ -244,7 +244,7 @@ def build(source, target, prefix, sizes, only):
         " * each resampled from the original rather than from a larger cell,",
         " * because a picture reduced twice is a picture blurred twice.",
         " *",
-        " * Channels are packed 0x00RRGGBB.  OpenGAT learns its real channel",
+        " * Channels are packed 0x00RRGGBB.  OpenRFS learns its real channel",
         " * positions from the loader at boot; the drawing code repacks these",
         " * if the device it finds disagrees.",
         " */",

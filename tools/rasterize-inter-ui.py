@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Developer tool: rasterize pinned Inter into OpenGAT's committed UI atlas.
+"""Developer tool: rasterize pinned Inter into OpenRFS's committed UI atlas.
 
 This regeneration step requires Pillow. The regular kernel build consumes the
 resulting grayscale PNG and metrics text using only the Python standard
