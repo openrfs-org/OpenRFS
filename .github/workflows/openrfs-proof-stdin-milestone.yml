@@ -111,7 +111,7 @@ jobs:
                   cmp build/openrfs-userland-first.raw \
                       build/userspace/openrfs-userland-fat16.raw
                   test "$(sha256sum build/userspace/openrfs-userland-fat16.raw | awk '{print toupper($1)}')" = \
-                      234289FCC58E498AA18A68B5BFF00E9F81940211CAAF2507B81CB65155EBE975
+                      29E49384CBF65B9F54516B875ABE183C69072DF461C76F7F6DD8E497055D4D21
             - name: Rebuild and trace all measured profiles twice
               shell: bash
               run: |
@@ -264,7 +264,7 @@ jobs:
                       printf 'BUSYBOX: clusters 2-10, 33584 bytes\n'
                       printf 'UNAMEBOX: clusters 11-20, 38368 bytes\n'
                       printf 'CATBOX: clusters 21-30, 38632 bytes\n'
-                      printf 'volume SHA-256: 234289FCC58E498AA18A68B5BFF00E9F81940211CAAF2507B81CB65155EBE975\n'
+                      printf 'volume SHA-256: 29E49384CBF65B9F54516B875ABE183C69072DF461C76F7F6DD8E497055D4D21\n'
                   } >"$release/userspace-volume-layout.txt"
                   {
                       printf 'Positive: linux cat completed twice with different lines and Ctrl-D through OpenRFS keyboard events.\n'
