@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#include <opengat/de/theme.h>
+#include <openrfs/de/theme.h>
 
 /*
  * The first three palettes retain their documented upstream definitions.
- * The OpenGAT palette uses the supplied G mark's navy and blue-grey with a
+ * The OpenRFS palette uses the supplied G mark's navy and blue-grey with a
  * neutral charcoal surface. It is the default desktop palette.
  */
 
-static const struct opengat_palette PALETTES[] = {
+static const struct openrfs_palette PALETTES[] = {
     /* Clearlooks: gtk2-engines, usr/share/themes/Clearlooks/gtk-2.0/gtkrc */
     {
         0xEDECEBU, 0xF2F1F0U, 0xD5D4D3U, 0xFFFFFFU, 0xE1E0DFU,
@@ -28,7 +28,7 @@ static const struct opengat_palette PALETTES[] = {
         0xEEEEECU, 0xEEEEECU, 0x215D9CU, 0xFFFFFFU, 0x1B1B1BU, 0x4A4A4AU,
         0x2F2F2FU, 0x1E1E1EU, 0x262626U, 0x1A1A1AU, 0xD8D8D6U, 0x8A8A88U
     },
-    /* OpenGAT: navy accent, blue-grey focus, neutral dark surfaces. */
+    /* OpenRFS: navy accent, blue-grey focus, neutral dark surfaces. */
     {
         0x30363CU, 0x394149U, 0x252A2FU, 0x2A3036U, 0x333A41U,
         0xF1F3F5U, 0xE5E9EDU, 0x0E4976U, 0xFFFFFFU, 0x1D2227U, 0x46515CU,
@@ -37,27 +37,27 @@ static const struct opengat_palette PALETTES[] = {
 };
 
 static const char *const NAMES[] = {
-    "Clearlooks", "Adwaita", "Adwaita-dark", "OpenGAT"
+    "Clearlooks", "Adwaita", "Adwaita-dark", "OpenRFS"
 };
 
 #define THEME_COUNT (sizeof(PALETTES) / sizeof(PALETTES[0]))
 
-/* OpenGAT, not Clearlooks: this is the desktop's own theme and the one it
+/* OpenRFS, not Clearlooks: this is the desktop's own theme and the one it
  * was drawn to look like.  The LXDE defaults are still in the list, one
  * press of the Widget row away. */
 static uint32_t current = 3U;
 
-const struct opengat_palette *opengat_theme(void)
+const struct openrfs_palette *openrfs_theme(void)
 {
     return &PALETTES[current];
 }
 
-uint32_t opengat_theme_count(void)
+uint32_t openrfs_theme_count(void)
 {
     return (uint32_t)THEME_COUNT;
 }
 
-const char *opengat_theme_name(uint32_t at)
+const char *openrfs_theme_name(uint32_t at)
 {
     if (at >= THEME_COUNT) {
         return "";
@@ -65,7 +65,7 @@ const char *opengat_theme_name(uint32_t at)
     return NAMES[at];
 }
 
-bool opengat_theme_select(uint32_t at)
+bool openrfs_theme_select(uint32_t at)
 {
     if (at >= THEME_COUNT) {
         return false;
@@ -74,12 +74,12 @@ bool opengat_theme_select(uint32_t at)
     return true;
 }
 
-uint32_t opengat_theme_selected(void)
+uint32_t openrfs_theme_selected(void)
 {
     return current;
 }
 
-bool opengat_theme_select_named(const char *name)
+bool openrfs_theme_select_named(const char *name)
 {
     uint32_t at;
 

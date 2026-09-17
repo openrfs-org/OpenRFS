@@ -3,9 +3,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/clock.h>
-#include <opengat/cpu.h>
-#include <opengat/random.h>
+#include <openrfs/clock.h>
+#include <openrfs/cpu.h>
+#include <openrfs/random.h>
 
 #define CPUID_BASIC UINT32_C(0)
 #define CPUID_FEATURES UINT32_C(1)

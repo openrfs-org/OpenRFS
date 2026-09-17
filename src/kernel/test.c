@@ -3,61 +3,61 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/acpi.h>
-#include <opengat/acpi_util.h>
-#include <opengat/abi/base.h>
-#include <opengat/apic.h>
-#include <opengat/apic_timer.h>
-#include <opengat/boot_ledger.h>
-#include <opengat/boot_plan.h>
-#include <opengat/clock.h>
-#include <opengat/console.h>
-#include <opengat/cpu.h>
-#include <opengat/device_substrate.h>
-#include <opengat/dma.h>
-#include <opengat/ext4_fs.h>
-#include <opengat/framebuffer.h>
-#include <opengat/filesystem.h>
-#include <opengat/fat32_fs.h>
-#include <opengat/font.h>
-#include <opengat/heap.h>
-#include <opengat/interrupts.h>
-#include <opengat/ioapic.h>
-#include <opengat/memory.h>
-#include <opengat/network.h>
-#include <opengat/native_process.h>
-#include <opengat/network_syscall.h>
-#include <opengat/audio.h>
-#include <opengat/nvidia.h>
-#include <opengat/driver.h>
-#include <opengat/multiprocess.h>
-#include <opengat/nvme.h>
-#include <opengat/paging.h>
-#include <opengat/package_service.h>
-#include <opengat/package_state.h>
-#include <opengat/pci.h>
-#include <opengat/pci_resource.h>
-#include <opengat/pic.h>
-#include <opengat/pit.h>
-#include <opengat/pointer.h>
-#include <opengat/process.h>
-#include <opengat/random.h>
-#include <opengat/keyboard.h>
-#include <opengat/linux_abi.h>
-#include <opengat/linux_cat.h>
-#include <opengat/linux_uname.h>
-#include <opengat/linux_userland.h>
-#include <opengat/screen.h>
-#include <opengat/shell.h>
-#include <opengat/pm_timer.h>
-#include <opengat/surface.h>
-#include <opengat/test.h>
-#include <opengat/thread.h>
-#include <opengat/timer.h>
-#include <opengat/tsc.h>
-#include <opengat/ui.h>
-#include <opengat/ui_font.h>
-#include <opengat/xhci.h>
+#include <openrfs/acpi.h>
+#include <openrfs/acpi_util.h>
+#include <openrfs/abi/base.h>
+#include <openrfs/apic.h>
+#include <openrfs/apic_timer.h>
+#include <openrfs/boot_ledger.h>
+#include <openrfs/boot_plan.h>
+#include <openrfs/clock.h>
+#include <openrfs/console.h>
+#include <openrfs/cpu.h>
+#include <openrfs/device_substrate.h>
+#include <openrfs/dma.h>
+#include <openrfs/ext4_fs.h>
+#include <openrfs/framebuffer.h>
+#include <openrfs/filesystem.h>
+#include <openrfs/fat32_fs.h>
+#include <openrfs/font.h>
+#include <openrfs/heap.h>
+#include <openrfs/interrupts.h>
+#include <openrfs/ioapic.h>
+#include <openrfs/memory.h>
+#include <openrfs/network.h>
+#include <openrfs/native_process.h>
+#include <openrfs/network_syscall.h>
+#include <openrfs/audio.h>
+#include <openrfs/nvidia.h>
+#include <openrfs/driver.h>
+#include <openrfs/multiprocess.h>
+#include <openrfs/nvme.h>
+#include <openrfs/paging.h>
+#include <openrfs/package_service.h>
+#include <openrfs/package_state.h>
+#include <openrfs/pci.h>
+#include <openrfs/pci_resource.h>
+#include <openrfs/pic.h>
+#include <openrfs/pit.h>
+#include <openrfs/pointer.h>
+#include <openrfs/process.h>
+#include <openrfs/random.h>
+#include <openrfs/keyboard.h>
+#include <openrfs/linux_abi.h>
+#include <openrfs/linux_cat.h>
+#include <openrfs/linux_uname.h>
+#include <openrfs/linux_userland.h>
+#include <openrfs/screen.h>
+#include <openrfs/shell.h>
+#include <openrfs/pm_timer.h>
+#include <openrfs/surface.h>
+#include <openrfs/test.h>
+#include <openrfs/thread.h>
+#include <openrfs/timer.h>
+#include <openrfs/tsc.h>
+#include <openrfs/ui.h>
+#include <openrfs/ui_font.h>
+#include <openrfs/xhci.h>
 
 #define QEMU_EXIT_PORT UINT16_C(0x00F4)
 #define QEMU_FAILURE_VALUE UINT8_C(0x7F)
@@ -99,7 +99,7 @@
 
 _Static_assert(
     PAGING_TEST_HUGE_ADDRESS % PAGING_HUGE_PAGE_SIZE == 0U &&
-        PAGING_TEST_HUGE_ADDRESS < OPENGAT_EARLY_PHYSICAL_LIMIT,
+        PAGING_TEST_HUGE_ADDRESS < OPENRFS_EARLY_PHYSICAL_LIMIT,
     "the paging huge-leaf probe must stay aligned inside the identity map"
 );
 
@@ -331,8 +331,8 @@ static enum kernel_test_scenario scenario_from_value(
         return KERNEL_TEST_BOOT_LEDGER;
     }
 
-    if (token_equals(value, length, "opengat-proof")) {
-        return KERNEL_TEST_OPENGAT_PROOF;
+    if (token_equals(value, length, "openrfs-proof")) {
+        return KERNEL_TEST_OPENRFS_PROOF;
     }
 
     if (token_equals(value, length, "device-substrate")) {
@@ -363,21 +363,21 @@ static enum kernel_test_scenario scenario_from_value(
         return KERNEL_TEST_LINUX_ABI_UNAME;
     }
 
-    if (token_equals(value, length, "opengat-proof-userland")) {
-        return KERNEL_TEST_OPENGAT_PROOF_USERLAND;
+    if (token_equals(value, length, "openrfs-proof-userland")) {
+        return KERNEL_TEST_OPENRFS_PROOF_USERLAND;
     }
 
-    if (token_equals(value, length, "opengat-proof-userland-absent")) {
-        return KERNEL_TEST_OPENGAT_PROOF_USERLAND_ABSENT;
+    if (token_equals(value, length, "openrfs-proof-userland-absent")) {
+        return KERNEL_TEST_OPENRFS_PROOF_USERLAND_ABSENT;
     }
 
-    if (token_equals(value, length, "opengat-proof-userland-interactive")) {
-        return KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE;
+    if (token_equals(value, length, "openrfs-proof-userland-interactive")) {
+        return KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE;
     }
 
     if (token_equals(
-            value, length, "opengat-proof-userland-interactive-absent")) {
-        return KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE_ABSENT;
+            value, length, "openrfs-proof-userland-interactive-absent")) {
+        return KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE_ABSENT;
     }
 
     if (token_equals(value, length, "fat32-system")) {
@@ -593,8 +593,8 @@ static enum kernel_test_scenario scenario_from_value(
     if (token_equals(value, length, "native-https")) {
         return KERNEL_TEST_NATIVE_HTTPS;
     }
-    if (token_equals(value, length, "native-opengat")) {
-        return KERNEL_TEST_NATIVE_OPENGAT;
+    if (token_equals(value, length, "native-openrfs")) {
+        return KERNEL_TEST_NATIVE_OPENRFS;
     }
     if (token_equals(value, length, "ext4-recovery")) {
         return KERNEL_TEST_EXT4_RECOVERY;
@@ -677,7 +677,7 @@ static uint8_t scenario_exit_value(enum kernel_test_scenario scenario)
         return UINT8_C(0x2D);
     case KERNEL_TEST_BOOT_LEDGER:
         return UINT8_C(0x2E);
-    case KERNEL_TEST_OPENGAT_PROOF:
+    case KERNEL_TEST_OPENRFS_PROOF:
         return UINT8_C(0x2F);
     case KERNEL_TEST_DEVICE_SUBSTRATE:
         return UINT8_C(0x30);
@@ -693,13 +693,13 @@ static uint8_t scenario_exit_value(enum kernel_test_scenario scenario)
         return UINT8_C(0x36);
     case KERNEL_TEST_LINUX_ABI_UNAME:
         return UINT8_C(0x37);
-    case KERNEL_TEST_OPENGAT_PROOF_USERLAND:
+    case KERNEL_TEST_OPENRFS_PROOF_USERLAND:
         return UINT8_C(0x38);
-    case KERNEL_TEST_OPENGAT_PROOF_USERLAND_ABSENT:
+    case KERNEL_TEST_OPENRFS_PROOF_USERLAND_ABSENT:
         return UINT8_C(0x39);
-    case KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE:
+    case KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE:
         return UINT8_C(0x3A);
-    case KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE_ABSENT:
+    case KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE_ABSENT:
         return UINT8_C(0x3B);
     case KERNEL_TEST_FAT32_SYSTEM:
         return UINT8_C(0x3C);
@@ -789,7 +789,7 @@ static uint8_t scenario_exit_value(enum kernel_test_scenario scenario)
     case KERNEL_TEST_NATIVE_DYNAMIC: return UINT8_C(0x84);
     case KERNEL_TEST_NATIVE_HTTPS: return UINT8_C(0x85);
     case KERNEL_TEST_EXT4_RECOVERY: return UINT8_C(0x86);
-    case KERNEL_TEST_NATIVE_OPENGAT: return UINT8_C(0x87);
+    case KERNEL_TEST_NATIVE_OPENRFS: return UINT8_C(0x87);
     default:
         return QEMU_FAILURE_VALUE;
     }
@@ -977,7 +977,7 @@ enum kernel_test_scenario kernel_test_select(
     const struct boot_information *context
 )
 {
-    static const char prefix[] = "opengat.test=";
+    static const char prefix[] = "openrfs.test=";
     enum kernel_test_scenario selected = KERNEL_TEST_NONE;
     size_t offset = 0;
 
@@ -1222,7 +1222,7 @@ static void ioapic_level_scenario(void)
 
     /*
      * Read the entry off the hardware. An entry programmed edge triggered while
-     * OpenGAT's records called it level triggered would deliver every interrupt
+     * OpenRFS's records called it level triggered would deliver every interrupt
      * below and latch nothing, so this is the check that catches it.
      */
     if (ioapic_read_redirection(pit_active_vector(), &entry) !=
@@ -2107,7 +2107,7 @@ static volatile uint8_t paging_scratch;
  * recorded in a table.
  *
  * `make verify` has always refused an RWX load segment, and until this
- * increment that assertion was the only thing standing behind OpenGAT's W^X
+ * increment that assertion was the only thing standing behind OpenRFS's W^X
  * claim - and it inspects the ELF file, not the machine the kernel runs on.
  * Everything below the rejections is the part a file check can never do: a
  * fresh frame is mapped writable, written, narrowed to read-only, and written
@@ -2172,23 +2172,23 @@ static void paging_scenario(const struct paging_device_windows *device_windows)
     }
 
     /* Every refusal, through the public interface, against the live tables. */
-    if (paging_map(PAGING_PROBE_ADDRESS + 1U, 0U, OPENGAT_PAGE_SIZE,
+    if (paging_map(PAGING_PROBE_ADDRESS + 1U, 0U, OPENRFS_PAGE_SIZE,
             PAGING_WRITE) != PAGING_STATUS_UNALIGNED_ADDRESS ||
         paging_map(PAGING_PROBE_ADDRESS, 0U, 0U, PAGING_WRITE) !=
             PAGING_STATUS_ZERO_LENGTH ||
-        paging_map(UINT64_C(0x0000800000000000), 0U, OPENGAT_PAGE_SIZE,
+        paging_map(UINT64_C(0x0000800000000000), 0U, OPENRFS_PAGE_SIZE,
             PAGING_WRITE) != PAGING_STATUS_NONCANONICAL_ADDRESS ||
-        paging_map(PAGING_PROBE_ADDRESS, 0U, OPENGAT_PAGE_SIZE,
+        paging_map(PAGING_PROBE_ADDRESS, 0U, OPENRFS_PAGE_SIZE,
             PAGING_WRITE | PAGING_EXECUTE) !=
             PAGING_STATUS_WRITABLE_AND_EXECUTABLE) {
         kernel_test_fail("a malformed mapping request was accepted");
     }
 
-    if (paging_map(text & ~(OPENGAT_PAGE_SIZE - 1U), 0U, OPENGAT_PAGE_SIZE,
+    if (paging_map(text & ~(OPENRFS_PAGE_SIZE - 1U), 0U, OPENRFS_PAGE_SIZE,
             PAGING_WRITE) != PAGING_STATUS_ALREADY_MAPPED ||
-        paging_unmap(PAGING_PROBE_ADDRESS, OPENGAT_PAGE_SIZE) !=
+        paging_unmap(PAGING_PROBE_ADDRESS, OPENRFS_PAGE_SIZE) !=
             PAGING_STATUS_NOT_MAPPED ||
-        paging_protect(PAGING_PROBE_ADDRESS, OPENGAT_PAGE_SIZE, PAGING_READ) !=
+        paging_protect(PAGING_PROBE_ADDRESS, OPENRFS_PAGE_SIZE, PAGING_READ) !=
             PAGING_STATUS_NOT_MAPPED) {
         kernel_test_fail("an impossible mapping change was accepted");
     }
@@ -2198,9 +2198,9 @@ static void paging_scenario(const struct paging_device_windows *device_windows)
      * so a 4 KiB change inside one is refused rather than silently applied to
      * the whole 2 MiB.
      */
-    if (paging_protect(PAGING_TEST_HUGE_ADDRESS, OPENGAT_PAGE_SIZE,
+    if (paging_protect(PAGING_TEST_HUGE_ADDRESS, OPENRFS_PAGE_SIZE,
             PAGING_READ) != PAGING_STATUS_HUGE_PAGE_PRESENT ||
-        paging_unmap(PAGING_TEST_HUGE_ADDRESS, OPENGAT_PAGE_SIZE) !=
+        paging_unmap(PAGING_TEST_HUGE_ADDRESS, OPENRFS_PAGE_SIZE) !=
             PAGING_STATUS_HUGE_PAGE_PRESENT) {
         kernel_test_fail("a 2 MiB mapping accepted a 4 KiB change");
     }
@@ -2214,9 +2214,9 @@ static void paging_scenario(const struct paging_device_windows *device_windows)
         kernel_test_fail("no frame was available for the probe page");
     }
 
-    if (paging_map(PAGING_PROBE_ADDRESS, frame, OPENGAT_PAGE_SIZE,
+    if (paging_map(PAGING_PROBE_ADDRESS, frame, OPENRFS_PAGE_SIZE,
             PAGING_WRITE) != PAGING_STATUS_OK ||
-        paging_map(PAGING_PROBE_ADDRESS, frame, OPENGAT_PAGE_SIZE,
+        paging_map(PAGING_PROBE_ADDRESS, frame, OPENRFS_PAGE_SIZE,
             PAGING_WRITE) != PAGING_STATUS_ALREADY_MAPPED) {
         kernel_test_fail("the probe page would not map exactly once");
     }
@@ -2235,7 +2235,7 @@ static void paging_scenario(const struct paging_device_windows *device_windows)
         kernel_test_fail("the probe page does not translate to its frame");
     }
 
-    if (paging_protect(PAGING_PROBE_ADDRESS, OPENGAT_PAGE_SIZE, PAGING_READ) !=
+    if (paging_protect(PAGING_PROBE_ADDRESS, OPENRFS_PAGE_SIZE, PAGING_READ) !=
         PAGING_STATUS_OK) {
         kernel_test_fail("the probe page would not narrow to read-only");
     }
@@ -2258,7 +2258,7 @@ static void paging_scenario(const struct paging_device_windows *device_windows)
      * kernel, so the check that matters is that the frame count is identical
      * after sixty-four cycles - and the paging state's own table count with it.
      */
-    if (paging_unmap(PAGING_PROBE_ADDRESS, OPENGAT_PAGE_SIZE) !=
+    if (paging_unmap(PAGING_PROBE_ADDRESS, OPENRFS_PAGE_SIZE) !=
         PAGING_STATUS_OK) {
         kernel_test_fail("the probe page would not unmap before the cycle");
     }
@@ -2270,9 +2270,9 @@ static void paging_scenario(const struct paging_device_windows *device_windows)
         uintptr_t cycle_frame;
 
         if (frame_allocate(&cycle_frame) != FRAME_STATUS_OK ||
-            paging_map(PAGING_PROBE_ADDRESS, cycle_frame, OPENGAT_PAGE_SIZE,
+            paging_map(PAGING_PROBE_ADDRESS, cycle_frame, OPENRFS_PAGE_SIZE,
                 PAGING_WRITE) != PAGING_STATUS_OK ||
-            paging_unmap(PAGING_PROBE_ADDRESS, OPENGAT_PAGE_SIZE) !=
+            paging_unmap(PAGING_PROBE_ADDRESS, OPENRFS_PAGE_SIZE) !=
                 PAGING_STATUS_OK ||
             frame_release(cycle_frame) != FRAME_STATUS_OK) {
             kernel_test_fail("a map and unmap cycle did not complete");
@@ -2293,9 +2293,9 @@ static void paging_scenario(const struct paging_device_windows *device_windows)
 
     /* Put the probe page back so the fault below has something to narrow. */
     if (frame_allocate(&frame) != FRAME_STATUS_OK ||
-        paging_map(PAGING_PROBE_ADDRESS, frame, OPENGAT_PAGE_SIZE,
+        paging_map(PAGING_PROBE_ADDRESS, frame, OPENRFS_PAGE_SIZE,
             PAGING_WRITE) != PAGING_STATUS_OK ||
-        paging_protect(PAGING_PROBE_ADDRESS, OPENGAT_PAGE_SIZE, PAGING_READ) !=
+        paging_protect(PAGING_PROBE_ADDRESS, OPENRFS_PAGE_SIZE, PAGING_READ) !=
             PAGING_STATUS_OK) {
         kernel_test_fail("the probe page would not come back read-only");
     }
@@ -2934,7 +2934,7 @@ static void pci_ecam_scenario(
     }
 
     /*
-     * A bus past what OpenGAT mapped is refused rather than folded back into the
+     * A bus past what OpenRFS mapped is refused rather than folded back into the
      * window, which is the failure that would read one bus as another.
      */
     address.segment = 0U;
@@ -3521,7 +3521,7 @@ static void shell_scenario(void)
     }
 
     after = shell_get_state();
-    console_write("OpenGAT: shell scenario ran ");
+    console_write("OpenRFS: shell scenario ran ");
     console_write_u64(after.commands);
     console_write(" commands and refused ");
     console_write_u64(after.unknown);
@@ -3682,7 +3682,7 @@ static void keyboard_scenario(void)
         kernel_test_fail("the keyboard lost events it never accounted for");
     }
 
-    console_write("OpenGAT: keyboard scenario queued ");
+    console_write("OpenRFS: keyboard scenario queued ");
     console_write_u64((uint64_t)after.queued);
     console_write(" and dropped ");
     console_write_u64(after.dropped - before.dropped);
@@ -3702,7 +3702,7 @@ static void screen_scenario(void)
         kernel_test_fail("the screen scenario has no console");
     }
 
-    if (opengat_font_geometry(&width, &height, &first, &count) !=
+    if (openrfs_font_geometry(&width, &height, &first, &count) !=
         FONT_STATUS_OK) {
         kernel_test_fail("the font table would not describe itself");
     }
@@ -3799,7 +3799,7 @@ static void screen_scenario(void)
         }
     }
 
-    console_write("OpenGAT: screen scenario drew ");
+    console_write("OpenRFS: screen scenario drew ");
     console_write_u64((uint64_t)count);
     console_write(" glyphs and read every one back\n");
 }
@@ -4655,7 +4655,7 @@ void kernel_test_run(
     case KERNEL_TEST_BOOT_LEDGER:
         /* Deferred until kernel_main publishes the fully verified receipts. */
         return;
-    case KERNEL_TEST_OPENGAT_PROOF:
+    case KERNEL_TEST_OPENRFS_PROOF:
         /* Deferred until the ledger and UI are both installed and published. */
         return;
     case KERNEL_TEST_DEVICE_SUBSTRATE:
@@ -4679,10 +4679,10 @@ void kernel_test_run(
     case KERNEL_TEST_LINUX_ABI_UNAME:
         /* Deferred until the uname proof receipt is installed and published. */
         return;
-    case KERNEL_TEST_OPENGAT_PROOF_USERLAND:
-    case KERNEL_TEST_OPENGAT_PROOF_USERLAND_ABSENT:
-    case KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE:
-    case KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE_ABSENT:
+    case KERNEL_TEST_OPENRFS_PROOF_USERLAND:
+    case KERNEL_TEST_OPENRFS_PROOF_USERLAND_ABSENT:
+    case KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE:
+    case KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE_ABSENT:
     case KERNEL_TEST_FAT32_SYSTEM:
     case KERNEL_TEST_FAT32_DATA:
     case KERNEL_TEST_FAT32_NESTED:
@@ -4753,9 +4753,9 @@ void kernel_test_run(
     case KERNEL_TEST_NATIVE_SDL:
     case KERNEL_TEST_NATIVE_DYNAMIC:
     case KERNEL_TEST_NATIVE_HTTPS:
-    case KERNEL_TEST_NATIVE_OPENGAT:
+    case KERNEL_TEST_NATIVE_OPENRFS:
     case KERNEL_TEST_EXT4_RECOVERY:
-        /* Deferred until OpenGAT and the Boot Ledger are published. */
+        /* Deferred until OpenRFS and the Boot Ledger are published. */
         return;
     case KERNEL_TEST_MULTIPROCESS_SLOTS:
         multiprocess_slots_scenario();
@@ -4765,7 +4765,7 @@ void kernel_test_run(
         interrupt_test_set_gate_present(14U, false);
         interrupt_trigger_page_fault();
     case KERNEL_TEST_INVALID:
-        kernel_test_fail("invalid or duplicate opengat.test argument");
+        kernel_test_fail("invalid or duplicate openrfs.test argument");
     case KERNEL_TEST_NONE:
     default:
         kernel_test_fail("unreachable test scenario");
@@ -4784,17 +4784,17 @@ _Noreturn void kernel_test_complete_normal(void)
 _Noreturn void kernel_test_complete_ext4_recovery(void)
 {
     static const uint8_t expected[] =
-        "OpenGAT deterministic ext4 fixture\n";
+        "OpenRFS deterministic ext4 fixture\n";
     static const uint8_t transaction_byte = 'X';
     const struct boot_ledger *ledger = boot_ledger_installed();
     const struct boot_stage_receipt *nvme_proof;
     const struct boot_stage_receipt *fat16_proof;
-    struct opengat_ext4_mount_diagnostic mount_diagnostic = {0};
-    struct opengat_ext4_recovery_report clean_remount = {0};
-    struct opengat_ext4_recovery_report recovery = {0};
-    const struct opengatfs_drive_info drive = opengatfs_drive(OPENGATFS_VOLUME_SYSTEM);
-    struct opengatfs_stat stat = {0};
-    opengatfs_handle handle = 0U;
+    struct openrfs_ext4_mount_diagnostic mount_diagnostic = {0};
+    struct openrfs_ext4_recovery_report clean_remount = {0};
+    struct openrfs_ext4_recovery_report recovery = {0};
+    const struct openrfsfs_drive_info drive = openrfsfs_drive(OPENRFSFS_VOLUME_SYSTEM);
+    struct openrfsfs_stat stat = {0};
+    openrfsfs_handle handle = 0U;
     uint8_t bytes[sizeof(expected)] = {0};
     uint8_t appended = 0U;
     size_t read_bytes = 0U;
@@ -4802,7 +4802,7 @@ _Noreturn void kernel_test_complete_ext4_recovery(void)
     bool contents_match = true;
     bool transaction_already_visible = false;
     const bool power_cut = ext4_backend_test_power_cut_configured();
-    const uint64_t before = opengatfs_completion_count(OPENGATFS_VOLUME_SYSTEM);
+    const uint64_t before = openrfsfs_completion_count(OPENRFSFS_VOLUME_SYSTEM);
 
     if (active_scenario != KERNEL_TEST_EXT4_RECOVERY) {
         kernel_test_fail("ext4 recovery completion used outside its scenario");
@@ -4825,13 +4825,13 @@ _Noreturn void kernel_test_complete_ext4_recovery(void)
         kernel_test_fail("ext4 namespace proof skips are invalid");
     }
     if (!drive.present || !drive.mounted || drive.read_only || !drive.healthy) {
-        if (!ext4_backend_mount_diagnostic(OPENGATFS_VOLUME_SYSTEM,
+        if (!ext4_backend_mount_diagnostic(OPENRFSFS_VOLUME_SYSTEM,
                 &mount_diagnostic)) {
             kernel_test_fail("ext4 mount diagnostic is unavailable");
         }
         console_write("ST EXT4 RECOVERY mount status ");
         console_write_u64((uint64_t)ext4_backend_last_mount_status(
-            OPENGATFS_VOLUME_SYSTEM));
+            OPENRFSFS_VOLUME_SYSTEM));
         console_write(" begin ");
         console_write_u64((uint64_t)mount_diagnostic.begin_status);
         console_write(" rust ");
@@ -4853,7 +4853,7 @@ _Noreturn void kernel_test_complete_ext4_recovery(void)
     if (drive.free_bytes == 0U || drive.free_bytes >= drive.total_bytes) {
         kernel_test_fail("ext4 allocator capacity was not exported");
     }
-    if (!ext4_backend_recovery_report(OPENGATFS_VOLUME_SYSTEM, &recovery)) {
+    if (!ext4_backend_recovery_report(OPENRFSFS_VOLUME_SYSTEM, &recovery)) {
         kernel_test_fail("ext4 recovery report is unavailable");
     }
     if (recovery.performed) {
@@ -4870,13 +4870,13 @@ _Noreturn void kernel_test_complete_ext4_recovery(void)
         recovery.consumed_slots != 0U) {
         kernel_test_fail("clean ext4 mount reported journal recovery");
     }
-    if (opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
-            OPENGATFS_STATUS_OK || stat.directory || stat.read_only ||
+    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
+            OPENRFSFS_STATUS_OK || stat.directory || stat.read_only ||
         (stat.size != sizeof(expected) - 1U && stat.size != UINT64_C(4097)) ||
-        opengatfs_open(OPENGATFS_VOLUME_SYSTEM, "system/README.TXT",
-            OPENGATFS_ACCESS_READ, &handle) != OPENGATFS_STATUS_OK ||
-        opengatfs_pread(handle, bytes, sizeof(expected) - 1U, 0U, &read_bytes) !=
-            OPENGATFS_STATUS_OK || read_bytes != sizeof(expected) - 1U) {
+        openrfsfs_open(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT",
+            OPENRFSFS_ACCESS_READ, &handle) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_pread(handle, bytes, sizeof(expected) - 1U, 0U, &read_bytes) !=
+            OPENRFSFS_STATUS_OK || read_bytes != sizeof(expected) - 1U) {
         kernel_test_fail("ext4 recovered namespace could not be read");
     }
     transaction_already_visible = stat.size == UINT64_C(4097);
@@ -4887,178 +4887,178 @@ _Noreturn void kernel_test_complete_ext4_recovery(void)
     }
     if (!contents_match ||
         (transaction_already_visible &&
-            (opengatfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
-                &read_bytes) != OPENGATFS_STATUS_OK || read_bytes != 1U ||
+            (openrfsfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
+                &read_bytes) != OPENRFSFS_STATUS_OK || read_bytes != 1U ||
              appended != transaction_byte)) ||
-        opengatfs_close(handle) != OPENGATFS_STATUS_OK ||
-        opengatfs_close(handle) != OPENGATFS_STATUS_STALE_HANDLE ||
-        opengatfs_completion_count(OPENGATFS_VOLUME_SYSTEM) <= before) {
+        openrfsfs_close(handle) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_close(handle) != OPENRFSFS_STATUS_STALE_HANDLE ||
+        openrfsfs_completion_count(OPENRFSFS_VOLUME_SYSTEM) <= before) {
         kernel_test_fail("ext4 recovery read leaked or changed data");
     }
-    if (opengatfs_open(OPENGATFS_VOLUME_SYSTEM, "system/README.TXT",
-            OPENGATFS_ACCESS_WRITE, &handle) != OPENGATFS_STATUS_OK ||
-        opengatfs_pread(handle, &appended, sizeof(appended), 0U, &read_bytes) !=
-            OPENGATFS_STATUS_ACCESS ||
-        opengatfs_close(handle) != OPENGATFS_STATUS_OK) {
+    if (openrfsfs_open(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT",
+            OPENRFSFS_ACCESS_WRITE, &handle) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_pread(handle, &appended, sizeof(appended), 0U, &read_bytes) !=
+            OPENRFSFS_STATUS_ACCESS ||
+        openrfsfs_close(handle) != OPENRFSFS_STATUS_OK) {
         kernel_test_fail("ext4 writable handle access enforcement failed");
     }
-    if (opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK) {
+    if (openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK) {
         kernel_test_fail("clean ext4 sync failed");
     }
     if (!power_cut && !transaction_already_visible) {
         if (!ext4_backend_test_fail_storage_once(3U) ||
-            ext4_backend_transaction_probe(OPENGATFS_VOLUME_SYSTEM,
+            ext4_backend_transaction_probe(OPENRFSFS_VOLUME_SYSTEM,
                 "system/README.TXT", UINT64_C(4096), &transaction_byte,
-                sizeof(transaction_byte), &written_bytes) != OPENGATFS_STATUS_IO ||
+                sizeof(transaction_byte), &written_bytes) != OPENRFSFS_STATUS_IO ||
             !ext4_backend_test_storage_failure_observed(
-                OPENGAT_EXT4_TEST_STORAGE_WRITE) ||
+                OPENRFS_EXT4_TEST_STORAGE_WRITE) ||
             !ext4_backend_test_fail_storage_once(3U) ||
-            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_IO ||
+            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_IO ||
             !ext4_backend_test_storage_failure_observed(
-                OPENGAT_EXT4_TEST_STORAGE_FLUSH)) {
+                OPENRFS_EXT4_TEST_STORAGE_FLUSH)) {
             kernel_test_fail("ext4 pending allocation failure retry is invalid");
         }
     }
     if (!transaction_already_visible &&
-        (ext4_backend_transaction_probe(OPENGATFS_VOLUME_SYSTEM,
+        (ext4_backend_transaction_probe(OPENRFSFS_VOLUME_SYSTEM,
             "system/README.TXT", UINT64_C(4096), &transaction_byte,
-            sizeof(transaction_byte), &written_bytes) != OPENGATFS_STATUS_OK ||
+            sizeof(transaction_byte), &written_bytes) != OPENRFSFS_STATUS_OK ||
          written_bytes != sizeof(transaction_byte))) {
         kernel_test_fail("ext4 private journal transaction probe failed");
     }
     if (!power_cut && !transaction_already_visible) {
         if (!ext4_backend_test_fail_storage_once(1U) ||
-            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_IO ||
+            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_IO ||
             !ext4_backend_test_storage_failure_observed(
-                OPENGAT_EXT4_TEST_STORAGE_WRITE) ||
+                OPENRFS_EXT4_TEST_STORAGE_WRITE) ||
             !ext4_backend_test_fail_storage_once(2U) ||
-            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_IO ||
+            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_IO ||
             !ext4_backend_test_storage_failure_observed(
-                OPENGAT_EXT4_TEST_STORAGE_FLUSH)) {
+                OPENRFS_EXT4_TEST_STORAGE_FLUSH)) {
             kernel_test_fail("ext4 sync retry is invalid");
         }
     }
-    if (opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
-        opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
-            OPENGATFS_STATUS_OK || stat.size != UINT64_C(4097) ||
-        opengatfs_open(OPENGATFS_VOLUME_SYSTEM, "system/README.TXT",
-            OPENGATFS_ACCESS_READ, &handle) != OPENGATFS_STATUS_OK ||
-        opengatfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
-            &read_bytes) != OPENGATFS_STATUS_OK || read_bytes != 1U ||
+    if (openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
+            OPENRFSFS_STATUS_OK || stat.size != UINT64_C(4097) ||
+        openrfsfs_open(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT",
+            OPENRFSFS_ACCESS_READ, &handle) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
+            &read_bytes) != OPENRFSFS_STATUS_OK || read_bytes != 1U ||
         appended != transaction_byte ||
-        opengatfs_close(handle) != OPENGATFS_STATUS_OK) {
+        openrfsfs_close(handle) != OPENRFSFS_STATUS_OK) {
         kernel_test_fail("ext4 private journal transaction probe failed");
     }
     if (!power_cut && !transaction_already_visible) {
-        if (opengatfs_truncate(OPENGATFS_VOLUME_SYSTEM,
+        if (openrfsfs_truncate(OPENRFSFS_VOLUME_SYSTEM,
                 "system/README.TXT", sizeof(expected) - 1U) !=
-                OPENGATFS_STATUS_OK ||
-            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
-            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
-                OPENGATFS_STATUS_OK || stat.size != sizeof(expected) - 1U ||
-            opengatfs_open(OPENGATFS_VOLUME_SYSTEM, "system/README.TXT",
-                OPENGATFS_ACCESS_READ, &handle) != OPENGATFS_STATUS_OK ||
-            opengatfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
-                &read_bytes) != OPENGATFS_STATUS_OK || read_bytes != 0U ||
-            opengatfs_close(handle) != OPENGATFS_STATUS_OK) {
+                OPENRFSFS_STATUS_OK ||
+            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
+            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
+                OPENRFSFS_STATUS_OK || stat.size != sizeof(expected) - 1U ||
+            openrfsfs_open(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT",
+                OPENRFSFS_ACCESS_READ, &handle) != OPENRFSFS_STATUS_OK ||
+            openrfsfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
+                &read_bytes) != OPENRFSFS_STATUS_OK || read_bytes != 0U ||
+            openrfsfs_close(handle) != OPENRFSFS_STATUS_OK) {
             kernel_test_fail("ext4 private truncate revocation probe failed");
         }
         written_bytes = 0U;
-        if (opengatfs_open(OPENGATFS_VOLUME_SYSTEM, "system/README.TXT",
-                OPENGATFS_ACCESS_WRITE, &handle) != OPENGATFS_STATUS_OK ||
-            opengatfs_seek(handle, INT64_C(4096), OPENGATFS_SEEK_START, NULL) !=
-                OPENGATFS_STATUS_INVALID_ARGUMENT ||
-            opengatfs_seek(handle, INT64_C(4096), OPENGATFS_SEEK_START,
-                &stat.size) != OPENGATFS_STATUS_OK || stat.size != UINT64_C(4096) ||
-            opengatfs_write(handle, &transaction_byte, sizeof(transaction_byte),
-                &written_bytes) != OPENGATFS_STATUS_OK ||
+        if (openrfsfs_open(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT",
+                OPENRFSFS_ACCESS_WRITE, &handle) != OPENRFSFS_STATUS_OK ||
+            openrfsfs_seek(handle, INT64_C(4096), OPENRFSFS_SEEK_START, NULL) !=
+                OPENRFSFS_STATUS_INVALID_ARGUMENT ||
+            openrfsfs_seek(handle, INT64_C(4096), OPENRFSFS_SEEK_START,
+                &stat.size) != OPENRFSFS_STATUS_OK || stat.size != UINT64_C(4096) ||
+            openrfsfs_write(handle, &transaction_byte, sizeof(transaction_byte),
+                &written_bytes) != OPENRFSFS_STATUS_OK ||
             written_bytes != sizeof(transaction_byte) ||
-            opengatfs_close(handle) != OPENGATFS_STATUS_OK ||
-            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
-            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
-                OPENGATFS_STATUS_OK || stat.size != UINT64_C(4097)) {
+            openrfsfs_close(handle) != OPENRFSFS_STATUS_OK ||
+            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
+            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
+                OPENRFSFS_STATUS_OK || stat.size != UINT64_C(4097)) {
             kernel_test_fail("ext4 post-truncate marker re-arm failed");
         }
-        if (opengatfs_create_mode(OPENGATFS_VOLUME_SYSTEM,
+        if (openrfsfs_create_mode(OPENRFSFS_VOLUME_SYSTEM,
                 "data/user/JRNLPROBE.TMP", UINT16_C(0555)) !=
-                OPENGATFS_STATUS_OK ||
-            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.TMP",
-                &stat) != OPENGATFS_STATUS_OK || stat.directory || stat.size != 0U ||
+                OPENRFSFS_STATUS_OK ||
+            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.TMP",
+                &stat) != OPENRFSFS_STATUS_OK || stat.directory || stat.size != 0U ||
             stat.read_only || (stat.mode & UINT16_C(0777)) != UINT16_C(0555) ||
-            opengatfs_open(OPENGATFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.TMP",
-                OPENGATFS_ACCESS_READ_WRITE, &handle) != OPENGATFS_STATUS_OK ||
-            opengatfs_write(handle, &transaction_byte, sizeof(transaction_byte),
-                &written_bytes) != OPENGATFS_STATUS_OK || written_bytes != 1U ||
-            opengatfs_seek(handle, 0, OPENGATFS_SEEK_START, &stat.size) !=
-                OPENGATFS_STATUS_OK || stat.size != 0U ||
-            opengatfs_read(handle, &appended, sizeof(appended), &read_bytes) !=
-                OPENGATFS_STATUS_OK || read_bytes != 1U ||
+            openrfsfs_open(OPENRFSFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.TMP",
+                OPENRFSFS_ACCESS_READ_WRITE, &handle) != OPENRFSFS_STATUS_OK ||
+            openrfsfs_write(handle, &transaction_byte, sizeof(transaction_byte),
+                &written_bytes) != OPENRFSFS_STATUS_OK || written_bytes != 1U ||
+            openrfsfs_seek(handle, 0, OPENRFSFS_SEEK_START, &stat.size) !=
+                OPENRFSFS_STATUS_OK || stat.size != 0U ||
+            openrfsfs_read(handle, &appended, sizeof(appended), &read_bytes) !=
+                OPENRFSFS_STATUS_OK || read_bytes != 1U ||
             appended != transaction_byte ||
-            opengatfs_unlink(OPENGATFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.TMP") != OPENGATFS_STATUS_BUSY ||
-            opengatfs_rename(OPENGATFS_VOLUME_SYSTEM,
+            openrfsfs_unlink(OPENRFSFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.TMP") != OPENRFSFS_STATUS_BUSY ||
+            openrfsfs_rename(OPENRFSFS_VOLUME_SYSTEM,
                 "data/user/JRNLPROBE.TMP", "data/user/JRNLPROBE.BUSY") !=
-                    OPENGATFS_STATUS_BUSY ||
-            opengatfs_close(handle) != OPENGATFS_STATUS_OK ||
-            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
-            opengatfs_link(OPENGATFS_VOLUME_SYSTEM,
+                    OPENRFSFS_STATUS_BUSY ||
+            openrfsfs_close(handle) != OPENRFSFS_STATUS_OK ||
+            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
+            openrfsfs_link(OPENRFSFS_VOLUME_SYSTEM,
                 "data/user/JRNLPROBE.TMP", "data/user/JRNLPROBE.LNK") !=
-                    OPENGATFS_STATUS_OK ||
-            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
-            opengatfs_unlink(OPENGATFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.TMP") != OPENGATFS_STATUS_OK ||
-            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
-            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.TMP",
-                &stat) != OPENGATFS_STATUS_NOT_FOUND ||
-            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.LNK",
-                &stat) != OPENGATFS_STATUS_OK || stat.directory || stat.size != 1U ||
-            opengatfs_rename(OPENGATFS_VOLUME_SYSTEM,
+                    OPENRFSFS_STATUS_OK ||
+            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
+            openrfsfs_unlink(OPENRFSFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.TMP") != OPENRFSFS_STATUS_OK ||
+            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
+            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.TMP",
+                &stat) != OPENRFSFS_STATUS_NOT_FOUND ||
+            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.LNK",
+                &stat) != OPENRFSFS_STATUS_OK || stat.directory || stat.size != 1U ||
+            openrfsfs_rename(OPENRFSFS_VOLUME_SYSTEM,
                 "data/user/JRNLPROBE.LNK", "data/user/JRNLPROBE.REN") !=
-                    OPENGATFS_STATUS_OK ||
-            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
-            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.LNK",
-                &stat) != OPENGATFS_STATUS_NOT_FOUND ||
-            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.REN",
-                &stat) != OPENGATFS_STATUS_OK || stat.directory || stat.size != 1U ||
-            opengatfs_unlink(OPENGATFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.REN") != OPENGATFS_STATUS_OK ||
-            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
-            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.REN",
-                &stat) != OPENGATFS_STATUS_NOT_FOUND ||
-            opengatfs_mkdir(OPENGATFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.DIR") != OPENGATFS_STATUS_OK ||
-            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
-            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.DIR",
-                &stat) != OPENGATFS_STATUS_OK || !stat.directory ||
-            opengatfs_rename(OPENGATFS_VOLUME_SYSTEM,
+                    OPENRFSFS_STATUS_OK ||
+            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
+            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.LNK",
+                &stat) != OPENRFSFS_STATUS_NOT_FOUND ||
+            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.REN",
+                &stat) != OPENRFSFS_STATUS_OK || stat.directory || stat.size != 1U ||
+            openrfsfs_unlink(OPENRFSFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.REN") != OPENRFSFS_STATUS_OK ||
+            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
+            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.REN",
+                &stat) != OPENRFSFS_STATUS_NOT_FOUND ||
+            openrfsfs_mkdir(OPENRFSFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.DIR") != OPENRFSFS_STATUS_OK ||
+            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
+            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.DIR",
+                &stat) != OPENRFSFS_STATUS_OK || !stat.directory ||
+            openrfsfs_rename(OPENRFSFS_VOLUME_SYSTEM,
                 "data/user/JRNLPROBE.DIR", "data/user/JRNLPROBE.RDR") !=
-                    OPENGATFS_STATUS_OK ||
-            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
-            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.DIR",
-                &stat) != OPENGATFS_STATUS_NOT_FOUND ||
-            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.RDR",
-                &stat) != OPENGATFS_STATUS_OK || !stat.directory ||
-            opengatfs_create(OPENGATFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.RDR/CHILD.TMP") != OPENGATFS_STATUS_OK ||
-            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
-            opengatfs_rmdir(OPENGATFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.RDR") != OPENGATFS_STATUS_NOT_EMPTY ||
-            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM,
+                    OPENRFSFS_STATUS_OK ||
+            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
+            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.DIR",
+                &stat) != OPENRFSFS_STATUS_NOT_FOUND ||
+            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.RDR",
+                &stat) != OPENRFSFS_STATUS_OK || !stat.directory ||
+            openrfsfs_create(OPENRFSFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.RDR/CHILD.TMP") != OPENRFSFS_STATUS_OK ||
+            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
+            openrfsfs_rmdir(OPENRFSFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.RDR") != OPENRFSFS_STATUS_NOT_EMPTY ||
+            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM,
                 "data/user/JRNLPROBE.RDR/CHILD.TMP", &stat) !=
-                    OPENGATFS_STATUS_OK || stat.directory ||
-            opengatfs_unlink(OPENGATFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.RDR/CHILD.TMP") != OPENGATFS_STATUS_OK ||
-            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
-            opengatfs_rmdir(OPENGATFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.RDR") != OPENGATFS_STATUS_OK ||
-            opengatfs_sync(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
-            opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.RDR",
-                &stat) != OPENGATFS_STATUS_NOT_FOUND) {
+                    OPENRFSFS_STATUS_OK || stat.directory ||
+            openrfsfs_unlink(OPENRFSFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.RDR/CHILD.TMP") != OPENRFSFS_STATUS_OK ||
+            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
+            openrfsfs_rmdir(OPENRFSFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.RDR") != OPENRFSFS_STATUS_OK ||
+            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
+            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.RDR",
+                &stat) != OPENRFSFS_STATUS_NOT_FOUND) {
             kernel_test_fail("ext4 VFS namespace journal proof failed");
         }
     }
-    if (opengatfs_unmount(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
-        opengatfs_drive(OPENGATFS_VOLUME_SYSTEM).mounted ||
+    if (openrfsfs_unmount(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_drive(OPENRFSFS_VOLUME_SYSTEM).mounted ||
         !nvme_filesystem_session_resources_released() ||
         heap_verify() != HEAP_STATUS_OK) {
         kernel_test_fail("ext4 recovered mount did not release cleanly");
@@ -5066,21 +5066,21 @@ _Noreturn void kernel_test_complete_ext4_recovery(void)
     const struct heap_state heap_before_remount = heap_get_state();
     const struct frame_allocator_stats frames_before_remount =
         frame_allocator_get_stats();
-    if (opengatfs_mount(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
-        !ext4_backend_recovery_report(OPENGATFS_VOLUME_SYSTEM, &clean_remount) ||
+    if (openrfsfs_mount(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
+        !ext4_backend_recovery_report(OPENRFSFS_VOLUME_SYSTEM, &clean_remount) ||
         clean_remount.performed || clean_remount.transactions != 0U ||
         clean_remount.replayed_blocks != 0U ||
         clean_remount.consumed_slots != 0U ||
-        opengatfs_stat_path(OPENGATFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
-            OPENGATFS_STATUS_OK || stat.directory ||
+        openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
+            OPENRFSFS_STATUS_OK || stat.directory ||
         stat.size != UINT64_C(4097) ||
-        opengatfs_open(OPENGATFS_VOLUME_SYSTEM, "system/README.TXT",
-            OPENGATFS_ACCESS_READ, &handle) != OPENGATFS_STATUS_OK ||
-        opengatfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
-            &read_bytes) != OPENGATFS_STATUS_OK || read_bytes != 1U ||
-        appended != transaction_byte || opengatfs_close(handle) != OPENGATFS_STATUS_OK ||
-        opengatfs_unmount(OPENGATFS_VOLUME_SYSTEM) != OPENGATFS_STATUS_OK ||
-        opengatfs_drive(OPENGATFS_VOLUME_SYSTEM).mounted ||
+        openrfsfs_open(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT",
+            OPENRFSFS_ACCESS_READ, &handle) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
+            &read_bytes) != OPENRFSFS_STATUS_OK || read_bytes != 1U ||
+        appended != transaction_byte || openrfsfs_close(handle) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_unmount(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_drive(OPENRFSFS_VOLUME_SYSTEM).mounted ||
         !nvme_filesystem_session_resources_released() ||
         heap_verify() != HEAP_STATUS_OK ||
         paging_verify() != PAGING_STATUS_OK) {
@@ -5124,8 +5124,8 @@ _Noreturn void kernel_test_complete_native(void)
 {
     static const uint8_t expected[] = "native ABI v1\n";
     struct native_process_result result = { 0 };
-    struct opengatfs_stat output;
-    opengatfs_handle file;
+    struct openrfsfs_stat output;
+    openrfsfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
     size_t read_bytes = 0U;
     bool content_matches = true;
@@ -5136,7 +5136,7 @@ _Noreturn void kernel_test_complete_native(void)
     }
     launch_status = native_process_launch("NATIVET.MAN", &result);
     if (launch_status != NATIVE_PROCESS_OK) {
-        console_write("OpenGAT: native launch refusal: ");
+        console_write("OpenRFS: native launch refusal: ");
         console_write(native_process_status_string(launch_status));
         console_putc('\n');
         kernel_test_fail("native application admission failed");
@@ -5147,7 +5147,7 @@ _Noreturn void kernel_test_complete_native(void)
         result.context_transition_samples == 0U ||
         result.context_cycles_with_fpu < result.context_cycles_without_fpu ||
         !native_process_resources_released()) {
-        console_write("OpenGAT: native result exit ");
+        console_write("OpenRFS: native result exit ");
         if (result.exit_status < 0) {
             console_putc('-');
             console_write_u64((uint64_t)(-(int64_t)result.exit_status));
@@ -5171,7 +5171,7 @@ _Noreturn void kernel_test_complete_native(void)
         console_putc('\n');
         kernel_test_fail("native application did not exit with a clean census");
     }
-    console_write("OPENGAT PERF context-switch transitions=");
+    console_write("OPENRFS PERF context-switch transitions=");
     console_write_u64(result.context_transition_samples);
     console_write(" without_fpu_cycles=");
     console_write_u64(result.context_cycles_without_fpu /
@@ -5180,31 +5180,31 @@ _Noreturn void kernel_test_complete_native(void)
     console_write_u64(result.context_cycles_with_fpu /
         result.context_transition_samples);
     console_putc('\n');
-    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "NATIVET/FOUND.TXT", &output) !=
-            OPENGATFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
-        opengatfs_open(OPENGATFS_VOLUME_DATA, "NATIVET/FOUND.TXT", OPENGATFS_ACCESS_READ,
-            &file) != OPENGATFS_STATUS_OK ||
-        opengatfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENGATFS_STATUS_OK ||
+    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "NATIVET/FOUND.TXT", &output) !=
+            OPENRFSFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
+        openrfsfs_open(OPENRFSFS_VOLUME_DATA, "NATIVET/FOUND.TXT", OPENRFSFS_ACCESS_READ,
+            &file) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENRFSFS_STATUS_OK ||
         read_bytes != sizeof(bytes)) {
         kernel_test_fail("native Ring 3 file result is missing");
     }
     for (size_t index = 0U; index < sizeof(bytes); ++index) {
         content_matches = content_matches && bytes[index] == expected[index];
     }
-    if (opengatfs_close(file) != OPENGATFS_STATUS_OK || !content_matches) {
+    if (openrfsfs_close(file) != OPENRFSFS_STATUS_OK || !content_matches) {
         kernel_test_fail("native Ring 3 file result is wrong");
     }
-    console_write("OpenGAT: native general loader, SDK, TLS, threads and FPU passed\n");
+    console_write("OpenRFS: native general loader, SDK, TLS, threads and FPU passed\n");
     kernel_test_pass();
 }
 
 _Noreturn void kernel_test_complete_native_lua(void)
 {
     static const uint8_t expected[] =
-        "input=opengat\nsum=5050\nmath=ok\n";
+        "input=openrfs\nsum=5050\nmath=ok\n";
     struct native_process_result result;
-    struct opengatfs_stat output;
-    opengatfs_handle file;
+    struct openrfsfs_stat output;
+    openrfsfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
     size_t read_bytes = 0U;
     bool content_matches = true;
@@ -5218,7 +5218,7 @@ _Noreturn void kernel_test_complete_native_lua(void)
         !result.exited || result.faulted || result.exit_status != 0 ||
         !result.resources_released || result.syscall_count < 10U ||
         !native_process_resources_released()) {
-        console_write("OpenGAT: Lua result launch ");
+        console_write("OpenRFS: Lua result launch ");
         console_write(native_process_status_string(launch_status));
         console_write(" exit ");
         console_write_u64((uint64_t)result.exit_status);
@@ -5229,22 +5229,22 @@ _Noreturn void kernel_test_complete_native_lua(void)
         console_putc('\n');
         kernel_test_fail("Lua did not exit with a clean resource census");
     }
-    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "LUA/RESULT.TXT", &output) !=
-            OPENGATFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
-        opengatfs_open(OPENGATFS_VOLUME_DATA, "LUA/RESULT.TXT", OPENGATFS_ACCESS_READ,
-            &file) != OPENGATFS_STATUS_OK ||
-        opengatfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENGATFS_STATUS_OK ||
+    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "LUA/RESULT.TXT", &output) !=
+            OPENRFSFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
+        openrfsfs_open(OPENRFSFS_VOLUME_DATA, "LUA/RESULT.TXT", OPENRFSFS_ACCESS_READ,
+            &file) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENRFSFS_STATUS_OK ||
         read_bytes != sizeof(bytes)) {
         kernel_test_fail("Lua result file is missing");
     }
     for (size_t index = 0U; index < sizeof(bytes); ++index) {
         content_matches = content_matches && bytes[index] == expected[index];
     }
-    if (opengatfs_close(file) != OPENGATFS_STATUS_OK || !content_matches ||
-        opengatfs_sync(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK) {
+    if (openrfsfs_close(file) != OPENRFSFS_STATUS_OK || !content_matches ||
+        openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK) {
         kernel_test_fail("Lua result file is wrong or could not be synchronized");
     }
-    console_write("OpenGAT: upstream Lua used stdin, Data, math and stdout\n");
+    console_write("OpenRFS: upstream Lua used stdin, Data, math and stdout\n");
     kernel_test_pass();
 }
 
@@ -5253,20 +5253,20 @@ _Noreturn void kernel_test_complete_native_sqlite(void)
     static const uint8_t expected[] =
         "rows=3\nsum=66\nintegrity=ok\n";
     struct native_process_result result;
-    struct opengatfs_stat database;
-    struct opengatfs_stat journal;
-    struct opengatfs_stat output;
-    opengatfs_handle file;
+    struct openrfsfs_stat database;
+    struct openrfsfs_stat journal;
+    struct openrfsfs_stat output;
+    openrfsfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
     size_t read_bytes = 0U;
     bool content_matches = true;
-    const enum opengatfs_status before = opengatfs_stat_path(OPENGATFS_VOLUME_DATA,
+    const enum openrfsfs_status before = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA,
         "SQLITE/PORT.DB", &database);
 
     if (active_scenario != KERNEL_TEST_NATIVE_SQLITE) {
         kernel_test_fail("SQLite completion used outside its scenario");
     }
-    if (before != OPENGATFS_STATUS_OK && before != OPENGATFS_STATUS_NOT_FOUND) {
+    if (before != OPENRFSFS_STATUS_OK && before != OPENRFSFS_STATUS_NOT_FOUND) {
         kernel_test_fail("SQLite database census failed before launch");
     }
     if (native_process_launch("SQLITE.MAN", &result) != NATIVE_PROCESS_OK ||
@@ -5275,46 +5275,46 @@ _Noreturn void kernel_test_complete_native_sqlite(void)
         !native_process_resources_released()) {
         kernel_test_fail("SQLite did not exit with a clean resource census");
     }
-    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "SQLITE/PORT.JRN", &journal) !=
-            OPENGATFS_STATUS_NOT_FOUND) {
+    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "SQLITE/PORT.JRN", &journal) !=
+            OPENRFSFS_STATUS_NOT_FOUND) {
         kernel_test_fail("SQLite left a rollback journal after clean close");
     }
-    if (before == OPENGATFS_STATUS_NOT_FOUND) {
-        if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "SQLITE/PORT.DB", &database) !=
-                OPENGATFS_STATUS_OK || database.directory || database.size == 0U ||
-            opengatfs_unmount(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK) {
+    if (before == OPENRFSFS_STATUS_NOT_FOUND) {
+        if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "SQLITE/PORT.DB", &database) !=
+                OPENRFSFS_STATUS_OK || database.directory || database.size == 0U ||
+            openrfsfs_unmount(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK) {
             kernel_test_fail("SQLite first phase did not synchronize its database");
         }
-        console_write("OpenGAT: upstream SQLite synchronized reboot phase\n");
+        console_write("OpenRFS: upstream SQLite synchronized reboot phase\n");
         cpu_out8(UINT16_C(0x0064), UINT8_C(0xFE));
         kernel_test_fail("platform reset did not restart SQLite scenario");
     }
-    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "SQLITE/RESULT.TXT", &output) !=
-            OPENGATFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
-        opengatfs_open(OPENGATFS_VOLUME_DATA, "SQLITE/RESULT.TXT", OPENGATFS_ACCESS_READ,
-            &file) != OPENGATFS_STATUS_OK ||
-        opengatfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENGATFS_STATUS_OK ||
+    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "SQLITE/RESULT.TXT", &output) !=
+            OPENRFSFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
+        openrfsfs_open(OPENRFSFS_VOLUME_DATA, "SQLITE/RESULT.TXT", OPENRFSFS_ACCESS_READ,
+            &file) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENRFSFS_STATUS_OK ||
         read_bytes != sizeof(bytes)) {
         kernel_test_fail("SQLite reboot result is missing");
     }
     for (size_t index = 0U; index < sizeof(bytes); ++index) {
         content_matches = content_matches && bytes[index] == expected[index];
     }
-    if (opengatfs_close(file) != OPENGATFS_STATUS_OK || !content_matches ||
-        opengatfs_sync(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK) {
+    if (openrfsfs_close(file) != OPENRFSFS_STATUS_OK || !content_matches ||
+        openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK) {
         kernel_test_fail("SQLite reboot result is wrong or could not be synchronized");
     }
-    console_write("OpenGAT: upstream SQLite retained and verified three rows after reboot\n");
+    console_write("OpenRFS: upstream SQLite retained and verified three rows after reboot\n");
     kernel_test_pass();
 }
 
 _Noreturn void kernel_test_complete_native_network(void)
 {
-    static const uint8_t expected[] = "hello from the OpenGAT network\n";
+    static const uint8_t expected[] = "hello from the OpenRFS network\n";
     struct native_process_result result = { 0 };
-    struct opengatfs_stat output;
+    struct openrfsfs_stat output;
     struct network_state network;
-    opengatfs_handle file;
+    openrfsfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
     size_t read_bytes = 0U;
     bool matches = true;
@@ -5328,7 +5328,7 @@ _Noreturn void kernel_test_complete_native_network(void)
         !result.exited || result.faulted || result.exit_status != 0 ||
         !result.resources_released || result.syscall_count < 25U ||
         !native_process_resources_released()) {
-        console_write("OpenGAT: native network launch ");
+        console_write("OpenRFS: native network launch ");
         console_write(native_process_status_string(launch_status));
         console_write(" result exit ");
         if (result.exit_status < 0) {
@@ -5353,21 +5353,21 @@ _Noreturn void kernel_test_complete_native_network(void)
         network.timers != 0U) {
         kernel_test_fail("native network handles survived process teardown");
     }
-    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "NETAPP/HTTP.TXT", &output) !=
-            OPENGATFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
-        opengatfs_open(OPENGATFS_VOLUME_DATA, "NETAPP/HTTP.TXT", OPENGATFS_ACCESS_READ,
-            &file) != OPENGATFS_STATUS_OK ||
-        opengatfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENGATFS_STATUS_OK ||
+    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "NETAPP/HTTP.TXT", &output) !=
+            OPENRFSFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
+        openrfsfs_open(OPENRFSFS_VOLUME_DATA, "NETAPP/HTTP.TXT", OPENRFSFS_ACCESS_READ,
+            &file) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENRFSFS_STATUS_OK ||
         read_bytes != sizeof(bytes)) {
         kernel_test_fail("native HTTP body is missing from Data");
     }
     for (size_t index = 0U; index < sizeof(bytes); ++index) {
         matches = matches && bytes[index] == expected[index];
     }
-    if (opengatfs_close(file) != OPENGATFS_STATUS_OK || !matches) {
+    if (openrfsfs_close(file) != OPENRFSFS_STATUS_OK || !matches) {
         kernel_test_fail("native HTTP body framing or contents are wrong");
     }
-    console_write("OpenGAT: native DNS, TCP, UDP, timeout, reset and cancellation passed\n");
+    console_write("OpenRFS: native DNS, TCP, UDP, timeout, reset and cancellation passed\n");
     console_write("ST NETWORK production path bounded and recoverable\n");
     kernel_test_pass();
 }
@@ -5376,8 +5376,8 @@ _Noreturn void kernel_test_complete_native_rust(void)
 {
     static const uint8_t expected[] = "native Rust no_std ABI v1\n";
     struct native_process_result result;
-    struct opengatfs_stat output;
-    opengatfs_handle file;
+    struct openrfsfs_stat output;
+    openrfsfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
     size_t read_bytes = 0U;
     bool matches = true;
@@ -5391,21 +5391,21 @@ _Noreturn void kernel_test_complete_native_rust(void)
         result.thread_switches == 0U || !native_process_resources_released()) {
         kernel_test_fail("Rust application did not exit with a clean census");
     }
-    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "RUSTAPP/RUST.TXT", &output) !=
-            OPENGATFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
-        opengatfs_open(OPENGATFS_VOLUME_DATA, "RUSTAPP/RUST.TXT", OPENGATFS_ACCESS_READ,
-            &file) != OPENGATFS_STATUS_OK ||
-        opengatfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENGATFS_STATUS_OK ||
+    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "RUSTAPP/RUST.TXT", &output) !=
+            OPENRFSFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
+        openrfsfs_open(OPENRFSFS_VOLUME_DATA, "RUSTAPP/RUST.TXT", OPENRFSFS_ACCESS_READ,
+            &file) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENRFSFS_STATUS_OK ||
         read_bytes != sizeof(bytes)) {
         kernel_test_fail("Rust application output is missing");
     }
     for (size_t index = 0U; index < sizeof(bytes); ++index) {
         matches = matches && bytes[index] == expected[index];
     }
-    if (opengatfs_close(file) != OPENGATFS_STATUS_OK || !matches) {
+    if (openrfsfs_close(file) != OPENRFSFS_STATUS_OK || !matches) {
         kernel_test_fail("Rust application output is wrong");
     }
-    console_write("OpenGAT: no_std Rust application used native ABI v1 services\n");
+    console_write("OpenRFS: no_std Rust application used native ABI v1 services\n");
     kernel_test_pass();
 }
 
@@ -5418,7 +5418,7 @@ _Noreturn void kernel_test_complete_native_crash(void)
         kernel_test_fail("native crash completion used outside its scenario");
     }
     if (native_process_launch("CRASH.MAN", &crash) != NATIVE_PROCESS_OK ||
-        !crash.exited || !crash.faulted || crash.exit_status != -OPENGAT_EFAULT ||
+        !crash.exited || !crash.faulted || crash.exit_status != -OPENRFS_EFAULT ||
         !crash.resources_released || crash.peak_handles < 6U ||
         crash.peak_pages < 20U || !native_process_resources_released()) {
         kernel_test_fail("faulted process did not release its live resources");
@@ -5428,7 +5428,7 @@ _Noreturn void kernel_test_complete_native_crash(void)
         !survivor.resources_released || !native_process_resources_released()) {
         kernel_test_fail("process after fault observed damaged or leaked state");
     }
-    console_write("OpenGAT: native crash contained; mappings handles threads windows FS x87 SSE reclaimed\n");
+    console_write("OpenRFS: native crash contained; mappings handles threads windows FS x87 SSE reclaimed\n");
     kernel_test_pass();
 }
 
@@ -5441,15 +5441,15 @@ _Noreturn void kernel_test_complete_native_admission_refusal(void)
     switch (active_scenario) {
     case KERNEL_TEST_NATIVE_ELF_REFUSAL:
         manifest = "BADELF.MAN";
-        diagnostic = "OpenGAT: native malformed ELF refused; resource census unchanged\n";
+        diagnostic = "OpenRFS: native malformed ELF refused; resource census unchanged\n";
         break;
     case KERNEL_TEST_NATIVE_DIGEST_REFUSAL:
         manifest = "BADDGST.MAN";
-        diagnostic = "OpenGAT: native manifest digest mismatch refused; resource census unchanged\n";
+        diagnostic = "OpenRFS: native manifest digest mismatch refused; resource census unchanged\n";
         break;
     case KERNEL_TEST_NATIVE_ABI_REFUSAL:
         manifest = "BADABI.MAN";
-        diagnostic = "OpenGAT: native unsupported ABI version refused; resource census unchanged\n";
+        diagnostic = "OpenRFS: native unsupported ABI version refused; resource census unchanged\n";
         break;
     default:
         kernel_test_fail("native admission completion used outside its scenario");
@@ -5481,7 +5481,7 @@ _Noreturn void kernel_test_complete_native_relaunch(void)
         !native_process_resources_released()) {
         kernel_test_fail("native relaunch did not reset generations and resources");
     }
-    console_write("OpenGAT: native relaunch advanced generation; both resource censuses clean\n");
+    console_write("OpenRFS: native relaunch advanced generation; both resource censuses clean\n");
     kernel_test_pass();
 }
 
@@ -5538,17 +5538,17 @@ _Noreturn void kernel_test_complete_native_audio(void)
         kernel_test_fail("native audio proof did not leave a clean census");
     }
     console_write(
-        "OpenGAT: native audio ABI capability, mixing, cancellation and teardown passed\n");
+        "OpenRFS: native audio ABI capability, mixing, cancellation and teardown passed\n");
     kernel_test_pass();
 }
 
 _Noreturn void kernel_test_complete_native_sdl(void)
 {
-    static const char state_path[] = "SDLPROOF/SDL/D7BAC15B/STATE.BIN";
+    static const char state_path[] = "SDLPROOF/SDL/DCDB3FF2/STATE.BIN";
     struct native_process_result first = { 0 };
     struct native_process_result second = { 0 };
-    struct opengatfs_stat state;
-    opengatfs_handle file;
+    struct openrfsfs_stat state;
+    openrfsfs_handle file;
     uint8_t bytes[4];
     size_t read_bytes = 0U;
 
@@ -5574,17 +5574,17 @@ _Noreturn void kernel_test_complete_native_sdl(void)
         ui_native_window_is_open(0U) || ui_native_window_is_open(1U)) {
         kernel_test_fail("second SDL process did not leave a clean census");
     }
-    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, state_path, &state) !=
-            OPENGATFS_STATUS_OK || state.directory || state.size != sizeof(bytes) ||
-        opengatfs_open(OPENGATFS_VOLUME_DATA, state_path, OPENGATFS_ACCESS_READ, &file) !=
-            OPENGATFS_STATUS_OK ||
-        opengatfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENGATFS_STATUS_OK ||
-        read_bytes != sizeof(bytes) || opengatfs_close(file) != OPENGATFS_STATUS_OK ||
+    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, state_path, &state) !=
+            OPENRFSFS_STATUS_OK || state.directory || state.size != sizeof(bytes) ||
+        openrfsfs_open(OPENRFSFS_VOLUME_DATA, state_path, OPENRFSFS_ACCESS_READ, &file) !=
+            OPENRFSFS_STATUS_OK ||
+        openrfsfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENRFSFS_STATUS_OK ||
+        read_bytes != sizeof(bytes) || openrfsfs_close(file) != OPENRFSFS_STATUS_OK ||
         bytes[0] != 2U || bytes[1] != 0U || bytes[2] != 0U || bytes[3] != 0U) {
         kernel_test_fail("SDL preference state did not survive process relaunch");
     }
     console_write(
-        "OpenGAT: SDL 2 window, input, partial damage, PCM and persistence passed\n");
+        "OpenRFS: SDL 2 window, input, partial damage, PCM and persistence passed\n");
     kernel_test_pass();
 }
 
@@ -5612,18 +5612,18 @@ _Noreturn void kernel_test_complete_native_dynamic(void)
             "concurrent dynamic ELF proofs did not leave a clean census");
     }
     console_write(
-        "OpenGAT: dynamic ELF shared RX, private TLS and lifecycle passed\n");
+        "OpenRFS: dynamic ELF shared RX, private TLS and lifecycle passed\n");
     kernel_test_pass();
 }
 
 _Noreturn void kernel_test_complete_native_https(void)
 {
     static const uint8_t expected[] =
-        "hello from the OpenGAT HTTPS peer\n";
+        "hello from the OpenRFS HTTPS peer\n";
     struct native_process_result proof = { 0 };
-    struct opengatfs_stat output;
+    struct openrfsfs_stat output;
     struct network_state network;
-    opengatfs_handle file;
+    openrfsfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
     size_t read_bytes = 0U;
     bool matches = true;
@@ -5645,28 +5645,28 @@ _Noreturn void kernel_test_complete_native_https(void)
         network.timers != 0U) {
         kernel_test_fail("native HTTPS network resources survived teardown");
     }
-    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "HTTPSAPP/HTTPS.TXT", &output) !=
-            OPENGATFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
-        opengatfs_open(OPENGATFS_VOLUME_DATA, "HTTPSAPP/HTTPS.TXT", OPENGATFS_ACCESS_READ,
-            &file) != OPENGATFS_STATUS_OK ||
-        opengatfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENGATFS_STATUS_OK ||
+    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "HTTPSAPP/HTTPS.TXT", &output) !=
+            OPENRFSFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
+        openrfsfs_open(OPENRFSFS_VOLUME_DATA, "HTTPSAPP/HTTPS.TXT", OPENRFSFS_ACCESS_READ,
+            &file) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENRFSFS_STATUS_OK ||
         read_bytes != sizeof(bytes)) {
         kernel_test_fail("authenticated HTTPS body is missing from Data");
     }
     for (size_t index = 0U; index < sizeof(bytes); ++index) {
         matches = matches && bytes[index] == expected[index];
     }
-    if (opengatfs_close(file) != OPENGATFS_STATUS_OK || !matches) {
+    if (openrfsfs_close(file) != OPENRFSFS_STATUS_OK || !matches) {
         kernel_test_fail("authenticated HTTPS body contents are wrong");
     }
-    console_write("OpenGAT: HTTPS strong hardware entropy passed\n");
+    console_write("OpenRFS: HTTPS strong hardware entropy passed\n");
     console_write(
-        "OpenGAT: HTTPS TLS 1.2 hostname time trust framing close and teardown passed\n");
+        "OpenRFS: HTTPS TLS 1.2 hostname time trust framing close and teardown passed\n");
     console_write("ST NETWORK production path bounded and recoverable\n");
     kernel_test_pass();
 }
 
-static bool native_opengat_authority_is_canonical(
+static bool native_openrfs_authority_is_canonical(
     uint8_t *database,
     size_t database_capacity,
     struct package_service_report *service
@@ -5707,7 +5707,7 @@ static bool native_opengat_authority_is_canonical(
         manifest.owner_index == 0U && manifest.length == UINT64_C(1024);
 }
 
-_Noreturn void kernel_test_complete_native_opengat(void)
+_Noreturn void kernel_test_complete_native_openrfs(void)
 {
     static const uint8_t expected[] = "SDL chess release-2.32.10\n";
     static const char damaged_manifest[] =
@@ -5715,43 +5715,43 @@ _Noreturn void kernel_test_complete_native_opengat(void)
     static const char repaired_manifest[] =
         "pkgstate/gen/00000000/00000003/root/bin/CHESS.MAN";
     static const char state_path[] =
-        "SDLCHESS/SDL/5841541D/STATE.TXT";
+        "SDLCHESS/SDL/DF4F1BB4/STATE.TXT";
     static uint8_t database[4096U];
     struct native_process_result proof = { 0 };
     struct package_service_report service;
-    const struct opengatfs_drive_info data = opengatfs_drive(OPENGATFS_VOLUME_DATA);
-    struct opengatfs_stat authority;
-    struct opengatfs_stat output;
-    opengatfs_handle file;
+    const struct openrfsfs_drive_info data = openrfsfs_drive(OPENRFSFS_VOLUME_DATA);
+    struct openrfsfs_stat authority;
+    struct openrfsfs_stat output;
+    openrfsfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
     size_t read_bytes = 0U;
     size_t database_bytes = 0U;
     bool matches = true;
     struct network_state network;
-    enum opengatfs_status authority_status;
+    enum openrfsfs_status authority_status;
     enum native_process_status launch_status;
 
-    if (active_scenario != KERNEL_TEST_NATIVE_OPENGAT) {
-        kernel_test_fail("native opengat completion used outside its scenario");
+    if (active_scenario != KERNEL_TEST_NATIVE_OPENRFS) {
+        kernel_test_fail("native openrfs completion used outside its scenario");
     }
     if (random_get_state().capability != RANDOM_CAPABILITY_INITIALIZED) {
-        kernel_test_fail("native opengat did not retain strong hardware entropy");
+        kernel_test_fail("native openrfs did not retain strong hardware entropy");
     }
     if (!data.present || !data.mounted || data.read_only || !data.healthy ||
         data.total_bytes != UINT64_C(128) * UINT64_C(1024) * UINT64_C(1024) ||
         data.free_bytes == 0U || data.free_bytes >= data.total_bytes) {
-        kernel_test_fail("native opengat writable ext4 volume is unavailable");
+        kernel_test_fail("native openrfs writable ext4 volume is unavailable");
     }
-    authority_status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA,
+    authority_status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA,
         PACKAGE_SERVICE_AUTHORITY_PATH, &authority);
-    if (authority_status == OPENGATFS_STATUS_NOT_FOUND) {
-        launch_status = native_process_launch("OPENGAT.MAN", &proof);
+    if (authority_status == OPENRFSFS_STATUS_NOT_FOUND) {
+        launch_status = native_process_launch("OPENRFS.MAN", &proof);
         if (launch_status != NATIVE_PROCESS_OK ||
             !proof.exited || proof.faulted || proof.exit_status != 0 ||
             !proof.resources_released || proof.peak_handles < 3U ||
             proof.syscall_count < 20U || proof.thread_switches == 0U ||
             !native_process_resources_released()) {
-            console_write("ST OPENGAT DIAGNOSTIC launch ");
+            console_write("ST OPENRFS DIAGNOSTIC launch ");
             console_write_u64((uint64_t)launch_status);
             console_write(" exited ");
             console_write(proof.exited ? "yes" : "no");
@@ -5777,105 +5777,105 @@ _Noreturn void kernel_test_complete_native_opengat(void)
             console_write(" switches ");
             console_write_u64(proof.thread_switches);
             console_putc('\n');
-            kernel_test_fail("native opengat client did not leave a clean census");
+            kernel_test_fail("native openrfs client did not leave a clean census");
         }
-        if (!native_opengat_authority_is_canonical(database, sizeof(database),
+        if (!native_openrfs_authority_is_canonical(database, sizeof(database),
                 &service) || service.generation != 1U) {
-            kernel_test_fail("native opengat installed authority is not canonical");
+            kernel_test_fail("native openrfs installed authority is not canonical");
         }
-        if (opengatfs_sync(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK ||
-            opengatfs_unmount(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK ||
+        if (openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK ||
+            openrfsfs_unmount(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK ||
             !nvme_filesystem_session_resources_released() ||
             !native_process_resources_released()) {
-            kernel_test_fail("native opengat ext4 reboot barrier leaked resources");
+            kernel_test_fail("native openrfs ext4 reboot barrier leaked resources");
         }
         console_write(
-            "OpenGAT: signed HTTPS package install synchronized reboot phase\n");
+            "OpenRFS: signed HTTPS package install synchronized reboot phase\n");
         cpu_out8(UINT16_C(0x0064), UINT8_C(0xFE));
         kernel_test_fail("platform reset did not restart QEMU");
     }
-    if (authority_status != OPENGATFS_STATUS_OK || authority.directory ||
+    if (authority_status != OPENRFSFS_STATUS_OK || authority.directory ||
         authority.size == 0U) {
-        kernel_test_fail("native opengat reboot authority is unavailable");
+        kernel_test_fail("native openrfs reboot authority is unavailable");
     }
     network = network_get_state();
     if (network.udp_sockets != 0U || network.tcp_connections != 0U ||
         network.timers != 0U) {
-        kernel_test_fail("native opengat network resources survived teardown");
+        kernel_test_fail("native openrfs network resources survived teardown");
     }
-    if (!native_opengat_authority_is_canonical(database, sizeof(database),
+    if (!native_openrfs_authority_is_canonical(database, sizeof(database),
             &service)) {
-        kernel_test_fail("native opengat reboot authority is not canonical");
+        kernel_test_fail("native openrfs reboot authority is not canonical");
     }
     if (service.generation == 1U) {
-        if (native_process_launch("OPENGAT.MAN", &proof) != NATIVE_PROCESS_OK ||
+        if (native_process_launch("OPENRFS.MAN", &proof) != NATIVE_PROCESS_OK ||
             !proof.exited || proof.faulted || proof.exit_status != 0 ||
             !proof.resources_released || proof.peak_handles < 3U ||
             proof.syscall_count < 20U || proof.thread_switches == 0U ||
             !native_process_resources_released() ||
-            !native_opengat_authority_is_canonical(database, sizeof(database),
+            !native_openrfs_authority_is_canonical(database, sizeof(database),
                 &service) || service.generation != 2U ||
-            opengatfs_sync(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK ||
-            opengatfs_unmount(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK ||
+            openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK ||
+            openrfsfs_unmount(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK ||
             !nvme_filesystem_session_resources_released()) {
-            kernel_test_fail("native opengat ext4 update did not commit cleanly");
+            kernel_test_fail("native openrfs ext4 update did not commit cleanly");
         }
         console_write(
-            "OpenGAT: signed HTTPS package update synchronized reboot phase\n");
+            "OpenRFS: signed HTTPS package update synchronized reboot phase\n");
         cpu_out8(UINT16_C(0x0064), UINT8_C(0xFE));
         kernel_test_fail("platform reset did not restart QEMU");
     }
     if (service.generation != 2U ||
-        native_process_launch("OPENGAT.MAN", &proof) != NATIVE_PROCESS_OK ||
+        native_process_launch("OPENRFS.MAN", &proof) != NATIVE_PROCESS_OK ||
         !proof.exited || proof.faulted || proof.exit_status != 21 ||
         !proof.resources_released || !native_process_resources_released() ||
-        !native_opengat_authority_is_canonical(database, sizeof(database),
+        !native_openrfs_authority_is_canonical(database, sizeof(database),
             &service) || service.generation != 2U) {
-        kernel_test_fail("native opengat signed rollback was not refused cleanly");
+        kernel_test_fail("native openrfs signed rollback was not refused cleanly");
     }
-    if (opengatfs_truncate(OPENGATFS_VOLUME_DATA, damaged_manifest, UINT64_C(1)) !=
-            OPENGATFS_STATUS_OK ||
-        opengatfs_sync(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK ||
+    if (openrfsfs_truncate(OPENRFSFS_VOLUME_DATA, damaged_manifest, UINT64_C(1)) !=
+            OPENRFSFS_STATUS_OK ||
+        openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK ||
         package_service_snapshot(database, sizeof(database), &database_bytes,
             &service) != PACKAGE_SERVICE_STATUS_INCOMPLETE ||
         database_bytes != 0U || service.journal_present ||
         service.live_file_handles != 0U || service.live_allocations != 0U) {
-        kernel_test_fail("native opengat damaged generation was not quarantined");
+        kernel_test_fail("native openrfs damaged generation was not quarantined");
     }
     console_write(
-        "OpenGAT: damaged package generation quarantined before repair passed\n");
-    if (native_process_launch("OPENGATR.MAN", &proof) != NATIVE_PROCESS_OK ||
+        "OpenRFS: damaged package generation quarantined before repair passed\n");
+    if (native_process_launch("OPENRFSR.MAN", &proof) != NATIVE_PROCESS_OK ||
         !proof.exited || proof.faulted || proof.exit_status != 0 ||
         !proof.resources_released || proof.peak_handles < 3U ||
         proof.syscall_count < 20U || proof.thread_switches == 0U ||
         !native_process_resources_released() ||
-        !native_opengat_authority_is_canonical(database, sizeof(database),
+        !native_openrfs_authority_is_canonical(database, sizeof(database),
             &service) || service.generation != 3U ||
         native_process_launch_installed(repaired_manifest, &proof) !=
             NATIVE_PROCESS_OK ||
         !proof.exited || proof.faulted || proof.exit_status != 0 ||
         !proof.resources_released || proof.syscall_count < 12U ||
         proof.thread_switches == 0U || !native_process_resources_released() ||
-        opengatfs_stat_path(OPENGATFS_VOLUME_DATA, state_path, &output) !=
-            OPENGATFS_STATUS_OK || output.directory ||
+        openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, state_path, &output) !=
+            OPENRFSFS_STATUS_OK || output.directory ||
         output.size != sizeof(bytes) ||
-        opengatfs_open(OPENGATFS_VOLUME_DATA, state_path,
-            OPENGATFS_ACCESS_READ, &file) != OPENGATFS_STATUS_OK ||
-        opengatfs_read(file, bytes, sizeof(bytes), &read_bytes) !=
-            OPENGATFS_STATUS_OK || read_bytes != sizeof(bytes)) {
-        kernel_test_fail("native opengat authenticated repair did not launch");
+        openrfsfs_open(OPENRFSFS_VOLUME_DATA, state_path,
+            OPENRFSFS_ACCESS_READ, &file) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_read(file, bytes, sizeof(bytes), &read_bytes) !=
+            OPENRFSFS_STATUS_OK || read_bytes != sizeof(bytes)) {
+        kernel_test_fail("native openrfs authenticated repair did not launch");
     }
     for (size_t index = 0U; index < sizeof(bytes); ++index) {
         matches = matches && bytes[index] == expected[index];
     }
-    if (opengatfs_close(file) != OPENGATFS_STATUS_OK || !matches ||
-        opengatfs_sync(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK ||
-        opengatfs_unmount(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK ||
+    if (openrfsfs_close(file) != OPENRFSFS_STATUS_OK || !matches ||
+        openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_unmount(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK ||
         !nvme_filesystem_session_resources_released()) {
-        kernel_test_fail("native opengat upstream SDL launch did not cleanly sync");
+        kernel_test_fail("native openrfs upstream SDL launch did not cleanly sync");
     }
     console_write(
-        "OpenGAT: damaged SDL package repaired authenticated and launched from writable ext4 passed\n");
+        "OpenRFS: damaged SDL package repaired authenticated and launched from writable ext4 passed\n");
     console_write("ST NETWORK production path bounded and recoverable\n");
     kernel_test_pass();
 }
@@ -6039,19 +6039,19 @@ _Noreturn void kernel_test_complete_boot_ledger(
     kernel_test_pass();
 }
 
-static uint32_t opengat_proof_pixel(uint32_t x, uint32_t y)
+static uint32_t openrfs_proof_pixel(uint32_t x, uint32_t y)
 {
     uint32_t pixel = 0U;
     struct surface *surface = screen_surface();
 
     if (surface == NULL ||
         surface_read_pixel(surface, x, y, &pixel) != SURFACE_STATUS_OK) {
-        kernel_test_fail("OpenGAT cached-surface pixel read failed");
+        kernel_test_fail("OpenRFS cached-surface pixel read failed");
     }
     return pixel;
 }
 
-static void opengat_proof_process_ui(const char *failure)
+static void openrfs_proof_process_ui(const char *failure)
 {
     enum ui_status status = ui_process_events();
 
@@ -6063,7 +6063,7 @@ static void opengat_proof_process_ui(const char *failure)
     }
 }
 
-static void opengat_proof_inject_pointer(
+static void openrfs_proof_inject_pointer(
     uint8_t flags,
     int32_t delta_x,
     int32_t delta_y,
@@ -6087,10 +6087,10 @@ static void opengat_proof_inject_pointer(
     if (status != POINTER_STATUS_OK) {
         kernel_test_fail(failure);
     }
-    opengat_proof_process_ui(failure);
+    openrfs_proof_process_ui(failure);
 }
 
-static void opengat_proof_move_pointer(
+static void openrfs_proof_move_pointer(
     uint32_t target_x,
     uint32_t target_y,
     const char *failure
@@ -6116,12 +6116,12 @@ static void opengat_proof_move_pointer(
         } else if (delta_y < -127) {
             delta_y = -127;
         }
-        opengat_proof_inject_pointer(0U, delta_x, delta_y, failure);
+        openrfs_proof_inject_pointer(0U, delta_x, delta_y, failure);
     }
-    kernel_test_fail("OpenGAT cursor did not reach its UI target");
+    kernel_test_fail("OpenRFS cursor did not reach its UI target");
 }
 
-_Noreturn void kernel_test_complete_opengat_proof(void)
+_Noreturn void kernel_test_complete_openrfs_proof(void)
 {
     const struct boot_ledger *ledger = boot_ledger_installed();
     const struct boot_stage_receipt *font;
@@ -6139,13 +6139,13 @@ _Noreturn void kernel_test_complete_opengat_proof(void)
         .control = false, .alt = false, .character = '\0'
     };
 
-    if (active_scenario != KERNEL_TEST_OPENGAT_PROOF) {
-        kernel_test_fail("OpenGAT completion used outside its scenario");
+    if (active_scenario != KERNEL_TEST_OPENRFS_PROOF) {
+        kernel_test_fail("OpenRFS completion used outside its scenario");
     }
     if (ledger == NULL || !ledger->validated || !ledger->executed ||
             ledger->status != BOOT_LEDGER_STATUS_OK || ledger->degraded ||
             !boot_ledger_fingerprint_valid(ledger)) {
-        kernel_test_fail("OpenGAT installed ledger is invalid");
+        kernel_test_fail("OpenRFS installed ledger is invalid");
     }
     font = boot_ledger_receipt_for(ledger, BOOT_STAGE_UI_FONT);
     layout = boot_ledger_receipt_for(ledger, BOOT_STAGE_UI_LAYOUT);
@@ -6154,7 +6154,7 @@ _Noreturn void kernel_test_complete_opengat_proof(void)
     activation = boot_ledger_receipt_for(ledger,
         BOOT_STAGE_DESKTOP_ACTIVATION);
     proof_receipt = boot_ledger_receipt_for(ledger,
-        BOOT_STAGE_OPENGAT_INSTALLED_PROOF);
+        BOOT_STAGE_OPENRFS_INSTALLED_PROOF);
     wc = boot_ledger_receipt_for(ledger, BOOT_STAGE_FRAMEBUFFER_WC);
     if (font == NULL || layout == NULL || construction == NULL ||
             activation == NULL || proof_receipt == NULL || wc == NULL ||
@@ -6167,7 +6167,7 @@ _Noreturn void kernel_test_complete_opengat_proof(void)
             wc->sequence >= construction->sequence ||
             construction->sequence >= activation->sequence ||
             activation->sequence >= proof_receipt->sequence) {
-        kernel_test_fail("OpenGAT required desktop receipt is invalid");
+        kernel_test_fail("OpenRFS required desktop receipt is invalid");
     }
     if (!boot_ledger_has_capability(ledger,
             BOOT_CAPABILITY_UI_FONT_VERIFIED) ||
@@ -6176,59 +6176,59 @@ _Noreturn void kernel_test_complete_opengat_proof(void)
             !boot_ledger_has_capability(ledger,
                 BOOT_CAPABILITY_DESKTOP_SHELL_ACTIVATED) ||
             !boot_ledger_has_capability(ledger,
-                BOOT_CAPABILITY_OPENGAT_INSTALLED_PROOF_COMPLETE)) {
-        kernel_test_fail("OpenGAT installed desktop capability is missing");
+                BOOT_CAPABILITY_OPENRFS_INSTALLED_PROOF_COMPLETE)) {
+        kernel_test_fail("OpenRFS installed desktop capability is missing");
     }
     if (!ui->active || !ui->pointer_present || !ui->ledger_pass ||
             !pointer_is_present() || ui->layout.surface.width != 1024U ||
             ui->layout.surface.height != 768U ||
             ui_layout_validate(&ui->layout) != UI_STATUS_OK) {
-        kernel_test_fail("OpenGAT installed desktop state is incomplete");
+        kernel_test_fail("OpenRFS installed desktop state is incomplete");
     }
-    if (opengat_proof_pixel(512U, 250U) == 0U ||
-            opengat_proof_pixel(512U, 767U) == 0U) {
-        kernel_test_fail("OpenGAT wallpaper or panel is not integrated");
+    if (openrfs_proof_pixel(512U, 250U) == 0U ||
+            openrfs_proof_pixel(512U, 767U) == 0U) {
+        kernel_test_fail("OpenRFS wallpaper or panel is not integrated");
     }
 
-    opengat_proof_move_pointer(200U, 160U,
-        "OpenGAT cursor did not move over the new desktop");
+    openrfs_proof_move_pointer(200U, 160U,
+        "OpenRFS cursor did not move over the new desktop");
     if (ui_get_state()->renders.cursor_moves <= initial_renders.cursor_moves) {
-        kernel_test_fail("OpenGAT cursor movement was not recorded");
+        kernel_test_fail("OpenRFS cursor movement was not recorded");
     }
 
     if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("OpenGAT focused window did not close");
+        kernel_test_fail("OpenRFS focused window did not close");
     }
-    opengat_proof_process_ui("OpenGAT close redraw failed");
+    openrfs_proof_process_ui("OpenRFS close redraw failed");
     keyboard.scancode = 0x0FU;
     if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("OpenGAT keyboard focus-next failed");
+        kernel_test_fail("OpenRFS keyboard focus-next failed");
     }
-    opengat_proof_process_ui("OpenGAT focus-next redraw failed");
+    openrfs_proof_process_ui("OpenRFS focus-next redraw failed");
     if (ui_get_state()->focus != UI_ELEMENT_DOCK_TERMINAL) {
-        kernel_test_fail("OpenGAT keyboard focus-next chose wrong app");
+        kernel_test_fail("OpenRFS keyboard focus-next chose wrong app");
     }
     keyboard.shift = true;
     if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("OpenGAT keyboard focus-previous failed");
+        kernel_test_fail("OpenRFS keyboard focus-previous failed");
     }
-    opengat_proof_process_ui("OpenGAT focus-previous redraw failed");
+    openrfs_proof_process_ui("OpenRFS focus-previous redraw failed");
     if (ui_get_state()->focus != UI_ELEMENT_DOCK_FILES) {
-        kernel_test_fail("OpenGAT keyboard focus-previous chose wrong app");
+        kernel_test_fail("OpenRFS keyboard focus-previous chose wrong app");
     }
     keyboard.scancode = 0x1CU;
     keyboard.shift = false;
     if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("OpenGAT keyboard activation failed");
+        kernel_test_fail("OpenRFS keyboard activation failed");
     }
-    opengat_proof_process_ui("OpenGAT application redraw failed");
+    openrfs_proof_process_ui("OpenRFS application redraw failed");
     if (ui_get_state()->active_panel != UI_PANEL_FILES) {
-        kernel_test_fail("OpenGAT Files window did not open");
+        kernel_test_fail("OpenRFS Files window did not open");
     }
-    console_serial_write("ST OPENGAT DE keyboard and pointer passed\n");
+    console_serial_write("ST OPENRFS DE keyboard and pointer passed\n");
 
     if (!boot_plan_pointer_absence_self_test()) {
-        kernel_test_fail("OpenGAT pointer-absence synthetic plan failed");
+        kernel_test_fail("OpenRFS pointer-absence synthetic plan failed");
     }
     proof_status = ui_verify_installed(&proof);
     if (proof_status != UI_STATUS_OK) {
@@ -6240,10 +6240,10 @@ _Noreturn void kernel_test_complete_opengat_proof(void)
             proof.render_hash == 0U || proof.events == 0U ||
             proof.panels == 0U || proof.cursor_moves == 0U ||
             proof.damage_rectangles == 0U || proof.glyphs == 0U) {
-        kernel_test_fail("OpenGAT final desktop proof is inconsistent");
+        kernel_test_fail("OpenRFS final desktop proof is inconsistent");
     }
 
-    console_write("ST OPENGAT_PROOF geometry ");
+    console_write("ST OPENRFS_PROOF geometry ");
     console_write_u64(proof.width);
     console_putc('x');
     console_write_u64(proof.height);
@@ -6409,7 +6409,7 @@ _Noreturn void kernel_test_complete_nvme(void)
 _Noreturn void kernel_test_complete_filesystem(void)
 {
     static const uint8_t expected_name[FAT16_CANONICAL_NAME_BYTES] =
-        {'O', 'P', 'E', 'N', 'G', 'A', 'T', ' ', 'B', 'I', 'N'};
+        {'O', 'P', 'E', 'N', 'R', 'F', 'S', ' ', 'B', 'I', 'N'};
     const struct boot_ledger *ledger = boot_ledger_installed();
     const struct boot_stage_receipt *foundation;
     const struct boot_stage_receipt *receipt;
@@ -6735,7 +6735,7 @@ static bool inject_keyboard_ctrl_d(void)
     return true;
 }
 
-static bool focus_opengat_proof_terminal(void)
+static bool focus_openrfs_proof_terminal(void)
 {
     if (ui_get_state()->active_panel == UI_PANEL_TERMINAL) {
         return true;
@@ -6748,13 +6748,13 @@ static bool focus_opengat_proof_terminal(void)
             return false;
         }
         shell_process_keyboard_events();
-        opengat_proof_process_ui(
+        openrfs_proof_process_ui(
             "interactive terminal focus-next processing failed");
         if (!inject_keyboard_byte(UINT8_C(0x8F))) {
             return false;
         }
         shell_process_keyboard_events();
-        opengat_proof_process_ui(
+        openrfs_proof_process_ui(
             "interactive terminal focus release processing failed");
     }
     if (ui_get_state()->focus != UI_ELEMENT_DOCK_TERMINAL) {
@@ -6764,13 +6764,13 @@ static bool focus_opengat_proof_terminal(void)
         return false;
     }
     shell_process_keyboard_events();
-    opengat_proof_process_ui(
+    openrfs_proof_process_ui(
         "interactive terminal activation processing failed");
     if (!inject_keyboard_byte(UINT8_C(0x9C))) {
         return false;
     }
     shell_process_keyboard_events();
-    opengat_proof_process_ui(
+    openrfs_proof_process_ui(
         "interactive terminal activation release processing failed");
     return ui_get_state()->active_panel == UI_PANEL_TERMINAL;
 }
@@ -6794,7 +6794,7 @@ static bool installed_test_runtime_ready(void)
             BOOT_CAPABILITY_LINUX_CAT_IMAGE_STDIN_FOUNDATION_AVAILABLE);
 }
 
-_Noreturn void kernel_test_complete_opengat_proof_userland(void)
+_Noreturn void kernel_test_complete_openrfs_proof_userland(void)
 {
     const struct shell_state before = shell_get_state();
     const uint32_t echo_before =
@@ -6804,20 +6804,20 @@ _Noreturn void kernel_test_complete_opengat_proof_userland(void)
     struct linux_abi_proof_result echo;
     struct linux_uname_abi_proof_result uname;
 
-    if (active_scenario != KERNEL_TEST_OPENGAT_PROOF_USERLAND ||
+    if (active_scenario != KERNEL_TEST_OPENRFS_PROOF_USERLAND ||
         !installed_test_runtime_ready() || !shell_is_active()) {
-        kernel_test_fail("OpenGAT userspace prerequisites are incomplete");
+        kernel_test_fail("OpenRFS userspace prerequisites are incomplete");
     }
     cpu_interrupt_enable();
     console_write("\n");
-    console_write("opengat$ ");
+    console_write("openrfs$ ");
     if (!feed_shell_line("linux unsupported") ||
         !feed_shell_line("echo native") ||
         !feed_shell_line("linux echo") ||
         !feed_shell_line("linux uname") ||
         !feed_shell_line("linux echo") ||
         !feed_shell_line("linux uname")) {
-        kernel_test_fail("OpenGAT shell input injection was refused");
+        kernel_test_fail("OpenRFS shell input injection was refused");
     }
     echo = linux_abi_get_proof_result();
     uname = linux_uname_abi_get_proof_result();
@@ -6838,27 +6838,27 @@ _Noreturn void kernel_test_complete_opengat_proof_userland(void)
         !uname.real_syscall_instruction || !uname.uts_copy_valid ||
         !uname.stdout_valid || !uname.exit_zero || !uname.teardown_complete ||
         !linux_userland_resources_released() || !cpu_interrupts_enabled()) {
-        kernel_test_fail("OpenGAT userspace relaunch contract failed");
+        kernel_test_fail("OpenRFS userspace relaunch contract failed");
     }
-    console_write("\nST OPENGAT_PROOF_USERLAND shell production echo 2 uname 2 ");
+    console_write("\nST OPENRFS_PROOF_USERLAND shell production echo 2 uname 2 ");
     console_write("invalid-profile recovered CPL3 SYSCALL stdout exact exit 0 ");
     console_write("teardown clean prompt restored\n");
     kernel_test_pass();
 }
 
-_Noreturn void kernel_test_complete_opengat_proof_userland_absent(void)
+_Noreturn void kernel_test_complete_openrfs_proof_userland_absent(void)
 {
     const struct shell_state before = shell_get_state();
     const uint32_t echo_before =
         linux_userland_completed(LINUX_USERLAND_PROFILE_ECHO);
 
-    if (active_scenario != KERNEL_TEST_OPENGAT_PROOF_USERLAND_ABSENT ||
+    if (active_scenario != KERNEL_TEST_OPENRFS_PROOF_USERLAND_ABSENT ||
         !installed_test_runtime_ready() || !shell_is_active()) {
         kernel_test_fail("absent-volume userspace prerequisites are incomplete");
     }
     cpu_interrupt_enable();
     console_write("\n");
-    console_write("opengat$ ");
+    console_write("openrfs$ ");
     if (!feed_shell_line("linux echo") ||
         !feed_shell_line("echo still usable") ||
         shell_get_state().commands != before.commands + 2U ||
@@ -6868,12 +6868,12 @@ _Noreturn void kernel_test_complete_opengat_proof_userland_absent(void)
         !linux_userland_resources_released() || !cpu_interrupts_enabled()) {
         kernel_test_fail("absent userspace volume did not recover cleanly");
     }
-    console_write("\nST OPENGAT_PROOF_USERLAND_ABSENT concise refusal prompt usable ");
+    console_write("\nST OPENRFS_PROOF_USERLAND_ABSENT concise refusal prompt usable ");
     console_write("teardown clean\n");
     kernel_test_pass();
 }
 
-_Noreturn void kernel_test_complete_opengat_proof_userland_interactive(void)
+_Noreturn void kernel_test_complete_openrfs_proof_userland_interactive(void)
 {
     const struct shell_state before = shell_get_state();
     const uint32_t cat_before =
@@ -6882,18 +6882,18 @@ _Noreturn void kernel_test_complete_opengat_proof_userland_interactive(void)
     uint64_t second_generation;
     struct linux_cat_abi_proof_result proof;
 
-    if (active_scenario != KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE ||
+    if (active_scenario != KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE ||
         !installed_test_runtime_ready() || !shell_is_active() ||
         !keyboard_is_initialized()) {
         kernel_test_fail("interactive userspace prerequisites are incomplete");
     }
     cpu_interrupt_enable();
     shell_process_keyboard_events();
-    if (!focus_opengat_proof_terminal()) {
+    if (!focus_openrfs_proof_terminal()) {
         kernel_test_fail("interactive scenario could not focus Terminal");
     }
     console_write("\n");
-    console_write("opengat$ ");
+    console_write("openrfs$ ");
 
     if (!inject_keyboard_text("linux cat\n") ||
         !linux_userland_foreground_waiting()) {
@@ -6938,13 +6938,13 @@ _Noreturn void kernel_test_complete_opengat_proof_userland_interactive(void)
         !cpu_interrupts_enabled()) {
         kernel_test_fail("interactive cat proof is inconsistent");
     }
-    console_write("\nST OPENGAT_PROOF_USERLAND_INTERACTIVE cat 2 keyboard IRQ ");
+    console_write("\nST OPENRFS_PROOF_USERLAND_INTERACTIVE cat 2 keyboard IRQ ");
     console_write("read SYSCALL copy-out resume write SYSCALL stdout exact ");
     console_write("EOF exit 0 teardown clean fresh generation prompt restored\n");
     kernel_test_pass();
 }
 
-_Noreturn void kernel_test_complete_opengat_proof_userland_interactive_absent(
+_Noreturn void kernel_test_complete_openrfs_proof_userland_interactive_absent(
     void
 )
 {
@@ -6956,18 +6956,18 @@ _Noreturn void kernel_test_complete_opengat_proof_userland_interactive_absent(
     struct linux_abi_proof_result echo;
 
     if (active_scenario !=
-            KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE_ABSENT ||
+            KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE_ABSENT ||
         !installed_test_runtime_ready() || !shell_is_active() ||
         !keyboard_is_initialized()) {
         kernel_test_fail("interactive absent-profile prerequisites incomplete");
     }
     cpu_interrupt_enable();
     shell_process_keyboard_events();
-    if (!focus_opengat_proof_terminal()) {
+    if (!focus_openrfs_proof_terminal()) {
         kernel_test_fail("absent scenario could not focus Terminal");
     }
     console_write("\n");
-    console_write("opengat$ ");
+    console_write("openrfs$ ");
     if (!inject_keyboard_text("linux cat\n") ||
         linux_userland_foreground_waiting() ||
         !linux_userland_resources_released() ||
@@ -6987,7 +6987,7 @@ _Noreturn void kernel_test_complete_opengat_proof_userland_interactive_absent(
         !linux_userland_resources_released() || !cpu_interrupts_enabled()) {
         kernel_test_fail("missing cat profile recovery proof is inconsistent");
     }
-    console_write("\nST OPENGAT_PROOF_USERLAND_INTERACTIVE_ABSENT cat missing ");
+    console_write("\nST OPENRFS_PROOF_USERLAND_INTERACTIVE_ABSENT cat missing ");
     console_write("echo valid keyboard IRQ refusal recoverable teardown clean ");
     console_write("prompt usable\n");
     kernel_test_pass();
@@ -7000,24 +7000,24 @@ static bool fat32_read_file(
     size_t *file_bytes
 )
 {
-    opengatfs_handle handle;
-    struct opengatfs_stat stat;
+    openrfsfs_handle handle;
+    struct openrfsfs_stat stat;
     size_t read_bytes = 0U;
-    enum opengatfs_status status;
+    enum openrfsfs_status status;
 
     if (path == NULL || buffer == NULL || file_bytes == NULL ||
-        opengatfs_stat_path(OPENGATFS_VOLUME_DATA, path, &stat) != OPENGATFS_STATUS_OK ||
+        openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, path, &stat) != OPENRFSFS_STATUS_OK ||
         stat.directory || stat.size > capacity ||
-        opengatfs_open(OPENGATFS_VOLUME_DATA, path, OPENGATFS_ACCESS_READ, &handle) !=
-            OPENGATFS_STATUS_OK) {
+        openrfsfs_open(OPENRFSFS_VOLUME_DATA, path, OPENRFSFS_ACCESS_READ, &handle) !=
+            OPENRFSFS_STATUS_OK) {
         return false;
     }
-    status = opengatfs_read(handle, buffer, capacity, &read_bytes);
-    if (opengatfs_close(handle) != OPENGATFS_STATUS_OK) {
+    status = openrfsfs_read(handle, buffer, capacity, &read_bytes);
+    if (openrfsfs_close(handle) != OPENRFSFS_STATUS_OK) {
         return false;
     }
     *file_bytes = read_bytes;
-    return status == OPENGATFS_STATUS_OK && read_bytes == stat.size;
+    return status == OPENRFSFS_STATUS_OK && read_bytes == stat.size;
 }
 
 static bool fat32_file_equals(
@@ -7049,14 +7049,14 @@ static bool fat32_file_equals(
 static void fat32_feed(const char *line)
 {
     if (!feed_shell_line(line)) {
-        kernel_test_fail("OpenGAT refused a FAT32 command line");
+        kernel_test_fail("OpenRFS refused a FAT32 command line");
     }
 }
 
 static void fat32_require_base(bool data_required)
 {
-    struct opengatfs_drive_info system = opengatfs_drive(OPENGATFS_VOLUME_SYSTEM);
-    struct opengatfs_drive_info data = opengatfs_drive(OPENGATFS_VOLUME_DATA);
+    struct openrfsfs_drive_info system = openrfsfs_drive(OPENRFSFS_VOLUME_SYSTEM);
+    struct openrfsfs_drive_info data = openrfsfs_drive(OPENRFSFS_VOLUME_DATA);
 
     if (!installed_test_runtime_ready() || !shell_is_active() ||
         !system.present || !system.healthy || !system.mounted ||
@@ -7106,7 +7106,7 @@ static void fat32_data_scenario(void)
 static void fat32_nested_scenario(void)
 {
     static const uint8_t expected[] = "nested\n";
-    struct opengatfs_stat stat;
+    struct openrfsfs_stat stat;
 
     fat32_require_base(true);
     fat32_feed("mkdir projects");
@@ -7118,8 +7118,8 @@ static void fat32_nested_scenario(void)
     fat32_feed("cd ..");
     if (!fat32_file_equals("projects/cuts/notes.txt", expected,
             sizeof(expected) - 1U) ||
-        opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "projects/cuts", &stat) !=
-            OPENGATFS_STATUS_OK || !stat.directory) {
+        openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "projects/cuts", &stat) !=
+            OPENRFSFS_STATUS_OK || !stat.directory) {
         kernel_test_fail("nested FAT32 traversal changed");
     }
     console_write("\nST FAT32 NESTED dot dotdot traversal enumeration exact\n");
@@ -7127,7 +7127,7 @@ static void fat32_nested_scenario(void)
 
 static void fat32_growth_scenario(void)
 {
-    struct opengatfs_stat stat;
+    struct openrfsfs_stat stat;
     uint8_t buffer[1024];
     size_t bytes = 0U;
 
@@ -7137,8 +7137,8 @@ static void fat32_growth_scenario(void)
         fat32_feed("append growth.bin \"0123456789012345678901234567890123456789012345678901234567890123456789\"");
     }
     fat32_feed("stat growth.bin");
-    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "growth.bin", &stat) !=
-            OPENGATFS_STATUS_OK || stat.size != 568U || stat.cluster_count != 2U ||
+    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "growth.bin", &stat) !=
+            OPENRFSFS_STATUS_OK || stat.size != 568U || stat.cluster_count != 2U ||
         !fat32_read_file("growth.bin", buffer, sizeof(buffer), &bytes) ||
         bytes != stat.size) {
         kernel_test_fail("multi-cluster FAT32 growth changed");
@@ -7162,7 +7162,7 @@ static void fat32_random_scenario(void)
 
 static void fat32_truncate_scenario(void)
 {
-    struct opengatfs_stat stat;
+    struct openrfsfs_stat stat;
     uint8_t buffer[800];
     size_t bytes = 0U;
 
@@ -7171,8 +7171,8 @@ static void fat32_truncate_scenario(void)
     fat32_feed("truncate trim.bin 648");
     fat32_feed("writeat trim.bin 0 \"prefix\"");
     fat32_feed("truncate trim.bin 100");
-    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "trim.bin", &stat) !=
-            OPENGATFS_STATUS_OK || stat.size != 100U || stat.cluster_count != 1U) {
+    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "trim.bin", &stat) !=
+            OPENRFSFS_STATUS_OK || stat.size != 100U || stat.cluster_count != 1U) {
         kernel_test_fail("FAT32 truncation did not release its tail");
     }
     fat32_feed("truncate trim.bin 700");
@@ -7191,27 +7191,27 @@ static void fat32_truncate_scenario(void)
 static void fat32_rename_scenario(void)
 {
     static const uint8_t expected[] = "move me\n";
-    struct opengatfs_stat stat;
+    struct openrfsfs_stat stat;
 
     fat32_require_base(true);
     fat32_feed("mkdir a");
     fat32_feed("mkdir b");
     fat32_feed("mkdir a/child");
-    if (opengatfs_rename(OPENGATFS_VOLUME_DATA, "a", "a/child/a") !=
-            OPENGATFS_STATUS_PATH) {
+    if (openrfsfs_rename(OPENRFSFS_VOLUME_DATA, "a", "a/child/a") !=
+            OPENRFSFS_STATUS_PATH) {
         kernel_test_fail("FAT32 accepted a directory move into itself");
     }
     fat32_feed("write a/note.txt \"move me\"");
     fat32_feed("mv a/note.txt b/moved.txt");
     fat32_feed("mv b archive");
     fat32_feed("touch conflict.txt");
-    if (opengatfs_rename(OPENGATFS_VOLUME_DATA, "conflict.txt",
-            "archive/moved.txt") != OPENGATFS_STATUS_EXISTS) {
+    if (openrfsfs_rename(OPENRFSFS_VOLUME_DATA, "conflict.txt",
+            "archive/moved.txt") != OPENRFSFS_STATUS_EXISTS) {
         kernel_test_fail("FAT32 rename conflict was not rejected");
     }
     fat32_feed("ls archive");
-    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "a/note.txt", &stat) !=
-            OPENGATFS_STATUS_NOT_FOUND ||
+    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "a/note.txt", &stat) !=
+            OPENRFSFS_STATUS_NOT_FOUND ||
         !fat32_file_equals("archive/moved.txt", expected,
             sizeof(expected) - 1U)) {
         kernel_test_fail("FAT32 rename or move changed ownership");
@@ -7221,22 +7221,22 @@ static void fat32_rename_scenario(void)
 
 static void fat32_delete_scenario(void)
 {
-    struct opengatfs_stat first;
-    struct opengatfs_stat second;
+    struct openrfsfs_stat first;
+    struct openrfsfs_stat second;
 
     fat32_require_base(true);
     fat32_feed("write first.bin \"one\"");
-    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "first.bin", &first) !=
-            OPENGATFS_STATUS_OK) {
+    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "first.bin", &first) !=
+            OPENRFSFS_STATUS_OK) {
         kernel_test_fail("FAT32 deletion setup failed");
     }
     fat32_feed("rm first.bin");
     fat32_feed("write second.bin \"two\"");
     fat32_feed("mkdir kept");
     fat32_feed("write kept/live.txt \"live\"");
-    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "second.bin", &second) !=
-            OPENGATFS_STATUS_OK || first.first_cluster != second.first_cluster ||
-        opengatfs_rmdir(OPENGATFS_VOLUME_DATA, "kept") != OPENGATFS_STATUS_NOT_EMPTY) {
+    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "second.bin", &second) !=
+            OPENRFSFS_STATUS_OK || first.first_cluster != second.first_cluster ||
+        openrfsfs_rmdir(OPENRFSFS_VOLUME_DATA, "kept") != OPENRFSFS_STATUS_NOT_EMPTY) {
         kernel_test_fail("FAT32 deletion did not reuse or protect ownership");
     }
     fat32_feed("rm kept/live.txt");
@@ -7246,22 +7246,22 @@ static void fat32_delete_scenario(void)
 
 static void fat32_full_scenario(void)
 {
-    struct opengatfs_stat stat;
+    struct openrfsfs_stat stat;
 
     fat32_require_base(true);
-    if (opengatfs_drive(OPENGATFS_VOLUME_DATA).free_bytes != 0U) {
+    if (openrfsfs_drive(OPENRFSFS_VOLUME_DATA).free_bytes != 0U) {
         kernel_test_fail("full FAT32 fixture retained free clusters");
     }
     fat32_feed("write recovery.txt \"blocked\"");
-    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "recovery.txt", &stat) !=
-            OPENGATFS_STATUS_OK || stat.size != 0U) {
+    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "recovery.txt", &stat) !=
+            OPENRFSFS_STATUS_OK || stat.size != 0U) {
         kernel_test_fail("full-volume refusal exposed partial contents");
     }
     fat32_feed("rm tiny.bin");
     fat32_feed("write recovery.txt \"recovered\"");
     fat32_feed("sync");
-    if (opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "recovery.txt", &stat) !=
-            OPENGATFS_STATUS_OK || stat.size != 10U) {
+    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "recovery.txt", &stat) !=
+            OPENRFSFS_STATUS_OK || stat.size != 10U) {
         kernel_test_fail("full FAT32 volume did not recover after deletion");
     }
     console_write("\nST FAT32 FULL refusal no leak deletion recovered\n");
@@ -7269,7 +7269,7 @@ static void fat32_full_scenario(void)
 
 static void fat32_unavailable_scenario(bool corrupt)
 {
-    struct opengatfs_drive_info data = opengatfs_drive(OPENGATFS_VOLUME_DATA);
+    struct openrfsfs_drive_info data = openrfsfs_drive(OPENRFSFS_VOLUME_DATA);
     const uint32_t before =
         linux_userland_completed(LINUX_USERLAND_PROFILE_ECHO);
 
@@ -7291,26 +7291,26 @@ static void fat32_unavailable_scenario(bool corrupt)
 static void fat32_persistence_scenario(void)
 {
     static const uint8_t expected[] = "first cut\nsecond line\n";
-    struct opengatfs_stat stat;
-    enum opengatfs_status status;
+    struct openrfsfs_stat stat;
+    enum openrfsfs_status status;
 
     fat32_require_base(true);
-    status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "projects/notes.txt", &stat);
-    if (status == OPENGATFS_STATUS_NOT_FOUND) {
+    status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "projects/notes.txt", &stat);
+    if (status == OPENRFSFS_STATUS_NOT_FOUND) {
         fat32_feed("mkdir projects");
         fat32_feed("write projects/notes.txt \"first cut\"");
         fat32_feed("append projects/notes.txt \"second line\"");
         fat32_feed("sync");
         if (!fat32_file_equals("projects/notes.txt", expected,
                 sizeof(expected) - 1U) ||
-            opengatfs_unmount(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK) {
+            openrfsfs_unmount(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK) {
             kernel_test_fail("clean persistence write phase failed");
         }
         console_write("\nST FAT32 PERSISTENCE synchronized reboot phase\n");
         cpu_out8(UINT16_C(0x0064), UINT8_C(0xFE));
         kernel_test_fail("platform reset did not restart QEMU");
     }
-    if (status != OPENGATFS_STATUS_OK ||
+    if (status != OPENRFSFS_STATUS_OK ||
         !fat32_file_equals("projects/notes.txt", expected,
             sizeof(expected) - 1U)) {
         kernel_test_fail("clean reboot did not retain FAT32 contents");
@@ -7351,16 +7351,16 @@ static void fat32_cache_scenario(void)
 
 static void fat32_immutable_scenario(void)
 {
-    opengatfs_handle handle;
+    openrfsfs_handle handle;
     const uint32_t before =
         linux_userland_completed(LINUX_USERLAND_PROFILE_ECHO);
 
     fat32_require_base(true);
     fat32_feed("linux echo");
-    if (opengatfs_create(OPENGATFS_VOLUME_SYSTEM, "ATTACK.TXT") !=
-            OPENGATFS_STATUS_READ_ONLY ||
-        opengatfs_open(OPENGATFS_VOLUME_SYSTEM, "BUSYBOX", OPENGATFS_ACCESS_WRITE,
-            &handle) != OPENGATFS_STATUS_READ_ONLY ||
+    if (openrfsfs_create(OPENRFSFS_VOLUME_SYSTEM, "ATTACK.TXT") !=
+            OPENRFSFS_STATUS_READ_ONLY ||
+        openrfsfs_open(OPENRFSFS_VOLUME_SYSTEM, "BUSYBOX", OPENRFSFS_ACCESS_WRITE,
+            &handle) != OPENRFSFS_STATUS_READ_ONLY ||
         linux_userland_completed(LINUX_USERLAND_PROFILE_ECHO) != before + 1U) {
         kernel_test_fail("immutable FAT32 system volume accepted a write");
     }
@@ -7369,37 +7369,37 @@ static void fat32_immutable_scenario(void)
 
 static void fat32_handles_scenario(void)
 {
-    opengatfs_handle handles[OPENGATFS_MAX_HANDLES];
-    opengatfs_handle extra;
+    openrfsfs_handle handles[OPENRFSFS_MAX_HANDLES];
+    openrfsfs_handle extra;
     size_t bytes = 0U;
     uint8_t byte = 0U;
 
     fat32_require_base(true);
     fat32_feed("write handle.txt \"generation\"");
-    if (opengatfs_open(OPENGATFS_VOLUME_DATA, "handle.txt", OPENGATFS_ACCESS_READ,
-            &handles[0]) != OPENGATFS_STATUS_OK ||
-        opengatfs_write(handles[0], &byte, 1U, &bytes) != OPENGATFS_STATUS_ACCESS ||
-        opengatfs_read(handles[0], NULL, 1U, &bytes) !=
-            OPENGATFS_STATUS_INVALID_ARGUMENT ||
-        opengatfs_unlink(OPENGATFS_VOLUME_DATA, "handle.txt") != OPENGATFS_STATUS_BUSY ||
-        opengatfs_close(handles[0]) != OPENGATFS_STATUS_OK ||
-        opengatfs_close(handles[0]) != OPENGATFS_STATUS_STALE_HANDLE ||
-        opengatfs_read(handles[0], &byte, 1U, &bytes) !=
-            OPENGATFS_STATUS_STALE_HANDLE) {
+    if (openrfsfs_open(OPENRFSFS_VOLUME_DATA, "handle.txt", OPENRFSFS_ACCESS_READ,
+            &handles[0]) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_write(handles[0], &byte, 1U, &bytes) != OPENRFSFS_STATUS_ACCESS ||
+        openrfsfs_read(handles[0], NULL, 1U, &bytes) !=
+            OPENRFSFS_STATUS_INVALID_ARGUMENT ||
+        openrfsfs_unlink(OPENRFSFS_VOLUME_DATA, "handle.txt") != OPENRFSFS_STATUS_BUSY ||
+        openrfsfs_close(handles[0]) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_close(handles[0]) != OPENRFSFS_STATUS_STALE_HANDLE ||
+        openrfsfs_read(handles[0], &byte, 1U, &bytes) !=
+            OPENRFSFS_STATUS_STALE_HANDLE) {
         kernel_test_fail("FAT32 handle generation controls changed");
     }
-    for (size_t index = 0U; index < OPENGATFS_MAX_HANDLES; ++index) {
-        if (opengatfs_open(OPENGATFS_VOLUME_DATA, "handle.txt", OPENGATFS_ACCESS_READ,
-                &handles[index]) != OPENGATFS_STATUS_OK) {
+    for (size_t index = 0U; index < OPENRFSFS_MAX_HANDLES; ++index) {
+        if (openrfsfs_open(OPENRFSFS_VOLUME_DATA, "handle.txt", OPENRFSFS_ACCESS_READ,
+                &handles[index]) != OPENRFSFS_STATUS_OK) {
             kernel_test_fail("FAT32 handle table filled early");
         }
     }
-    if (opengatfs_open(OPENGATFS_VOLUME_DATA, "handle.txt", OPENGATFS_ACCESS_READ,
-            &extra) != OPENGATFS_STATUS_NO_HANDLES) {
+    if (openrfsfs_open(OPENRFSFS_VOLUME_DATA, "handle.txt", OPENRFSFS_ACCESS_READ,
+            &extra) != OPENRFSFS_STATUS_NO_HANDLES) {
         kernel_test_fail("FAT32 handle table exceeded its fixed bound");
     }
-    for (size_t index = 0U; index < OPENGATFS_MAX_HANDLES; ++index) {
-        if (opengatfs_close(handles[index]) != OPENGATFS_STATUS_OK) {
+    for (size_t index = 0U; index < OPENRFSFS_MAX_HANDLES; ++index) {
+        if (openrfsfs_close(handles[index]) != OPENRFSFS_STATUS_OK) {
             kernel_test_fail("FAT32 handle teardown leaked ownership");
         }
     }
@@ -7413,7 +7413,7 @@ _Noreturn void kernel_test_complete_fat32(void)
         kernel_test_fail("FAT32 completion used outside its scenario");
     }
     cpu_interrupt_enable();
-    console_write("\nopengat$ ");
+    console_write("\nopenrfs$ ");
     switch (active_scenario) {
     case KERNEL_TEST_FAT32_SYSTEM: fat32_system_scenario(); break;
     case KERNEL_TEST_FAT32_DATA: fat32_data_scenario(); break;
@@ -7443,7 +7443,7 @@ _Noreturn void kernel_test_complete_fat32(void)
 #define NETWORK_TEST_HTTP UINT32_C(0x0A000214)
 
 static const uint8_t network_welcome[] =
-    "hello from the OpenGAT network\n";
+    "hello from the OpenRFS network\n";
 
 static void network_require_device(void)
 {
@@ -7507,7 +7507,7 @@ static void network_syscall_http_download_scenario(void)
     const uint64_t response_address = request_address + UINT64_C(256);
     const uint64_t url_address = request_address + UINT64_C(512);
     const uint64_t path_address = request_address + UINT64_C(640);
-    static const char url[] = "http://opengat.test/welcome.txt";
+    static const char url[] = "http://openrfs.test/welcome.txt";
     static const char destination[] = "HTTPLEN.TXT";
     uintptr_t executable_frame = 0U;
     uintptr_t data_frame = 0U;
@@ -7592,7 +7592,7 @@ static void network_syscall_http_download_scenario(void)
         response->network_status != NETWORK_STATUS_OK ||
         response->http_status != 200U ||
         response->value != sizeof(network_welcome) - 1U) {
-        console_write("OpenGAT: network syscall register ");
+        console_write("OpenRFS: network syscall register ");
         console_write(network_syscall_status_string(register_status));
         console_write(" dispatch ");
         console_write(network_syscall_status_string(dispatch_status));
@@ -7729,7 +7729,7 @@ static void network_tcp_connect_close(bool expect_reset)
 #define NETWORK_TEST_LISTEN_PORT UINT16_C(7777)
 #define NETWORK_TEST_CLOSED_PORT UINT16_C(7778)
 
-static const uint8_t network_listen_request[] = "OPENGAT LISTEN\n";
+static const uint8_t network_listen_request[] = "OPENRFS LISTEN\n";
 static const uint8_t network_refusal_notice[] = "REFUSED";
 
 static network_handle network_announce_port(
@@ -7742,8 +7742,8 @@ static network_handle network_announce_port(
     uint8_t message[6];
 
     message[0] = (uint8_t)'O';
-    message[1] = (uint8_t)'G';
-    message[2] = (uint8_t)'T';
+    message[1] = (uint8_t)'R';
+    message[2] = (uint8_t)'F';
     message[3] = (uint8_t)'1';
     message[4] = (uint8_t)(announced >> 8U);
     message[5] = (uint8_t)announced;
@@ -8068,7 +8068,7 @@ static void network_download(const char *destination)
 
     network_require_dhcp();
     if (network_http_download(NETWORK_TEST_OWNER,
-            "http://opengat.test/welcome.txt", destination, false,
+            "http://openrfs.test/welcome.txt", destination, false,
             UINT64_C(15000000000), &result) != NETWORK_STATUS_OK ||
         !result.synchronized || result.status_code != 200U ||
         !fat32_file_equals(destination, network_welcome,
@@ -8178,7 +8178,7 @@ _Noreturn void kernel_test_complete_network(void)
         uint32_t address;
 
         network_require_dhcp();
-        if (network_resolve("opengat.test", &address,
+        if (network_resolve("openrfs.test", &address,
                 NETWORK_DEFAULT_OPERATION_TIMEOUT_NS) != NETWORK_STATUS_OK ||
             address != NETWORK_TEST_HTTP) {
             kernel_test_fail("DNS resolution did not return fixture address");
@@ -8190,7 +8190,7 @@ _Noreturn void kernel_test_complete_network(void)
         enum network_status status;
 
         network_require_dhcp();
-        status = network_resolve("opengat.test", &address,
+        status = network_resolve("openrfs.test", &address,
             UINT64_C(1000000000));
         if (status != NETWORK_STATUS_TIMEOUT &&
             status != NETWORK_STATUS_DNS_FAILURE &&
@@ -8228,32 +8228,32 @@ _Noreturn void kernel_test_complete_network(void)
     }
     case KERNEL_TEST_NETWORK_HTTP_CHUNKED:
         network_http_download_scenario(
-            "http://opengat.test/welcome.txt", "HTTPCHNK.TXT", true, 0U);
+            "http://openrfs.test/welcome.txt", "HTTPCHNK.TXT", true, 0U);
         break;
     case KERNEL_TEST_NETWORK_HTTP_REDIRECT:
         network_http_download_scenario(
-            "http://opengat.test/start", "HTTPREDR.TXT", false, 1U);
+            "http://openrfs.test/start", "HTTPREDR.TXT", false, 1U);
         break;
     case KERNEL_TEST_NETWORK_HTTP_MALFORMED: {
         struct network_http_result result;
-        struct opengatfs_stat stat;
+        struct openrfsfs_stat stat;
 
         fat32_require_base(true);
         network_require_dhcp();
         if (network_http_download(NETWORK_TEST_OWNER,
-                "http://opengat.test/welcome.txt", "BADHTTP.TXT", false,
+                "http://openrfs.test/welcome.txt", "BADHTTP.TXT", false,
                 UINT64_C(5000000000), &result) == NETWORK_STATUS_OK ||
-            opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "BADHTTP.TXT", &stat) !=
-                OPENGATFS_STATUS_NOT_FOUND) {
+            openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "BADHTTP.TXT", &stat) !=
+                OPENRFSFS_STATUS_NOT_FOUND) {
             kernel_test_fail("malformed HTTP response was accepted");
         }
         break;
     }
     case KERNEL_TEST_NETWORK_HTTP_NESTED:
         fat32_require_base(true);
-        if (opengatfs_mkdir(OPENGATFS_VOLUME_DATA, "DOWNLDS") != OPENGATFS_STATUS_OK &&
-            opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "DOWNLDS",
-                &(struct opengatfs_stat){0}) != OPENGATFS_STATUS_OK) {
+        if (openrfsfs_mkdir(OPENRFSFS_VOLUME_DATA, "DOWNLDS") != OPENRFSFS_STATUS_OK &&
+            openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "DOWNLDS",
+                &(struct openrfsfs_stat){0}) != OPENRFSFS_STATUS_OK) {
             kernel_test_fail("download directory was not available");
         }
         network_download("DOWNLDS/WELCOME.TXT");
@@ -8270,7 +8270,7 @@ _Noreturn void kernel_test_complete_network(void)
         fat32_require_base(true);
         network_require_dhcp();
         status = network_http_download(NETWORK_TEST_OWNER,
-            "http://opengat.test/welcome.txt", "full.txt", false,
+            "http://openrfs.test/welcome.txt", "full.txt", false,
             UINT64_C(5000000000), &result);
         if (status != NETWORK_STATUS_TOO_LARGE &&
             status != NETWORK_STATUS_FILESYSTEM) {
@@ -8308,14 +8308,14 @@ _Noreturn void kernel_test_complete_network(void)
         break;
     }
     case KERNEL_TEST_NETWORK_SYSTEM_IMMUTABLE: {
-        opengatfs_handle handle;
+        openrfsfs_handle handle;
 
         fat32_require_base(true);
         network_http_download_scenario(
-            "http://opengat.test/welcome.txt", "IMMUTABL.TXT",
+            "http://openrfs.test/welcome.txt", "IMMUTABL.TXT",
             false, 0U);
-        if (opengatfs_open(OPENGATFS_VOLUME_SYSTEM, "BUSYBOX", OPENGATFS_ACCESS_WRITE,
-                &handle) != OPENGATFS_STATUS_READ_ONLY) {
+        if (openrfsfs_open(OPENRFSFS_VOLUME_SYSTEM, "BUSYBOX", OPENRFSFS_ACCESS_WRITE,
+                &handle) != OPENRFSFS_STATUS_READ_ONLY) {
             kernel_test_fail("networking weakened the immutable system volume");
         }
         break;
@@ -8343,13 +8343,13 @@ _Noreturn void kernel_test_complete_network(void)
         network_linux_cat_twice();
         break;
     case KERNEL_TEST_NETWORK_FILES: {
-        struct opengatfs_list_entry entries[4];
+        struct openrfsfs_list_entry entries[4];
         size_t count = 0U;
 
         fat32_require_base(true);
         network_require_dhcp();
-        if (opengatfs_list(OPENGATFS_VOLUME_DATA, ".", entries, 4U, &count) !=
-                OPENGATFS_STATUS_OK || ui_flush() != UI_STATUS_OK) {
+        if (openrfsfs_list(OPENRFSFS_VOLUME_DATA, ".", entries, 4U, &count) !=
+                OPENRFSFS_STATUS_OK || ui_flush() != UI_STATUS_OK) {
             kernel_test_fail("networking regressed Files");
         }
         break;
@@ -8363,21 +8363,21 @@ _Noreturn void kernel_test_complete_network(void)
         }
         break;
     case KERNEL_TEST_NETWORK_PERSISTENCE: {
-        struct opengatfs_stat stat;
-        enum opengatfs_status status;
+        struct openrfsfs_stat stat;
+        enum openrfsfs_status status;
 
         fat32_require_base(true);
-        status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA, "network.txt", &stat);
-        if (status == OPENGATFS_STATUS_NOT_FOUND) {
+        status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "network.txt", &stat);
+        if (status == OPENRFSFS_STATUS_NOT_FOUND) {
             network_download("network.txt");
-            if (opengatfs_unmount(OPENGATFS_VOLUME_DATA) != OPENGATFS_STATUS_OK) {
+            if (openrfsfs_unmount(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK) {
                 kernel_test_fail("network download did not unmount cleanly");
             }
             console_write("\nST NETWORK PERSISTENCE synchronized reboot phase\n");
             cpu_out8(UINT16_C(0x0064), UINT8_C(0xFE));
             kernel_test_fail("platform reset did not restart QEMU");
         }
-        if (status != OPENGATFS_STATUS_OK ||
+        if (status != OPENRFSFS_STATUS_OK ||
             !fat32_file_equals("network.txt", network_welcome,
                 sizeof(network_welcome) - 1U)) {
             kernel_test_fail("network download did not persist after reboot");
@@ -9072,8 +9072,8 @@ const char *kernel_test_scenario_name(enum kernel_test_scenario scenario)
         return "device-windows";
     case KERNEL_TEST_BOOT_LEDGER:
         return "boot-ledger";
-    case KERNEL_TEST_OPENGAT_PROOF:
-        return "opengat-proof";
+    case KERNEL_TEST_OPENRFS_PROOF:
+        return "openrfs-proof";
     case KERNEL_TEST_DEVICE_SUBSTRATE:
         return "device-substrate";
     case KERNEL_TEST_XHCI:
@@ -9088,14 +9088,14 @@ const char *kernel_test_scenario_name(enum kernel_test_scenario scenario)
         return "linux-abi";
     case KERNEL_TEST_LINUX_ABI_UNAME:
         return "linux-abi-uname";
-    case KERNEL_TEST_OPENGAT_PROOF_USERLAND:
-        return "opengat-proof-userland";
-    case KERNEL_TEST_OPENGAT_PROOF_USERLAND_ABSENT:
-        return "opengat-proof-userland-absent";
-    case KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE:
-        return "opengat-proof-userland-interactive";
-    case KERNEL_TEST_OPENGAT_PROOF_USERLAND_INTERACTIVE_ABSENT:
-        return "opengat-proof-userland-interactive-absent";
+    case KERNEL_TEST_OPENRFS_PROOF_USERLAND:
+        return "openrfs-proof-userland";
+    case KERNEL_TEST_OPENRFS_PROOF_USERLAND_ABSENT:
+        return "openrfs-proof-userland-absent";
+    case KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE:
+        return "openrfs-proof-userland-interactive";
+    case KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE_ABSENT:
+        return "openrfs-proof-userland-interactive-absent";
     case KERNEL_TEST_FAT32_SYSTEM:
         return "fat32-system";
     case KERNEL_TEST_FAT32_DATA:
@@ -9238,8 +9238,8 @@ const char *kernel_test_scenario_name(enum kernel_test_scenario scenario)
         return "native-dynamic";
     case KERNEL_TEST_NATIVE_HTTPS:
         return "native-https";
-    case KERNEL_TEST_NATIVE_OPENGAT:
-        return "native-opengat";
+    case KERNEL_TEST_NATIVE_OPENRFS:
+        return "native-openrfs";
     case KERNEL_TEST_EXT4_RECOVERY:
         return "ext4-recovery";
     case KERNEL_TEST_INVALID:

@@ -1,12 +1,12 @@
 ## What changed
 
-Tell us what problem this solves and why the change belongs in OpenGAT.
+Tell us what problem this solves and why the change belongs in OpenRFS.
 
 ## What you checked
 
 - [ ] I ran the local checks that match this change's risk.
 - [ ] `make verify` passes from a clean tree when code changed.
-- [ ] `make smoke` reaches `OpenGAT: day one passed` when boot behavior changed.
+- [ ] `make smoke` reaches `OpenRFS: day one passed` when boot behavior changed.
 - [ ] I inspected new binary or generated artifacts and recorded their source.
 - [ ] The latest commit has no unexplained warning or failed check.
 

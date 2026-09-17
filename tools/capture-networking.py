@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Capture an authentic OpenGAT networking session and its packet evidence."""
+"""Capture an authentic OpenRFS networking session and its packet evidence."""
 
 from __future__ import annotations
 
@@ -19,12 +19,12 @@ import fat32_image
 
 
 def load_capture_support():
-    path = Path(__file__).with_name("capture-opengat-proof.py")
+    path = Path(__file__).with_name("capture-openrfs-proof.py")
     specification = importlib.util.spec_from_file_location(
-        "opengat_capture_support", path
+        "openrfs_capture_support", path
     )
     if specification is None or specification.loader is None:
-        raise RuntimeError("OpenGAT capture support is unavailable")
+        raise RuntimeError("OpenRFS capture support is unavailable")
     module = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(module)
     return module
@@ -132,11 +132,11 @@ def storage_arguments(system: Path, data: Path) -> list[str]:
         "-blockdev",
         f"driver=file,filename={system.resolve()},node-name=system-file,read-only=on,auto-read-only=off",
         "-blockdev", "driver=raw,file=system-file,node-name=system-raw,read-only=on",
-        "-device", "nvme,serial=opengat-system-fat32,drive=system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1",
+        "-device", "nvme,serial=openrfs-system-fat32,drive=system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1",
         "-blockdev",
         f"driver=file,filename={data.resolve()},node-name=data-file,read-only=off,auto-read-only=off",
         "-blockdev", "driver=raw,file=data-file,node-name=data-raw,read-only=off",
-        "-device", "nvme,serial=opengat-data-fat32,drive=data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1",
+        "-device", "nvme,serial=openrfs-data-fat32,drive=data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1",
     ]
 
 
@@ -151,12 +151,12 @@ def boot_arguments(args: argparse.Namespace, work: Path) -> list[str]:
     root = work / "efi"
     variables = work / "efi-vars.fd"
     shutil.copytree(args.efi_root, root)
-    shutil.copyfile(args.kernel, root / "boot" / "opengat.elf")
+    shutil.copyfile(args.kernel, root / "boot" / "openrfs.elf")
     configuration = (
         "set default=0\n"
         "set timeout=0\n\n"
-        'menuentry "OpenGAT" {\n'
-        "    multiboot2 /boot/opengat.elf\n"
+        'menuentry "OpenRFS" {\n'
+        "    multiboot2 /boot/openrfs.elf\n"
         "    boot\n"
         "}\n"
     )
@@ -204,14 +204,14 @@ def main() -> int:
     support = load_capture_support()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    data = output / "opengat-v2.1.0-network-data.raw"
-    serial = output / "opengat-v2.1.0-networking-serial.log"
-    capture = output / "opengat-v2.1.0-networking.pcap"
-    audit = output / "opengat-v2.1.0-network-packet-audit.json"
-    fixture_log = output / "opengat-v2.1.0-network-fixture.log"
-    screenshot = output / "OpenGAT-v2.1.0-networking.png"
-    video = output / "OpenGAT-v2.1.0-networking-22s.mp4"
-    report_path = output / "opengat-v2.1.0-network-fat32-report.json"
+    data = output / "openrfs-v2.1.0-network-data.raw"
+    serial = output / "openrfs-v2.1.0-networking-serial.log"
+    capture = output / "openrfs-v2.1.0-networking.pcap"
+    audit = output / "openrfs-v2.1.0-network-packet-audit.json"
+    fixture_log = output / "openrfs-v2.1.0-network-fixture.log"
+    screenshot = output / "OpenRFS-v2.1.0-networking.png"
+    video = output / "OpenRFS-v2.1.0-networking-22s.mp4"
+    report_path = output / "openrfs-v2.1.0-network-fat32-report.json"
     ready = output / ".fixture-ready"
     for path in (serial, capture, audit, fixture_log, screenshot, video,
                  report_path, ready):
@@ -220,7 +220,7 @@ def main() -> int:
 
     peer_port, guest_port = free_udp_ports()
     qmp_port = support.free_port()
-    boot_work = tempfile.TemporaryDirectory(prefix="opengat-network-boot-")
+    boot_work = tempfile.TemporaryDirectory(prefix="openrfs-network-boot-")
     boot = boot_arguments(args, Path(boot_work.name))
     fixture_stream = fixture_log.open("wb")
     fixture = subprocess.Popen([
@@ -240,11 +240,11 @@ def main() -> int:
             *(["-icount", args.icount] if args.icount else []),
             *storage_arguments(args.system, data),
             "-netdev",
-            "dgram,id=opengatnet,local.type=inet,local.host=127.0.0.1,"
+            "dgram,id=openrfsnet,local.type=inet,local.host=127.0.0.1,"
             f"local.port={guest_port},remote.type=inet,remote.host=127.0.0.1,"
             f"remote.port={peer_port}",
             "-device",
-            "virtio-net-pci,id=virtio-net0,netdev=opengatnet,"
+            "virtio-net-pci,id=virtio-net0,netdev=openrfsnet,"
             "mac=52:54:00:12:34:56,disable-legacy=on,mrg_rxbuf=off",
             "-qmp", f"tcp:127.0.0.1:{qmp_port},server=on,wait=off",
             "-serial", f"file:{serial}", "-no-reboot",
@@ -260,7 +260,7 @@ def main() -> int:
         events: set[str] = set()
         frames: list[Path] = []
         capture_times: list[float] = []
-        with tempfile.TemporaryDirectory(prefix="opengat-network-capture-") as raw:
+        with tempfile.TemporaryDirectory(prefix="openrfs-network-capture-") as raw:
             work = Path(raw)
             started = time.monotonic()
             next_capture = started
@@ -277,12 +277,12 @@ def main() -> int:
                     send_command(support, qmp, "ping 10.0.2.2 1")
                     events.add("ping")
                 elif elapsed >= 9.50 and "resolve" not in events:
-                    send_command(support, qmp, "resolve opengat.test")
+                    send_command(support, qmp, "resolve openrfs.test")
                     events.add("resolve")
                 elif elapsed >= 12.50 and "http" not in events:
                     send_command(
                         support, qmp,
-                        "http http://opengat.test/welcome.txt NETCAP.TXT",
+                        "http http://openrfs.test/welcome.txt NETCAP.TXT",
                     )
                     events.add("http")
                 elif elapsed >= 17.50 and "netstat" not in events:
@@ -327,9 +327,9 @@ def main() -> int:
             support.press(qmp, "tab", 0.15)
             support.press(qmp, "ret", 0.40)
             support.capture(
-                qmp, output, "OpenGAT-v2.1.0-networking-terminal-open"
+                qmp, output, "OpenRFS-v2.1.0-networking-terminal-open"
             )
-            support.capture(qmp, output, "OpenGAT-v2.1.0-networking")
+            support.capture(qmp, output, "OpenRFS-v2.1.0-networking")
             encode(args.ffmpeg, frames, capture_times, args.fps,
                    args.seconds, video)
     finally:

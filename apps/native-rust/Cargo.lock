@@ -3,12 +3,12 @@
 version = 4
 
 [[package]]
-name = "opengat"
+name = "openrfs"
 version = "0.1.0"
 
 [[package]]
-name = "opengat-native-rust-proof"
+name = "openrfs-native-rust-proof"
 version = "0.1.0"
 dependencies = [
- "opengat",
+ "openrfs",
 ]

@@ -63,8 +63,8 @@ jobs:
                   # qemu-test-%, so request each one explicitly before copying.
                   for log in build/tests/*/serial.log; do
                       scenario=$(basename "$(dirname "$log")")
-                      make "build/tests/${scenario}/opengat.iso"
-                      cp "build/tests/${scenario}/opengat.iso" \
+                      make "build/tests/${scenario}/openrfs.iso"
+                      cp "build/tests/${scenario}/openrfs.iso" \
                           "evidence/nvme/scenario-isos/${scenario}.iso"
                   done
             - name: Record the CI hardware-accelerator safety boundary
@@ -81,16 +81,16 @@ jobs:
               run: |
                   set -o pipefail
                   make iso
-                  cp build/opengat.iso evidence/nvme/OpenGAT-nvme-regression.iso
+                  cp build/openrfs.iso evidence/nvme/OpenRFS-nvme-regression.iso
                   proof=evidence/nvme/nvme-proof-transcript.txt
                   expected_lines=(
-                      'OpenGAT: NVMe foundation robustness controls 20/20 passed'
-                      'OpenGAT: NVMe controller ready'
-                      'OpenGAT: NVMe namespace ready'
-                      'OpenGAT: NVMe block read completed: 4096 bytes'
-                      'OpenGAT: NVMe MSI-X read completion count 1'
-                      'OpenGAT: NVMe DMA ownership CPU-CONTROLLER-CPU complete'
-                      'OpenGAT: NVMe teardown complete'
+                      'OpenRFS: NVMe foundation robustness controls 20/20 passed'
+                      'OpenRFS: NVMe controller ready'
+                      'OpenRFS: NVMe namespace ready'
+                      'OpenRFS: NVMe block read completed: 4096 bytes'
+                      'OpenRFS: NVMe MSI-X read completion count 1'
+                      'OpenRFS: NVMe DMA ownership CPU-CONTROLLER-CPU complete'
+                      'OpenRFS: NVMe teardown complete'
                       'ST NVME read 4096 msix 1 ownership CPU-CONTROLLER-CPU teardown clean robustness 22'
                   )
                   for expected_line in "${expected_lines[@]}"; do
@@ -124,7 +124,7 @@ jobs:
                           | awk '{print $1}'
                   )
                   {
-                      printf 'OpenGAT NVMe Block Storage Foundation verification\n'
+                      printf 'OpenRFS NVMe Block Storage Foundation verification\n'
                       printf 'commit: %s\n' "$GITHUB_SHA"
                       printf 'tree: %s\n' "$(git rev-parse 'HEAD^{tree}')"
                       printf 'scenarios per sweep: %s\n' "$scenario_count"
@@ -158,7 +158,7 @@ jobs:
             - name: Upload the bounded milestone evidence
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
-                  name: opengat-nvme-milestone-${{ github.sha }}
+                  name: openrfs-nvme-milestone-${{ github.sha }}
                   path: evidence/nvme
                   if-no-files-found: error
                   retention-days: 30

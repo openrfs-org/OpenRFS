@@ -5,16 +5,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/heap.h>
-#include <opengat/package_builder.h>
-#include <opengat/package_control.h>
-#include <opengat/package_generation.h>
-#include <opengat/package_manager.h>
-#include <opengat/package_platform_trust.h>
-#include <opengat/package_service.h>
-#include <opengat/package_state.h>
-#include <opengat/package_upload.h>
-#include <opengat/wall_clock.h>
+#include <openrfs/heap.h>
+#include <openrfs/package_builder.h>
+#include <openrfs/package_control.h>
+#include <openrfs/package_generation.h>
+#include <openrfs/package_manager.h>
+#include <openrfs/package_platform_trust.h>
+#include <openrfs/package_service.h>
+#include <openrfs/package_state.h>
+#include <openrfs/package_upload.h>
+#include <openrfs/wall_clock.h>
 
 struct control_session {
     struct package_manager_policy policy;

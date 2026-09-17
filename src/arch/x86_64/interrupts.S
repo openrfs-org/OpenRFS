@@ -311,9 +311,9 @@ interrupt_trigger_unexpected:
 
 .section .rodata, "a"
 double_fault_message:
-    .asciz "OpenGAT DOUBLE FAULT - HALTED\n"
+    .asciz "OpenRFS DOUBLE FAULT - HALTED\n"
 double_fault_test_message:
-    .asciz "OpenGAT DOUBLE FAULT - HALTED\nST PASS double-fault\n"
+    .asciz "OpenRFS DOUBLE FAULT - HALTED\nST PASS double-fault\n"
 
 .balign 8
 .global interrupt_vector_table

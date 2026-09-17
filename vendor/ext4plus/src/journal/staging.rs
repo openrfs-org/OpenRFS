@@ -1,4 +1,4 @@
-// Copyright 2026 OpenGAT contributors
+// Copyright 2026 OpenRFS contributors
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license

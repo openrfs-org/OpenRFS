@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Offline DNS/TCP/TLS/HTTPS peer for OpenGAT's QEMU dgram NIC."""
+"""Offline DNS/TCP/TLS/HTTPS peer for OpenRFS's QEMU dgram NIC."""
 
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ ROOT = Path(__file__).resolve().parent.parent
 CERTIFICATE = ROOT / "tests" / "fixtures" / "tls" / "valid.pem"
 PRIVATE_KEY = ROOT / "tests" / "fixtures" / "tls" / "valid-key.pem"
 NATIVE_HTTPS_SOURCE = ROOT / "apps" / "native-https" / "main.c"
-HOSTNAME = b"repo.opengat.test"
-BODY = b"hello from the OpenGAT HTTPS peer\n"
+HOSTNAME = b"repo.openrfs.test"
+BODY = b"hello from the OpenRFS HTTPS peer\n"
 SERVER_ISN = 0x63000000
 TLS_PORT = 443
 MAX_REQUEST = 2048
@@ -77,7 +77,7 @@ class HttpsFixture(network.Fixture):
     def response_body(self, request: bytes) -> bytes:
         lines = request.split(b"\r\n")
         if len(lines) != 7 or lines[1:] != [
-            b"Host: repo.opengat.test",
+            b"Host: repo.openrfs.test",
             b"Accept: application/octet-stream",
             b"Accept-Encoding: identity",
             b"Connection: close",
@@ -300,7 +300,7 @@ def self_test() -> int:
         server_in, server_out, server_side=True
     )
     client = client_context.wrap_bio(
-        client_in, client_out, server_hostname="repo.opengat.test"
+        client_in, client_out, server_hostname="repo.openrfs.test"
     )
     server_done = client_done = False
     for _ in range(64):
@@ -326,7 +326,7 @@ def self_test() -> int:
     assert client.version() == "TLSv1.2"
     parsed = network.dns_question(
         b"\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00"
-        b"\x04repo\x07opengat\x04test\x00\x00\x01\x00\x01"
+        b"\x04repo\x07openrfs\x04test\x00\x00\x01\x00\x01"
     )
     assert parsed is not None and parsed[0] == HOSTNAME
     assert len(BODY) == 34
@@ -346,7 +346,7 @@ def self_test() -> int:
         fixture.repository_requests = 0
         request = (
             b"GET /repository.sri HTTP/1.1\r\n"
-            b"Host: repo.opengat.test\r\n"
+            b"Host: repo.openrfs.test\r\n"
             b"Accept: application/octet-stream\r\n"
             b"Accept-Encoding: identity\r\n"
             b"Connection: close\r\n\r\n"

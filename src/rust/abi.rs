@@ -38,7 +38,7 @@ const HEAP_STATUS_OK: i32 = 0;
 struct KernelAllocator;
 
 // SAFETY: `heap_allocate` returns distinct 16-byte-aligned allocations and
-// `heap_free` accepts exactly those pointers. OpenGAT serializes kernel entry
+// `heap_free` accepts exactly those pointers. OpenRFS serializes kernel entry
 // today; the C allocator owns its own integrity checks as threading expands.
 unsafe impl GlobalAlloc for KernelAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
@@ -85,7 +85,7 @@ pub(crate) fn ext4_block_read(
     destination: &mut [u8],
 ) -> bool {
     unsafe extern "C" {
-        fn opengat_ext4_block_read(
+        fn openrfs_ext4_block_read(
             context: usize,
             start_byte: u64,
             destination: *mut u8,
@@ -96,7 +96,7 @@ pub(crate) fn ext4_block_read(
     // SAFETY: the slice supplies a live writable region for its exact length;
     // C authenticates the context and checks the media bounds.
     unsafe {
-        opengat_ext4_block_read(
+        openrfs_ext4_block_read(
             context,
             start_byte,
             destination.as_mut_ptr(),
@@ -108,7 +108,7 @@ pub(crate) fn ext4_block_read(
 /// Write one checked byte range through the active C-owned ext4 session.
 pub(crate) fn ext4_block_write(context: usize, start_byte: u64, source: &[u8]) -> bool {
     unsafe extern "C" {
-        fn opengat_ext4_block_write(
+        fn openrfs_ext4_block_write(
             context: usize,
             start_byte: u64,
             source: *const u8,
@@ -119,20 +119,20 @@ pub(crate) fn ext4_block_write(context: usize, start_byte: u64, source: &[u8]) -
     // SAFETY: the slice supplies a live readable region for its exact length;
     // C authenticates the writable session and checks the media bounds.
     unsafe {
-        opengat_ext4_block_write(context, start_byte, source.as_ptr(), source.len()) == 0
+        openrfs_ext4_block_write(context, start_byte, source.as_ptr(), source.len()) == 0
     }
 }
 
 /// Flush every preceding write through the active C-owned ext4 session.
 pub(crate) fn ext4_block_flush(context: usize, boundary: u32) -> bool {
     unsafe extern "C" {
-        fn opengat_ext4_block_flush(context: usize, boundary: u32) -> i32;
+        fn openrfs_ext4_block_flush(context: usize, boundary: u32) -> i32;
     }
 
     // SAFETY: `context` is the authenticated token installed by the C mount
     // operation; C rejects inactive and read-only sessions. `boundary` is an
     // explicitly mapped ABI value rather than Rust enum layout.
-    unsafe { opengat_ext4_block_flush(context, boundary) == 0 }
+    unsafe { openrfs_ext4_block_flush(context, boundary) == 0 }
 }
 
 const _: () = {
@@ -258,7 +258,7 @@ pub(crate) fn panic() -> ! {
 /// Both outputs must name complete writable values. `context` remains owned by
 /// C and must outlive the returned opaque mount.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_ext4_mount(
+pub(crate) unsafe extern "C" fn openrfs_ext4_mount(
     context: usize,
     media_bytes: u64,
     identity: *mut ext4::Identity,
@@ -292,7 +292,7 @@ pub(crate) unsafe extern "C" fn opengat_ext4_mount(
 /// mount call, and C must keep its storage context valid with a write lease for
 /// this call. The mount remains live regardless of the result.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_ext4_prepare_unmount(mounted: usize) -> i32 {
+pub(crate) unsafe extern "C" fn openrfs_ext4_prepare_unmount(mounted: usize) -> i32 {
     if mounted == 0 {
         return ext4::Status::NullArgument as i32;
     }
@@ -311,7 +311,7 @@ pub(crate) unsafe extern "C" fn opengat_ext4_prepare_unmount(mounted: usize) -> 
 /// mount call, and C must keep its storage context valid with a write lease for
 /// this call. The mount remains live regardless of the result.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_ext4_sync(mounted: usize) -> i32 {
+pub(crate) unsafe extern "C" fn openrfs_ext4_sync(mounted: usize) -> i32 {
     if mounted == 0 {
         return ext4::Status::NullArgument as i32;
     }
@@ -326,10 +326,10 @@ pub(crate) unsafe extern "C" fn opengat_ext4_sync(mounted: usize) -> i32 {
 /// Read the checked allocator capacity from one live ext4 mount.
 ///
 /// # Safety
-/// `mounted` must be a live value returned by `opengat_ext4_mount`, and
+/// `mounted` must be a live value returned by `openrfs_ext4_mount`, and
 /// `free_bytes` must name one writable `u64` that does not overlap it.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_ext4_free_bytes(
+pub(crate) unsafe extern "C" fn openrfs_ext4_free_bytes(
     mounted: usize,
     free_bytes: *mut u64,
 ) -> i32 {
@@ -354,7 +354,7 @@ pub(crate) unsafe extern "C" fn opengat_ext4_free_bytes(
 /// `mounted` must be a live, uniquely owned value returned by one successful
 /// mount call. It is consumed on success and remains live on refusal.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_ext4_unmount(mounted: usize) -> i32 {
+pub(crate) unsafe extern "C" fn openrfs_ext4_unmount(mounted: usize) -> i32 {
     if mounted == 0 {
         return ext4::Status::NullArgument as i32;
     }
@@ -375,7 +375,7 @@ pub(crate) unsafe extern "C" fn opengat_ext4_unmount(mounted: usize) -> i32 {
 /// `mounted` must be live, `path` must name `path_length` readable bytes, and
 /// `metadata` must name one writable result. Ranges must not overlap.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_ext4_stat(
+pub(crate) unsafe extern "C" fn openrfs_ext4_stat(
     mounted: usize,
     path: *const u8,
     path_length: usize,
@@ -407,7 +407,7 @@ pub(crate) unsafe extern "C" fn opengat_ext4_stat(
 /// The mount and input path must be readable and live; `destination` must name
 /// `capacity` writable bytes and `read_out` one writable `usize`.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_ext4_pread(
+pub(crate) unsafe extern "C" fn openrfs_ext4_pread(
     mounted: usize,
     path: *const u8,
     path_length: usize,
@@ -446,7 +446,7 @@ pub(crate) unsafe extern "C" fn opengat_ext4_pread(
 /// The mount and input ranges must be live and readable, and `written_out`
 /// must name one writable `usize`. The ranges must not overlap.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_ext4_transaction_probe(
+pub(crate) unsafe extern "C" fn openrfs_ext4_transaction_probe(
     mounted: usize,
     path: *const u8,
     path_length: usize,
@@ -486,7 +486,7 @@ pub(crate) unsafe extern "C" fn opengat_ext4_transaction_probe(
 /// The mount and path range must be live and readable and must not overlap the
 /// mounted object.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_ext4_truncate_probe(
+pub(crate) unsafe extern "C" fn openrfs_ext4_truncate_probe(
     mounted: usize,
     path: *const u8,
     path_length: usize,
@@ -514,7 +514,7 @@ pub(crate) unsafe extern "C" fn opengat_ext4_truncate_probe(
 /// The mount and path range must be live, readable, and non-overlapping. C must
 /// hold a writable storage lease.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_ext4_create_file_probe(
+pub(crate) unsafe extern "C" fn openrfs_ext4_create_file_probe(
     mounted: usize,
     path: *const u8,
     path_length: usize,
@@ -542,7 +542,7 @@ pub(crate) unsafe extern "C" fn opengat_ext4_create_file_probe(
 /// The mount and path range must be live, readable, and non-overlapping. C must
 /// hold a writable storage lease.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_ext4_unlink_file_probe(
+pub(crate) unsafe extern "C" fn openrfs_ext4_unlink_file_probe(
     mounted: usize,
     path: *const u8,
     path_length: usize,
@@ -569,7 +569,7 @@ pub(crate) unsafe extern "C" fn opengat_ext4_unlink_file_probe(
 /// Both path ranges must be live and readable and must not overlap the mounted
 /// object. C must hold a writable storage lease.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_ext4_link_file_probe(
+pub(crate) unsafe extern "C" fn openrfs_ext4_link_file_probe(
     mounted: usize,
     source: *const u8,
     source_length: usize,
@@ -599,7 +599,7 @@ pub(crate) unsafe extern "C" fn opengat_ext4_link_file_probe(
 /// The mount and path range must be live, readable, and non-overlapping. C must
 /// hold a writable storage lease.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_ext4_create_directory_probe(
+pub(crate) unsafe extern "C" fn openrfs_ext4_create_directory_probe(
     mounted: usize,
     path: *const u8,
     path_length: usize,
@@ -626,7 +626,7 @@ pub(crate) unsafe extern "C" fn opengat_ext4_create_directory_probe(
 /// The mount and path range must be live, readable, and non-overlapping. C must
 /// hold a writable storage lease.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_ext4_remove_directory_probe(
+pub(crate) unsafe extern "C" fn openrfs_ext4_remove_directory_probe(
     mounted: usize,
     path: *const u8,
     path_length: usize,
@@ -653,7 +653,7 @@ pub(crate) unsafe extern "C" fn opengat_ext4_remove_directory_probe(
 /// Both path ranges must be live and readable and must not overlap the mounted
 /// object. C must hold a writable storage lease.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_ext4_rename_probe(
+pub(crate) unsafe extern "C" fn openrfs_ext4_rename_probe(
     mounted: usize,
     source: *const u8,
     source_length: usize,
@@ -683,7 +683,7 @@ pub(crate) unsafe extern "C" fn opengat_ext4_rename_probe(
 /// The mount/path inputs must be live and readable, `entry` one writable value,
 /// and `present` one writable byte. The ranges must not overlap.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_ext4_directory_entry(
+pub(crate) unsafe extern "C" fn openrfs_ext4_directory_entry(
     mounted: usize,
     path: *const u8,
     path_length: usize,
@@ -715,21 +715,21 @@ pub(crate) unsafe extern "C" fn opengat_ext4_directory_entry(
 }
 
 /// The run-length image, produced by `tools/make-logo-asset.py` at build time.
-/// The Makefile points `OPENGAT_LOGO_BLOB` at it; there is no committed copy.
-static LOGO: &[u8] = include_bytes!(env!("OPENGAT_LOGO_BLOB"));
+/// The Makefile points `OPENRFS_LOGO_BLOB` at it; there is no committed copy.
+static LOGO: &[u8] = include_bytes!(env!("OPENRFS_LOGO_BLOB"));
 
 /// The deterministic RGB565 wallpaper collection built from committed PNGs.
-static WALLPAPER: &[u8] = include_bytes!(env!("OPENGAT_WALLPAPER_BLOB"));
+static WALLPAPER: &[u8] = include_bytes!(env!("OPENRFS_WALLPAPER_BLOB"));
 
 /// Run the SPW3 decoder's production-asset and bounded refusal checks.
 #[unsafe(no_mangle)]
-pub extern "C" fn opengat_wallpaper_self_test() -> i32 {
+pub extern "C" fn openrfs_wallpaper_self_test() -> i32 {
     i32::from(wallpaper::self_test(WALLPAPER))
 }
 
 /// Return the exact byte length of the built-in SPW3 collection.
 #[unsafe(no_mangle)]
-pub extern "C" fn opengat_wallpaper_size() -> usize {
+pub extern "C" fn openrfs_wallpaper_size() -> usize {
     WALLPAPER.len()
 }
 
@@ -738,7 +738,7 @@ pub extern "C" fn opengat_wallpaper_size() -> usize {
 /// # Safety
 /// Both pointers must address writable `u32` values.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_wallpaper_geometry(
+pub unsafe extern "C" fn openrfs_wallpaper_geometry(
     width: *mut u32,
     height: *mut u32,
     frames: *mut u32,
@@ -765,7 +765,7 @@ pub unsafe extern "C" fn opengat_wallpaper_geometry(
 /// # Safety
 /// `out` must point to `out_pixels` writable, aligned, non-aliased `u32`s.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_wallpaper_decode(
+pub unsafe extern "C" fn openrfs_wallpaper_decode(
     frame: u32,
     out: *mut u32,
     out_pixels: usize,
@@ -795,13 +795,13 @@ fn status_code(status: Status) -> i32 {
 
 /// Run the decoder's own tests. Returns 1 when they all pass.
 #[unsafe(no_mangle)]
-pub extern "C" fn opengat_logo_self_test() -> i32 {
+pub extern "C" fn openrfs_logo_self_test() -> i32 {
     i32::from(logo::self_test())
 }
 
 /// How many bytes the built-in image occupies.
 #[unsafe(no_mangle)]
-pub extern "C" fn opengat_logo_size() -> usize {
+pub extern "C" fn openrfs_logo_size() -> usize {
     LOGO.len()
 }
 
@@ -811,7 +811,7 @@ pub extern "C" fn opengat_logo_size() -> usize {
 ///
 /// `width` and `height` must both be non-null and point at writable `u32` values.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_logo_geometry(width: *mut u32, height: *mut u32) -> i32 {
+pub unsafe extern "C" fn openrfs_logo_geometry(width: *mut u32, height: *mut u32) -> i32 {
     if width.is_null() || height.is_null() {
         return status_code(Status::NullArgument);
     }
@@ -841,7 +841,7 @@ pub unsafe extern "C" fn opengat_logo_geometry(width: *mut u32, height: *mut u32
 /// `out` must point at `out_pixels` writable, aligned `u32`s, and must not
 /// alias anything else live for the duration of the call.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_logo_decode(
+pub unsafe extern "C" fn openrfs_logo_decode(
     out: *mut u32,
     out_pixels: usize,
     red_shift: u8,
@@ -878,7 +878,7 @@ pub unsafe extern "C" fn opengat_logo_decode(
 ///
 /// `out` must point at `out_pixels` writable, non-aliased bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_logo_decode_alpha(
+pub unsafe extern "C" fn openrfs_logo_decode_alpha(
     out: *mut u8,
     out_pixels: usize,
 ) -> i32 {
@@ -896,9 +896,9 @@ pub unsafe extern "C" fn opengat_logo_decode_alpha(
 }
 
 /// The packed glyph table, produced by `tools/make-font-asset.py` at build
-/// time. The Makefile points `OPENGAT_FONT_BLOB` at it; there is no committed
+/// time. The Makefile points `OPENRFS_FONT_BLOB` at it; there is no committed
 /// copy of the blob, only the ASCII art it is built from.
-static FONT: &[u8] = include_bytes!(env!("OPENGAT_FONT_BLOB"));
+static FONT: &[u8] = include_bytes!(env!("OPENRFS_FONT_BLOB"));
 
 fn font_status_code(status: font::Status) -> i32 {
     status as i32
@@ -906,13 +906,13 @@ fn font_status_code(status: font::Status) -> i32 {
 
 /// Run the font reader's own tests. Returns 1 when they all pass.
 #[unsafe(no_mangle)]
-pub extern "C" fn opengat_font_self_test() -> i32 {
+pub extern "C" fn openrfs_font_self_test() -> i32 {
     i32::from(font::self_test())
 }
 
 /// How many bytes the built-in glyph table occupies.
 #[unsafe(no_mangle)]
-pub extern "C" fn opengat_font_size() -> usize {
+pub extern "C" fn openrfs_font_size() -> usize {
     FONT.len()
 }
 
@@ -922,7 +922,7 @@ pub extern "C" fn opengat_font_size() -> usize {
 ///
 /// Each pointer must be non-null and address a writable `u32`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_font_geometry(
+pub unsafe extern "C" fn openrfs_font_geometry(
     width: *mut u32,
     height: *mut u32,
     first: *mut u32,
@@ -956,7 +956,7 @@ pub unsafe extern "C" fn opengat_font_geometry(
 /// `out` must point at `out_len` writable bytes and must not alias anything
 /// else live for the duration of the call.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_font_glyph(code: u32, out: *mut u8, out_len: usize) -> i32 {
+pub unsafe extern "C" fn openrfs_font_glyph(code: u32, out: *mut u8, out_len: usize) -> i32 {
     if out.is_null() {
         return font_status_code(font::Status::NullArgument);
     }
@@ -973,7 +973,7 @@ pub unsafe extern "C" fn opengat_font_glyph(code: u32, out: *mut u8, out_len: us
 }
 
 /// Build-packed antialiased Inter glyphs. No TrueType parser enters the kernel.
-static UI_FONT: &[u8] = include_bytes!(env!("OPENGAT_UI_FONT_BLOB"));
+static UI_FONT: &[u8] = include_bytes!(env!("OPENRFS_UI_FONT_BLOB"));
 
 fn ui_font_status_code(status: ui_font::Status) -> i32 {
     status as i32
@@ -981,19 +981,19 @@ fn ui_font_status_code(status: ui_font::Status) -> i32 {
 
 /// Run the SUF2 parser's synthetic acceptance and refusal tests.
 #[unsafe(no_mangle)]
-pub extern "C" fn opengat_ui_font_self_test() -> i32 {
+pub extern "C" fn openrfs_ui_font_self_test() -> i32 {
     i32::from(ui_font::self_test())
 }
 
 /// Return the byte length of the built-in SUF2 asset.
 #[unsafe(no_mangle)]
-pub extern "C" fn opengat_ui_font_size() -> usize {
+pub extern "C" fn openrfs_ui_font_size() -> usize {
     UI_FONT.len()
 }
 
 /// Return a stable FNV-1a fingerprint of the exact built-in bytes.
 #[unsafe(no_mangle)]
-pub extern "C" fn opengat_ui_font_fingerprint() -> u64 {
+pub extern "C" fn openrfs_ui_font_fingerprint() -> u64 {
     ui_font::fingerprint(UI_FONT)
 }
 
@@ -1003,7 +1003,7 @@ pub extern "C" fn opengat_ui_font_fingerprint() -> u64 {
 ///
 /// `metrics` must be non-null and point to one writable `ui_font::Geometry`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_ui_font_geometry(metrics: *mut ui_font::Geometry) -> i32 {
+pub unsafe extern "C" fn openrfs_ui_font_geometry(metrics: *mut ui_font::Geometry) -> i32 {
     if metrics.is_null() {
         return ui_font_status_code(ui_font::Status::NullArgument);
     }
@@ -1024,7 +1024,7 @@ pub unsafe extern "C" fn opengat_ui_font_geometry(metrics: *mut ui_font::Geometr
 ///
 /// `out` must address `out_len` writable, non-aliased bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_ui_font_glyph(code: u32, out: *mut u8, out_len: usize) -> i32 {
+pub unsafe extern "C" fn openrfs_ui_font_glyph(code: u32, out: *mut u8, out_len: usize) -> i32 {
     if out.is_null() {
         return ui_font_status_code(ui_font::Status::NullArgument);
     }
@@ -1041,7 +1041,7 @@ pub unsafe extern "C" fn opengat_ui_font_glyph(code: u32, out: *mut u8, out_len:
 /// # Safety
 /// `out` must address one writable `u32`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_ui_font_glyph_advance(code: u32, out: *mut u32) -> i32 {
+pub unsafe extern "C" fn openrfs_ui_font_glyph_advance(code: u32, out: *mut u32) -> i32 {
     if out.is_null() {
         return ui_font_status_code(ui_font::Status::NullArgument);
     }
@@ -1066,7 +1066,7 @@ fn fat32_status_code(status: fat32::Status) -> i32 {
 /// `block` must address `block_len` readable bytes and `out` one writable
 /// geometry value. The ranges must not overlap.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_fat32_parse_bpb(
+pub(crate) unsafe extern "C" fn openrfs_fat32_parse_bpb(
     block: *const u8,
     block_len: usize,
     namespace_blocks: u64,
@@ -1100,7 +1100,7 @@ pub(crate) unsafe extern "C" fn opengat_fat32_parse_bpb(
 /// `block` must address `block_len` readable bytes, `geometry` one readable
 /// value, and `out` one writable result. No input may overlap the output.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_fat32_parse_fsinfo(
+pub(crate) unsafe extern "C" fn openrfs_fat32_parse_fsinfo(
     block: *const u8,
     block_len: usize,
     geometry: *const fat32::Geometry,
@@ -1135,7 +1135,7 @@ pub(crate) unsafe extern "C" fn opengat_fat32_parse_fsinfo(
 /// Each block pointer must address its stated readable length and `geometry`
 /// must address one readable value.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_fat32_validate_fat_pair(
+pub(crate) unsafe extern "C" fn openrfs_fat32_validate_fat_pair(
     first: *const u8,
     first_len: usize,
     second: *const u8,
@@ -1165,7 +1165,7 @@ pub(crate) unsafe extern "C" fn opengat_fat32_validate_fat_pair(
 ///
 /// `geometry` must address one readable value and `out` one writable `u32`.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_fat32_classify_cluster(
+pub(crate) unsafe extern "C" fn openrfs_fat32_classify_cluster(
     value: u32,
     geometry: *const fat32::Geometry,
     out: *mut u32,
@@ -1194,7 +1194,7 @@ pub(crate) unsafe extern "C" fn opengat_fat32_classify_cluster(
 /// `component` must address `component_len` readable bytes and `out` one
 /// writable result. The ranges must not overlap.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_fat32_parse_component(
+pub(crate) unsafe extern "C" fn openrfs_fat32_parse_component(
     component: *const u8,
     component_len: usize,
     out: *mut fat32::Name,
@@ -1226,7 +1226,7 @@ pub(crate) unsafe extern "C" fn opengat_fat32_parse_component(
 /// `path` must address `path_len` readable bytes and `component_count` one
 /// writable `u32`. The ranges must not overlap.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_fat32_validate_path(
+pub(crate) unsafe extern "C" fn openrfs_fat32_validate_path(
     path: *const u8,
     path_len: usize,
     component_count: *mut u32,
@@ -1258,7 +1258,7 @@ pub(crate) unsafe extern "C" fn opengat_fat32_validate_path(
 /// `entry` must address `entry_len` readable bytes and `out` one writable
 /// result. The ranges must not overlap.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn opengat_fat32_parse_directory_entry(
+pub(crate) unsafe extern "C" fn openrfs_fat32_parse_directory_entry(
     entry: *const u8,
     entry_len: usize,
     out: *mut fat32::DirectoryEntry,
@@ -1294,7 +1294,7 @@ fn fat16_status_code(status: fat16::Status) -> i32 {
 /// `block` must address `block_len` readable, non-aliased bytes and `out` must
 /// address one writable `fat16::Geometry`. The two ranges must not overlap.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_fat16_parse_bpb(
+pub unsafe extern "C" fn openrfs_fat16_parse_bpb(
     block: *const u8,
     block_len: usize,
     namespace_blocks: u64,
@@ -1328,7 +1328,7 @@ pub unsafe extern "C" fn opengat_fat16_parse_bpb(
 /// `name` must address `name_len` readable bytes and `out` one writable query;
 /// the ranges must not overlap.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_fat16_make_query(
+pub unsafe extern "C" fn openrfs_fat16_make_query(
     name: *const u8,
     name_len: usize,
     out: *mut fat16::RootQuery,
@@ -1361,7 +1361,7 @@ pub unsafe extern "C" fn opengat_fat16_make_query(
 /// must each address one readable value; `out` must address one writable root
 /// entry. No input may overlap the output.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_fat16_find_root(
+pub unsafe extern "C" fn openrfs_fat16_find_root(
     block: *const u8,
     block_len: usize,
     geometry: *const fat16::Geometry,
@@ -1404,7 +1404,7 @@ pub unsafe extern "C" fn opengat_fat16_find_root(
 /// readable value; `out` must address one writable FAT result. No input may
 /// overlap the output.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_fat16_parse_fat(
+pub unsafe extern "C" fn openrfs_fat16_parse_fat(
     block: *const u8,
     block_len: usize,
     geometry: *const fat16::Geometry,
@@ -1439,7 +1439,7 @@ pub unsafe extern "C" fn opengat_fat16_parse_fat(
 /// Each input must address one readable value and `out` one writable extent;
 /// no input may overlap the output.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_fat16_validate_extent(
+pub unsafe extern "C" fn openrfs_fat16_validate_extent(
     geometry: *const fat16::Geometry,
     entry: *const fat16::RootEntry,
     fat: *const fat16::FatState,
@@ -1473,7 +1473,7 @@ pub unsafe extern "C" fn opengat_fat16_validate_extent(
 /// `data` must address `data_len` readable bytes and `out` one writable
 /// `fat16::Payload`; the ranges must not overlap.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_fat16_validate_payload(
+pub unsafe extern "C" fn openrfs_fat16_validate_payload(
     data: *const u8,
     data_len: usize,
     out: *mut fat16::Payload,
@@ -1504,7 +1504,7 @@ fn linux_fat16_status_code(status: linux_fat16::Status) -> i32 {
 
 /// Run the pointer-free BusyBox FAT-chain invariant controls.
 #[unsafe(no_mangle)]
-pub extern "C" fn opengat_linux_fat16_self_test() -> u32 {
+pub extern "C" fn openrfs_linux_fat16_self_test() -> u32 {
     linux_fat16::self_test()
 }
 
@@ -1514,7 +1514,7 @@ pub extern "C" fn opengat_linux_fat16_self_test() -> u32 {
 ///
 /// `out` must address one writable root query.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_linux_fat16_make_query(out: *mut fat16::RootQuery) -> i32 {
+pub unsafe extern "C" fn openrfs_linux_fat16_make_query(out: *mut fat16::RootQuery) -> i32 {
     if out.is_null() {
         return linux_fat16_status_code(linux_fat16::Status::NullArgument);
     }
@@ -1530,7 +1530,7 @@ pub unsafe extern "C" fn opengat_linux_fat16_make_query(out: *mut fat16::RootQue
 /// Inputs must address their complete readable values, `out` must address one
 /// writable root entry, and no input may overlap the output.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_linux_fat16_find_root(
+pub unsafe extern "C" fn openrfs_linux_fat16_find_root(
     block: *const u8,
     block_len: usize,
     geometry: *const fat16::Geometry,
@@ -1572,7 +1572,7 @@ pub unsafe extern "C" fn opengat_linux_fat16_find_root(
 /// Inputs must address their complete readable values, `out` must address one
 /// writable chain, and no input may overlap the output.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_linux_fat16_build_chain(
+pub unsafe extern "C" fn openrfs_linux_fat16_build_chain(
     fat_block: *const u8,
     fat_len: usize,
     geometry: *const fat16::Geometry,
@@ -1612,7 +1612,7 @@ pub unsafe extern "C" fn opengat_linux_fat16_build_chain(
 /// `data` must address `data_len` readable bytes, `out` one writable payload,
 /// and the two ranges must not overlap.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_linux_fat16_validate_payload(
+pub unsafe extern "C" fn openrfs_linux_fat16_validate_payload(
     data: *const u8,
     data_len: usize,
     out: *mut linux_fat16::Payload,
@@ -1639,7 +1639,7 @@ pub unsafe extern "C" fn opengat_linux_fat16_validate_payload(
 
 /// Run the pointer-free uname BusyBox FAT-chain invariant controls.
 #[unsafe(no_mangle)]
-pub extern "C" fn opengat_linux_uname_fat16_self_test() -> u32 {
+pub extern "C" fn openrfs_linux_uname_fat16_self_test() -> u32 {
     linux_fat16::self_test_uname()
 }
 
@@ -1649,7 +1649,7 @@ pub extern "C" fn opengat_linux_uname_fat16_self_test() -> u32 {
 ///
 /// `out` must address one writable root query.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_linux_uname_fat16_make_query(out: *mut fat16::RootQuery) -> i32 {
+pub unsafe extern "C" fn openrfs_linux_uname_fat16_make_query(out: *mut fat16::RootQuery) -> i32 {
     if out.is_null() {
         return linux_fat16_status_code(linux_fat16::Status::NullArgument);
     }
@@ -1665,7 +1665,7 @@ pub unsafe extern "C" fn opengat_linux_uname_fat16_make_query(out: *mut fat16::R
 /// Inputs must name their complete readable values and `out` one writable
 /// non-overlapping root entry.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_linux_uname_fat16_find_root(
+pub unsafe extern "C" fn openrfs_linux_uname_fat16_find_root(
     block: *const u8,
     block_len: usize,
     geometry: *const fat16::Geometry,
@@ -1707,7 +1707,7 @@ pub unsafe extern "C" fn opengat_linux_uname_fat16_find_root(
 /// Inputs must name complete readable values and `out` one writable,
 /// non-overlapping chain.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_linux_uname_fat16_build_chain(
+pub unsafe extern "C" fn openrfs_linux_uname_fat16_build_chain(
     fat_block: *const u8,
     fat_len: usize,
     geometry: *const fat16::Geometry,
@@ -1747,7 +1747,7 @@ pub unsafe extern "C" fn opengat_linux_uname_fat16_build_chain(
 /// `data` must name `data_len` readable bytes and `out` one writable,
 /// non-overlapping payload.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_linux_uname_fat16_validate_payload(
+pub unsafe extern "C" fn openrfs_linux_uname_fat16_validate_payload(
     data: *const u8,
     data_len: usize,
     out: *mut linux_fat16::Payload,
@@ -1774,7 +1774,7 @@ pub unsafe extern "C" fn opengat_linux_uname_fat16_validate_payload(
 
 /// Run the pointer-free measured cat FAT16 controls.
 #[unsafe(no_mangle)]
-pub extern "C" fn opengat_linux_cat_fat16_self_test() -> u32 {
+pub extern "C" fn openrfs_linux_cat_fat16_self_test() -> u32 {
     linux_fat16::self_test_cat()
 }
 
@@ -1784,7 +1784,7 @@ pub extern "C" fn opengat_linux_cat_fat16_self_test() -> u32 {
 ///
 /// `out` must point to one writable `fat16::RootQuery`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_linux_cat_fat16_make_query(out: *mut fat16::RootQuery) -> i32 {
+pub unsafe extern "C" fn openrfs_linux_cat_fat16_make_query(out: *mut fat16::RootQuery) -> i32 {
     if out.is_null() {
         return linux_fat16_status_code(linux_fat16::Status::NullArgument);
     }
@@ -1800,7 +1800,7 @@ pub unsafe extern "C" fn opengat_linux_cat_fat16_make_query(out: *mut fat16::Roo
 /// The input pointers must name their complete readable values and `out` one
 /// writable, non-overlapping root entry.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_linux_cat_fat16_find_root(
+pub unsafe extern "C" fn openrfs_linux_cat_fat16_find_root(
     block: *const u8,
     block_len: usize,
     geometry: *const fat16::Geometry,
@@ -1835,7 +1835,7 @@ pub unsafe extern "C" fn opengat_linux_cat_fat16_find_root(
 ///
 /// Inputs must name complete readable values and `out` one writable chain.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_linux_cat_fat16_build_chain(
+pub unsafe extern "C" fn openrfs_linux_cat_fat16_build_chain(
     fat_block: *const u8,
     fat_len: usize,
     geometry: *const fat16::Geometry,
@@ -1869,7 +1869,7 @@ pub unsafe extern "C" fn opengat_linux_cat_fat16_build_chain(
 ///
 /// `data` must name `data_len` readable bytes and `out` one writable payload.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_linux_cat_fat16_validate_payload(
+pub unsafe extern "C" fn openrfs_linux_cat_fat16_validate_payload(
     data: *const u8,
     data_len: usize,
     out: *mut linux_fat16::Payload,
@@ -1908,13 +1908,13 @@ fn elf64_dynamic_status_code(status: elf64_dynamic::Status) -> i32 {
 
 /// Run the allocation-free native manifest, ELF, and SHA-256 invariants.
 #[unsafe(no_mangle)]
-pub extern "C" fn opengat_native_image_self_test() -> u32 {
+pub extern "C" fn openrfs_native_image_self_test() -> u32 {
     native_image::self_test()
 }
 
 /// Run the dynamic-ELF C-layout and checked-address invariants.
 #[unsafe(no_mangle)]
-pub extern "C" fn opengat_elf64_dynamic_self_test() -> u32 {
+pub extern "C" fn openrfs_elf64_dynamic_self_test() -> u32 {
     elf64_dynamic::self_test()
 }
 
@@ -1925,7 +1925,7 @@ pub extern "C" fn opengat_elf64_dynamic_self_test() -> u32 {
 /// Both inputs must name their complete readable lengths. `manifest_out` must
 /// name one writable result and must not overlap either input.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_native_manifest_authenticate(
+pub unsafe extern "C" fn openrfs_native_manifest_authenticate(
     manifest_bytes: *const u8,
     manifest_length: usize,
     elf_bytes: *const u8,
@@ -1963,7 +1963,7 @@ pub unsafe extern "C" fn opengat_native_manifest_authenticate(
 /// `input` must name its complete readable length and `image_out` one writable
 /// result. The ranges must not overlap.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_elf64_dynamic_parse(
+pub unsafe extern "C" fn openrfs_elf64_dynamic_parse(
     input: *const u8,
     input_length: usize,
     image_out: *mut elf64_dynamic::Image,
@@ -1996,7 +1996,7 @@ pub unsafe extern "C" fn opengat_elf64_dynamic_parse(
 /// `input_length` and 32 bytes. `catalog_out` must name one separate writable
 /// result.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_elf64_dynamic_catalog_authenticate(
+pub unsafe extern "C" fn openrfs_elf64_dynamic_catalog_authenticate(
     input: *const u8,
     input_length: usize,
     expected_sha256: *const u8,
@@ -2034,7 +2034,7 @@ pub unsafe extern "C" fn opengat_elf64_dynamic_catalog_authenticate(
 /// Inputs name complete readable file and 32-byte digest ranges; `image_out`
 /// names one separate writable result.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_elf64_dynamic_object_authenticate(
+pub unsafe extern "C" fn openrfs_elf64_dynamic_object_authenticate(
     input: *const u8,
     input_length: usize,
     expected_sha256: *const u8,
@@ -2072,7 +2072,7 @@ pub unsafe extern "C" fn opengat_elf64_dynamic_object_authenticate(
 /// `root` names one admitted image, `libraries` names `library_count` admitted
 /// images, and both outputs name complete writable ranges.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_elf64_dynamic_dependency_order(
+pub unsafe extern "C" fn openrfs_elf64_dynamic_dependency_order(
     root: *const elf64_dynamic::Image,
     libraries: *const elf64_dynamic::Image,
     library_count: usize,
@@ -2160,7 +2160,7 @@ unsafe fn dynamic_scope<'a>(
 /// `objects` names `object_count` complete descriptors. Every descriptor owns
 /// separate file/preparation ranges and an admitted image for the duration.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_elf64_dynamic_relocate_scope(
+pub unsafe extern "C" fn openrfs_elf64_dynamic_relocate_scope(
     objects: *const elf64_dynamic::PreparedObject,
     object_count: usize,
 ) -> i32 {
@@ -2210,7 +2210,7 @@ pub unsafe extern "C" fn opengat_elf64_dynamic_relocate_scope(
 /// Descriptors have the same requirements as relocation and retain their
 /// relocated preparation buffers. `lifecycle_out` names one separate result.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_elf64_dynamic_lifecycle(
+pub unsafe extern "C" fn openrfs_elf64_dynamic_lifecycle(
     objects: *const elf64_dynamic::PreparedObject,
     object_count: usize,
     lifecycle_out: *mut elf64_dynamic::Lifecycle,
@@ -2275,11 +2275,11 @@ pub unsafe extern "C" fn opengat_elf64_dynamic_lifecycle(
 ///
 /// # Safety
 ///
-/// `image` must name one result returned by `opengat_elf64_dynamic_parse`,
+/// `image` must name one result returned by `openrfs_elf64_dynamic_parse`,
 /// `input` its unchanged complete file, and `memory` an exactly sized writable
 /// preparation range. The ranges must not overlap.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_elf64_dynamic_prepare(
+pub unsafe extern "C" fn openrfs_elf64_dynamic_prepare(
     image: *const elf64_dynamic::Image,
     input: *const u8,
     input_length: usize,
@@ -2328,7 +2328,7 @@ pub unsafe extern "C" fn opengat_elf64_dynamic_prepare(
 /// `image_out` must each name one writable, non-overlapping result, and neither
 /// output may overlap either input.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_native_image_validate(
+pub unsafe extern "C" fn openrfs_native_image_validate(
     manifest_bytes: *const u8,
     manifest_length: usize,
     elf_bytes: *const u8,
@@ -2368,7 +2368,7 @@ pub unsafe extern "C" fn opengat_native_image_validate(
 
 /// Run the pointer-free measured BusyBox ELF conjunction controls.
 #[unsafe(no_mangle)]
-pub extern "C" fn opengat_linux_elf64_self_test() -> u32 {
+pub extern "C" fn openrfs_linux_elf64_self_test() -> u32 {
     linux_elf64::self_test()
 }
 
@@ -2379,7 +2379,7 @@ pub extern "C" fn opengat_linux_elf64_self_test() -> u32 {
 /// `input` must address `input_len` readable, non-aliased bytes and `out` one
 /// writable validated image. The ranges must not overlap.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_linux_elf64_parse(
+pub unsafe extern "C" fn openrfs_linux_elf64_parse(
     input: *const u8,
     input_len: usize,
     out: *mut linux_elf64::ValidatedImage,
@@ -2406,7 +2406,7 @@ pub unsafe extern "C" fn opengat_linux_elf64_parse(
 
 /// Run the pointer-free measured uname BusyBox ELF conjunction controls.
 #[unsafe(no_mangle)]
-pub extern "C" fn opengat_linux_uname_elf64_self_test() -> u32 {
+pub extern "C" fn openrfs_linux_uname_elf64_self_test() -> u32 {
     linux_elf64::self_test_uname()
 }
 
@@ -2417,7 +2417,7 @@ pub extern "C" fn opengat_linux_uname_elf64_self_test() -> u32 {
 /// `input` must address `input_len` readable, non-aliased bytes and `out` one
 /// writable validated image. The ranges must not overlap.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_linux_uname_elf64_parse(
+pub unsafe extern "C" fn openrfs_linux_uname_elf64_parse(
     input: *const u8,
     input_len: usize,
     out: *mut linux_elf64::ValidatedImage,
@@ -2444,7 +2444,7 @@ pub unsafe extern "C" fn opengat_linux_uname_elf64_parse(
 
 /// Run the pointer-free measured cat BusyBox ELF conjunction controls.
 #[unsafe(no_mangle)]
-pub extern "C" fn opengat_linux_cat_elf64_self_test() -> u32 {
+pub extern "C" fn openrfs_linux_cat_elf64_self_test() -> u32 {
     linux_elf64::self_test_cat()
 }
 
@@ -2455,7 +2455,7 @@ pub extern "C" fn opengat_linux_cat_elf64_self_test() -> u32 {
 /// `input` must address `input_len` readable bytes and `out` one writable,
 /// non-overlapping validated image.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_linux_cat_elf64_parse(
+pub unsafe extern "C" fn openrfs_linux_cat_elf64_parse(
     input: *const u8,
     input_len: usize,
     out: *mut linux_elf64::ValidatedImage,
@@ -2486,7 +2486,7 @@ fn elf64_status_code(status: elf64::Status) -> i32 {
 
 /// Run all host-independent ELF64 parser mutation families.
 #[unsafe(no_mangle)]
-pub extern "C" fn opengat_elf64_self_test() -> u32 {
+pub extern "C" fn openrfs_elf64_self_test() -> u32 {
     elf64::self_test()
 }
 
@@ -2497,7 +2497,7 @@ pub extern "C" fn opengat_elf64_self_test() -> u32 {
 /// `input` must address `input_len` readable, non-aliased bytes and `out` must
 /// address one writable `elf64::ValidatedImage`.  The ranges must not overlap.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_elf64_parse(
+pub unsafe extern "C" fn openrfs_elf64_parse(
     input: *const u8,
     input_len: usize,
     out: *mut elf64::ValidatedImage,
@@ -2524,19 +2524,19 @@ pub unsafe extern "C" fn opengat_elf64_parse(
 
 /// Run all host-independent multiprocess ELF64 parser mutation families.
 #[unsafe(no_mangle)]
-pub extern "C" fn opengat_multiprocess_elf64_self_test() -> u32 {
+pub extern "C" fn openrfs_multiprocess_elf64_self_test() -> u32 {
     elf64::self_test_multiprocess()
 }
 
 /// Run every VBIOS parser control and report how many passed.
 #[unsafe(no_mangle)]
-pub extern "C" fn opengat_nvbios_self_test() -> u32 {
+pub extern "C" fn openrfs_nvbios_self_test() -> u32 {
     nvbios::self_test() as u32
 }
 
 /// How many controls a complete VBIOS parser self-test runs.
 #[unsafe(no_mangle)]
-pub extern "C" fn opengat_nvbios_controls() -> u32 {
+pub extern "C" fn openrfs_nvbios_controls() -> u32 {
     nvbios::ROBUSTNESS_CONTROLS as u32
 }
 
@@ -2550,7 +2550,7 @@ pub extern "C" fn opengat_nvbios_controls() -> u32 {
 ///
 /// `out` must address `capacity` writable, non-aliased bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_nvbios_reference(
+pub unsafe extern "C" fn openrfs_nvbios_reference(
     out: *mut u8,
     capacity: usize,
 ) -> usize {
@@ -2574,7 +2574,7 @@ pub unsafe extern "C" fn opengat_nvbios_reference(
 /// `input` must address `input_len` readable, non-aliased bytes and `out` must
 /// address one writable `nvbios::Image`.  The ranges must not overlap.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_nvbios_parse(
+pub unsafe extern "C" fn openrfs_nvbios_parse(
     input: *const u8,
     input_len: usize,
     out: *mut nvbios::Image,
@@ -2606,7 +2606,7 @@ pub unsafe extern "C" fn opengat_nvbios_parse(
 /// `input` must address `input_len` readable, non-aliased bytes and `out` must
 /// address one writable `elf64::ValidatedImage`.  The ranges must not overlap.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn opengat_multiprocess_elf64_parse(
+pub unsafe extern "C" fn openrfs_multiprocess_elf64_parse(
     input: *const u8,
     input_len: usize,
     out: *mut elf64::ValidatedImage,

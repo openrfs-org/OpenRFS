@@ -1,20 +1,20 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* One private static BusyBox process and its complete reverse-order teardown. */
 
-#include <opengat/linux_abi.h>
+#include <openrfs/linux_abi.h>
 
-#include <opengat/console.h>
-#include <opengat/cpu.h>
-#include <opengat/dma.h>
-#include <opengat/filesystem.h>
-#include <opengat/fat32.h>
-#include <opengat/interrupt_vector.h>
-#include <opengat/linux_elf64.h>
-#include <opengat/linux_syscall.h>
-#include <opengat/memory.h>
-#include <opengat/msix.h>
-#include <opengat/paging.h>
-#include <opengat/pci_resource.h>
+#include <openrfs/console.h>
+#include <openrfs/cpu.h>
+#include <openrfs/dma.h>
+#include <openrfs/filesystem.h>
+#include <openrfs/fat32.h>
+#include <openrfs/interrupt_vector.h>
+#include <openrfs/linux_elf64.h>
+#include <openrfs/linux_syscall.h>
+#include <openrfs/memory.h>
+#include <openrfs/msix.h>
+#include <openrfs/paging.h>
+#include <openrfs/pci_resource.h>
 
 #define LINUX_ARGUMENT_BYTES 21U
 #define LINUX_INITIAL_STACK_WORDS 10U
@@ -214,7 +214,7 @@ static uint64_t next_generation = UINT64_C(1);
 static bool proof_active;
 static const uint8_t linux_argv_zero[] = "busybox";
 static const uint8_t linux_argv_one[] = "echo";
-static const uint8_t linux_argv_two[] = "OPENGAT";
+static const uint8_t linux_argv_two[] = "OPENRFS";
 
 static bool failure_in_range(
     enum linux_failure_point point,
@@ -326,7 +326,7 @@ static void report_control_failure(
     bool observed
 )
 {
-    console_write("OpenGAT: Linux ABI control failure ");
+    console_write("OpenRFS: Linux ABI control failure ");
     console_write(kind);
     console_write(" ordinal ");
     console_write_u64(ordinal);
@@ -740,7 +740,7 @@ static bool initial_stack_installed_valid(uint64_t vector_address)
     const uint8_t expected[LINUX_ARGUMENT_BYTES] = {
         'b', 'u', 's', 'y', 'b', 'o', 'x', 0,
         'e', 'c', 'h', 'o', 0,
-        'O', 'P', 'E', 'N', 'G', 'A', 'T', 0
+        'O', 'P', 'E', 'N', 'R', 'F', 'S', 0
     };
 
     if (!stack_read((uint8_t *)(void *)words, vector_address,
@@ -1099,7 +1099,7 @@ bool linux_abi_image_stack_foundation_self_test(size_t *completed_tests)
         return false;
     }
     *completed_tests = 0U;
-    if (opengat_linux_elf64_self_test() !=
+    if (openrfs_linux_elf64_self_test() !=
             LINUX_ELF64_PARSER_ROBUSTNESS_CONTROLS ||
         (PAGING_LINUX_IMAGE_BASE & (PAGING_PAGE_SIZE - 1U)) != 0U ||
         (PAGING_LINUX_STACK_GUARD & (PAGING_PAGE_SIZE - 1U)) != 0U ||
@@ -1283,7 +1283,7 @@ static enum linux_abi_status linux_attempt(
         status = failure_status(failure_point);
         goto cleanup;
     }
-    if (opengat_linux_elf64_parse(runtime.elf_bytes,
+    if (openrfs_linux_elf64_parse(runtime.elf_bytes,
             sizeof(runtime.elf_bytes), &runtime.image) !=
             LINUX_ELF64_STATUS_OK || !validated_placement(&runtime.image)) {
         status = LINUX_ABI_STATUS_ELF;

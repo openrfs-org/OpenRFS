@@ -2,9 +2,9 @@
 /*
  * Intel High Definition Audio: codec control and one kernel-owned PCM stream.
  *
- * This is the first OpenGAT driver whose device writes into kernel memory for
+ * This is the first OpenRFS driver whose device writes into kernel memory for
  * something other than storage or networking, and the ordering that makes that
- * safe is the whole point of the file. OpenGAT has no IOMMU. A device with bus
+ * safe is the whole point of the file. OpenRFS has no IOMMU. A device with bus
  * mastering enabled can write anywhere, so bus mastering is enabled only after
  * every ring, BDL and PCM region is a typed DMA allocation declared to the
  * claim, and it is withdrawn only after the stream and ring engines have been
@@ -21,16 +21,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/audio.h>
-#include <opengat/clock.h>
-#include <opengat/cpu.h>
-#include <opengat/dma.h>
-#include <opengat/interrupt_vector.h>
-#include <opengat/memory.h>
-#include <opengat/msix.h>
-#include <opengat/paging.h>
-#include <opengat/pci.h>
-#include <opengat/pci_resource.h>
+#include <openrfs/audio.h>
+#include <openrfs/clock.h>
+#include <openrfs/cpu.h>
+#include <openrfs/dma.h>
+#include <openrfs/interrupt_vector.h>
+#include <openrfs/memory.h>
+#include <openrfs/msix.h>
+#include <openrfs/paging.h>
+#include <openrfs/pci.h>
+#include <openrfs/pci_resource.h>
 
 /* PCI Code and ID Assignment Specification 1.19: multimedia, HD Audio. */
 #define AUDIO_PCI_VENDOR UINT16_C(0x8086)

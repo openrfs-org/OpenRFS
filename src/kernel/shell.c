@@ -3,26 +3,26 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/account.h>
-#include <opengat/boot_plan.h>
-#include <opengat/clock.h>
-#include <opengat/boot_ledger.h>
-#include <opengat/console.h>
-#include <opengat/cpu.h>
-#include <opengat/framebuffer.h>
-#include <opengat/fat32_fs.h>
-#include <opengat/heap.h>
-#include <opengat/keyboard.h>
-#include <opengat/linux_userland.h>
-#include <opengat/linux_syscall.h>
-#include <opengat/memory.h>
-#include <opengat/native_process.h>
-#include <opengat/network.h>
-#include <opengat/pci.h>
-#include <opengat/screen.h>
-#include <opengat/shell.h>
-#include <opengat/thread.h>
-#include <opengat/ui.h>
+#include <openrfs/account.h>
+#include <openrfs/boot_plan.h>
+#include <openrfs/clock.h>
+#include <openrfs/boot_ledger.h>
+#include <openrfs/console.h>
+#include <openrfs/cpu.h>
+#include <openrfs/framebuffer.h>
+#include <openrfs/fat32_fs.h>
+#include <openrfs/heap.h>
+#include <openrfs/keyboard.h>
+#include <openrfs/linux_userland.h>
+#include <openrfs/linux_syscall.h>
+#include <openrfs/memory.h>
+#include <openrfs/native_process.h>
+#include <openrfs/network.h>
+#include <openrfs/pci.h>
+#include <openrfs/screen.h>
+#include <openrfs/shell.h>
+#include <openrfs/thread.h>
+#include <openrfs/ui.h>
 
 /*
  * A command line.
@@ -42,7 +42,7 @@
  * mistakes, so an unknown command is a line of output and not an incident.
  */
 
-#define SHELL_PROMPT "opengat$ "
+#define SHELL_PROMPT "openrfs$ "
 #define SHELL_NETWORK_OWNER UINT64_C(1)
 
 /* What splits a command from its arguments. Nothing exotic; space and tab. */
@@ -56,7 +56,7 @@ static char line[SHELL_LINE_LIMIT + 1U];
 static bool linux_prompt_evidence_pending;
 static bool ui_keyboard_operational;
 static bool ui_keyboard_decided;
-static char filesystem_cwd[OPENGATFS_MAX_PATH + 1U] = ".";
+static char filesystem_cwd[OPENRFSFS_MAX_PATH + 1U] = ".";
 
 enum authentication_prompt {
     AUTHENTICATION_NONE = 0,
@@ -191,7 +191,7 @@ static void command_help(void)
 {
     console_write("  help      this list\n");
     console_write("  useradd NAME  create the first local user\n");
-    console_write("  starty    authenticate and start the OpenGAT desktop\n");
+    console_write("  starty    authenticate and start the OpenRFS desktop\n");
     console_write("  echo      print the rest of the line\n");
     console_write("  linux     run measured echo, uname, or bounded cat userspace\n");
     console_write("  native    launch one native application manifest\n");
@@ -213,7 +213,7 @@ static void command_help(void)
     console_write("  netstat   bounded socket and packet counters\n");
     console_write("  reboot    sync, unmount, and restart cleanly\n");
     console_write("  clear     clear the screen\n");
-    console_write("  fetch     OpenGAT identity and live system summary\n");
+    console_write("  fetch     OpenRFS identity and live system summary\n");
     console_write("  uptime    nanoseconds since the clock started\n");
     console_write("  mem       physical frames and kernel heap\n");
     console_write("  pci       every function enumeration found\n");
@@ -247,7 +247,7 @@ static void command_linux(const char *arguments)
         console_serial_write("RW USERLAND unsupported profile refused\n");
         return;
     }
-    console_serial_write("RW USERLAND command accepted through OpenGAT shell linux ");
+    console_serial_write("RW USERLAND command accepted through OpenRFS shell linux ");
     console_serial_write(linux_userland_profile_name(profile));
     console_serial_write("\n");
     status = linux_userland_launch(profile, &result);
@@ -327,36 +327,36 @@ static void command_native_go(void)
     report_native_result(native_process_run(&result), &result);
 }
 
-static void filesystem_error(const char *command, enum opengatfs_status status)
+static void filesystem_error(const char *command, enum openrfsfs_status status)
 {
     console_write(command);
     console_write(": ");
-    console_write(opengatfs_status_string(status));
+    console_write(openrfsfs_status_string(status));
     console_putc('\n');
 }
 
 static bool filesystem_path(const char *argument, char *output)
 {
-    char combined[OPENGATFS_MAX_PATH + 1U];
+    char combined[OPENRFSFS_MAX_PATH + 1U];
     size_t used = 0U;
     size_t index = 0U;
     size_t output_used = 0U;
-    size_t component_starts[OPENGATFS_MAX_DEPTH];
+    size_t component_starts[OPENRFSFS_MAX_DEPTH];
     size_t depth = 0U;
 
     if (argument == NULL || output == NULL || argument[0] == '/') {
         return false;
     }
     if (filesystem_cwd[0] != '.' || filesystem_cwd[1] != '\0') {
-        while (filesystem_cwd[used] != '\0' && used < OPENGATFS_MAX_PATH) {
+        while (filesystem_cwd[used] != '\0' && used < OPENRFSFS_MAX_PATH) {
             combined[used] = filesystem_cwd[used];
             ++used;
         }
-        if (argument[0] != '\0' && used < OPENGATFS_MAX_PATH) {
+        if (argument[0] != '\0' && used < OPENRFSFS_MAX_PATH) {
             combined[used++] = '/';
         }
     }
-    while (argument[index] != '\0' && used < OPENGATFS_MAX_PATH) {
+    while (argument[index] != '\0' && used < OPENRFSFS_MAX_PATH) {
         combined[used++] = argument[index++];
     }
     if (argument[index] != '\0' || used == 0U) {
@@ -385,18 +385,18 @@ static bool filesystem_path(const char *argument, char *output)
                 --output_used;
             }
         } else {
-            if (depth >= OPENGATFS_MAX_DEPTH) {
+            if (depth >= OPENRFSFS_MAX_DEPTH) {
                 return false;
             }
             if (output_used != 0U) {
-                if (output_used >= OPENGATFS_MAX_PATH) {
+                if (output_used >= OPENRFSFS_MAX_PATH) {
                     return false;
                 }
                 output[output_used++] = '/';
             }
             component_starts[depth++] = output_used;
             for (size_t source = index; source < end; ++source) {
-                if (output_used >= OPENGATFS_MAX_PATH) {
+                if (output_used >= OPENRFSFS_MAX_PATH) {
                     return false;
                 }
                 output[output_used++] = combined[source];
@@ -430,7 +430,7 @@ static bool first_argument(
     }
     while (arguments[index] != '\0' &&
         !is_separator(arguments[index])) {
-        if (length >= OPENGATFS_MAX_PATH) {
+        if (length >= OPENRFSFS_MAX_PATH) {
             return false;
         }
         first[length++] = arguments[index++];
@@ -504,7 +504,7 @@ static bool line_content(
     return true;
 }
 
-static void print_drive(const char *name, struct opengatfs_drive_info drive)
+static void print_drive(const char *name, struct openrfsfs_drive_info drive)
 {
     console_write(name);
     console_write("  fat32  ");
@@ -522,34 +522,34 @@ static void print_drive(const char *name, struct opengatfs_drive_info drive)
 
 static void command_drives(void)
 {
-    print_drive("system", opengatfs_drive(OPENGATFS_VOLUME_SYSTEM));
-    print_drive("data  ", opengatfs_drive(OPENGATFS_VOLUME_DATA));
+    print_drive("system", openrfsfs_drive(OPENRFSFS_VOLUME_SYSTEM));
+    print_drive("data  ", openrfsfs_drive(OPENRFSFS_VOLUME_DATA));
 }
 
 static void command_mount(const char *arguments)
 {
-    enum opengatfs_volume first = OPENGATFS_VOLUME_SYSTEM;
-    enum opengatfs_volume last = OPENGATFS_VOLUME_DATA;
+    enum openrfsfs_volume first = OPENRFSFS_VOLUME_SYSTEM;
+    enum openrfsfs_volume last = OPENRFSFS_VOLUME_DATA;
 
     if (argument_equals(arguments, "system")) {
-        last = OPENGATFS_VOLUME_SYSTEM;
+        last = OPENRFSFS_VOLUME_SYSTEM;
     } else if (argument_equals(arguments, "data")) {
-        first = OPENGATFS_VOLUME_DATA;
+        first = OPENRFSFS_VOLUME_DATA;
     } else if (arguments[0] != '\0') {
         console_write("mount: use 'mount system' or 'mount data'\n");
         return;
     }
-    for (enum opengatfs_volume volume = first; volume <= last;
-         volume = (enum opengatfs_volume)(volume + 1)) {
-        struct opengatfs_drive_info drive = opengatfs_drive(volume);
-        enum opengatfs_status status;
+    for (enum openrfsfs_volume volume = first; volume <= last;
+         volume = (enum openrfsfs_volume)(volume + 1)) {
+        struct openrfsfs_drive_info drive = openrfsfs_drive(volume);
+        enum openrfsfs_status status;
 
         if (drive.mounted) {
             continue;
         }
-        status = opengatfs_mount(volume);
-        if (status != OPENGATFS_STATUS_OK) {
-            filesystem_error(volume == OPENGATFS_VOLUME_SYSTEM ?
+        status = openrfsfs_mount(volume);
+        if (status != OPENRFSFS_STATUS_OK) {
+            filesystem_error(volume == OPENRFSFS_VOLUME_SYSTEM ?
                 "mount system" : "mount data", status);
         }
     }
@@ -567,21 +567,21 @@ static void command_pwd(void)
 
 static void command_cd(const char *arguments)
 {
-    char path[OPENGATFS_MAX_PATH + 1U];
-    struct opengatfs_stat stat;
-    enum opengatfs_status status;
+    char path[OPENRFSFS_MAX_PATH + 1U];
+    struct openrfsfs_stat stat;
+    enum openrfsfs_status status;
 
     if (!filesystem_path(arguments[0] == '\0' ? "." : arguments, path)) {
         console_write("cd: malformed path\n");
         return;
     }
-    status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA, path, &stat);
-    if (status != OPENGATFS_STATUS_OK) {
+    status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, path, &stat);
+    if (status != OPENRFSFS_STATUS_OK) {
         filesystem_error("cd", status);
         return;
     }
     if (!stat.directory) {
-        filesystem_error("cd", OPENGATFS_STATUS_NOT_DIRECTORY);
+        filesystem_error("cd", OPENRFSFS_STATUS_NOT_DIRECTORY);
         return;
     }
     size_t index = 0U;
@@ -592,18 +592,18 @@ static void command_cd(const char *arguments)
 
 static void command_ls(const char *arguments)
 {
-    char path[OPENGATFS_MAX_PATH + 1U];
-    struct opengatfs_list_entry entries[OPENGATFS_MAX_LIST_ENTRIES];
+    char path[OPENRFSFS_MAX_PATH + 1U];
+    struct openrfsfs_list_entry entries[OPENRFSFS_MAX_LIST_ENTRIES];
     size_t count = 0U;
-    enum opengatfs_status status;
+    enum openrfsfs_status status;
 
     if (!filesystem_path(arguments[0] == '\0' ? "." : arguments, path)) {
         console_write("ls: malformed path\n");
         return;
     }
-    status = opengatfs_list(OPENGATFS_VOLUME_DATA, path, entries,
-        OPENGATFS_MAX_LIST_ENTRIES, &count);
-    if (status != OPENGATFS_STATUS_OK) {
+    status = openrfsfs_list(OPENRFSFS_VOLUME_DATA, path, entries,
+        OPENRFSFS_MAX_LIST_ENTRIES, &count);
+    if (status != OPENRFSFS_STATUS_OK) {
         filesystem_error("ls", status);
         return;
     }
@@ -620,92 +620,92 @@ static void command_ls(const char *arguments)
 
 static void command_mkdir(const char *arguments)
 {
-    char path[OPENGATFS_MAX_PATH + 1U];
-    enum opengatfs_status status;
+    char path[OPENRFSFS_MAX_PATH + 1U];
+    enum openrfsfs_status status;
 
     if (arguments[0] == '\0' || !filesystem_path(arguments, path)) {
         console_write("mkdir: provide one relative 8.3 path\n");
         return;
     }
-    status = opengatfs_mkdir(OPENGATFS_VOLUME_DATA, path);
-    if (status != OPENGATFS_STATUS_OK) {
+    status = openrfsfs_mkdir(OPENRFSFS_VOLUME_DATA, path);
+    if (status != OPENRFSFS_STATUS_OK) {
         filesystem_error("mkdir", status);
     }
 }
 
 static void command_touch(const char *arguments)
 {
-    char path[OPENGATFS_MAX_PATH + 1U];
-    struct opengatfs_stat stat;
-    enum opengatfs_status status;
+    char path[OPENRFSFS_MAX_PATH + 1U];
+    struct openrfsfs_stat stat;
+    enum openrfsfs_status status;
 
     if (arguments[0] == '\0' || !filesystem_path(arguments, path)) {
         console_write("touch: provide one relative 8.3 path\n");
         return;
     }
-    status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA, path, &stat);
-    if (status == OPENGATFS_STATUS_OK) {
+    status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, path, &stat);
+    if (status == OPENRFSFS_STATUS_OK) {
         if (stat.directory) {
-            filesystem_error("touch", OPENGATFS_STATUS_IS_DIRECTORY);
+            filesystem_error("touch", OPENRFSFS_STATUS_IS_DIRECTORY);
         }
         return;
     }
-    if (status != OPENGATFS_STATUS_NOT_FOUND) {
+    if (status != OPENRFSFS_STATUS_NOT_FOUND) {
         filesystem_error("touch", status);
         return;
     }
-    status = opengatfs_create(OPENGATFS_VOLUME_DATA, path);
-    if (status != OPENGATFS_STATUS_OK) {
+    status = openrfsfs_create(OPENRFSFS_VOLUME_DATA, path);
+    if (status != OPENRFSFS_STATUS_OK) {
         filesystem_error("touch", status);
     }
 }
 
 static void command_read(const char *arguments)
 {
-    char path[OPENGATFS_MAX_PATH + 1U];
+    char path[OPENRFSFS_MAX_PATH + 1U];
     uint8_t buffer[128];
-    opengatfs_handle handle;
-    enum opengatfs_status status;
+    openrfsfs_handle handle;
+    enum openrfsfs_status status;
 
     if (arguments[0] == '\0' || !filesystem_path(arguments, path)) {
         console_write("read: provide one relative 8.3 path\n");
         return;
     }
-    status = opengatfs_open(OPENGATFS_VOLUME_DATA, path, OPENGATFS_ACCESS_READ, &handle);
-    if (status != OPENGATFS_STATUS_OK) {
+    status = openrfsfs_open(OPENRFSFS_VOLUME_DATA, path, OPENRFSFS_ACCESS_READ, &handle);
+    if (status != OPENRFSFS_STATUS_OK) {
         filesystem_error("read", status);
         return;
     }
     for (;;) {
         size_t read_bytes = 0U;
 
-        status = opengatfs_read(handle, buffer, sizeof(buffer), &read_bytes);
+        status = openrfsfs_read(handle, buffer, sizeof(buffer), &read_bytes);
         if (read_bytes != 0U) {
             console_write_n((const char *)buffer, read_bytes);
         }
-        if (status != OPENGATFS_STATUS_OK || read_bytes == 0U) {
+        if (status != OPENRFSFS_STATUS_OK || read_bytes == 0U) {
             break;
         }
     }
-    if (opengatfs_close(handle) != OPENGATFS_STATUS_OK && status == OPENGATFS_STATUS_OK) {
-        status = OPENGATFS_STATUS_STALE_HANDLE;
+    if (openrfsfs_close(handle) != OPENRFSFS_STATUS_OK && status == OPENRFSFS_STATUS_OK) {
+        status = OPENRFSFS_STATUS_STALE_HANDLE;
     }
-    if (status != OPENGATFS_STATUS_OK) {
+    if (status != OPENRFSFS_STATUS_OK) {
         filesystem_error("read", status);
     }
 }
 
 static void command_write_line(const char *arguments, bool append)
 {
-    char argument_path[OPENGATFS_MAX_PATH + 1U];
-    char path[OPENGATFS_MAX_PATH + 1U];
+    char argument_path[OPENRFSFS_MAX_PATH + 1U];
+    char path[OPENRFSFS_MAX_PATH + 1U];
     const char *text;
     uint8_t content[SHELL_LINE_LIMIT + 1U];
     size_t content_bytes;
     size_t written = 0U;
-    opengatfs_handle handle;
+    openrfsfs_handle handle;
     bool opened = false;
-    enum opengatfs_status status;
+    enum openrfsfs_status status;
 
     if (!first_argument(arguments, argument_path, &text) ||
         !filesystem_path(argument_path, path) ||
@@ -715,42 +715,42 @@ static void command_write_line(const char *arguments, bool append)
             "write: use write PATH \"text\"\n");
         return;
     }
-    struct opengatfs_stat stat;
-    status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA, path, &stat);
-    if (status == OPENGATFS_STATUS_NOT_FOUND) {
-        status = opengatfs_create(OPENGATFS_VOLUME_DATA, path);
+    struct openrfsfs_stat stat;
+    status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, path, &stat);
+    if (status == OPENRFSFS_STATUS_NOT_FOUND) {
+        status = openrfsfs_create(OPENRFSFS_VOLUME_DATA, path);
     }
-    if (status == OPENGATFS_STATUS_OK && !append) {
-        status = opengatfs_truncate(OPENGATFS_VOLUME_DATA, path, 0U);
+    if (status == OPENRFSFS_STATUS_OK && !append) {
+        status = openrfsfs_truncate(OPENRFSFS_VOLUME_DATA, path, 0U);
     }
-    if (status == OPENGATFS_STATUS_OK) {
-        status = opengatfs_open(OPENGATFS_VOLUME_DATA, path,
-            OPENGATFS_ACCESS_WRITE, &handle);
-        opened = status == OPENGATFS_STATUS_OK;
+    if (status == OPENRFSFS_STATUS_OK) {
+        status = openrfsfs_open(OPENRFSFS_VOLUME_DATA, path,
+            OPENRFSFS_ACCESS_WRITE, &handle);
+        opened = status == OPENRFSFS_STATUS_OK;
     }
-    if (status == OPENGATFS_STATUS_OK && append) {
+    if (status == OPENRFSFS_STATUS_OK && append) {
         uint64_t position;
 
-        status = opengatfs_seek(handle, 0, OPENGATFS_SEEK_END, &position);
+        status = openrfsfs_seek(handle, 0, OPENRFSFS_SEEK_END, &position);
     }
-    if (status == OPENGATFS_STATUS_OK) {
-        status = opengatfs_write(handle, content, content_bytes, &written);
+    if (status == OPENRFSFS_STATUS_OK) {
+        status = openrfsfs_write(handle, content, content_bytes, &written);
     }
-    if (opened && opengatfs_close(handle) != OPENGATFS_STATUS_OK &&
-        status == OPENGATFS_STATUS_OK) {
-        status = OPENGATFS_STATUS_STALE_HANDLE;
+    if (opened && openrfsfs_close(handle) != OPENRFSFS_STATUS_OK &&
+        status == OPENRFSFS_STATUS_OK) {
+        status = OPENRFSFS_STATUS_STALE_HANDLE;
     }
-    if (status != OPENGATFS_STATUS_OK || written != content_bytes) {
+    if (status != OPENRFSFS_STATUS_OK || written != content_bytes) {
         filesystem_error(append ? "append" : "write",
-            status != OPENGATFS_STATUS_OK ? status : OPENGATFS_STATUS_WRITEBACK);
+            status != OPENRFSFS_STATUS_OK ? status : OPENRFSFS_STATUS_WRITEBACK);
     }
 }
 
 static void command_write_at(const char *arguments)
 {
-    char argument_path[OPENGATFS_MAX_PATH + 1U];
-    char argument_offset[OPENGATFS_MAX_PATH + 1U];
-    char path[OPENGATFS_MAX_PATH + 1U];
+    char argument_path[OPENRFSFS_MAX_PATH + 1U];
+    char argument_offset[OPENRFSFS_MAX_PATH + 1U];
+    char path[OPENRFSFS_MAX_PATH + 1U];
     const char *after_path;
     const char *text;
     uint8_t content[SHELL_LINE_LIMIT + 1U];
@@ -758,9 +758,9 @@ static void command_write_at(const char *arguments)
     size_t written = 0U;
     uint32_t offset;
     uint64_t position = 0U;
-    opengatfs_handle handle;
+    openrfsfs_handle handle;
     bool opened = false;
-    enum opengatfs_status status;
+    enum openrfsfs_status status;
 
     if (!first_argument(arguments, argument_path, &after_path) ||
         !first_argument(after_path, argument_offset, &text) ||
@@ -770,34 +770,34 @@ static void command_write_at(const char *arguments)
         console_write("writeat: use writeat PATH OFFSET \"text\"\n");
         return;
     }
-    status = opengatfs_open(OPENGATFS_VOLUME_DATA, path,
-        OPENGATFS_ACCESS_WRITE, &handle);
-    opened = status == OPENGATFS_STATUS_OK;
-    if (status == OPENGATFS_STATUS_OK) {
-        status = opengatfs_seek(handle, (int64_t)offset,
-            OPENGATFS_SEEK_START, &position);
+    status = openrfsfs_open(OPENRFSFS_VOLUME_DATA, path,
+        OPENRFSFS_ACCESS_WRITE, &handle);
+    opened = status == OPENRFSFS_STATUS_OK;
+    if (status == OPENRFSFS_STATUS_OK) {
+        status = openrfsfs_seek(handle, (int64_t)offset,
+            OPENRFSFS_SEEK_START, &position);
     }
-    if (status == OPENGATFS_STATUS_OK) {
-        status = opengatfs_write(handle, content, content_bytes, &written);
+    if (status == OPENRFSFS_STATUS_OK) {
+        status = openrfsfs_write(handle, content, content_bytes, &written);
     }
-    if (opened && opengatfs_close(handle) != OPENGATFS_STATUS_OK &&
-        status == OPENGATFS_STATUS_OK) {
-        status = OPENGATFS_STATUS_STALE_HANDLE;
+    if (opened && openrfsfs_close(handle) != OPENRFSFS_STATUS_OK &&
+        status == OPENRFSFS_STATUS_OK) {
+        status = OPENRFSFS_STATUS_STALE_HANDLE;
     }
-    if (status != OPENGATFS_STATUS_OK || position != offset ||
+    if (status != OPENRFSFS_STATUS_OK || position != offset ||
         written != content_bytes) {
-        filesystem_error("writeat", status != OPENGATFS_STATUS_OK ? status :
-            OPENGATFS_STATUS_WRITEBACK);
+        filesystem_error("writeat", status != OPENRFSFS_STATUS_OK ? status :
+            OPENRFSFS_STATUS_WRITEBACK);
     }
 }
 
 static void command_truncate(const char *arguments)
 {
-    char argument_path[OPENGATFS_MAX_PATH + 1U];
-    char path[OPENGATFS_MAX_PATH + 1U];
+    char argument_path[OPENRFSFS_MAX_PATH + 1U];
+    char path[OPENRFSFS_MAX_PATH + 1U];
     const char *size_text;
     uint32_t size;
-    enum opengatfs_status status;
+    enum openrfsfs_status status;
 
     if (!first_argument(arguments, argument_path, &size_text) ||
         !filesystem_path(argument_path, path) ||
@@ -805,24 +805,24 @@ static void command_truncate(const char *arguments)
         console_write("truncate: use truncate PATH BYTES\n");
         return;
     }
-    status = opengatfs_truncate(OPENGATFS_VOLUME_DATA, path, size);
-    if (status != OPENGATFS_STATUS_OK) {
+    status = openrfsfs_truncate(OPENRFSFS_VOLUME_DATA, path, size);
+    if (status != OPENRFSFS_STATUS_OK) {
         filesystem_error("truncate", status);
     }
 }
 
 static void command_stat(const char *arguments)
 {
-    char path[OPENGATFS_MAX_PATH + 1U];
-    struct opengatfs_stat stat;
-    enum opengatfs_status status;
+    char path[OPENRFSFS_MAX_PATH + 1U];
+    struct openrfsfs_stat stat;
+    enum openrfsfs_status status;
 
     if (arguments[0] == '\0' || !filesystem_path(arguments, path)) {
         console_write("stat: provide one relative 8.3 path\n");
         return;
     }
-    status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA, path, &stat);
-    if (status != OPENGATFS_STATUS_OK) {
+    status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, path, &stat);
+    if (status != OPENRFSFS_STATUS_OK) {
         filesystem_error("stat", status);
         return;
     }
@@ -837,11 +837,11 @@ static void command_stat(const char *arguments)
 
 static void command_mv(const char *arguments)
 {
-    char first[OPENGATFS_MAX_PATH + 1U];
-    char source[OPENGATFS_MAX_PATH + 1U];
-    char destination[OPENGATFS_MAX_PATH + 1U];
+    char first[OPENRFSFS_MAX_PATH + 1U];
+    char source[OPENRFSFS_MAX_PATH + 1U];
+    char destination[OPENRFSFS_MAX_PATH + 1U];
     const char *second;
-    enum opengatfs_status status;
+    enum openrfsfs_status status;
 
     if (!first_argument(arguments, first, &second) || second[0] == '\0' ||
         !filesystem_path(first, source) ||
@@ -849,37 +849,37 @@ static void command_mv(const char *arguments)
         console_write("mv: use mv SOURCE DESTINATION\n");
         return;
     }
-    status = opengatfs_rename(OPENGATFS_VOLUME_DATA, source, destination);
-    if (status != OPENGATFS_STATUS_OK) {
+    status = openrfsfs_rename(OPENRFSFS_VOLUME_DATA, source, destination);
+    if (status != OPENRFSFS_STATUS_OK) {
         filesystem_error("mv", status);
     }
 }
 
 static void command_rm(const char *arguments)
 {
-    char path[OPENGATFS_MAX_PATH + 1U];
-    struct opengatfs_stat stat;
-    enum opengatfs_status status;
+    char path[OPENRFSFS_MAX_PATH + 1U];
+    struct openrfsfs_stat stat;
+    enum openrfsfs_status status;
 
     if (arguments[0] == '\0' || !filesystem_path(arguments, path)) {
         console_write("rm: provide one relative 8.3 path\n");
         return;
     }
-    status = opengatfs_stat_path(OPENGATFS_VOLUME_DATA, path, &stat);
-    if (status == OPENGATFS_STATUS_OK) {
-        status = stat.directory ? opengatfs_rmdir(OPENGATFS_VOLUME_DATA, path) :
-            opengatfs_unlink(OPENGATFS_VOLUME_DATA, path);
+    status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, path, &stat);
+    if (status == OPENRFSFS_STATUS_OK) {
+        status = stat.directory ? openrfsfs_rmdir(OPENRFSFS_VOLUME_DATA, path) :
+            openrfsfs_unlink(OPENRFSFS_VOLUME_DATA, path);
     }
-    if (status != OPENGATFS_STATUS_OK) {
+    if (status != OPENRFSFS_STATUS_OK) {
         filesystem_error("rm", status);
     }
 }
 
 static void command_sync(void)
 {
-    enum opengatfs_status status = opengatfs_sync(OPENGATFS_VOLUME_DATA);
+    enum openrfsfs_status status = openrfsfs_sync(OPENRFSFS_VOLUME_DATA);
 
-    if (status == OPENGATFS_STATUS_OK) {
+    if (status == OPENRFSFS_STATUS_OK) {
         console_write("data synchronized\n");
     } else {
         filesystem_error("sync", status);
@@ -888,16 +888,16 @@ static void command_sync(void)
 
 static void command_reboot(void)
 {
-    enum opengatfs_status status = opengatfs_unmount(OPENGATFS_VOLUME_DATA);
+    enum openrfsfs_status status = openrfsfs_unmount(OPENRFSFS_VOLUME_DATA);
 
-    if (status != OPENGATFS_STATUS_OK && status != OPENGATFS_STATUS_NOT_MOUNTED) {
+    if (status != OPENRFSFS_STATUS_OK && status != OPENRFSFS_STATUS_NOT_MOUNTED) {
         filesystem_error("reboot", status);
         return;
     }
-    status = opengatfs_unmount(OPENGATFS_VOLUME_SYSTEM);
-    if (status != OPENGATFS_STATUS_OK && status != OPENGATFS_STATUS_NOT_MOUNTED) {
+    status = openrfsfs_unmount(OPENRFSFS_VOLUME_SYSTEM);
+    if (status != OPENRFSFS_STATUS_OK && status != OPENRFSFS_STATUS_NOT_MOUNTED) {
         filesystem_error("reboot", status);
-        (void)opengatfs_mount(OPENGATFS_VOLUME_DATA);
+        (void)openrfsfs_mount(OPENRFSFS_VOLUME_DATA);
         return;
     }
     console_write("restarting after clean synchronization\n");
@@ -905,8 +905,8 @@ static void command_reboot(void)
     cpu_out8(UINT16_C(0x0064), UINT8_C(0xFE));
     cpu_interrupt_enable();
     console_write("reboot: platform reset failed\n");
-    (void)opengatfs_mount(OPENGATFS_VOLUME_SYSTEM);
-    (void)opengatfs_mount(OPENGATFS_VOLUME_DATA);
+    (void)openrfsfs_mount(OPENRFSFS_VOLUME_SYSTEM);
+    (void)openrfsfs_mount(OPENRFSFS_VOLUME_DATA);
 }
 
 static void command_uptime(void)
@@ -1004,7 +1004,7 @@ static void command_version(void)
 {
     const struct screen_state screen = screen_get_state();
 
-    console_write("OpenGAT 2.2.0 dev, a proof-driven x86_64 operating system.\n");
+    console_write("OpenRFS 2.2.0 dev, a proof-driven x86_64 operating system.\n");
     console_write("console ");
     console_write_u64(screen.columns);
     console_putc('x');
@@ -1012,7 +1012,7 @@ static void command_version(void)
     console_write(" characters\n");
 }
 
-static void print_fetch_drive(struct opengatfs_drive_info drive)
+static void print_fetch_drive(struct openrfsfs_drive_info drive)
 {
     if (!drive.present || !drive.healthy || !drive.mounted) {
         console_write("unavailable");
@@ -1025,16 +1025,16 @@ static void command_fetch(void)
 {
     const struct screen_state screen = screen_get_state();
     const struct heap_state heap = heap_get_state();
-    const struct opengatfs_drive_info system = opengatfs_drive(OPENGATFS_VOLUME_SYSTEM);
-    const struct opengatfs_drive_info data = opengatfs_drive(OPENGATFS_VOLUME_DATA);
+    const struct openrfsfs_drive_info system = openrfsfs_drive(OPENRFSFS_VOLUME_SYSTEM);
+    const struct openrfsfs_drive_info data = openrfsfs_drive(OPENRFSFS_VOLUME_DATA);
 
     console_write("\n");
     if (ui_terminal_draw_logo() != UI_STATUS_OK) {
-        console_write("  [ OpenGAT ]\n");
+        console_write("  [ OpenRFS ]\n");
     }
     console_write("\n");
-    console_write("  OpenGAT\n");
-    console_write("  kernel      OpenGAT 2.2.0 dev / x86_64\n");
+    console_write("  OpenRFS\n");
+    console_write("  kernel      OpenRFS 2.2.0 dev / x86_64\n");
     console_write("  terminal    ");
     console_write_u64(screen.columns);
     console_putc('x');
@@ -1152,10 +1152,10 @@ static void command_dhcp(void)
 
 static void command_ip(const char *arguments)
 {
-    char address_text[OPENGATFS_MAX_PATH + 1U];
-    char mask_text[OPENGATFS_MAX_PATH + 1U];
-    char gateway_text[OPENGATFS_MAX_PATH + 1U];
-    char dns_text[OPENGATFS_MAX_PATH + 1U];
+    char address_text[OPENRFSFS_MAX_PATH + 1U];
+    char mask_text[OPENRFSFS_MAX_PATH + 1U];
+    char gateway_text[OPENRFSFS_MAX_PATH + 1U];
+    char dns_text[OPENRFSFS_MAX_PATH + 1U];
     const char *remainder;
     uint32_t address;
     uint32_t mask;
@@ -1202,7 +1202,7 @@ static void command_arp(void)
 
 static void command_ping(const char *arguments)
 {
-    char address_text[OPENGATFS_MAX_PATH + 1U];
+    char address_text[OPENRFSFS_MAX_PATH + 1U];
     const char *remainder;
     uint32_t address;
     uint32_t count = 3U;
@@ -1237,7 +1237,7 @@ static void command_ping(const char *arguments)
 
 static void command_resolve(const char *arguments)
 {
-    char hostname[OPENGATFS_MAX_PATH + 1U];
+    char hostname[OPENRFSFS_MAX_PATH + 1U];
     const char *remainder;
     uint32_t address;
     enum network_status status;
@@ -1259,8 +1259,8 @@ static void command_resolve(const char *arguments)
 
 static void command_http(const char *arguments)
 {
-    char url[OPENGATFS_MAX_PATH + 1U];
-    char path[OPENGATFS_MAX_PATH + 1U];
+    char url[OPENRFSFS_MAX_PATH + 1U];
+    char path[OPENRFSFS_MAX_PATH + 1U];
     const char *remainder;
     struct network_http_result result;
     enum network_status status;
@@ -1407,7 +1407,7 @@ static void command_starty(const char *arguments)
         return;
     }
     if (ui_is_active()) {
-        console_write("starty: the OpenGAT desktop is already active\n");
+        console_write("starty: the OpenRFS desktop is already active\n");
         return;
     }
     status = account_configured(&configured);
@@ -1437,7 +1437,7 @@ static bool start_desktop(void)
     ui_keyboard_operational = true;
     ui_keyboard_decided = true;
     ui_animation_attach();
-    console_serial_write("OpenGAT: authenticated desktop started\n");
+    console_serial_write("OpenRFS: authenticated desktop started\n");
     return true;
 }
 
@@ -1513,7 +1513,7 @@ static bool authentication_feed(char character)
             authentication.input_bytes);
         authentication_reset();
         if (status == ACCOUNT_STATUS_OK) {
-            console_write("OpenGAT user created. Run 'starty' to enter the desktop.\n");
+            console_write("OpenRFS user created. Run 'starty' to enter the desktop.\n");
         } else {
             authentication_error(status);
         }
@@ -1680,7 +1680,7 @@ static void write_prompt_restored(void)
 {
     console_write(SHELL_PROMPT);
     if (linux_prompt_evidence_pending) {
-        console_serial_write("\nRW USERLAND OpenGAT prompt restored\n");
+        console_serial_write("\nRW USERLAND OpenRFS prompt restored\n");
         console_serial_write(SHELL_PROMPT);
         linux_prompt_evidence_pending = false;
     }
@@ -1986,13 +1986,13 @@ _Noreturn void shell_run(void)
                 (void)screen_set_viewport((struct surface_rect){
                     0U, 0U, framebuffer.width, framebuffer.height
                 }, true);
-                console_write("OpenGAT: runtime disabled: ");
+                console_write("OpenRFS: runtime disabled: ");
                 console_write(ui_status_string(status));
                 console_putc('\n');
             }
         }
         if (ui_operational) {
-            char manifest[OPENGATFS_MAX_PATH + 1U];
+            char manifest[OPENRFSFS_MAX_PATH + 1U];
 
             if (ui_application_launch_dequeue(manifest,
                     sizeof(manifest))) {

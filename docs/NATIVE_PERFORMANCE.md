@@ -2,17 +2,17 @@
 
 # Native userspace performance diagnostics
 
-OpenGAT records bounded diagnostics to catch structural regressions. They are
+OpenRFS records bounded diagnostics to catch structural regressions. They are
 QEMU measurements, not production throughput claims, and the QEMU serial logs
 retained by the native-porting workflow are the evidence of record.
 
 | Marker | Measured boundary |
 | --- | --- |
-| `OPENGAT PERF syscall` | 1,024 Ring 3 ABI-version queries, reported as total and mean monotonic nanoseconds. |
-| `OPENGAT PERF file` | 64 KiB sequential Data write and read in 4 KiB requests through native file handles. |
-| `OPENGAT PERF context-switch` | Real scheduler transition sections. `without_fpu_cycles` includes saved GPR context, address-space activation/restoration, and FS-base work; `with_fpu_cycles` adds the eager aligned `FXSAVE64` or `FXRSTOR64` section. Both are per-transition TSC means and exclude application work. |
-| `OPENGAT PERF lua` | Native entry-probe time through upstream Lua state creation and standard-library initialization. A link wrapper observes `luaL_openlibs` without changing upstream sources. |
-| `OPENGAT PERF sqlite` | The committed insert transaction in phase one, then database reopen, query, integrity check, and close after a clean reboot. |
+| `OPENRFS PERF syscall` | 1,024 Ring 3 ABI-version queries, reported as total and mean monotonic nanoseconds. |
+| `OPENRFS PERF file` | 64 KiB sequential Data write and read in 4 KiB requests through native file handles. |
+| `OPENRFS PERF context-switch` | Real scheduler transition sections. `without_fpu_cycles` includes saved GPR context, address-space activation/restoration, and FS-base work; `with_fpu_cycles` adds the eager aligned `FXSAVE64` or `FXRSTOR64` section. Both are per-transition TSC means and exclude application work. |
+| `OPENRFS PERF lua` | Native entry-probe time through upstream Lua state creation and standard-library initialization. A link wrapper observes `luaL_openlibs` without changing upstream sources. |
+| `OPENRFS PERF sqlite` | The committed insert transaction in phase one, then database reopen, query, integrity check, and close after a clean reboot. |
 
 The following reference sample came from GitHub's Ubuntu QEMU TCG run at
 merge-test commit `53466d34c4480f79d7c9ebff08299dfbfa05e1c2`, which merged

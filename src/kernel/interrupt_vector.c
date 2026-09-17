@@ -3,10 +3,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/apic.h>
-#include <opengat/cpu.h>
-#include <opengat/interrupt_vector.h>
-#include <opengat/interrupts.h>
+#include <openrfs/apic.h>
+#include <openrfs/cpu.h>
+#include <openrfs/interrupt_vector.h>
+#include <openrfs/interrupts.h>
 
 #define DYNAMIC_VECTOR_COUNT \
     ((size_t)INTERRUPT_DYNAMIC_LIMIT - (size_t)INTERRUPT_DYNAMIC_BASE)

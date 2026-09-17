@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Three measured Linux x86-64 SYSCALL profiles for bounded BusyBox proofs. */
 
-#include <opengat/linux_syscall.h>
+#include <openrfs/linux_syscall.h>
 
 #include <stddef.h>
 
-#include <opengat/console.h>
-#include <opengat/cpu.h>
-#include <opengat/linux_abi.h>
-#include <opengat/linux_cat.h>
-#include <opengat/linux_uname.h>
-#include <opengat/memory.h>
+#include <openrfs/console.h>
+#include <openrfs/cpu.h>
+#include <openrfs/linux_abi.h>
+#include <openrfs/linux_cat.h>
+#include <openrfs/linux_uname.h>
+#include <openrfs/memory.h>
 
 #define CPUID_EXTENDED_ROOT UINT32_C(0x80000000)
 #define CPUID_EXTENDED_FEATURES UINT32_C(0x80000001)
@@ -150,7 +150,7 @@ static const uint64_t expected_calls[LINUX_SYSCALL_EXPECTED_CALLS] = {
 };
 
 static const uint8_t expected_stdout[LINUX_SYSCALL_STDOUT_BYTES] = {
-    'O', 'P', 'E', 'N', 'G', 'A', 'T', '\n'
+    'O', 'P', 'E', 'N', 'R', 'F', 'S', '\n'
 };
 
 static const uint64_t uname_allowlist[LINUX_UNAME_SYSCALL_ALLOWLIST_COUNT] = {
@@ -173,11 +173,11 @@ static const uint64_t cat_allowlist[LINUX_CAT_SYSCALL_ALLOWLIST_COUNT] = {
     UINT64_C(0), UINT64_C(1), UINT64_C(158), UINT64_C(218), UINT64_C(231)
 };
 
-static const struct linux_utsname_record opengat_uts_record = {
+static const struct linux_utsname_record openrfs_uts_record = {
     .sysname = "Linux",
-    .nodename = "opengat",
-    .release = "2.2.0-opengat",
-    .version = "OpenGAT",
+    .nodename = "openrfs",
+    .release = "2.2.0-openrfs",
+    .version = "OpenRFS",
     .machine = "x86_64",
     .domainname = "(none)"
 };
@@ -1619,13 +1619,13 @@ bool linux_syscall_uname_semantic_self_test(void)
     struct linux_syscall_runtime candidate;
     struct linux_syscall_frame frame;
 
-    if (!uts_field_valid(opengat_uts_record.sysname, "Linux", 5U) ||
-        !uts_field_valid(opengat_uts_record.nodename, "opengat", 7U) ||
-        !uts_field_valid(opengat_uts_record.release, "2.2.0-opengat", 13U) ||
-        !uts_field_valid(opengat_uts_record.version, "OpenGAT", 7U) ||
-        !uts_field_valid(opengat_uts_record.machine, "x86_64", 6U) ||
-        !uts_field_valid(opengat_uts_record.domainname, "(none)", 6U) ||
-        sizeof(opengat_uts_record) != 390U ||
+    if (!uts_field_valid(openrfs_uts_record.sysname, "Linux", 5U) ||
+        !uts_field_valid(openrfs_uts_record.nodename, "openrfs", 7U) ||
+        !uts_field_valid(openrfs_uts_record.release, "2.2.0-openrfs", 13U) ||
+        !uts_field_valid(openrfs_uts_record.version, "OpenRFS", 7U) ||
+        !uts_field_valid(openrfs_uts_record.machine, "x86_64", 6U) ||
+        !uts_field_valid(openrfs_uts_record.domainname, "(none)", 6U) ||
+        sizeof(openrfs_uts_record) != 390U ||
         LINUX_UNAME_SYSCALL_ALLOWLIST_COUNT >
             LINUX_SYSCALL_ALLOWLIST_MAX) {
         return false;
@@ -1934,28 +1934,28 @@ bool linux_syscall_uname_copyout_self_test(size_t *completed_tests)
         runtime.context.address_space->state !=
             PAGING_PROCESS_SPACE_INSTALLED ||
         !copy_from_user(before, valid, sizeof(before)) ||
-        copy_to_user_stack(0U, &opengat_uts_record,
-            sizeof(opengat_uts_record)) ||
-        copy_to_user_stack(UINT64_MAX - 1U, &opengat_uts_record,
-            sizeof(opengat_uts_record)) ||
+        copy_to_user_stack(0U, &openrfs_uts_record,
+            sizeof(openrfs_uts_record)) ||
+        copy_to_user_stack(UINT64_MAX - 1U, &openrfs_uts_record,
+            sizeof(openrfs_uts_record)) ||
         copy_to_user_stack(UINT64_C(0x0000800000000000),
-            &opengat_uts_record, sizeof(opengat_uts_record)) ||
+            &openrfs_uts_record, sizeof(openrfs_uts_record)) ||
         copy_to_user_stack(PAGING_LINUX_STACK_GUARD,
-            &opengat_uts_record, sizeof(opengat_uts_record)) ||
+            &openrfs_uts_record, sizeof(openrfs_uts_record)) ||
         copy_to_user_stack(runtime.context.executable_start,
-            &opengat_uts_record, sizeof(opengat_uts_record)) ||
+            &openrfs_uts_record, sizeof(openrfs_uts_record)) ||
         !copy_from_user(prefix_before, invalid_cross,
             sizeof(prefix_before)) ||
-        copy_to_user_stack(invalid_cross, &opengat_uts_record,
-            sizeof(opengat_uts_record)) ||
+        copy_to_user_stack(invalid_cross, &openrfs_uts_record,
+            sizeof(openrfs_uts_record)) ||
         !copy_from_user(prefix_after, invalid_cross,
             sizeof(prefix_after)) ||
         !bytes_equal(prefix_before, prefix_after, sizeof(prefix_before)) ||
-        !copy_to_user_stack(valid, &opengat_uts_record,
-            sizeof(opengat_uts_record)) ||
+        !copy_to_user_stack(valid, &openrfs_uts_record,
+            sizeof(openrfs_uts_record)) ||
         !copy_from_user(after, valid, sizeof(after)) ||
-        !bytes_equal(after, &opengat_uts_record,
-            sizeof(opengat_uts_record)) ||
+        !bytes_equal(after, &openrfs_uts_record,
+            sizeof(openrfs_uts_record)) ||
         !copy_to_user_stack(valid, before, sizeof(before))) {
         return false;
     }
@@ -2092,8 +2092,8 @@ static enum linux_syscall_status execute_uname_call(
                 LINUX_SYSCALL_STATUS_OK) {
             return LINUX_SYSCALL_STATUS_BAD_STATE;
         }
-        if (!copy_to_user_stack(frame->rdi, &opengat_uts_record,
-                sizeof(opengat_uts_record))) {
+        if (!copy_to_user_stack(frame->rdi, &openrfs_uts_record,
+                sizeof(openrfs_uts_record))) {
             if (transition_uts(LINUX_UTS_COPY_FAILED) !=
                     LINUX_SYSCALL_STATUS_OK) {
                 return LINUX_SYSCALL_STATUS_BAD_STATE;

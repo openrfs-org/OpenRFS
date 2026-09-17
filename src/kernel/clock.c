@@ -3,8 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/clock.h>
-#include <opengat/tsc.h>
+#include <openrfs/clock.h>
+#include <openrfs/tsc.h>
 
 static struct clock_state state;
 

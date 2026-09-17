@@ -1,0 +1,17 @@
+OpenRFS wallpaper source receipt
+
+Source: supplied directly by the project owner in the Codex task on 2026-09-17
+Original attachment filename: WhatsApp Image 2026-09-17 at 1.34.48 PM.jpeg
+Preserved source path: assets/openrfs/wallpaper-source.jpeg
+Source dimensions: 1600x1049 RGB
+Source SHA-256: 6c8373c70a017ed3d20ad2956e9eca70a56fb99954647ebfddc3a242f10d33d7
+
+Runtime derivative path: assets/openrfs/wallpaper.png
+Runtime derivative dimensions: 1600x1200 RGB
+Runtime derivative SHA-256: a4e085d608988a0edc9e3abf1031fed74e2083c7a2f368093c4b9998375fb9d7
+Transformation: deterministic JPEG decode with equal white vertical padding
+to preserve the full supplied drawing in the desktop's 4:3 wallpaper frame.
+No generated text, symbol, scenery, or replacement artwork was added.
+
+The build performs a deterministic conversion to the bounded SPW3 runtime
+format.

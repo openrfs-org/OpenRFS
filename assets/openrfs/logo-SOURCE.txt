@@ -1,0 +1,22 @@
+OpenRFS logo source receipt
+
+Source: supplied directly by the project owner in the Codex task on 2026-09-17
+Original attachment filename: WhatsApp Image 2026-09-17 at 1.34.44 PM.jpeg
+Preserved source path: assets/openrfs/logo-source.jpeg
+Source dimensions: 1600x1049 RGB
+Source SHA-256: 0b0338127f35c5655376a9d18b16e9398558032679fd8b5ff7c6bf79d88302b3
+
+Lossless decode path: assets/openrfs/logo-source.png
+Decoded dimensions: 1600x1049 RGBA
+Decoded SHA-256: 6c48564bb5995aba9e7fff16854e6169713189420409a48799806d206d7da5c2
+
+Runtime derivative path: assets/openrfs/logo.png
+Runtime derivative dimensions: 1600x1049 RGBA
+Runtime derivative SHA-256: b9adb33e48417e3c089a39935faab4b1a86f18d47ec65797f0d6574ac356100c
+Transformation: deterministic JPEG decode and near-white background removal
+with FFmpeg; the supplied mark, proportions, colours, and composition are
+otherwise unchanged.
+
+This receipt records provenance supplied to the repository. It does not infer
+an upstream author, website, vector source, or license that the user did not
+provide.

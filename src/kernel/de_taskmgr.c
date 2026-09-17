@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#include <opengat/de/taskmgr.h>
+#include <openrfs/de/taskmgr.h>
 
-#include <opengat/de/font.h>
-#include <opengat/de/theme.h>
+#include <openrfs/de/font.h>
+#include <openrfs/de/theme.h>
 
 /* ================================================================ METRICS */
 
@@ -19,21 +19,21 @@
  * their longest plausible value and RIGHT ALIGNED, because a column of
  * numbers that is not right aligned cannot be scanned.
  */
-static const uint32_t COLUMN_WIDTH[OPENGAT_TASKMGR_COLUMNS] = {
+static const uint32_t COLUMN_WIDTH[OPENRFS_TASKMGR_COLUMNS] = {
     0U, 70U, 60U, 76U, 50U
 };
 
-static const char *const COLUMN_NAME[OPENGAT_TASKMGR_COLUMNS] = {
+static const char *const COLUMN_NAME[OPENRFS_TASKMGR_COLUMNS] = {
     "Command", "User", "CPU%", "RSS", "PID"
 };
 
 /* ================================================================== STATE */
 
-static struct opengat_taskmgr_row rows[OPENGAT_TASKMGR_MAX_ROWS];
+static struct openrfs_taskmgr_row rows[OPENRFS_TASKMGR_MAX_ROWS];
 static uint32_t row_count;
-static enum opengat_taskmgr_column sort_column = OPENGAT_TASKMGR_PID;
+static enum openrfs_taskmgr_column sort_column = OPENRFS_TASKMGR_PID;
 static bool sort_descending;
-static uint32_t chosen = OPENGAT_TASKMGR_MAX_ROWS;
+static uint32_t chosen = OPENRFS_TASKMGR_MAX_ROWS;
 
 /* ================================================================ HELPERS */
 
@@ -64,25 +64,25 @@ static int compare_text(const char *a, const char *b)
     return a[at] == '\0' ? -1 : 1;
 }
 
-static int compare(const struct opengat_taskmgr_row *a,
-    const struct opengat_taskmgr_row *b)
+static int compare(const struct openrfs_taskmgr_row *a,
+    const struct openrfs_taskmgr_row *b)
 {
     switch (sort_column) {
-    case OPENGAT_TASKMGR_COMMAND:
+    case OPENRFS_TASKMGR_COMMAND:
         return compare_text(a->command, b->command);
-    case OPENGAT_TASKMGR_USER:
+    case OPENRFS_TASKMGR_USER:
         return compare_text(a->user, b->user);
-    case OPENGAT_TASKMGR_CPU:
+    case OPENRFS_TASKMGR_CPU:
         if (a->cpu_tenths == b->cpu_tenths) {
             return 0;
         }
         return a->cpu_tenths < b->cpu_tenths ? -1 : 1;
-    case OPENGAT_TASKMGR_RSS:
+    case OPENRFS_TASKMGR_RSS:
         if (a->rss_kib == b->rss_kib) {
             return 0;
         }
         return a->rss_kib < b->rss_kib ? -1 : 1;
-    case OPENGAT_TASKMGR_PID:
+    case OPENRFS_TASKMGR_PID:
     default:
         if (a->pid == b->pid) {
             return 0;
@@ -101,7 +101,7 @@ static void resort(void)
     const uint32_t selected_pid = keep_selection ? rows[chosen].pid : 0U;
 
     for (at = 1U; at < row_count; ++at) {
-        struct opengat_taskmgr_row held = rows[at];
+        struct openrfs_taskmgr_row held = rows[at];
         uint32_t back = at;
 
         while (back > 0U) {
@@ -121,7 +121,7 @@ static void resort(void)
     if (!keep_selection) {
         return;
     }
-    chosen = OPENGAT_TASKMGR_MAX_ROWS;
+    chosen = OPENRFS_TASKMGR_MAX_ROWS;
     for (at = 0U; at < row_count; ++at) {
         if (rows[at].pid == selected_pid) {
             chosen = at;
@@ -196,54 +196,54 @@ static void memory(char *out, uint32_t kib, uint32_t capacity)
 
 /* ================================================================== API */
 
-void opengat_taskmgr_reset(void)
+void openrfs_taskmgr_reset(void)
 {
     row_count = 0U;
-    chosen = OPENGAT_TASKMGR_MAX_ROWS;
+    chosen = OPENRFS_TASKMGR_MAX_ROWS;
 }
 
-bool opengat_taskmgr_add(const struct opengat_taskmgr_row *row)
+bool openrfs_taskmgr_add(const struct openrfs_taskmgr_row *row)
 {
-    if (row == NULL || row_count >= OPENGAT_TASKMGR_MAX_ROWS) {
+    if (row == NULL || row_count >= OPENRFS_TASKMGR_MAX_ROWS) {
         return false;
     }
     rows[row_count] = *row;
     copy(rows[row_count].command, row->command,
-         OPENGAT_TASKMGR_NAME_BYTES);
-    copy(rows[row_count].user, row->user, OPENGAT_TASKMGR_NAME_BYTES);
+         OPENRFS_TASKMGR_NAME_BYTES);
+    copy(rows[row_count].user, row->user, OPENRFS_TASKMGR_NAME_BYTES);
     ++row_count;
     resort();
     return true;
 }
 
-uint32_t opengat_taskmgr_count(void)
+uint32_t openrfs_taskmgr_count(void)
 {
     return row_count;
 }
 
-void opengat_taskmgr_select(uint32_t at)
+void openrfs_taskmgr_select(uint32_t at)
 {
     if (at < row_count) {
         chosen = at;
     }
 }
 
-uint32_t opengat_taskmgr_selected(void)
+uint32_t openrfs_taskmgr_selected(void)
 {
     return chosen;
 }
 
-bool opengat_taskmgr_has_selection(void)
+bool openrfs_taskmgr_has_selection(void)
 {
     return chosen < row_count;
 }
 
-uint32_t opengat_taskmgr_selected_pid(void)
+uint32_t openrfs_taskmgr_selected_pid(void)
 {
     return chosen < row_count ? rows[chosen].pid : 0U;
 }
 
-bool opengat_taskmgr_end_selected(void)
+bool openrfs_taskmgr_end_selected(void)
 {
     uint32_t at;
 
@@ -261,14 +261,14 @@ bool opengat_taskmgr_end_selected(void)
     --row_count;
     /* The selection does NOT follow the gap onto whatever moved up: the
      * next press would then end a row nobody chose. */
-    chosen = OPENGAT_TASKMGR_MAX_ROWS;
+    chosen = OPENRFS_TASKMGR_MAX_ROWS;
     return true;
 }
 
-bool opengat_taskmgr_row_bounds(const struct opengat_window *window,
-    uint32_t at, struct opengat_rect *out)
+bool openrfs_taskmgr_row_bounds(const struct openrfs_window *window,
+    uint32_t at, struct openrfs_rect *out)
 {
-    struct opengat_rect client;
+    struct openrfs_rect client;
     const uint32_t list_offset = TASKMGR_MENUBAR + TASKMGR_SUMMARY +
         TASKMGR_HEADER;
     uint32_t list_height;
@@ -276,7 +276,7 @@ bool opengat_taskmgr_row_bounds(const struct opengat_window *window,
     if (window == NULL || out == NULL || at >= row_count) {
         return false;
     }
-    client = opengat_window_client(window);
+    client = openrfs_window_client(window);
     list_height = client.height > list_offset + TASKMGR_FOOTER ?
         client.height - list_offset - TASKMGR_FOOTER : 0U;
     if ((at + 1U) * TASKMGR_ROW > list_height) {
@@ -289,15 +289,15 @@ bool opengat_taskmgr_row_bounds(const struct opengat_window *window,
     return true;
 }
 
-bool opengat_taskmgr_end_button(const struct opengat_window *window,
-    struct opengat_rect *out)
+bool openrfs_taskmgr_end_button(const struct openrfs_window *window,
+    struct openrfs_rect *out)
 {
-    struct opengat_rect client;
+    struct openrfs_rect client;
 
     if (window == NULL || out == NULL) {
         return false;
     }
-    client = opengat_window_client(window);
+    client = openrfs_window_client(window);
     out->width = 82U;
     out->height = 22U;
     out->x = client.x + client.width - out->width - TASKMGR_PAD;
@@ -305,7 +305,7 @@ bool opengat_taskmgr_end_button(const struct opengat_window *window,
     return true;
 }
 
-void opengat_taskmgr_sort(enum opengat_taskmgr_column column)
+void openrfs_taskmgr_sort(enum openrfs_taskmgr_column column)
 {
     if (column == sort_column) {
         sort_descending = !sort_descending;
@@ -316,24 +316,24 @@ void opengat_taskmgr_sort(enum opengat_taskmgr_column column)
     resort();
 }
 
-enum opengat_taskmgr_column opengat_taskmgr_sort_column(void)
+enum openrfs_taskmgr_column openrfs_taskmgr_sort_column(void)
 {
     return sort_column;
 }
 
-bool opengat_taskmgr_sort_descending(void)
+bool openrfs_taskmgr_sort_descending(void)
 {
     return sort_descending;
 }
 
 /* ================================================================ LAYOUT */
 
-static uint32_t command_width(struct opengat_rect client)
+static uint32_t command_width(struct openrfs_rect client)
 {
     uint32_t fixed = 0U;
     uint32_t at;
 
-    for (at = 1U; at < OPENGAT_TASKMGR_COLUMNS; ++at) {
+    for (at = 1U; at < OPENRFS_TASKMGR_COLUMNS; ++at) {
         fixed += COLUMN_WIDTH[at];
     }
     if (client.width < fixed + TASKMGR_PAD * 2U + 60U) {
@@ -342,25 +342,25 @@ static uint32_t command_width(struct opengat_rect client)
     return client.width - fixed - TASKMGR_PAD * 2U;
 }
 
-bool opengat_taskmgr_header_bounds(const struct opengat_window *window,
-    enum opengat_taskmgr_column column, struct opengat_rect *out)
+bool openrfs_taskmgr_header_bounds(const struct openrfs_window *window,
+    enum openrfs_taskmgr_column column, struct openrfs_rect *out)
 {
-    struct opengat_rect client;
+    struct openrfs_rect client;
     uint32_t left;
     uint32_t at;
 
     if (window == NULL || out == NULL ||
-            (uint32_t)column >= OPENGAT_TASKMGR_COLUMNS) {
+            (uint32_t)column >= OPENRFS_TASKMGR_COLUMNS) {
         return false;
     }
-    client = opengat_window_client(window);
+    client = openrfs_window_client(window);
     left = client.x + TASKMGR_PAD;
     for (at = 0U; at < (uint32_t)column; ++at) {
         left += at == 0U ? command_width(client) : COLUMN_WIDTH[at];
     }
     out->x = left;
     out->y = client.y + TASKMGR_MENUBAR + TASKMGR_SUMMARY;
-    out->width = column == OPENGAT_TASKMGR_COMMAND ?
+    out->width = column == OPENRFS_TASKMGR_COMMAND ?
         command_width(client) : COLUMN_WIDTH[column];
     out->height = TASKMGR_HEADER;
     return true;
@@ -368,52 +368,52 @@ bool opengat_taskmgr_header_bounds(const struct opengat_window *window,
 
 /* ================================================================ DRAWING */
 
-static void draw_cell(struct opengat_surface *surface, struct opengat_rect clip,
-    struct opengat_rect box, const char *text, uint32_t baseline,
+static void draw_cell(struct openrfs_surface *surface, struct openrfs_rect clip,
+    struct openrfs_rect box, const char *text, uint32_t baseline,
     uint32_t ink, bool right_aligned)
 {
-    uint32_t width = opengat_font_width(text);
+    uint32_t width = openrfs_font_width(text);
     uint32_t x = box.x + 4U;
 
     if (right_aligned && box.width > width + 8U) {
         x = box.x + box.width - width - 6U;
     }
-    opengat_font_draw(surface, clip, x, baseline, text, ink);
+    openrfs_font_draw(surface, clip, x, baseline, text, ink);
 }
 
-void opengat_taskmgr_draw(struct opengat_surface *surface,
-    const struct opengat_window *window)
+void openrfs_taskmgr_draw(struct openrfs_surface *surface,
+    const struct openrfs_window *window)
 {
-    struct opengat_rect client;
-    struct opengat_rect strip;
+    struct openrfs_rect client;
+    struct openrfs_rect strip;
     char scratch[24];
     uint32_t at;
     uint32_t column;
     uint32_t list_top;
 
-    if (window == NULL || !opengat_surface_valid(surface)) {
+    if (window == NULL || !openrfs_surface_valid(surface)) {
         return;
     }
-    client = opengat_window_client(window);
-    opengat_surface_fill(surface, client, client, OPENGAT_BG);
+    client = openrfs_window_client(window);
+    openrfs_surface_fill(surface, client, client, OPENRFS_BG);
 
     /* the menu bar */
     strip = client;
     strip.height = TASKMGR_MENUBAR;
-    opengat_surface_fill(surface, client, strip, OPENGAT_BG);
+    openrfs_surface_fill(surface, client, strip, OPENRFS_BG);
     {
         static const char *const MENUS[3] = { "File", "View", "Help" };
         uint32_t pen = client.x + TASKMGR_PAD;
 
         for (at = 0U; at < 3U; ++at) {
-            opengat_font_draw(surface, client, pen,
-                client.y + 14U, MENUS[at], OPENGAT_FG);
-            pen += opengat_font_width(MENUS[at]) + 14U;
+            openrfs_font_draw(surface, client, pen,
+                client.y + 14U, MENUS[at], OPENRFS_FG);
+            pen += openrfs_font_width(MENUS[at]) + 14U;
         }
     }
     for (at = 0U; at < client.width; ++at) {
-        opengat_surface_plot(surface, client, client.x + at,
-            client.y + TASKMGR_MENUBAR - 1U, OPENGAT_LINE);
+        openrfs_surface_plot(surface, client, client.x + at,
+            client.y + TASKMGR_MENUBAR - 1U, OPENRFS_LINE);
     }
 
     /* the summary line */
@@ -421,32 +421,32 @@ void opengat_taskmgr_draw(struct opengat_surface *surface,
         uint32_t pen = client.x + TASKMGR_PAD;
         uint32_t base = client.y + TASKMGR_MENUBAR + 14U;
 
-        opengat_font_draw(surface, client, pen, base, "Tasks:", OPENGAT_TEXT);
-        pen += opengat_font_width("Tasks:") + 5U;
+        openrfs_font_draw(surface, client, pen, base, "Tasks:", OPENRFS_TEXT);
+        pen += openrfs_font_width("Tasks:") + 5U;
         (void)number(scratch, row_count, sizeof(scratch));
-        opengat_font_draw(surface, client, pen, base, scratch, OPENGAT_TEXT);
+        openrfs_font_draw(surface, client, pen, base, scratch, OPENRFS_TEXT);
     }
 
     /* the column header, with the sorted one marked */
-    for (column = 0U; column < OPENGAT_TASKMGR_COLUMNS; ++column) {
-        struct opengat_rect head;
+    for (column = 0U; column < OPENRFS_TASKMGR_COLUMNS; ++column) {
+        struct openrfs_rect head;
 
-        if (!opengat_taskmgr_header_bounds(window,
-                (enum opengat_taskmgr_column)column, &head)) {
+        if (!openrfs_taskmgr_header_bounds(window,
+                (enum openrfs_taskmgr_column)column, &head)) {
             continue;
         }
-        opengat_surface_fill(surface, client, head, OPENGAT_BG_ACTIVE);
+        openrfs_surface_fill(surface, client, head, OPENRFS_BG_ACTIVE);
         for (at = 0U; at < head.height; ++at) {
-            opengat_surface_plot(surface, client,
-                head.x + head.width - 1U, head.y + at, OPENGAT_LINE);
+            openrfs_surface_plot(surface, client,
+                head.x + head.width - 1U, head.y + at, OPENRFS_LINE);
         }
         for (at = 0U; at < head.width; ++at) {
-            opengat_surface_plot(surface, client, head.x + at,
-                head.y + head.height - 1U, OPENGAT_LINE);
+            openrfs_surface_plot(surface, client, head.x + at,
+                head.y + head.height - 1U, OPENRFS_LINE);
         }
-        opengat_font_draw(surface, head, head.x + 4U, head.y + 13U,
-            COLUMN_NAME[column], OPENGAT_FG);
-        if ((enum opengat_taskmgr_column)column == sort_column &&
+        openrfs_font_draw(surface, head, head.x + 4U, head.y + 13U,
+            COLUMN_NAME[column], OPENRFS_FG);
+        if ((enum openrfs_taskmgr_column)column == sort_column &&
                 head.width > 20U) {
             /* The sort marker: a triangle, pointing the way the list
              * runs.  Drawn rather than carried as a picture, because at
@@ -468,10 +468,10 @@ void opengat_taskmgr_draw(struct opengat_surface *surface,
                     uint32_t row = sort_descending ?
                         mid + 2U - at : mid - 2U + at;
 
-                    opengat_surface_plot(surface, head, tip + span, row,
-                                       OPENGAT_FG);
-                    opengat_surface_plot(surface, head, tip - span, row,
-                                       OPENGAT_FG);
+                    openrfs_surface_plot(surface, head, tip + span, row,
+                                       OPENRFS_FG);
+                    openrfs_surface_plot(surface, head, tip - span, row,
+                                       OPENRFS_FG);
                 }
             }
         }
@@ -481,7 +481,7 @@ void opengat_taskmgr_draw(struct opengat_surface *surface,
     list_top = client.y + TASKMGR_MENUBAR + TASKMGR_SUMMARY +
         TASKMGR_HEADER;
     {
-        struct opengat_rect list;
+        struct openrfs_rect list;
 
         list.x = client.x;
         list.y = list_top;
@@ -489,60 +489,60 @@ void opengat_taskmgr_draw(struct opengat_surface *surface,
         list.height = client.height > (list_top - client.y) +
             TASKMGR_FOOTER ?
             client.height - (list_top - client.y) - TASKMGR_FOOTER : 0U;
-        opengat_surface_fill(surface, client, list, OPENGAT_BASE);
+        openrfs_surface_fill(surface, client, list, OPENRFS_BASE);
 
         for (at = 0U; at < row_count; ++at) {
             uint32_t top = list_top + at * TASKMGR_ROW;
             uint32_t baseline = top + 12U;
-            uint32_t ink = at == chosen ? OPENGAT_SEL_FG : OPENGAT_TEXT;
+            uint32_t ink = at == chosen ? OPENRFS_SEL_FG : OPENRFS_TEXT;
 
             if (top + TASKMGR_ROW > list.y + list.height) {
                 break;
             }
             if (at == chosen) {
-                struct opengat_rect band;
+                struct openrfs_rect band;
 
                 band.x = list.x;
                 band.y = top;
                 band.width = list.width;
                 band.height = TASKMGR_ROW;
-                opengat_surface_fill(surface, list, band, OPENGAT_SEL_BG);
+                openrfs_surface_fill(surface, list, band, OPENRFS_SEL_BG);
             } else if ((at & 1U) != 0U) {
-                struct opengat_rect band;
+                struct openrfs_rect band;
 
                 band.x = list.x;
                 band.y = top;
                 band.width = list.width;
                 band.height = TASKMGR_ROW;
-                opengat_surface_fill(surface, list, band,
-                                   OPENGAT_BASE_PRELIGHT);
+                openrfs_surface_fill(surface, list, band,
+                                   OPENRFS_BASE_PRELIGHT);
             }
-            for (column = 0U; column < OPENGAT_TASKMGR_COLUMNS; ++column) {
-                struct opengat_rect head;
-                struct opengat_rect cell;
+            for (column = 0U; column < OPENRFS_TASKMGR_COLUMNS; ++column) {
+                struct openrfs_rect head;
+                struct openrfs_rect cell;
 
-                if (!opengat_taskmgr_header_bounds(window,
-                        (enum opengat_taskmgr_column)column, &head)) {
+                if (!openrfs_taskmgr_header_bounds(window,
+                        (enum openrfs_taskmgr_column)column, &head)) {
                     continue;
                 }
                 cell = head;
                 cell.y = top;
                 cell.height = TASKMGR_ROW;
                 switch (column) {
-                case OPENGAT_TASKMGR_COMMAND:
+                case OPENRFS_TASKMGR_COMMAND:
                     draw_cell(surface, list, cell, rows[at].command,
                               baseline, ink, false);
                     break;
-                case OPENGAT_TASKMGR_USER:
+                case OPENRFS_TASKMGR_USER:
                     draw_cell(surface, list, cell, rows[at].user,
                               baseline, ink, false);
                     break;
-                case OPENGAT_TASKMGR_CPU:
+                case OPENRFS_TASKMGR_CPU:
                     tenths(scratch, rows[at].cpu_tenths, sizeof(scratch));
                     draw_cell(surface, list, cell, scratch, baseline,
                               ink, true);
                     break;
-                case OPENGAT_TASKMGR_RSS:
+                case OPENRFS_TASKMGR_RSS:
                     memory(scratch, rows[at].rss_kib, sizeof(scratch));
                     draw_cell(surface, list, cell, scratch, baseline,
                               ink, true);
@@ -559,34 +559,34 @@ void opengat_taskmgr_draw(struct opengat_surface *surface,
 
     /* the End Task button */
     {
-        struct opengat_rect button;
+        struct openrfs_rect button;
 
-        if (!opengat_taskmgr_end_button(window, &button)) {
+        if (!openrfs_taskmgr_end_button(window, &button)) {
             return;
         }
-        opengat_surface_fill(surface, client, button, OPENGAT_BG);
+        openrfs_surface_fill(surface, client, button, OPENRFS_BG);
         for (at = 0U; at < button.width; ++at) {
-            opengat_surface_plot(surface, client, button.x + at, button.y,
-                               OPENGAT_LINE_LIGHT);
-            opengat_surface_plot(surface, client, button.x + at,
-                button.y + button.height - 1U, OPENGAT_LINE);
+            openrfs_surface_plot(surface, client, button.x + at, button.y,
+                               OPENRFS_LINE_LIGHT);
+            openrfs_surface_plot(surface, client, button.x + at,
+                button.y + button.height - 1U, OPENRFS_LINE);
         }
         for (at = 0U; at < button.height; ++at) {
-            opengat_surface_plot(surface, client, button.x, button.y + at,
-                               OPENGAT_LINE_LIGHT);
-            opengat_surface_plot(surface, client,
-                button.x + button.width - 1U, button.y + at, OPENGAT_LINE);
+            openrfs_surface_plot(surface, client, button.x, button.y + at,
+                               OPENRFS_LINE_LIGHT);
+            openrfs_surface_plot(surface, client,
+                button.x + button.width - 1U, button.y + at, OPENRFS_LINE);
         }
         {
-            uint32_t width = opengat_font_width("End Task");
+            uint32_t width = openrfs_font_width("End Task");
 
             /* DIMMED with nothing chosen: the button cannot end what
              * has not been picked, and it should not look as though it
              * could. */
-            opengat_font_draw(surface, client,
+            openrfs_font_draw(surface, client,
                 button.x + (button.width - width) / 2U,
                 button.y + 15U, "End Task",
-                opengat_taskmgr_has_selection() ? OPENGAT_FG : OPENGAT_LINE);
+                openrfs_taskmgr_has_selection() ? OPENRFS_FG : OPENRFS_LINE);
         }
     }
 }
@@ -597,125 +597,125 @@ void opengat_taskmgr_draw(struct opengat_surface *surface,
  * actually reorder, and does asking for the same column again reverse it
  * rather than doing nothing?
  */
-bool opengat_taskmgr_self_test(void)
+bool openrfs_taskmgr_self_test(void)
 {
-    struct opengat_taskmgr_row row;
+    struct openrfs_taskmgr_row row;
     uint32_t first;
 
-    opengat_taskmgr_reset();
-    chosen = OPENGAT_TASKMGR_MAX_ROWS;
-    sort_column = OPENGAT_TASKMGR_PID;
+    openrfs_taskmgr_reset();
+    chosen = OPENRFS_TASKMGR_MAX_ROWS;
+    sort_column = OPENRFS_TASKMGR_PID;
     sort_descending = false;
 
-    copy(row.command, "zsh", OPENGAT_TASKMGR_NAME_BYTES);
-    copy(row.user, "user", OPENGAT_TASKMGR_NAME_BYTES);
+    copy(row.command, "zsh", OPENRFS_TASKMGR_NAME_BYTES);
+    copy(row.user, "user", OPENRFS_TASKMGR_NAME_BYTES);
     row.cpu_tenths = 10U;
     row.rss_kib = 900U;
     row.pid = 7U;
-    if (!opengat_taskmgr_add(&row)) {
+    if (!openrfs_taskmgr_add(&row)) {
         return false;
     }
-    opengat_taskmgr_select(0U);
-    copy(row.command, "awk", OPENGAT_TASKMGR_NAME_BYTES);
+    openrfs_taskmgr_select(0U);
+    copy(row.command, "awk", OPENRFS_TASKMGR_NAME_BYTES);
     row.cpu_tenths = 50U;
     row.rss_kib = 4096U;
     row.pid = 2U;
-    if (!opengat_taskmgr_add(&row)) {
+    if (!openrfs_taskmgr_add(&row)) {
         return false;
     }
     /* Added out of order, sorted by pid: the low pid comes first. */
-    if (rows[0].pid != 2U || opengat_taskmgr_selected_pid() != 7U) {
+    if (rows[0].pid != 2U || openrfs_taskmgr_selected_pid() != 7U) {
         return false;
     }
     {
-        struct opengat_window window = { 0 };
-        struct opengat_rect bounds;
+        struct openrfs_window window = { 0 };
+        struct openrfs_rect bounds;
 
         window.frame.width = 320U;
-        window.frame.height = OPENGAT_TITLE_HEIGHT + OPENGAT_BORDER * 2U +
+        window.frame.height = OPENRFS_TITLE_HEIGHT + OPENRFS_BORDER * 2U +
             TASKMGR_MENUBAR + TASKMGR_SUMMARY + TASKMGR_HEADER +
             TASKMGR_FOOTER + TASKMGR_ROW;
-        if (opengat_taskmgr_row_bounds(NULL, 0U, &bounds) ||
-                !opengat_taskmgr_row_bounds(&window, 0U, &bounds) ||
-                opengat_taskmgr_row_bounds(&window, 1U, &bounds)) {
+        if (openrfs_taskmgr_row_bounds(NULL, 0U, &bounds) ||
+                !openrfs_taskmgr_row_bounds(&window, 0U, &bounds) ||
+                openrfs_taskmgr_row_bounds(&window, 1U, &bounds)) {
             return false;
         }
     }
-    opengat_taskmgr_sort(OPENGAT_TASKMGR_COMMAND);
+    openrfs_taskmgr_sort(OPENRFS_TASKMGR_COMMAND);
     if (compare_text(rows[0].command, "awk") != 0 ||
-            opengat_taskmgr_selected_pid() != 7U) {
+            openrfs_taskmgr_selected_pid() != 7U) {
         return false;
     }
-    opengat_taskmgr_sort(OPENGAT_TASKMGR_CPU);
+    openrfs_taskmgr_sort(OPENRFS_TASKMGR_CPU);
     first = rows[0].cpu_tenths;
-    if (first != 10U || opengat_taskmgr_selected_pid() != 7U) {
+    if (first != 10U || openrfs_taskmgr_selected_pid() != 7U) {
         return false;
     }
     /* The same column again REVERSES it. */
-    opengat_taskmgr_sort(OPENGAT_TASKMGR_CPU);
+    openrfs_taskmgr_sort(OPENRFS_TASKMGR_CPU);
     if (rows[0].cpu_tenths == first) {
         return false;
     }
-    if (!opengat_taskmgr_sort_descending()) {
+    if (!openrfs_taskmgr_sort_descending()) {
         return false;
     }
-    if (opengat_taskmgr_selected_pid() != 7U) {
+    if (openrfs_taskmgr_selected_pid() != 7U) {
         return false;
     }
-    chosen = OPENGAT_TASKMGR_MAX_ROWS;
+    chosen = OPENRFS_TASKMGR_MAX_ROWS;
 
     /* End Task. */
     {
-        uint32_t was = opengat_taskmgr_count();
+        uint32_t was = openrfs_taskmgr_count();
 
         /* Nothing chosen: the button cannot act. */
-        if (opengat_taskmgr_has_selection()) {
+        if (openrfs_taskmgr_has_selection()) {
             return false;
         }
-        if (opengat_taskmgr_end_selected()) {
+        if (openrfs_taskmgr_end_selected()) {
             return false;
         }
-        opengat_taskmgr_select(0U);
-        if (!opengat_taskmgr_has_selection()) {
+        openrfs_taskmgr_select(0U);
+        if (!openrfs_taskmgr_has_selection()) {
             return false;
         }
-        if (!opengat_taskmgr_end_selected()) {
+        if (!openrfs_taskmgr_end_selected()) {
             return false;
         }
-        if (opengat_taskmgr_count() != was - 1U) {
+        if (openrfs_taskmgr_count() != was - 1U) {
             return false;
         }
         /* The selection did NOT slide onto the row that moved up. */
-        if (opengat_taskmgr_has_selection()) {
+        if (openrfs_taskmgr_has_selection()) {
             return false;
         }
     }
     /* And the session refuses to be ended. */
     {
-        struct opengat_taskmgr_row session;
+        struct openrfs_taskmgr_row session;
         uint32_t at;
 
-        opengat_taskmgr_reset();
-        copy(session.command, "opengat-session", OPENGAT_TASKMGR_NAME_BYTES);
-        copy(session.user, "user", OPENGAT_TASKMGR_NAME_BYTES);
+        openrfs_taskmgr_reset();
+        copy(session.command, "openrfs-session", OPENRFS_TASKMGR_NAME_BYTES);
+        copy(session.user, "user", OPENRFS_TASKMGR_NAME_BYTES);
         session.cpu_tenths = 20U;
         session.rss_kib = 2400U;
         session.pid = 1U;
-        if (!opengat_taskmgr_add(&session)) {
+        if (!openrfs_taskmgr_add(&session)) {
             return false;
         }
-        for (at = 0U; at < opengat_taskmgr_count(); ++at) {
+        for (at = 0U; at < openrfs_taskmgr_count(); ++at) {
             if (rows[at].pid == 1U) {
-                opengat_taskmgr_select(at);
+                openrfs_taskmgr_select(at);
             }
         }
-        if (opengat_taskmgr_end_selected()) {
+        if (openrfs_taskmgr_end_selected()) {
             return false;
         }
-        if (opengat_taskmgr_count() != 1U) {
+        if (openrfs_taskmgr_count() != 1U) {
             return false;
         }
     }
-    opengat_taskmgr_reset();
+    openrfs_taskmgr_reset();
     return true;
 }

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef OPENGAT_CTYPE_H
-#define OPENGAT_CTYPE_H
+#ifndef OPENRFS_CTYPE_H
+#define OPENRFS_CTYPE_H
 
 int isalnum(int value);
 int isalpha(int value);

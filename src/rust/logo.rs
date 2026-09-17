@@ -17,13 +17,13 @@ const MAGIC: [u8; 4] = *b"SRL1";
 /// One length byte then four RGBA bytes.
 const RUN_SIZE: usize = 5;
 
-/// A OpenGAT policy bound. The framebuffer this draws into is at least this
+/// An OpenRFS policy bound. The framebuffer this draws into is at least this
 /// wide on every mode the kernel accepts, and a header claiming more is a
 /// header describing a different image than the one that was built.
 const MAX_DIMENSION: u32 = 1024;
 
 /// What a decode can conclude. Mirrored by `enum logo_status` in
-/// `include/opengat/logo.h`; the two are kept in step by a compile-time
+/// `include/openrfs/logo.h`; the two are kept in step by a compile-time
 /// assertion on the C side.
 #[repr(i32)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

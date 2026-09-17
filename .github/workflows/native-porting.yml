@@ -62,13 +62,13 @@ jobs:
                       build/tests/native-https/network.pcap
                       build/tests/native-https/fixture.log
                       build/tests/native-https/packet-audit.json
-                      build/tests/native-opengat/network.pcap
-                      build/tests/native-opengat/fixture.log
-                      build/tests/native-opengat/packet-audit.json
-                      build/native-opengat/OPENGAT.APP
-                      build/native-opengat/OPENGAT.map
-                      build/native-opengat/repository/repository.sri
-                      build/native-opengat/repository/packages/**/*.spk
+                      build/tests/native-openrfs/network.pcap
+                      build/tests/native-openrfs/fixture.log
+                      build/tests/native-openrfs/packet-audit.json
+                      build/native-openrfs/OPENRFS.APP
+                      build/native-openrfs/OPENRFS.map
+                      build/native-openrfs/repository/repository.sri
+                      build/native-openrfs/repository/packages/**/*.spk
                       build/native-dynamic/DYNROOT.APP
                       build/native-dynamic/DYNLIB.SO
                       build/native-dynamic/DYNROOT.CAT

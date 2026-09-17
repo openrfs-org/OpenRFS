@@ -9,17 +9,17 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/cpu.h>
-#include <opengat/dma.h>
-#include <opengat/elf64.h>
-#include <opengat/interrupt_vector.h>
-#include <opengat/interrupts.h>
-#include <opengat/memory.h>
-#include <opengat/msix.h>
-#include <opengat/multiprocess.h>
-#include <opengat/paging.h>
-#include <opengat/pci_resource.h>
-#include <opengat/process.h>
+#include <openrfs/cpu.h>
+#include <openrfs/dma.h>
+#include <openrfs/elf64.h>
+#include <openrfs/interrupt_vector.h>
+#include <openrfs/interrupts.h>
+#include <openrfs/memory.h>
+#include <openrfs/msix.h>
+#include <openrfs/multiprocess.h>
+#include <openrfs/paging.h>
+#include <openrfs/pci_resource.h>
+#include <openrfs/process.h>
 
 #define MULTIPROCESS_SENTINEL_BYTES 32U
 #define MULTIPROCESS_USER_RFLAGS UINT64_C(2)
@@ -651,7 +651,7 @@ static enum multiprocess_status build_process(
     }
     installed_count = index + 1U;
 
-    if (opengat_multiprocess_elf64_parse(multiprocess_image,
+    if (openrfs_multiprocess_elf64_parse(multiprocess_image,
             sizeof(multiprocess_image), &image) != ELF64_STATUS_OK) {
         return MULTIPROCESS_STATUS_ELF_PARSER;
     }
@@ -1090,13 +1090,13 @@ bool multiprocess_foundation_self_test(size_t *completed_tests)
         return false;
     }
     ++completed;
-    if (opengat_multiprocess_elf64_self_test() !=
+    if (openrfs_multiprocess_elf64_self_test() !=
             ELF64_PARSER_ROBUSTNESS_CONTROLS) {
         return false;
     }
     ++completed;
     zero_bytes(&image, sizeof(image));
-    if (opengat_multiprocess_elf64_parse(multiprocess_image,
+    if (openrfs_multiprocess_elf64_parse(multiprocess_image,
             sizeof(multiprocess_image), &image) != ELF64_STATUS_OK ||
         !validated_placement(&image)) {
         return false;
@@ -1104,9 +1104,9 @@ bool multiprocess_foundation_self_test(size_t *completed_tests)
     ++completed;
     /* The proof executable and the multiprocess one must refuse each other. */
     zero_bytes(&image, sizeof(image));
-    if (opengat_multiprocess_elf64_parse(multiprocess_image,
+    if (openrfs_multiprocess_elf64_parse(multiprocess_image,
             ELF64_FILE_BYTES, &image) == ELF64_STATUS_OK ||
-        opengat_elf64_parse(multiprocess_image, sizeof(multiprocess_image),
+        openrfs_elf64_parse(multiprocess_image, sizeof(multiprocess_image),
             &image) == ELF64_STATUS_OK) {
         return false;
     }

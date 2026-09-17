@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#include <opengat/de/window.h>
+#include <openrfs/de/window.h>
 
-#include <opengat/de/font.h>
-#include <opengat/de/theme.h>
+#include <openrfs/de/font.h>
+#include <openrfs/de/theme.h>
 
 /* Openbox's title bar is a vertical ramp between two colours; this is
  * that ramp, one row at a time. */
@@ -26,26 +26,26 @@ static uint32_t ramp(uint32_t top, uint32_t bottom, uint32_t row,
     return out;
 }
 
-struct opengat_rect opengat_window_title(const struct opengat_window *window)
+struct openrfs_rect openrfs_window_title(const struct openrfs_window *window)
 {
-    struct opengat_rect box = { 0U, 0U, 0U, 0U };
+    struct openrfs_rect box = { 0U, 0U, 0U, 0U };
 
     if (window == NULL) {
         return box;
     }
-    box.x = window->frame.x + OPENGAT_BORDER;
-    box.y = window->frame.y + OPENGAT_BORDER;
-    box.width = window->frame.width > OPENGAT_BORDER * 2U ?
-        window->frame.width - OPENGAT_BORDER * 2U : 0U;
-    box.height = OPENGAT_TITLE_HEIGHT;
+    box.x = window->frame.x + OPENRFS_BORDER;
+    box.y = window->frame.y + OPENRFS_BORDER;
+    box.width = window->frame.width > OPENRFS_BORDER * 2U ?
+        window->frame.width - OPENRFS_BORDER * 2U : 0U;
+    box.height = OPENRFS_TITLE_HEIGHT;
     return box;
 }
 
-struct opengat_rect opengat_window_client(const struct opengat_window *window)
+struct openrfs_rect openrfs_window_client(const struct openrfs_window *window)
 {
-    struct opengat_rect title = opengat_window_title(window);
-    struct opengat_rect box = { 0U, 0U, 0U, 0U };
-    uint32_t chrome = OPENGAT_BORDER * 2U + OPENGAT_TITLE_HEIGHT;
+    struct openrfs_rect title = openrfs_window_title(window);
+    struct openrfs_rect box = { 0U, 0U, 0U, 0U };
+    uint32_t chrome = OPENRFS_BORDER * 2U + OPENRFS_TITLE_HEIGHT;
 
     if (window == NULL) {
         return box;
@@ -58,7 +58,7 @@ struct opengat_rect opengat_window_client(const struct opengat_window *window)
     return box;
 }
 
-void opengat_window_set_title(struct opengat_window *window, const char *text)
+void openrfs_window_set_title(struct openrfs_window *window, const char *text)
 {
     uint32_t at = 0U;
 
@@ -66,7 +66,7 @@ void opengat_window_set_title(struct opengat_window *window, const char *text)
         return;
     }
     while (text != NULL && text[at] != '\0' &&
-            at + 1U < OPENGAT_TITLE_BYTES) {
+            at + 1U < OPENRFS_TITLE_BYTES) {
         window->title[at] = text[at];
         ++at;
     }
@@ -86,10 +86,10 @@ void opengat_window_set_title(struct opengat_window *window, const char *text)
  * press on it.  Two definitions drift, and the way that shows up is a
  * close button that closes when you click slightly to the left of it.
  */
-bool opengat_window_button_bounds(const struct opengat_window *window,
-    enum opengat_window_button which, struct opengat_rect *out)
+bool openrfs_window_button_bounds(const struct openrfs_window *window,
+    enum openrfs_window_button which, struct openrfs_rect *out)
 {
-    struct opengat_rect title = opengat_window_title(window);
+    struct openrfs_rect title = openrfs_window_title(window);
     uint32_t right;
     uint32_t step;
 
@@ -102,13 +102,13 @@ bool opengat_window_button_bounds(const struct opengat_window *window,
     out->width = BUTTON_MARK;
     out->height = BUTTON_MARK;
     switch (which) {
-    case OPENGAT_WINDOW_CLOSE:
+    case OPENRFS_WINDOW_CLOSE:
         out->x = right - 6U - BUTTON_MARK;
         return true;
-    case OPENGAT_WINDOW_MAXIMISE:
+    case OPENRFS_WINDOW_MAXIMISE:
         out->x = right - 6U - BUTTON_MARK - step;
         return true;
-    case OPENGAT_WINDOW_MINIMISE:
+    case OPENRFS_WINDOW_MINIMISE:
         out->x = right - 6U - BUTTON_MARK - step * 2U;
         return true;
     default:
@@ -116,30 +116,30 @@ bool opengat_window_button_bounds(const struct opengat_window *window,
     }
 }
 
-static void buttons(struct opengat_surface *surface, struct opengat_rect title,
-    const struct opengat_window *window, uint32_t ink)
+static void buttons(struct openrfs_surface *surface, struct openrfs_rect title,
+    const struct openrfs_window *window, uint32_t ink)
 {
-    struct opengat_rect box;
+    struct openrfs_rect box;
     uint32_t at;
 
     if (title.width < 90U) {
         return;
     }
-    if (opengat_window_button_bounds(window, OPENGAT_WINDOW_CLOSE, &box)) {
+    if (openrfs_window_button_bounds(window, OPENRFS_WINDOW_CLOSE, &box)) {
         for (at = 0U; at < BUTTON_MARK; ++at) {
-            opengat_surface_plot(surface, title, box.x + at, box.y + at,
+            openrfs_surface_plot(surface, title, box.x + at, box.y + at,
                                ink);
-            opengat_surface_plot(surface, title, box.x + at,
+            openrfs_surface_plot(surface, title, box.x + at,
                 box.y + BUTTON_MARK - 1U - at, ink);
         }
     }
-    if (opengat_window_button_bounds(window, OPENGAT_WINDOW_MAXIMISE, &box)) {
+    if (openrfs_window_button_bounds(window, OPENRFS_WINDOW_MAXIMISE, &box)) {
         for (at = 0U; at < BUTTON_MARK; ++at) {
-            opengat_surface_plot(surface, title, box.x + at, box.y, ink);
-            opengat_surface_plot(surface, title, box.x + at,
+            openrfs_surface_plot(surface, title, box.x + at, box.y, ink);
+            openrfs_surface_plot(surface, title, box.x + at,
                 box.y + BUTTON_MARK - 1U, ink);
-            opengat_surface_plot(surface, title, box.x, box.y + at, ink);
-            opengat_surface_plot(surface, title,
+            openrfs_surface_plot(surface, title, box.x, box.y + at, ink);
+            openrfs_surface_plot(surface, title,
                 box.x + BUTTON_MARK - 1U, box.y + at, ink);
         }
         /* A MAXIMISED window's button shows the restore mark - two
@@ -147,54 +147,54 @@ static void buttons(struct opengat_surface *surface, struct opengat_rect title,
          * states does not say which one you are in. */
         if (window->maximised) {
             for (at = 0U; at < BUTTON_MARK - 3U; ++at) {
-                opengat_surface_plot(surface, title, box.x + 3U + at,
+                openrfs_surface_plot(surface, title, box.x + 3U + at,
                                    box.y + 3U, ink);
-                opengat_surface_plot(surface, title, box.x + 3U,
+                openrfs_surface_plot(surface, title, box.x + 3U,
                                    box.y + 3U + at, ink);
             }
         }
     }
-    if (opengat_window_button_bounds(window, OPENGAT_WINDOW_MINIMISE, &box)) {
+    if (openrfs_window_button_bounds(window, OPENRFS_WINDOW_MINIMISE, &box)) {
         for (at = 0U; at < BUTTON_MARK; ++at) {
-            opengat_surface_plot(surface, title, box.x + at,
+            openrfs_surface_plot(surface, title, box.x + at,
                 box.y + BUTTON_MARK - 1U, ink);
         }
     }
 }
 
-void opengat_window_draw(struct opengat_surface *surface,
-    const struct opengat_window *window)
+void openrfs_window_draw(struct openrfs_surface *surface,
+    const struct openrfs_window *window)
 {
-    struct opengat_rect title;
-    struct opengat_rect client;
+    struct openrfs_rect title;
+    struct openrfs_rect client;
     uint32_t top;
     uint32_t bottom;
     uint32_t ink;
     uint32_t row;
     uint32_t at;
 
-    if (window == NULL || !opengat_surface_valid(surface)) {
+    if (window == NULL || !openrfs_surface_valid(surface)) {
         return;
     }
-    title = opengat_window_title(window);
-    client = opengat_window_client(window);
-    top = window->active ? OPENGAT_FRAME_ACTIVE_TOP : OPENGAT_FRAME_IDLE_TOP;
+    title = openrfs_window_title(window);
+    client = openrfs_window_client(window);
+    top = window->active ? OPENRFS_FRAME_ACTIVE_TOP : OPENRFS_FRAME_IDLE_TOP;
     bottom = window->active ?
-        OPENGAT_FRAME_ACTIVE_BOTTOM : OPENGAT_FRAME_IDLE_BOTTOM;
-    ink = window->active ? OPENGAT_FRAME_INK : OPENGAT_FRAME_INK_DIM;
+        OPENRFS_FRAME_ACTIVE_BOTTOM : OPENRFS_FRAME_IDLE_BOTTOM;
+    ink = window->active ? OPENRFS_FRAME_INK : OPENRFS_FRAME_INK_DIM;
 
     /* The border, drawn as the frame with the client punched out of it
      * afterwards - one fill rather than four strips. */
-    opengat_surface_fill(surface, window->frame, window->frame, bottom);
+    openrfs_surface_fill(surface, window->frame, window->frame, bottom);
 
     for (row = 0U; row < title.height; ++row) {
         for (at = 0U; at < title.width; ++at) {
-            opengat_surface_plot(surface, title, title.x + at, title.y + row,
+            openrfs_surface_plot(surface, title, title.x + at, title.y + row,
                                ramp(top, bottom, row, title.height));
         }
     }
-    opengat_font_draw(surface, title, title.x + 7U,
+    openrfs_font_draw(surface, title, title.x + 7U,
         title.y + title.height - 7U, window->title, ink);
     buttons(surface, title, window, ink);
-    opengat_surface_fill(surface, client, client, OPENGAT_BG);
+    openrfs_surface_fill(surface, client, client, OPENRFS_BG);
 }

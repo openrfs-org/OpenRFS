@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and independently verify OpenGAT's bounded FAT16 QEMU fixture."""
+"""Build and independently verify OpenRFS's bounded FAT16 QEMU fixture."""
 
 from __future__ import annotations
 
@@ -24,9 +24,9 @@ FIRST_DATA_SECTOR = 4
 FILE_CLUSTER = 2
 FILE_BYTES = 128
 MEDIA = 0xF8
-SHORT_NAME = b"OPENGAT BIN"
+SHORT_NAME = b"OPENRFS BIN"
 PAYLOAD_SHA256 = "D399F065C9F21E2FD51E2AEADB7768EAB7E6E45E5150F31227C9711934A4D1D3"
-IMAGE_SHA256 = "A34664FB5A9A4D125E3AEF5AB655046C88937F88D8159BD773AD225D8B4617CA"
+IMAGE_SHA256 = "34A217787FD60E7C528DEF6E2B4F280A5011465A736730A50FE8FA85845D86A5"
 
 
 def payload() -> bytes:
@@ -48,7 +48,7 @@ def build_image() -> bytes:
 
     # Microsoft FAT General Overview 1.03, "Boot Sector and BPB Structure".
     image[0:3] = b"\xEB\x3C\x90"
-    image[3:11] = b"OPENGAT "
+    image[3:11] = b"OPENRFS "
     put_u16(image, 11, BLOCK_BYTES)
     image[13] = 1
     put_u16(image, 14, RESERVED_SECTORS)
@@ -68,7 +68,7 @@ def build_image() -> bytes:
     image[37] = 0
     image[38] = 0x29
     put_u32(image, 39, 0x0600_0001)
-    image[43:54] = b"OPENGAT    "
+    image[43:54] = b"OPENRFS    "
     image[54:62] = b"FAT16   "
     image[510:512] = b"\x55\xAA"
 
@@ -231,7 +231,7 @@ def main() -> int:
         return 1
     print(
         f"{output}: {TOTAL_SECTORS} sectors x {BLOCK_BYTES} bytes, "
-        f"OPENGAT.BIN {FILE_BYTES} bytes, SHA-256 {PAYLOAD_SHA256}, "
+        f"OPENRFS.BIN {FILE_BYTES} bytes, SHA-256 {PAYLOAD_SHA256}, "
         f"image SHA-256 {IMAGE_SHA256}"
     )
     return 0

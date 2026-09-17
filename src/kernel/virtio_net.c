@@ -3,15 +3,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <opengat/cpu.h>
-#include <opengat/clock.h>
-#include <opengat/console.h>
-#include <opengat/dma.h>
-#include <opengat/interrupts.h>
-#include <opengat/msix.h>
-#include <opengat/pci.h>
-#include <opengat/pci_resource.h>
-#include <opengat/virtio_net.h>
+#include <openrfs/cpu.h>
+#include <openrfs/clock.h>
+#include <openrfs/console.h>
+#include <openrfs/dma.h>
+#include <openrfs/interrupts.h>
+#include <openrfs/msix.h>
+#include <openrfs/pci.h>
+#include <openrfs/pci_resource.h>
+#include <openrfs/virtio_net.h>
 
 #define VIRTIO_VENDOR_ID UINT16_C(0x1AF4)
 #define VIRTIO_NET_MODERN_DEVICE_ID UINT16_C(0x1041)
@@ -74,7 +74,7 @@
 #define VIRTIO_NET_ARENA_BYTES \
     ((uint64_t)VIRTIO_NET_PACKET_COUNT * VIRTIO_NET_PACKET_BYTES)
 #define VIRTIO_NET_ARENA_PAGES \
-    ((VIRTIO_NET_ARENA_BYTES + OPENGAT_PAGE_SIZE - 1U) / OPENGAT_PAGE_SIZE)
+    ((VIRTIO_NET_ARENA_BYTES + OPENRFS_PAGE_SIZE - 1U) / OPENRFS_PAGE_SIZE)
 
 struct virtio_capability_region {
     uint8_t type;
@@ -128,7 +128,7 @@ struct virtio_net_runtime {
 static struct virtio_net_runtime runtime;
 static uint64_t next_device_generation = UINT64_C(1);
 
-_Static_assert(VIRTIO_NET_ARENA_BYTES % OPENGAT_PAGE_SIZE == 0U,
+_Static_assert(VIRTIO_NET_ARENA_BYTES % OPENRFS_PAGE_SIZE == 0U,
     "network packet arena must use complete DMA pages");
 _Static_assert(VIRTIO_NET_HEADER_BYTES + VIRTIO_NET_MAX_FRAME_SIZE <=
     VIRTIO_NET_PACKET_BYTES, "network packet buffer is too small");
@@ -654,12 +654,12 @@ static enum virtio_net_status allocate_dma(void)
 {
     struct dma_request queue_request = {
         .page_count = 1U,
-        .alignment = OPENGAT_PAGE_SIZE,
+        .alignment = OPENRFS_PAGE_SIZE,
         .maximum_physical_address = UINT32_MAX
     };
     struct dma_request arena_request = {
         .page_count = VIRTIO_NET_ARENA_PAGES,
-        .alignment = OPENGAT_PAGE_SIZE,
+        .alignment = OPENRFS_PAGE_SIZE,
         .maximum_physical_address = UINT32_MAX
     };
 
@@ -888,7 +888,7 @@ enum virtio_net_status virtio_net_initialize(void)
     }
     resource_status = pci_claim_device(function, &runtime.claim);
     if (resource_status != PCI_RESOURCE_STATUS_OK) {
-        console_write("OpenGAT: virtio-net PCI claim failed: ");
+        console_write("OpenRFS: virtio-net PCI claim failed: ");
         console_write(pci_resource_status_string(resource_status));
         console_putc('\n');
         return VIRTIO_NET_STATUS_CLAIM_FAILURE;
@@ -1154,14 +1154,14 @@ bool virtio_net_self_test(size_t *completed_tests)
     if (completed_tests == NULL) {
         return false;
     }
-    if (!queue_layout(VIRTIO_NET_QUEUE_LENGTH, OPENGAT_PAGE_SIZE,
+    if (!queue_layout(VIRTIO_NET_QUEUE_LENGTH, OPENRFS_PAGE_SIZE,
             &available, &used) || available != 256U || used != 296U) {
         return false;
     }
     ++completed;
-    if (queue_layout(0U, OPENGAT_PAGE_SIZE, &available, &used) ||
-        queue_layout(3U, OPENGAT_PAGE_SIZE, &available, &used) ||
-        queue_layout(VIRTIO_NET_QUEUE_LENGTH + 1U, OPENGAT_PAGE_SIZE,
+    if (queue_layout(0U, OPENRFS_PAGE_SIZE, &available, &used) ||
+        queue_layout(3U, OPENRFS_PAGE_SIZE, &available, &used) ||
+        queue_layout(VIRTIO_NET_QUEUE_LENGTH + 1U, OPENRFS_PAGE_SIZE,
             &available, &used)) {
         return false;
     }

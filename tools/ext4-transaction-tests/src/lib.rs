@@ -755,8 +755,8 @@ fn superblock_images_admit_only_a_complete_clean_inode_map() {
 
 #[test]
 fn deterministic_ext4_fixture_discovers_its_real_journal_inode_map() {
-    let Ok(path) = std::env::var("OPENGAT_EXT4_RUST_FIXTURE") else {
-        eprintln!("OPENGAT_EXT4_RUST_FIXTURE is unset; journal-inode integration is CI-only");
+    let Ok(path) = std::env::var("OPENRFS_EXT4_RUST_FIXTURE") else {
+        eprintln!("OPENRFS_EXT4_RUST_FIXTURE is unset; journal-inode integration is CI-only");
         return;
     };
     let Ok(bytes) = std::fs::read(&path) else {

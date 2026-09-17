@@ -1,1 +1,1 @@
-OpenGAT immutable resource
+OpenRFS immutable resource

@@ -3,7 +3,7 @@
 # Reproducible BusyBox proof inputs
 
 BusyBox and musl are separate userspace works. Neither is copied into or linked
-with OpenGAT's GPL-3.0-only kernel. Their source, configurations, licenses,
+with OpenRFS's GPL-3.0-only kernel. Their source, configurations, licenses,
 traces, and build records remain distinct release materials.
 
 ## Pinned source inputs
@@ -46,7 +46,7 @@ source archives remain byte-identical.
 
 | Profile | Executable | Size | Executable SHA-256 | FAT16 fixture SHA-256 |
 | --- | --- | ---: | --- | --- |
-| v0.8.0 | `echo OPENGAT` | 33,584 | `B308F2CAD5B5CD0EEB92A622DEC8D71C1A08F628A22CDC5BCDE2B98B53220746` | `79EE482967A1979C34DCFC87B68813C5DA79B27292362DDA890839B6263FF821` |
+| v0.8.0 | `echo OPENRFS` | 33,584 | `B308F2CAD5B5CD0EEB92A622DEC8D71C1A08F628A22CDC5BCDE2B98B53220746` | `79EE482967A1979C34DCFC87B68813C5DA79B27292362DDA890839B6263FF821` |
 | v0.9.0 | `uname -s` | 38,368 | `389AD6B13804EB7307BA589C8E8A7C702F91302005A7C5FC6E9E99124FCEAF43` | `CDB8E920F06AC93F63E73854FC5A6A63CDBCC7DCEDBBFB62325C7EC4B408AD36` |
 | v1.1.0 | `cat` | 38,632 | `8191596A22778B575942895071A2E50CCEEE0F82F4D88B6D986584CE0914FC3E` | composed v1.1.0 volume |
 
@@ -55,7 +55,7 @@ dynamic section, runtime relocation, PIE, shared object, or RWX segment. Their
 exact syscall traces and allowlists are committed beside the configurations.
 
 Version 1.1.0 places all three exact executables in one 16 MiB read-only FAT16
-volume. `tools/make-opengat-proof-userland.py` rebuilds every byte, independently
+volume. `tools/make-openrfs-proof-userland.py` rebuilds every byte, independently
 verifies each file and root entry, runs negative mutations, and pins the volume
 SHA-256 to
 `234289FCC58E498AA18A68B5BFF00E9F81940211CAAF2507B81CB65155EBE975`.

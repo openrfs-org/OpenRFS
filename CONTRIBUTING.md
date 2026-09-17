@@ -1,6 +1,6 @@
-# Contributing to OpenGAT
+# Contributing to OpenRFS
 
-Thank you for helping with OpenGAT. This is a small operating-system project,
+Thank you for helping with OpenRFS. This is a small operating-system project,
 so a focused change with clear evidence is much easier to review than a large
 patch that tries to solve several things at once.
 
@@ -57,14 +57,14 @@ than treating a green badge as evidence by itself. The gate definitions live in
 
 ## Keep the system boundaries visible
 
-- OpenGAT is freestanding. Do not add a host libc, an undeclared runtime,
+- OpenRFS is freestanding. Do not add a host libc, an undeclared runtime,
   floating-point or SIMD kernel state, or a red zone.
 - Keep warnings as errors. Bound lengths, arithmetic, retries, queues, and wait
   times explicitly.
 - Validate a user pointer across its full range before copying and preserve
   supervisor-only kernel mappings.
 - Claim PCI resources before enabling a device. Disable bus mastering before
-  reclaiming DMA memory. OpenGAT does not currently have an IOMMU.
+  reclaiming DMA memory. OpenRFS does not currently have an IOMMU.
 - Preserve W^X mappings and make process, file, socket, and native-handle
   ownership clear at every boundary.
 - Keep QEMU fixtures as ordinary local files attached to emulated devices. Do
