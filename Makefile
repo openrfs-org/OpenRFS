@@ -342,7 +342,7 @@ DEPENDENCIES := $(C_OBJECTS:.o=.d) $(MONOCYPHER_OBJECTS:.o=.d) \
 # implicit and pattern rule search for a phony target, so declaring them phony
 # makes every scenario resolve to "nothing to be done" and pass without booting.
 # They never create a file of their own name, so they rerun regardless.
-.PHONY: all audio-wav-tests capture-boot-video capture-openrfs capture-openrfs-proof capture-networking clean contract-counts contract-scenarios dynamic-elf-tests ext4-images ext4-tests fat32-images force-package-trust hooks https-tests \
+.PHONY: all installer-port-test audio-wav-tests capture-boot-video capture-openrfs capture-openrfs-proof capture-networking clean contract-counts contract-scenarios dynamic-elf-tests ext4-images ext4-tests fat32-images force-package-trust hooks https-tests \
 	iso kernel lint native-apps native-audio-proof native-dynamic-proof native-https-proof native-openrfs-proof native-sdl-proof sdl-preference-tests port-tests qemu-port-tests reproducible-sdk run \
 	package-control-tests package-fetch-tests package-manager-tests package-repository-tests package-service-tests package-state-tests package-transaction-tests package-trust-asset-tests package-trust-tests package-upload-tests qemu-test-ext4-powercuts screenshot-proof sdk sdk-once smoke tls-tests toolchain verify wall-clock-tests zlib-tests
 
@@ -1283,7 +1283,22 @@ $(EXT4_FIXTURE): tools/ext4_image.py
 
 ext4-images: $(EXT4_FIXTURE)
 
-verify: toolchain lint
+INSTALLER_PORT_TEST := $(BUILD_DIR)/tools/installer-port-test
+
+$(INSTALLER_PORT_TEST): tools/installer-port-test.c \
+		src/kernel/orfs_term.c src/kernel/orfs_ui.c src/kernel/orfs_install.c \
+		include/orfs/term.h include/orfs/ui.h include/orfs/install.h \
+		include/orfs/line.h include/orfs/version.h
+	mkdir -p $(dir $@)
+	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
+		tools/installer-port-test.c src/kernel/orfs_term.c \
+		src/kernel/orfs_ui.c src/kernel/orfs_install.c -o $@
+
+installer-port-test: $(INSTALLER_PORT_TEST)
+	$(INSTALLER_PORT_TEST)
+
+verify: toolchain lint installer-port-test
 	$(MAKE) clean
 	$(MAKE) kernel
 	$(MAKE) wall-clock-tests ext4-tests package-repository-tests \

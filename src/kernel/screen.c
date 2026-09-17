@@ -82,11 +82,13 @@ static bool font_covers(uint32_t code)
  * rather than being drawn over it. Region redraws pass their exact clip: an
  * intersecting edge cell must never leak into another compositor layer.
  */
-static enum screen_status paint_cell(
+static enum screen_status paint_cell_colored(
     uint32_t column,
     uint32_t row,
     char character,
-    const struct surface_rect *clip
+    const struct surface_rect *clip,
+    uint32_t cell_foreground,
+    uint32_t cell_background
 )
 {
     uint8_t glyph_rows[FONT_MAX_CELL_HEIGHT];
@@ -117,7 +119,7 @@ static enum screen_status paint_cell(
         for (uint32_t x = 0U; x < state.cell_width; ++x) {
             const bool lit = (bits & (uint8_t)(0x80U >> x)) != 0U;
             pixels[y * state.cell_width + x] =
-                lit ? foreground_pixel : background_pixel;
+                lit ? cell_foreground : cell_background;
         }
     }
 
@@ -152,6 +154,17 @@ static enum screen_status paint_cell(
     }
 
     return SCREEN_STATUS_OK;
+}
+
+static enum screen_status paint_cell(
+    uint32_t column,
+    uint32_t row,
+    char character,
+    const struct surface_rect *clip
+)
+{
+    return paint_cell_colored(column, row, character, clip,
+        foreground_pixel, background_pixel);
 }
 
 static enum screen_status draw_cell(
@@ -837,6 +850,60 @@ enum screen_status screen_write(const char *text)
     }
 
     return SCREEN_STATUS_OK;
+}
+
+enum screen_status screen_draw_text_grid(
+    const char *characters,
+    const uint8_t *attributes,
+    uint32_t columns,
+    uint32_t rows
+)
+{
+    static const uint8_t rgb[16U][3U] = {
+        {0x00U, 0x00U, 0x00U}, {0x00U, 0x00U, 0xaaU},
+        {0x00U, 0xaaU, 0x00U}, {0x00U, 0xaaU, 0xaaU},
+        {0xaaU, 0x00U, 0x00U}, {0xaaU, 0x00U, 0xaaU},
+        {0xaaU, 0x55U, 0x00U}, {0xaaU, 0xaaU, 0xaaU},
+        {0x55U, 0x55U, 0x55U}, {0x55U, 0x55U, 0xffU},
+        {0x55U, 0xffU, 0x55U}, {0x55U, 0xffU, 0xffU},
+        {0xffU, 0x55U, 0x55U}, {0xffU, 0x55U, 0xffU},
+        {0xffU, 0xffU, 0x55U}, {0xffU, 0xffU, 0xffU}
+    };
+
+    if (!state.active) {
+        return SCREEN_STATUS_NOT_INITIALIZED;
+    }
+    if (characters == NULL || attributes == NULL || columns == 0U ||
+            rows == 0U || columns > state.columns || rows > state.rows) {
+        return SCREEN_STATUS_NO_ROOM;
+    }
+    image_overlay.active = false;
+    if (surface_fill_rect(&back_buffer, state.viewport, background_pixel) !=
+            SURFACE_STATUS_OK) {
+        return SCREEN_STATUS_DRAW_FAILURE;
+    }
+    for (uint32_t row = 0U; row < rows; ++row) {
+        for (uint32_t column = 0U; column < columns; ++column) {
+            const uint32_t at = row * columns + column;
+            const uint8_t attribute = attributes[at];
+            const uint8_t foreground = attribute & 0x0fU;
+            const uint8_t background = (attribute >> 4U) & 0x0fU;
+            const uint32_t foreground_color = framebuffer_pack(
+                rgb[foreground][0], rgb[foreground][1], rgb[foreground][2]);
+            const uint32_t background_color = framebuffer_pack(
+                rgb[background][0], rgb[background][1], rgb[background][2]);
+
+            cells[row * SCREEN_MAX_COLUMNS + column] = characters[at];
+            if (paint_cell_colored(column, row, characters[at], NULL,
+                    foreground_color, background_color) != SCREEN_STATUS_OK) {
+                return SCREEN_STATUS_DRAW_FAILURE;
+            }
+        }
+    }
+    state.column = 0U;
+    state.row = rows < state.rows ? rows : state.rows - 1U;
+    return surface_present(&back_buffer) == SURFACE_STATUS_OK ?
+        SCREEN_STATUS_OK : SCREEN_STATUS_DRAW_FAILURE;
 }
 
 struct screen_state screen_get_state(void)
