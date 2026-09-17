@@ -17,7 +17,7 @@ import zlib
 from pathlib import Path
 
 
-PROOF = b"OpenRFS: Boot Ledger installed proof passed"
+PROOF = b"OpenRFS: BT11 Boot Ledger installed proof passed"
 
 
 class Qmp:

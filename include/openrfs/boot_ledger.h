@@ -16,6 +16,10 @@
  * plan construction nor validation may depend on the heap they are meant to
  * authorize.
  */
+/* Project-owned boot dependency and receipt system. */
+#define BOOT_LEDGER_CODENAME "BT11"
+#define BOOT_LEDGER_DISPLAY_NAME "BT11 Boot Ledger"
+
 #define BOOT_LEDGER_STAGE_CAPACITY 57U
 #define BOOT_LEDGER_RECEIPT_CAPACITY 57U
 #define BOOT_STAGE_CAPABILITY_CAPACITY 23U

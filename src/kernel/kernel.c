@@ -92,7 +92,7 @@ static void report_ledger_refusal(
     const struct boot_context *context
 )
 {
-    console_write("OpenRFS: Boot Ledger refusal: ");
+    console_write("OpenRFS: BT11 Boot Ledger refusal: ");
     console_write(boot_ledger_status_string(ledger->status));
 
     if (ledger->refusal_stage != BOOT_STAGE_INVALID) {
@@ -126,7 +126,7 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
 
     /* Pure and bounded; runs before PAT, WBINVD or CR3 replacement. */
     if (!boot_ledger_self_test()) {
-        console_panic("Boot Ledger planner self-test failed");
+        console_panic("BT11 Boot Ledger planner self-test failed");
     }
 
     status = boot_plan_build(&installed_ledger);
@@ -155,7 +155,7 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
     }
 
     boot_ledger_publish(&installed_ledger);
-    console_write("OpenRFS: Boot Ledger installed proof passed\n");
+    console_write("OpenRFS: BT11 Boot Ledger installed proof passed\n");
     if (!openrfsfs_self_test(&filesystem_tests)) {
         console_panic("FAT32 store self-test failed");
     }

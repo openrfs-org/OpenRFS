@@ -2564,7 +2564,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 		  ! grep -Fxq 'OpenRFS: keyboard decoded "hiI" from injected scancodes' "$$log" || \
 		  ! grep -Fq 'OpenRFS: keyboard established' "$$log" || \
 		  ! grep -Fq 'OpenRFS: keyboard passed' "$$log" || \
-		  ! grep -Fq 'OpenRFS: Boot Ledger installed proof passed' "$$log" || \
+		  ! grep -Fq 'OpenRFS: BT11 Boot Ledger installed proof passed' "$$log" || \
 		  ! grep -Fq 'OpenRFS: font verified' "$$log" || \
 		  ! grep -Eq '^OpenRFS: PS/2 pointer (available|unavailable: .+)$$' "$$log" || \
 		  ! grep -Fq 'OpenRFS: layout validated' "$$log" || \
@@ -2638,7 +2638,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 				diagnostics_ok=false ;; \
 		boot-ledger) \
 			grep -Eq '^ST LEDGER stages [1-9][0-9]* receipts [1-9][0-9]* capabilities [1-9][0-9]* skips [0-9]+ fingerprint 0x[0-9A-F]{16}$$' "$$log" && \
-			grep -Fxq 'OpenRFS: Boot Ledger installed proof passed' "$$log" || \
+			grep -Fxq 'OpenRFS: BT11 Boot Ledger installed proof passed' "$$log" || \
 				diagnostics_ok=false ;; \
 		openrfs-proof) \
 		grep -Eq '^ST OPENRFS_PROOF geometry 1024x768 apps 5 events [1-9][0-9]* windows [1-9][0-9]* cursor [1-9][0-9]* damage [1-9][0-9]* fingerprint 0x[0-9A-F]{16}$$' "$$log" && \

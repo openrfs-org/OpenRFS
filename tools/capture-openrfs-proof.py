@@ -21,7 +21,7 @@ from pathlib import Path
 import fat32_image
 
 
-PROOF_LINE = b"OpenRFS: Boot Ledger installed proof passed"
+PROOF_LINE = b"OpenRFS: BT11 Boot Ledger installed proof passed"
 TERMINAL_COMMAND = "echo openrfs"
 TERMINAL_RESULT = b"echo openrfs\nopenrfs\nopenrfs$ "
 PROMPT = b"openrfs$ "

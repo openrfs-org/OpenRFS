@@ -1,8 +1,8 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 
-# Boot Ledger
+# BT11 Boot Ledger
 
-OpenRFS models startup as a validated dependency graph instead of a call list in
+BT11 is OpenRFS's project-owned boot ledger codename. OpenRFS models startup as a validated dependency graph instead of a call list in
 `kernel_main`. Each descriptor names a stable stage ID, phase, prerequisites,
 provided capabilities, optional policy, irreversible class, and execution
 function.

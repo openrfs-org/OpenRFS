@@ -7,7 +7,7 @@ boots through Multiboot2, installs its own memory and interrupt foundations,
 discovers emulated hardware, and can hand control to the OpenRFS workspace
 or one of the bounded QEMU proof scenarios.
 
-Source, headers, self-tests, and the Boot Ledger define the implementation. This
+Source, headers, self-tests, and the BT11 Boot Ledger define the implementation. This
 page maps those pieces by subsystem.
 
 ## Boot and CPU boundary
@@ -159,7 +159,7 @@ received frame is still being parsed resolves its hardware address from the
 cache or defers, never by pumping the device again. That ordering is what lets
 a handler answer the frame it is reading at all.
 
-The Boot Ledger records networking after time, heap, paging, PCI, dynamic
+The BT11 Boot Ledger records networking after time, heap, paging, PCI, dynamic
 vectors, DMA, interrupts and the closed boot proofs, and before First
 Environment construction. NIC absence or link-down is a healthy availability
 decision; malformed initialization is a failed stage. See
