@@ -17,12 +17,13 @@ Branch status
 * Current product identity: OpenRFS.
 * Current branch purpose: preserve and complete the writable ext4plus work.
 * Divergence at this update: 355 branch-only commits and 8 `main`-only commits.
-* Implementation and verified milestone progress: **4.3 of 5**.
+* Project-tracked milestone progress: **4.3 of 5**.
 * Remaining work: the final 0.7 of the acceptance plan; Stage 5 is not complete.
 * Exact-head CI: the previous branch tip had no GitHub check runs. A green claim
   requires fresh checks on the final forward-ported head.
 
-The `4.3/5` value is the current verified progress, not a claim of full
+The `4.3/5` value is the current project-tracked progress. It has not been
+independently reverified on this exact branch head and is not a claim of full
 completion. It reaches `5/5` only when the remaining acceptance work has
 complete, inspected evidence on the exact branch head.
 

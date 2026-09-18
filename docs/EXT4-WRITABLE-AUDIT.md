@@ -6,16 +6,17 @@
 > product name. This branch forked before the repository-wide rename and still
 > contains legacy `phipia` source paths, ABI identifiers, fixtures, and commit
 > history that must be reconciled during the forward port. The implementation
-> has advanced to **4.3/5 verified**. The remaining 0.7 of the acceptance plan
-> is unfinished, so this is not Stage 5 completion, release certification, or
-> an exact-head green-check claim.
+> records **4.3/5 project-tracked progress**. That figure has not been
+> independently reverified on this exact branch head. The remaining 0.7 of the
+> acceptance plan is unfinished, so this is not Stage 5 completion, release
+> certification, or an exact-head green-check claim.
 
 Historical baseline: `804c6ac065d92813e604b971f912383c3addf350`
 (from the PR #72 development history).
 This is a source audit of the existing writable implementation, not a release
 certification. The matrix below preserves that baseline, not current status.
 Stage 1 subsequently passed its host/e2fsprogs gates at `771ab6c`. Later work
-advanced the tracked status to **4.3/5 verified**. See
+advanced the project-tracked status to **4.3/5**. See
 [the current ext4 boundary](EXT4.md) for the tested feature profile and later
 Linux evidence; the remaining 0.7 and release/review completion remain open.
 The acceptance contract is everyday VFS semantics for the exact profile below;
