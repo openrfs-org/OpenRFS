@@ -434,10 +434,6 @@
 
 <p align="center"><samp>Use your own name and email in commits and take responsibility for the patch you submit.</samp></p>
 
-<p align="center"><samp>Do not add coding assistants, bots, or tools as commit authors or co-authors.</samp></p>
-
-<p align="center"><samp>Tools may help produce a change. The human submitting it remains the author and the reviewer-facing owner.</samp></p>
-
 <h3 align="center"><samp>Contributor conduct</samp></h3>
 
 <p align="center"><samp>Discuss code and evidence directly. Be specific, patient, and respectful.</samp></p>
