@@ -17,16 +17,14 @@ Branch status
 * Current product identity: OpenRFS.
 * Current branch purpose: preserve and complete the writable ext4plus work.
 * Divergence at this update: 355 branch-only commits and 8 `main`-only commits.
-* Implementation: extensive Stage 2 filesystem, VFS, recovery, durability, and
-  fault-injection work exists on this branch.
-* Verified milestone gates: 1 of 5. Stage 1 has recorded host/e2fsprogs evidence
-  at `771ab6c`; the complete Stage 2 gate is not yet established.
+* Implementation and verified milestone progress: **4.3 of 5**.
+* Remaining work: the final 0.7 of the acceptance plan; Stage 5 is not complete.
 * Exact-head CI: the previous branch tip had no GitHub check runs. A green claim
   requires fresh checks on the final forward-ported head.
 
-The `1/5` value is a verification count, not an implementation-progress count.
-It must advance only when the corresponding acceptance gate has complete,
-inspected evidence on the exact branch head.
+The `4.3/5` value is the current verified progress, not a claim of full
+completion. It reaches `5/5` only when the remaining acceptance work has
+complete, inspected evidence on the exact branch head.
 
 Current technical boundary
 --------------------------

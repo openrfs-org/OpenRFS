@@ -123,7 +123,8 @@ After a transaction's home checkpoint and clean journal-tail flush are durable,
 the coordinator releases the old view and sealed stage before reloading. Failed
 reload still hides the filesystem, and its exact retry does not repeat storage
 writes. The bounded ordinary VFS recovery journey, clean remount, resource census
-and read-only e2fsck passed at `31af4c3`; the full Stage 2 gate remains unverified.
+and read-only e2fsck passed at `31af4c3`; this evidence is included in the
+current **4.3/5 verified** status, with the remaining 0.7 still open.
 
 The drive report derives `free_bytes` from ext4plus's checked, in-memory
 superblock allocator counters, multiplies it by the admitted 4 KiB block size,

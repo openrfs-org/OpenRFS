@@ -6,19 +6,18 @@
 > product name. This branch forked before the repository-wide rename and still
 > contains legacy `phipia` source paths, ABI identifiers, fixtures, and commit
 > history that must be reconciled during the forward port. The implementation
-> has advanced substantially into Stage 2, but the formal verified-gate count
-> remains **1/5**: Stage 1 has evidence, while the complete Stage 2 acceptance
-> gate and exact-head GitHub checks have not been established. `1/5` is a
-> verification count, not a claim that only one fifth of the code exists.
+> has advanced to **4.3/5 verified**. The remaining 0.7 of the acceptance plan
+> is unfinished, so this is not Stage 5 completion, release certification, or
+> an exact-head green-check claim.
 
 Historical baseline: `804c6ac065d92813e604b971f912383c3addf350`
 (from the PR #72 development history).
 This is a source audit of the existing writable implementation, not a release
 certification. The matrix below preserves that baseline, not current status.
-Stage 1 subsequently passed its host/e2fsprogs gates at `771ab6c`; the formal
-gate status remains **1/5 verified**. Stage 2 implementation continues. See
+Stage 1 subsequently passed its host/e2fsprogs gates at `771ab6c`. Later work
+advanced the tracked status to **4.3/5 verified**. See
 [the current ext4 boundary](EXT4.md) for the tested feature profile and later
-Linux evidence; stages 2–5 and release/review completion remain unproven.
+Linux evidence; the remaining 0.7 and release/review completion remain open.
 The acceptance contract is everyday VFS semantics for the exact profile below;
 neither upstream APIs nor synthetic journal tests alone establish that contract.
 
