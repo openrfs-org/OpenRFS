@@ -1,78 +1,45 @@
-<p align="center">
-  <img src="assets/phipia/logo.png" alt="Phipia logo" width="170">
-</p>
+OpenRFS writable ext4plus development branch
+============================================
 
-<h1 align="center">Phipia New Generation</h1>
+OpenRFS is a small, privacy-focused, Unix-like operating system built from
+scratch for x86_64.
 
-<p align="center"><strong>An x86_64 operating system built from first principles.</strong></p>
+This branch preserves the in-progress writable ext4plus work. It forked before
+the repository-wide OpenRFS rename, so many source paths, ABI identifiers,
+fixtures, and historical commits still contain the former `phipia` name. Those
+names describe the branch's ancestry and current forward-porting work; they are
+not the current product identity. The authoritative OpenRFS product tree and
+project README are on `main`.
 
-<p align="center">
-  <a href="https://github.com/saudaljuaid/Phipia/actions/workflows/verify.yml"><img src="https://github.com/saudaljuaid/Phipia/actions/workflows/verify.yml/badge.svg" alt="verification status"></a>
-  <img src="https://img.shields.io/badge/release-2.2.0-0078D7" alt="Phipia 2.2.0">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--only-595976" alt="GPL-3.0-only"></a>
-</p>
+Branch status
+-------------
 
-<p align="center">
-  <img src="assets/phipia/desktop.png" alt="Phipia desktop" width="820">
-</p>
+* Current product identity: OpenRFS.
+* Current branch purpose: preserve and complete the writable ext4plus work.
+* Divergence at this update: 355 branch-only commits and 8 `main`-only commits.
+* Implementation: extensive Stage 2 filesystem, VFS, recovery, durability, and
+  fault-injection work exists on this branch.
+* Verified milestone gates: 1 of 5. Stage 1 has recorded host/e2fsprogs evidence
+  at `771ab6c`; the complete Stage 2 gate is not yet established.
+* Exact-head CI: the previous branch tip had no GitHub check runs. A green claim
+  requires fresh checks on the final forward-ported head.
 
-## Main mission
+The `1/5` value is a verification count, not an implementation-progress count.
+It must advance only when the corresponding acceptance gate has complete,
+inspected evidence on the exact branch head.
 
-Our mission is to provide a stable and truthful operating system to the modern world!
+Current technical boundary
+--------------------------
 
-## About
+The detailed implementation and evidence boundary is documented in
+`docs/EXT4.md`. The historical audit and gate definitions are in
+`docs/EXT4-WRITABLE-AUDIT.md`.
 
-Phipia is an operating system built from scratch. The current graphical shell
-is Phipia New Generation, based on the Phipia 2.2.0 development release.
+Before this work can merge, it must be forward-ported onto current `main`, the
+remaining legacy product identity must be reconciled without breaking ABI and
+fixture provenance, deleted applications must stay deleted, and every required
+filesystem, NVMe, VFS, package, networking, and release check must pass on the
+resulting exact head.
 
-## Highlights
-
-- A 64-bit kernel built from scratch — no Linux inside.
-- Drivers for real hardware: NVMe, USB, audio, networking.
-- Runs real outside software — Lua and SQLite, natively.
-- 117 automated QEMU scenarios on every change, including reboot and
-  deliberate power-cut recovery paths.
-
-## Build and boot
-
-Ubuntu 24.04 (or similar), with a few standard tools.
-
-```sh
-sudo apt-get install binutils gcc grub-common grub-pc-bin make mtools \
-    qemu-system-x86 xorriso
-rustup target add x86_64-unknown-none
-
-make run
-```
-
-That's it — it boots straight into QEMU. Run `make verify` first if you
-want the full test suite to pass before you trust it!
-
-## Design
-
-C and assembly handle anything that touches real hardware. Rust's job is
-narrower: check any bytes the kernel didn't create itself — a file, a
-network packet — before C ever touches them. That same Rust also runs
-native applications.
-
-There's a Boot Ledger too — it just keeps track of what's started and in
-what order, so nothing boots blind.
-
-## Documentation
-
-- [Architecture](docs/ARCHITECTURE.md)
-- [Phipia New Generation UI](docs/PHIPIA.md)
-- [Persistent FAT32](docs/FAT32.md)
-- [Networking](docs/NETWORKING.md)
-- [Processes](docs/MULTIPROCESS.md)
-- [Drivers](docs/DRIVERS.md)
-- [HD Audio](docs/AUDIO.md)
-- [SDL 2](docs/SDL.md)
-- [NVIDIA](docs/NVIDIA.md)
-- [Linux syscall boundary](docs/LINUX_SYSCALL_ABI.md)
-- [Rust boundary](docs/RUST.md)
-- [Verification](docs/VERIFICATION.md)
-- [Third-party assets](docs/THIRD_PARTY_ASSETS.md)
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) before sending changes. Phipia is
-licensed under [GPL-3.0-only](LICENSE).
+This branch is development evidence. It is not an everyday-use certification,
+an anonymity claim, or a release-ready tree.
