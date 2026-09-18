@@ -98,6 +98,14 @@ impl JournalBlockImage {
     }
 
     #[cfg(feature = "sync")]
+    pub(super) fn try_from_staged(
+        block_index: u64,
+        bytes: &[u8],
+    ) -> Result<Self, JournalTransactionError> {
+        Ok(Self { block_index, bytes: try_copy_bytes(bytes)? })
+    }
+
+    #[cfg(feature = "sync")]
     pub(super) fn from_staged(block_index: u64, bytes: Vec<u8>) -> Self {
         debug_assert_eq!(bytes.len(), JOURNAL_BLOCK_BYTES);
         Self { block_index, bytes }

@@ -761,9 +761,11 @@ int main(void)
             (field < 2U ? PHIPFS_STATUS_INVALID_ARGUMENT : PHIPFS_STATUS_RANGE));
     }
     assert(ext4_backend_set_times(PHIPFS_VOLUME_DATA, "file", NULL) == PHIPFS_STATUS_INVALID_ARGUMENT);
-    assert(ext4_backend_chmod(PHIPFS_VOLUME_DATA, "file", 010000U) == PHIPFS_STATUS_INVALID_ARGUMENT);
-    assert(ext4_backend_chmod(PHIPFS_VOLUME_DATA, "file", UINT16_MAX) == PHIPFS_STATUS_INVALID_ARGUMENT);
-    assert(opens == before_invalid_metadata && changed_mode == 0640U);
+    /* chmod ignores stat's file-type bits, so a stat -> chmod mode round-trips. */
+    assert(ext4_backend_chmod(PHIPFS_VOLUME_DATA, "file", 0100640U) == PHIPFS_STATUS_OK);
+    assert(changed_mode == 0640U);
+    assert(ext4_backend_chmod(PHIPFS_VOLUME_DATA, "file", UINT16_MAX) == PHIPFS_STATUS_OK);
+    assert(opens == before_invalid_metadata + 2U && changed_mode == 07777U);
     permanent_status = PHIPIA_EXT4_STATUS_IO;
     assert(ext4_backend_set_times(PHIPFS_VOLUME_DATA, "file", &times) == PHIPFS_STATUS_IO);
     permanent_status = PHIPIA_EXT4_STATUS_OK;

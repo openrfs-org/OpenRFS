@@ -1129,7 +1129,7 @@ fn commit_staged_mutation(
     let target_inode = mutation_target_inode(mounted, &path);
     let checkpointed_superblock = match mounted
         .stage
-        .staged_images()
+        .try_staged_images().map_err(|_| Status::Range)?
         .into_iter()
         .find(|image| image.block_index() == 0)
         .map(|image| {
@@ -1296,16 +1296,19 @@ fn resume_write_request(mounted: &mut Mounted) -> Result<usize, Status> {
             Ok(written) if written != 0 && written <= length => request.completed += written,
             Ok(_) => return Err(Status::Invalid),
             Err(error) => {
-                if mounted.pending_mutation.is_some() {
-                    // An unknown durable prefix owns this exact chunk. Keep the
-                    // whole request and its already checkpointed byte count so
-                    // retry/sync never allocates or replays earlier chunks twice.
-                    mounted.pending_write = Some(request);
-                    return Err(error);
-                }
-                // Setup/ENOSPC rolled back this chunk before storage started.
-                // A completed prefix is a normal short write; it stays durable.
-                return if request.completed != 0 { Ok(request.completed) } else { Err(error) };
+                // Keep the whole request even when recovery-marker activation or
+                // another pre-prepare storage operation failed before a journal
+                // mutation was installed. Dropping it would make fsync return
+                // success while the bytes were never written.
+                let completed = request.completed;
+                mounted.pending_write = Some(request);
+                // A capacity refusal after a durable prefix remains a normal
+                // short write, but the unfinished suffix is still retryable.
+                return if error == Status::Full && completed != 0 {
+                    Ok(completed)
+                } else {
+                    Err(error)
+                };
             }
         }
     }
@@ -1708,7 +1711,9 @@ where F: FnOnce(&Ext4, &mut Inode) -> Result<(), Ext4Error> {
 }
 
 pub(crate) fn chmod(mounted: &mut Mounted, path: &[u8], mode: u16) -> Result<(), Status> {
-    if mode & !0o7777 != 0 { return Err(Status::Invalid); }
+    // chmod(2) operates on permission and special bits; the file-type bits
+    // returned by stat are ignored, so stat -> chmod must round-trip.
+    let mode = mode & 0o7777;
     mutate_inode(mounted, path, PendingMutationKind::Chmod, Vec::from(mode.to_le_bytes()),
         |filesystem, inode| {
             inode.chmod_with_acl(filesystem,

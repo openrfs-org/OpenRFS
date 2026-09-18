@@ -88,24 +88,24 @@ are test locations, not a claim that this audit head has passed them.
 | --- | --- | --- |
 | read / pread | Implemented, bounded | offset read, lazy extent validation; pread preserves cursor; no concurrent-read proof |
 | aligned / unaligned write, overwrite | Partial | one staged transaction; initialized touched blocks are ordered data; no large-request splitting |
-| append | Refused as an atomic operation | seek-to-end followed by write exists; access enum has only read/write/read-write |
+| append | Implemented, bounded | inode-identity append path retains its offset and retries the unfinished request; concurrent writer proof remains bounded |
 | sparse extension / hole read | Partial | hole-backed growth and zero reads are covered by the focused coordinator case; unaligned boundary writes, exact retries, and the 64 MiB/256 KiB bounds are exercised when the Linux fixture is available; no broad fragmented-scale claim |
 | truncate grow / shrink | Partial | grow, partial-block shrink, re-extension, revoke/reclaim, retained retries, shared EOF, and bounded refusal are covered by the focused case; broader large-free and power-cut coverage remains outside this scope |
-| create | Implemented, bounded | empty regular file; mode limited to 0777, default 0644 |
+| create | Implemented, bounded | empty regular file; caller-supplied mode is preserved within the admitted 07777 permission/special-bit mask |
 | mkdir / rmdir | Partial | dot/dotdot and counts handled; removal explicitly requires one-block empty directory |
 | hard link | Implemented, bounded | regular-file path; same inode identity; bounded u16 links and transaction size |
-| symlink / readlink | Refused through VFS | existing symlinks followed and mount-validated; no creation/readlink method in backend contract |
-| unlink | Partial | live inode handles return BUSY; no deferred last-close deletion/orphan lifecycle |
-| rename | Partial | no-overwrite files cross parents; directories same-parent; open source inode BUSY; replacement and cross-parent directories absent |
-| stat | Partial | size, identity, uid/gid/mode/links; no timestamps/xattrs/sparse map in public structure |
-| directory iteration | Partial | bounded ordinal rescan; quadratic; no stable mutation cookies or snapshot semantics |
+| symlink / readlink | Implemented, bounded | literal target creation and readback are exposed; traversal and loop bounds remain enforced |
+| unlink | Partial | final-link removal retains open inodes through the bounded orphan chain; broader orphan scale remains limited |
+| rename | Partial | no-replace and replacement paths cover files and supported directories; open handles and ancestry remain bounded |
+| stat | Partial | size, identity, uid/gid/mode/links and nanosecond timestamps are exported; sparse-map inspection remains private |
+| directory iteration | Partial | bounded `DirectorySnapshot` preserves captured entries and inode identities; bulk and scale limits remain |
 | sync | Implemented, bounded | finish retained plan and durably clean marker; clean view reload required |
 | fsync(file) | Implemented, bounded | inode-identity retry through the existing commit/checkpoint executor; unrelated retained work remains owned by its mutation or volume sync |
 | close | Partial | releases cookie only; a previously failed write is not implicitly completed |
 | clean unmount | Implemented, bounded | VFS references must be zero; pending plan and clean census checked; retries retained |
 | access / permissions | Partial | handle access bits enforced; mode preserved on create/stat; backend open does not authorize credentials against inode mode |
 | timestamps | Partial | mount validates stored timestamps; public stat/set-time interface absent; mutation timestamp policy unproven |
-| xattrs | Refused for public access/mutation | mount validates names/values; admitted ext_attr bit is not a public xattr API |
+| xattrs | Implemented, bounded | user xattr get/set/remove and ACL-aware inode updates are journaled; namespace and size bounds remain |
 | ENOSPC / inode exhaustion | Partial | block/inode ENOSPC and read-only refusals now retain dedicated Rust/C/VFS errors; real low-space rollback test added, full exhaustion matrix pending |
 | crash recovery | Implemented, bounded | checksum/sequence/revoke validation, wrap and marker-only state; ten bounded QEMU cuts are not the release matrix |
 | multiple handles / concurrency | Partial | bounded generation-authenticated handles; synchronous single-core path; no append race or parallel writer proof |
@@ -118,7 +118,7 @@ are test locations, not a claim that this audit head has passed them.
   ext4plus ordinary/recovery writer admission also refuses permanent readonly
   and unsupported ro-compat states. No bigalloc, encryption, inline data,
   casefold, external journal, fast-commit or arbitrary ext4 profile support.
-- Stage has **64 total images**, shared by file data and metadata, and 64 revokes.
+- Stage has **64 total images**, shared by file data and metadata, and up to **8,192 revokes**.
   The transaction format separately bounds ordered data and metadata to 64 each;
   that does not double stage capacity. Requests now split into transactions
   touching at most 32 data blocks, with unaligned first/last blocks included.
@@ -169,9 +169,10 @@ ring ordering/abort/wrap, corruption, replay and mapped durability prefixes.
 Its deterministic fixture covers real journal discovery, allocation-bearing
 write, failed classification followed by object discard and rollback, bitmap/
 superblock checksums, truncate revoke, replay counters and read-only e2fsck.
-The vendored superblock readonly unit test references an upstream
-`src/test_data/raw_superblock.bin` that is absent from this tree; its presence in
-source is not runnable evidence. The real-fixture test now exercises both
+The vendored `ext4plus` crate's own test module currently does not compile in
+this tree: its upstream `test_data` fixtures are absent, several tests require
+an undeclared `tempfile` dev-dependency, and two async/bitmap tests are not valid
+in the synchronous test configuration. The real-fixture test now exercises both
 ordinary and coordinator loaders with checksummed permanent-readonly and unknown
 ro-compat images, with/without recovery, and requires mutation refusal with an
 empty stage and unchanged backing bytes.

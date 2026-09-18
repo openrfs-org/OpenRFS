@@ -210,6 +210,19 @@ impl JournalMutationStage {
             .collect()
     }
 
+    /// Fallibly snapshot every complete staged block image for kernel paths.
+    pub fn try_staged_images(&self) -> Result<Vec<JournalBlockImage>, JournalTransactionError> {
+        let state = self.state.read();
+        let mut images = Vec::new();
+        images
+            .try_reserve_exact(state.blocks.len())
+            .map_err(|_| JournalTransactionError::TooManyBlocks)?;
+        for (block_index, bytes) in state.blocks.iter() {
+            images.push(JournalBlockImage::try_from_staged(*block_index, bytes)?);
+        }
+        Ok(images)
+    }
+
     /// Classify one atomic stage snapshot into ordered data and metadata.
     ///
     /// Every named ordered-data block must occur exactly once in this stage.

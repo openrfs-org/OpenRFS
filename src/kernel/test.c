@@ -6228,8 +6228,8 @@ static _Noreturn void ext4_vfs_metadata_powercut(bool changing_times)
     struct phipfs_times invalid = times;
     invalid.mtime_nanos = 1000000000U;
     if (phipfs_set_times(volume, name, &invalid) != PHIPFS_STATUS_INVALID_ARGUMENT ||
-        phipfs_chmod(volume, name, 010000U) != PHIPFS_STATUS_INVALID_ARGUMENT)
-        kernel_test_fail("ext4 metadata cut invalid fields were admitted");
+        phipfs_chmod(volume, name, 0100640U) != PHIPFS_STATUS_OK)
+        kernel_test_fail("ext4 metadata cut invalid fields or stat mode round-trip failed");
     const phipfs_handle held[] = { file, reader };
     for (size_t index = 0U; index < 2U; ++index) {
         ext4_vfs_require(phipfs_fstat(held[index], &after), "metadata cut shared inode");

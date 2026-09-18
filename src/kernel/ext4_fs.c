@@ -2343,13 +2343,14 @@ enum phipfs_status ext4_backend_chmod(enum phipfs_volume volume,
     const char *path, uint16_t mode)
 {
     const size_t length = path_length(path);
-    if (!valid_volume(volume) || length == 0U || length >= PHIPFS_MAX_PATH || (mode & ~07777U) != 0U) {
+    const uint16_t permissions = (uint16_t)(mode & 07777U);
+    if (!valid_volume(volume) || length == 0U || length >= PHIPFS_MAX_PATH) {
         return PHIPFS_STATUS_INVALID_ARGUMENT;
     }
     struct ext4_mount_state *mount = &ext4_mounts[volume];
     enum phipfs_status status = begin_operation(mount, true);
     if (status != PHIPFS_STATUS_OK) return status;
-    status = map_status(phipia_ext4_chmod(mount->rust_mount, (const uint8_t *)path, length, mode));
+    status = map_status(phipia_ext4_chmod(mount->rust_mount, (const uint8_t *)path, length, permissions));
     enum phipfs_status close_status = end_operation(mount, NULL);
     return status != PHIPFS_STATUS_OK ? status : close_status;
 }

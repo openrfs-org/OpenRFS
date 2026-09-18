@@ -5991,9 +5991,9 @@ fn bounded_sparse_growth_partial_write_and_truncate_retry_contract() {
     let mut holes = vec![0xa5; grown_size];
     read_exact(&mounted, name, &mut holes);
     assert!(holes.iter().all(|byte| *byte == 0), "grown sparse range was not zero-filled");
+    let growth_events = DEVICE.with_borrow(|device| device.events.clone());
     ext4::sync(&mut mounted).unwrap();
     let grown_disk = DEVICE.with_borrow(|device| device.bytes.clone());
-    let growth_events = DEVICE.with_borrow(|device| device.events.clone());
     retry_truncate_case(&initial, name, grown_size as u64, &growth_events, &grown_disk);
     drop(mounted);
 
@@ -6006,9 +6006,9 @@ fn bounded_sparse_growth_partial_write_and_truncate_retry_contract() {
     let mut actual = vec![0xa5; grown_size];
     read_exact(&mounted, name, &mut actual);
     assert_eq!(actual, expected, "unaligned sparse overwrite changed the wrong bytes");
+    let write_events = DEVICE.with_borrow(|device| device.events.clone());
     ext4::sync(&mut mounted).unwrap();
     let written_disk = DEVICE.with_borrow(|device| device.bytes.clone());
-    let write_events = DEVICE.with_borrow(|device| device.events.clone());
     retry_write_case(&grown_disk, name, write_offset, &source, &write_events, &written_disk);
     drop(mounted);
 
@@ -6018,9 +6018,9 @@ fn bounded_sparse_growth_partial_write_and_truncate_retry_contract() {
     let mut actual = vec![0xa5; shrink_size];
     read_exact(&mounted, name, &mut actual);
     assert_eq!(actual, expected[..shrink_size], "partial-block shrink lost retained data");
+    let shrink_events = DEVICE.with_borrow(|device| device.events.clone());
     ext4::sync(&mut mounted).unwrap();
     let shrunk_disk = DEVICE.with_borrow(|device| device.bytes.clone());
-    let shrink_events = DEVICE.with_borrow(|device| device.events.clone());
     retry_truncate_case(&written_disk, name, shrink_size as u64, &shrink_events, &shrunk_disk);
 
     let before_bounds = DEVICE.with_borrow(|device| (device.bytes.clone(), device.events.clone()));
