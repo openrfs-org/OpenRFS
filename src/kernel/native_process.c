@@ -18,6 +18,7 @@
 #include <openrfs/native_handle.h>
 #include <openrfs/native_image.h>
 #include <openrfs/native_syscall.h>
+#include <openrfs/native_teardown_diagnostics.h>
 #include <openrfs/network.h>
 #include <openrfs/keyboard.h>
 #include <openrfs/paging.h>
@@ -176,6 +177,7 @@ struct native_process {
     struct paging_process_space address_space;
     struct paging_process_alias_set aliases;
     struct native_handle_table handles;
+    struct native_process_teardown_report teardown_report;
     struct native_thread threads[NATIVE_THREAD_LIMIT];
     struct native_page pages[NATIVE_PROCESS_PAGE_LIMIT];
     struct native_directory_resource directories[NATIVE_HANDLE_LIMIT];
@@ -805,14 +807,17 @@ static int64_t filesystem_error(enum openrfsfs_status status)
     case OPENRFSFS_STATUS_BUSY:
         return -OPENRFS_EBUSY;
     case OPENRFSFS_STATUS_NO_HANDLES:
-        return -OPENRFS_ENOMEM;
+        return -OPENRFS_EMFILE;
     case OPENRFSFS_STATUS_STALE_HANDLE:
         return -OPENRFS_ESTALE;
     case OPENRFSFS_STATUS_FULL:
     case OPENRFSFS_STATUS_DIRECTORY_FULL:
         return -OPENRFS_ENOSPC;
     case OPENRFSFS_STATUS_NAME:
+    case OPENRFSFS_STATUS_NAME_TOO_LONG:
         return -OPENRFS_ENAMETOOLONG;
+    case OPENRFSFS_STATUS_SYMLINK_LOOP:
+        return -OPENRFS_ELOOP;
     case OPENRFSFS_STATUS_PATH:
     case OPENRFSFS_STATUS_INVALID_ARGUMENT:
     case OPENRFSFS_STATUS_RANGE:
@@ -935,13 +940,21 @@ static void window_finalize_if_unreferenced(struct native_process *process)
     }
 }
 
-static bool window_release_surface(struct native_process *process)
+static bool window_release_surface_report(
+    struct native_process *process,
+    bool *consumed
+)
 {
     struct native_window_state *window;
     const bool enabled = cpu_interrupts_enabled();
     bool success = true;
+    bool surface_released = true;
     size_t page_count;
 
+    if (consumed == NULL) {
+        return false;
+    }
+    *consumed = false;
     if (process == NULL || !process->window.allocated) {
         return false;
     }
@@ -953,10 +966,14 @@ static bool window_release_surface(struct native_process *process)
         ui_native_window_close(window->ui_slot) != UI_STATUS_OK) {
         success = false;
     }
+    if (ui_native_window_is_open(window->ui_slot)) {
+        surface_released = false;
+    } else {
+        *consumed = true;
+    }
     page_count = (window->surface_bytes + PAGING_PAGE_SIZE - 1U) /
         PAGING_PAGE_SIZE;
     for (size_t page = 0U; page < page_count; ++page) {
-        struct native_page removed;
         const uint64_t address = window->surface_address +
             page * PAGING_PAGE_SIZE;
         struct native_page *record = page_at(process, address);
@@ -964,6 +981,7 @@ static bool window_release_surface(struct native_process *process)
         if (record == NULL ||
             record->kind != PAGING_PROCESS_MAPPING_NATIVE_SURFACE) {
             success = false;
+            surface_released = false;
             continue;
         }
         if (record->mapped &&
@@ -971,30 +989,51 @@ static bool window_release_surface(struct native_process *process)
                 PAGING_PROCESS_MAPPING_NATIVE_SURFACE, address) !=
                     PAGING_STATUS_OK) {
             success = false;
+            surface_released = false;
             continue;
         }
-        if (!remove_page_record(process, address, &removed) ||
-            !release_page_frame(&removed)) {
+        record->mapped = false;
+        *consumed = true;
+        if (!release_page_frame(record)) {
             success = false;
+            surface_released = false;
+            continue;
+        }
+        if (!remove_page_record(process, address, NULL)) {
+            success = false;
+            surface_released = false;
+            continue;
         }
     }
     if (window->shadow_pixels != NULL &&
         heap_free(window->shadow_pixels) != HEAP_STATUS_OK) {
         success = false;
+        surface_released = false;
+    } else if (window->shadow_pixels != NULL) {
+        window->shadow_pixels = NULL;
+        *consumed = true;
     }
-    window->shadow_pixels = NULL;
-    window->surface_address = 0U;
-    window->surface_bytes = 0U;
-    window->visible = false;
-    window->window_object_open = false;
+    if (surface_released) {
+        window->surface_address = 0U;
+        window->surface_bytes = 0U;
+        window->visible = false;
+        window->window_object_open = false;
+        window_finalize_if_unreferenced(process);
+    }
     if (enabled) {
         cpu_interrupt_enable();
     }
-    window_finalize_if_unreferenced(process);
     return success;
 }
 
-static bool close_resource(
+static bool window_release_surface(struct native_process *process)
+{
+    bool consumed;
+
+    return window_release_surface_report(process, &consumed);
+}
+
+static enum native_resource_close_result close_resource(
     uint8_t type,
     const struct native_resource *resource,
     void *context
@@ -1003,74 +1042,98 @@ static bool close_resource(
     struct native_process *process = context;
 
     if (resource == NULL || process == NULL) {
-        return false;
+        return NATIVE_RESOURCE_RETAINED;
     }
     switch (type) {
-    case OPENRFS_HANDLE_FILE:
-        return openrfsfs_close((openrfsfs_handle)resource->words[0]) == OPENRFSFS_STATUS_OK;
-    case OPENRFS_HANDLE_DIRECTORY:
+    case OPENRFS_HANDLE_FILE: {
+        bool consumed = false;
+        const enum openrfsfs_status status = openrfsfs_close_report((openrfsfs_handle)resource->words[0], &consumed);
+        return status == OPENRFSFS_STATUS_OK ? NATIVE_RESOURCE_CLOSED :
+            consumed ? NATIVE_RESOURCE_CLOSED_WITH_ERROR : NATIVE_RESOURCE_RETAINED;
+    }
+    case OPENRFS_HANDLE_DIRECTORY: {
         if (resource->words[0] >= NATIVE_HANDLE_LIMIT) {
-            return false;
+            return NATIVE_RESOURCE_RETAINED;
         }
-        if (openrfsfs_directory_close(
-                process->directories[resource->words[0]].iterator) !=
-                OPENRFSFS_STATUS_OK) {
-            return false;
+        bool consumed = false;
+        const enum openrfsfs_status status = openrfsfs_directory_close_report(
+            process->directories[resource->words[0]].iterator, &consumed);
+        if (!consumed) {
+            return NATIVE_RESOURCE_RETAINED;
         }
         zero_bytes(&process->directories[resource->words[0]],
             sizeof(process->directories[resource->words[0]]));
-        return true;
+        return status == OPENRFSFS_STATUS_OK ? NATIVE_RESOURCE_CLOSED :
+            NATIVE_RESOURCE_CLOSED_WITH_ERROR;
+    }
     case OPENRFS_HANDLE_STREAM:
     case OPENRFS_HANDLE_DATAGRAM:
         return network_close(process->generation,
-            (network_handle)resource->words[0]) == NETWORK_STATUS_OK;
+            (network_handle)resource->words[0]) == NETWORK_STATUS_OK ?
+            NATIVE_RESOURCE_CLOSED : NATIVE_RESOURCE_RETAINED;
     case OPENRFS_HANDLE_TIMER:
-        return true;
+        return NATIVE_RESOURCE_CLOSED;
     case OPENRFS_HANDLE_WINDOW:
         if (!process->window.allocated ||
             process->window.generation != resource->words[1] ||
             process->window.ui_slot != resource->words[0]) {
-            return false;
+            return NATIVE_RESOURCE_RETAINED;
         }
-        return window_release_surface(process);
+        {
+            bool consumed = false;
+            const bool success = window_release_surface_report(process,
+                &consumed);
+
+            return success ? NATIVE_RESOURCE_CLOSED :
+                consumed ? NATIVE_RESOURCE_CLOSED_WITH_ERROR :
+                    NATIVE_RESOURCE_RETAINED;
+        }
     case OPENRFS_HANDLE_EVENT_QUEUE:
         if (!process->window.allocated ||
             process->window.generation != resource->words[1]) {
-            return false;
+            return NATIVE_RESOURCE_RETAINED;
         }
         process->window.event_object_open = false;
         process->window.event_count = 0U;
         process->window.overflow_pending = false;
         window_finalize_if_unreferenced(process);
-        return true;
+        return NATIVE_RESOURCE_CLOSED;
     case OPENRFS_HANDLE_THREAD:
-        return true;
+        return NATIVE_RESOURCE_CLOSED;
     case OPENRFS_HANDLE_AUDIO_OUTPUT: {
         const bool enabled = cpu_interrupts_enabled();
         enum audio_native_status status;
+        bool consumed = false;
 
         cpu_interrupt_disable();
-        status = audio_native_close(process->generation,
-            resource->words[0]);
+        status = audio_native_close_report(process->generation,
+            resource->words[0], &consumed);
         if (enabled) {
             cpu_interrupt_enable();
         }
-        return status == AUDIO_NATIVE_OK;
+        return status == AUDIO_NATIVE_OK ? NATIVE_RESOURCE_CLOSED :
+            consumed ? NATIVE_RESOURCE_CLOSED_WITH_ERROR :
+                NATIVE_RESOURCE_RETAINED;
     }
     case OPENRFS_HANDLE_PACKAGE_UPLOAD: {
         struct package_upload_report report;
+        bool consumed = false;
+        const enum package_upload_status status = package_upload_close_report(
+            process->generation, resource->words[0], &report, &consumed);
 
-        return package_upload_close(process->generation, resource->words[0],
-            &report) == PACKAGE_UPLOAD_STATUS_OK;
+        return status == PACKAGE_UPLOAD_STATUS_OK ? NATIVE_RESOURCE_CLOSED :
+            consumed ? NATIVE_RESOURCE_CLOSED_WITH_ERROR :
+                NATIVE_RESOURCE_RETAINED;
     }
     case OPENRFS_HANDLE_PACKAGE_CONTROL: {
         struct package_control_report report;
 
         return package_control_close(process->generation, resource->words[0],
-            &report) == PACKAGE_CONTROL_STATUS_OK;
+            &report) == PACKAGE_CONTROL_STATUS_OK ? NATIVE_RESOURCE_CLOSED :
+            NATIVE_RESOURCE_RETAINED;
     }
     default:
-        return false;
+        return NATIVE_RESOURCE_RETAINED;
     }
 }
 
@@ -2619,14 +2682,66 @@ static bool initialize_stack(
     return true;
 }
 
-static bool process_cleanup(struct native_process *process)
+static void build_teardown_attempt(
+    const struct native_process *process,
+    bool blocked,
+    bool retired,
+    struct native_process_teardown_attempt *attempt
+)
+{
+    const struct native_handle_close_report *report;
+
+    if (process == NULL || attempt == NULL) {
+        return;
+    }
+    zero_bytes(attempt, sizeof(*attempt));
+    report = &process->teardown_report.handles;
+    attempt->attempt_number = process->teardown_report.attempts;
+    attempt->handles_attempted = report->attempted_handles;
+    attempt->callbacks_attempted = report->callback_attempts;
+    attempt->closed_resources = report->closed_resources;
+    attempt->consumed_error_resources = report->consumed_error_resources;
+    attempt->retained_resources = report->retained_resources;
+    attempt->duplicate_references = report->duplicate_references;
+    attempt->stale_entries = report->stale_entries;
+    attempt->invalid_entries = report->invalid_entries;
+    attempt->retired_handles = report->retired_handles;
+    attempt->active_handles_before = report->active_handles_before;
+    attempt->active_handles_after = report->active_handles_after;
+    attempt->active_objects_before = report->active_objects_before;
+    attempt->active_objects_after = report->active_objects_after;
+    attempt->made_progress = report->progress;
+    attempt->retryable = report->retryable;
+    attempt->close_failed = report->status != NATIVE_HANDLE_OK;
+    attempt->blocked = blocked;
+    attempt->retired = retired;
+    for (size_t type = 0U; type < NATIVE_HANDLE_CLOSE_TYPE_COUNT; ++type) {
+        attempt->types[type] = report->types[type];
+    }
+}
+
+static bool process_cleanup_with_callback(
+    struct native_process *process,
+    native_handle_close_fn close_callback,
+    void *close_context,
+    struct native_process_teardown_report *output
+)
 {
     bool success = true;
     const bool interrupts_were_enabled = cpu_interrupts_enabled();
 
+    if (output != NULL) {
+        zero_bytes(output, sizeof(*output));
+    }
     if (process == NULL) {
         return false;
     }
+    if (process->teardown_report.attempts != UINT32_MAX) {
+        ++process->teardown_report.attempts;
+    }
+    native_handle_close_report_reset(&process->teardown_report.handles);
+    process->teardown_report.blocked = false;
+    process->teardown_report.retired = false;
     cpu_interrupt_disable();
     if (process->address_space.state == PAGING_PROCESS_SPACE_ACTIVE &&
         paging_process_restore_kernel(&process->address_space) !=
@@ -2634,10 +2749,40 @@ static bool process_cleanup(struct native_process *process)
         success = false;
     }
     cpu_interrupt_enable();
-    if (process->handles.initialized &&
-        native_handle_close_all(&process->handles, close_resource, process) !=
-            NATIVE_HANDLE_OK) {
-        success = false;
+    if (process->handles.initialized) {
+        const enum native_handle_status handle_status =
+            native_handle_close_all_diagnostics(&process->handles,
+                close_callback, close_context,
+                &process->teardown_report.handles);
+
+        if (handle_status != NATIVE_HANDLE_OK) {
+            success = false;
+        }
+    }
+    /* A remaining wrapper keeps the process wrapper alive. */
+    if (process->handles.initialized && process->handles.active_handles != 0U) {
+        process->teardown_report.blocked = true;
+    }
+    {
+        struct native_process_teardown_attempt attempt;
+
+        build_teardown_attempt(process, process->teardown_report.blocked,
+            !process->teardown_report.blocked, &attempt);
+        native_process_teardown_history_append(
+            &process->teardown_report.history, &attempt);
+    }
+    if (process->teardown_report.blocked) {
+        if (output != NULL) {
+            *output = process->teardown_report;
+        }
+        if (!interrupts_were_enabled) {
+            cpu_interrupt_disable();
+        }
+        return false;
+    }
+    process->teardown_report.retired = true;
+    if (output != NULL) {
+        *output = process->teardown_report;
     }
     network_process_terminated(process->generation);
     cpu_interrupt_disable();
@@ -2674,6 +2819,150 @@ static bool process_cleanup(struct native_process *process)
         cpu_interrupt_enable();
     }
     return success;
+}
+
+static bool process_cleanup(
+    struct native_process *process,
+    struct native_process_teardown_report *output
+)
+{
+    return process_cleanup_with_callback(process, close_resource, process,
+        output);
+}
+
+struct process_cleanup_test_script {
+    enum native_resource_close_result result;
+    unsigned calls;
+};
+
+static enum native_resource_close_result process_cleanup_test_close(
+    uint8_t type,
+    const struct native_resource *resource,
+    void *context
+)
+{
+    struct process_cleanup_test_script *script = context;
+
+    if (script == NULL || resource == NULL || type != OPENRFS_HANDLE_TIMER) {
+        return NATIVE_RESOURCE_RETAINED;
+    }
+    ++script->calls;
+    return script->result;
+}
+
+static bool process_cleanup_retry_self_test(void)
+{
+    static struct native_process process;
+    struct native_process_teardown_report refusal_report;
+    struct native_process_teardown_report success_report;
+    struct native_process_teardown_report consumed_report;
+    struct native_process_teardown_attempt history_entries[2];
+    struct process_cleanup_test_script script = {
+        NATIVE_RESOURCE_RETAINED, 0U
+    };
+    size_t diagnostic_length;
+    openrfs_handle_t handle;
+
+    zero_bytes(&process, sizeof(process));
+    process.active = true;
+    process.exiting = true;
+    if (native_handle_table_initialize(&process.handles, 1U) !=
+            NATIVE_HANDLE_OK ||
+        native_handle_install(&process.handles, OPENRFS_HANDLE_TIMER,
+            &(const struct native_resource){{77U, 0U, 0U, 0U}}, &handle) !=
+            NATIVE_HANDLE_OK ||
+        process_cleanup_with_callback(&process, process_cleanup_test_close,
+            &script, &refusal_report) || !process.active ||
+        process.handles.active_handles != 1U || refusal_report.attempts != 1U ||
+        !refusal_report.blocked || refusal_report.retired ||
+        refusal_report.handles.attempted_handles != 1U ||
+        refusal_report.handles.retained_resources != 1U ||
+        refusal_report.handles.active_handles_after != 1U ||
+        !refusal_report.handles.retryable ||
+        refusal_report.history.total_attempts != 1U ||
+        refusal_report.history.valid_entries != 1U ||
+        refusal_report.history.entries[0].attempt_number != 1U ||
+        !refusal_report.history.entries[0].blocked ||
+        refusal_report.history.entries[0].retired ||
+        refusal_report.history.entries[0].retained_resources != 1U ||
+        !refusal_report.history.entries[0].retryable ||
+        !refusal_report.history.entries[0].close_failed ||
+        !native_handle_close_report_validate(&refusal_report.handles) ||
+        !native_process_teardown_history_validate(&refusal_report.history) ||
+        native_handle_close_report_format(&refusal_report.handles, NULL, 0U,
+            &diagnostic_length) != NATIVE_TEARDOWN_DIAGNOSTICS_OK ||
+        diagnostic_length == 0U ||
+        native_process_teardown_history_format(&refusal_report.history, NULL,
+            0U, &diagnostic_length) != NATIVE_TEARDOWN_DIAGNOSTICS_OK ||
+        diagnostic_length == 0U ||
+        script.calls != 1U) {
+        return false;
+    }
+    script.result = NATIVE_RESOURCE_CLOSED;
+    if (!process_cleanup_with_callback(&process, process_cleanup_test_close,
+            &script, &success_report) || process.active ||
+        process.handles.active_handles != 0U || script.calls != 2U ||
+        success_report.attempts != 2U || success_report.blocked ||
+        !success_report.retired ||
+        success_report.handles.status != NATIVE_HANDLE_OK ||
+        success_report.handles.closed_resources != 1U ||
+        success_report.handles.active_handles_before != 1U ||
+        success_report.handles.active_handles_after != 0U ||
+        !success_report.handles.progress ||
+        success_report.history.total_attempts != 2U ||
+        success_report.history.valid_entries != 2U ||
+        success_report.history.dropped_attempts != 0U ||
+        success_report.history.entries[1].attempt_number != 2U ||
+        !success_report.history.entries[1].retired ||
+        success_report.history.entries[1].close_failed ||
+        success_report.history.entries[1].closed_resources != 1U ||
+        !native_handle_close_report_validate(&success_report.handles) ||
+        !native_process_teardown_history_validate(&success_report.history)) {
+        return false;
+    }
+    if (native_process_teardown_history_copy(&success_report.history,
+            history_entries, 2U) != 2U ||
+        history_entries[0].attempt_number != 1U ||
+        !history_entries[0].blocked ||
+        history_entries[1].attempt_number != 2U ||
+        history_entries[1].blocked || !history_entries[1].retired) {
+        return false;
+    }
+    zero_bytes(&process, sizeof(process));
+
+    process.active = true;
+    process.exiting = true;
+    process.generation = UINT64_C(777);
+    script.result = NATIVE_RESOURCE_CLOSED_WITH_ERROR;
+    script.calls = 0U;
+    if (native_handle_table_initialize(&process.handles, 1U) !=
+            NATIVE_HANDLE_OK ||
+        native_handle_install(&process.handles, OPENRFS_HANDLE_TIMER,
+            &(const struct native_resource){{77U, 0U, 0U, 0U}}, &handle) !=
+            NATIVE_HANDLE_OK ||
+        process_cleanup_with_callback(&process, process_cleanup_test_close,
+            &script, &consumed_report) || process.active ||
+        process.handles.active_handles != 0U || script.calls != 1U ||
+        consumed_report.attempts != 1U || consumed_report.blocked ||
+        !consumed_report.retired ||
+        consumed_report.handles.status != NATIVE_HANDLE_CLOSE_FAILED ||
+        consumed_report.handles.consumed_error_resources != 1U ||
+        consumed_report.handles.retained_resources != 0U ||
+        consumed_report.handles.active_handles_after != 0U ||
+        consumed_report.handles.retryable || !consumed_report.handles.progress ||
+        consumed_report.history.total_attempts != 1U ||
+        consumed_report.history.entries[0].consumed_error_resources != 1U ||
+        consumed_report.history.entries[0].retryable ||
+        !consumed_report.history.entries[0].close_failed ||
+        consumed_report.history.entries[0].blocked ||
+        !consumed_report.history.entries[0].retired ||
+        !native_handle_close_report_validate(&consumed_report.handles) ||
+        !native_process_teardown_history_validate(&consumed_report.history) ||
+        script.calls != 1U) {
+        return false;
+    }
+    zero_bytes(&process, sizeof(process));
+    return true;
 }
 
 static enum native_process_status load_process(
@@ -2897,7 +3186,7 @@ static enum native_process_status native_process_spawn_from_volume(
     }
     status = load_process(process, manifest_path, image_volume);
     if (status != NATIVE_PROCESS_OK) {
-        if (!process_cleanup(process)) {
+        if (!process_cleanup(process, NULL)) {
             return NATIVE_PROCESS_TEARDOWN;
         }
         return status;
@@ -3225,8 +3514,11 @@ static int64_t syscall_file_open(
         return -OPENRFS_EFAULT;
     }
     if (request.size != sizeof(request) ||
-        request.version != OPENRFS_ABI_VERSION || request.reserved != 0U ||
+        request.version != OPENRFS_ABI_VERSION ||
+        ((request.flags & OPENRFS_OPEN_MODE_PRESENT) == 0U ? request.reserved != 0U :
+            ((request.flags & OPENRFS_OPEN_CREATE) == 0U || (request.reserved & ~07777U) != 0U)) ||
         (request.flags & ~OPENRFS_OPEN_FLAGS_V1) != 0U ||
+        ((request.flags & OPENRFS_OPEN_EXCLUSIVE) != 0U && (request.flags & OPENRFS_OPEN_CREATE) == 0U) ||
         (request.flags & (OPENRFS_OPEN_READ | OPENRFS_OPEN_WRITE)) == 0U ||
         !path_from_user(process, &request.path, path, &volume)) {
         return -OPENRFS_EINVAL;
@@ -3244,24 +3536,25 @@ static int64_t syscall_file_open(
     access = (request.flags & OPENRFS_OPEN_WRITE) != 0U ?
         ((request.flags & OPENRFS_OPEN_READ) != 0U ? OPENRFSFS_ACCESS_READ_WRITE :
             OPENRFSFS_ACCESS_WRITE) : OPENRFSFS_ACCESS_READ;
+    const uint8_t open_flags = (uint8_t)(
+        ((request.flags & OPENRFS_OPEN_CREATE) != 0U ? OPENRFSFS_OPEN_CREATE : 0U) |
+        ((request.flags & OPENRFS_OPEN_TRUNCATE) != 0U ? OPENRFSFS_OPEN_TRUNCATE : 0U) |
+        ((request.flags & OPENRFS_OPEN_EXCLUSIVE) != 0U ? OPENRFSFS_OPEN_EXCLUSIVE : 0U));
+    if (process->handles.active_handles >= process->handles.limit ||
+        process->handles.active_objects >= process->handles.limit) return -OPENRFS_EMFILE;
     cpu_interrupt_enable();
-    status = openrfsfs_stat_path(volume, path, &(struct openrfsfs_stat){0});
-    if (status == OPENRFSFS_STATUS_NOT_FOUND &&
-        (request.flags & OPENRFS_OPEN_CREATE) != 0U) {
-        status = openrfsfs_create(volume, path);
-    }
-    if (status == OPENRFSFS_STATUS_OK &&
-        (request.flags & OPENRFS_OPEN_TRUNCATE) != 0U) {
-        status = openrfsfs_truncate(volume, path, 0U);
-    }
-    if (status == OPENRFSFS_STATUS_OK) {
-        status = openrfsfs_open(volume, path, access, &file);
+    status = openrfsfs_open_options(volume, path, access, open_flags,
+        (request.flags & OPENRFS_OPEN_MODE_PRESENT) != 0U ? (uint16_t)request.reserved : 0644U, &file);
+    if (status == OPENRFSFS_STATUS_OK && (request.flags & OPENRFS_OPEN_APPEND) != 0U) {
+        status = openrfsfs_set_append(file, true);
+        if (status != OPENRFSFS_STATUS_OK) (void)openrfsfs_close(file);
     }
     cpu_interrupt_disable();
     if (status != OPENRFSFS_STATUS_OK) {
         return filesystem_error(status);
     }
     resource.words[0] = file;
+    resource.words[1] = (request.flags & OPENRFS_OPEN_APPEND) != 0U ? 1U : 0U;
     {
         const enum native_handle_status handle_status = native_handle_install(
             &process->handles, OPENRFS_HANDLE_FILE, &resource, &handle);
@@ -3270,7 +3563,7 @@ static int64_t syscall_file_open(
             cpu_interrupt_enable();
             (void)openrfsfs_close(file);
             cpu_interrupt_disable();
-            return handle_error(handle_status);
+            return handle_status == NATIVE_HANDLE_FULL ? -OPENRFS_EMFILE : handle_error(handle_status);
         }
     }
     if (process->handles.active_handles > process->peak_handles) {
@@ -3363,7 +3656,9 @@ static int64_t syscall_file_io(
             return completed == 0U ? -OPENRFS_EFAULT : (int64_t)completed;
         }
         completed += transferred;
-        if (transferred < chunk) {
+        // Append one copied chunk per syscall. Returning a short write avoids
+        // claiming one atomic append across separately leased chunks.
+        if (transferred < chunk || (write && resource->words[1] != 0U)) {
             break;
         }
     }
@@ -3441,6 +3736,68 @@ static int64_t syscall_path_stat(
         0 : -OPENRFS_EFAULT;
 }
 
+static struct openrfs_path_metadata native_metadata(struct openrfsfs_stat stat)
+{
+    struct openrfs_path_metadata output = {.size = sizeof(output), .version = OPENRFS_ABI_VERSION};
+    output.byte_length = stat.size;
+    output.object_id = stat.object_id;
+    output.uid = stat.uid;
+    output.gid = stat.gid;
+    output.links = stat.links;
+    output.mode = stat.mode;
+    output.atime_seconds = stat.atime_seconds;
+    output.mtime_seconds = stat.mtime_seconds;
+    output.ctime_seconds = stat.ctime_seconds;
+    output.atime_nanos = stat.atime_nanos;
+    output.mtime_nanos = stat.mtime_nanos;
+    output.ctime_nanos = stat.ctime_nanos;
+    if ((stat.mode & 0170000U) != 0U) output.flags = OPENRFS_METADATA_UNIX_FIELDS;
+    else {
+        // Preserve the old mode projection for filesystems without Unix
+        // metadata; the validity flag keeps it distinct in the native ABI.
+        output.mode = (stat.directory ? 0040000U : 0100000U) | 0400U | (stat.read_only ? 0U : 0200U);
+    }
+    return output;
+}
+
+static int64_t syscall_file_metadata(struct native_process *process, openrfs_handle_t handle, uint64_t output_address)
+{
+    struct native_resource *resource;
+    struct openrfsfs_stat stat;
+    if (!validate_user_range(process, output_address, sizeof(struct openrfs_path_metadata), true)) return -OPENRFS_EFAULT;
+    const enum native_handle_status handle_status = native_handle_resolve(
+        &process->handles, handle, OPENRFS_HANDLE_FILE, &resource);
+    if (handle_status != NATIVE_HANDLE_OK) return handle_error(handle_status);
+    const openrfsfs_handle file = (openrfsfs_handle)resource->words[0];
+    cpu_interrupt_enable();
+    const enum openrfsfs_status status = openrfsfs_fstat(file, &stat);
+    cpu_interrupt_disable();
+    if (status != OPENRFSFS_STATUS_OK) return filesystem_error(status);
+    const struct openrfs_path_metadata output = native_metadata(stat);
+    return copy_to_user(process, output_address, &output, sizeof(output)) ? 0 : -OPENRFS_EFAULT;
+}
+
+static int64_t syscall_path_metadata(struct native_process *process,
+    uint64_t path_address, uint64_t output_address, uint64_t flags)
+{
+    struct openrfs_path request;
+    struct openrfs_path_metadata output = {.size = sizeof(output), .version = OPENRFS_ABI_VERSION};
+    struct openrfsfs_stat stat;
+    char path[OPENRFSFS_MAX_PATH];
+    enum openrfsfs_volume volume;
+    if ((flags & ~(uint64_t)OPENRFS_METADATA_NOFOLLOW) != 0U) return -OPENRFS_EINVAL;
+    if (!copy_from_user(process, &request, path_address, sizeof(request)) ||
+        !validate_user_range(process, output_address, sizeof(output), true)) return -OPENRFS_EFAULT;
+    if (!path_from_user(process, &request, path, &volume)) return -OPENRFS_EINVAL;
+    cpu_interrupt_enable();
+    const enum openrfsfs_status status = (flags & OPENRFS_METADATA_NOFOLLOW) != 0U ?
+        openrfsfs_lstat_path(volume, path, &stat) : openrfsfs_stat_path(volume, path, &stat);
+    cpu_interrupt_disable();
+    if (status != OPENRFSFS_STATUS_OK) return filesystem_error(status);
+    output = native_metadata(stat);
+    return copy_to_user(process, output_address, &output, sizeof(output)) ? 0 : -OPENRFS_EFAULT;
+}
+
 static int64_t syscall_directory_open(
     struct native_process *process,
     uint64_t path_address
@@ -3500,17 +3857,20 @@ static int64_t syscall_directory_open(
 static int64_t syscall_directory_read(
     struct native_process *process,
     openrfs_handle_t handle,
-    uint64_t output_address
+    uint64_t output_address,
+    bool long_names
 )
 {
     struct native_resource *resource;
     struct openrfsfs_list_entry entry;
-    struct openrfs_directory_entry output;
+    struct openrfs_directory_entry_long output;
+    const size_t output_bytes = long_names ? sizeof(output) : sizeof(struct openrfs_directory_entry);
+    const size_t name_capacity = long_names ? sizeof(output.name) : OPENRFS_DIRECTORY_NAME_MAX;
     struct native_directory_resource *directory;
     bool present = false;
     enum openrfsfs_status status;
 
-    if (!validate_user_range(process, output_address, sizeof(output), true)) {
+    if (!validate_user_range(process, output_address, output_bytes, true)) {
         return -OPENRFS_EFAULT;
     }
     {
@@ -3538,18 +3898,18 @@ static int64_t syscall_directory_read(
         return 0;
     }
     zero_bytes(&output, sizeof(output));
-    output.size = sizeof(output);
+    output.size = (uint32_t)output_bytes;
     output.version = OPENRFS_ABI_VERSION;
     output.byte_length = entry.size;
     output.attributes = entry.directory ?
         OPENRFS_PATH_DIRECTORY : 0U;
     output.name_length = (uint16_t)bounded_length(
         (const uint8_t *)entry.name, sizeof(entry.name));
-    if (output.name_length > sizeof(output.name)) {
+    if (output.name_length > name_capacity) {
         return -OPENRFS_EIO;
     }
     copy_bytes(output.name, entry.name, output.name_length);
-    if (!copy_to_user(process, output_address, &output, sizeof(output))) {
+    if (!copy_to_user(process, output_address, &output, output_bytes)) {
         return -OPENRFS_EFAULT;
     }
     return 1;
@@ -3563,10 +3923,18 @@ static int64_t syscall_single_path_mutation(
 )
 {
     struct openrfs_path path_request;
-    struct openrfsfs_stat stat;
     char path[OPENRFSFS_MAX_PATH];
     enum openrfsfs_volume volume;
     enum openrfsfs_status status;
+
+    if (number == OPENRFS_SYS_PATH_UNLINK && value > OPENRFS_UNLINK_DIRECTORY) {
+        return -OPENRFS_EINVAL;
+    }
+    if (number == OPENRFS_SYS_PATH_MKDIR && value != 0U &&
+        ((value & OPENRFS_MKDIR_MODE_PRESENT) == 0U ||
+         (value & ~(OPENRFS_MKDIR_MODE_PRESENT | UINT64_C(07777))) != 0U)) {
+        return -OPENRFS_EINVAL;
+    }
 
     if (!copy_from_user(process, &path_request, path_address,
             sizeof(path_request))) {
@@ -3581,18 +3949,167 @@ static int64_t syscall_single_path_mutation(
     }
     cpu_interrupt_enable();
     if (number == OPENRFS_SYS_PATH_MKDIR) {
-        status = openrfsfs_mkdir(volume, path);
+        status = openrfsfs_mkdir_mode(volume, path,
+            value == 0U ? 0755U : (uint16_t)(value & 07777U));
     } else if (number == OPENRFS_SYS_PATH_TRUNCATE) {
         status = openrfsfs_truncate(volume, path, value);
+    } else if (value == OPENRFS_UNLINK_FILE) {
+        status = openrfsfs_unlink(volume, path);
+    } else if (value == OPENRFS_UNLINK_DIRECTORY) {
+        status = openrfsfs_rmdir(volume, path);
     } else {
-        status = openrfsfs_stat_path(volume, path, &stat);
-        if (status == OPENRFSFS_STATUS_OK) {
-            status = stat.directory ? openrfsfs_rmdir(volume, path) :
-                openrfsfs_unlink(volume, path);
-        }
+        status = openrfsfs_remove(volume, path);
     }
     cpu_interrupt_disable();
     return filesystem_error(status);
+}
+
+static int64_t syscall_symlink(
+    struct native_process *process, uint64_t path_address,
+    uint64_t bytes_address, uint64_t length, bool create)
+{
+    struct openrfs_path request;
+    char path[OPENRFSFS_MAX_PATH];
+    uint8_t bytes[4096];
+    enum openrfsfs_volume volume;
+    enum openrfsfs_status status;
+    size_t count = 0U;
+
+    if (length == 0U || (create && length >= OPENRFSFS_MAX_PATH)) {
+        return -OPENRFS_EINVAL;
+    }
+    const size_t capacity = length < sizeof(bytes) ? (size_t)length : sizeof(bytes);
+    if (!copy_from_user(process, &request, path_address, sizeof(request))) {
+        return -OPENRFS_EFAULT;
+    }
+    if (!path_from_user(process, &request, path, &volume)) {
+        return -OPENRFS_EINVAL;
+    }
+    if (create) {
+        if (volume != OPENRFSFS_VOLUME_DATA ||
+            (process->manifest.capabilities & OPENRFS_CAP_DATA_WRITE) == 0U) {
+            return -OPENRFS_EACCES;
+        }
+        if (!copy_from_user(process, bytes, bytes_address, capacity)) {
+            return -OPENRFS_EFAULT;
+        }
+        if (bounded_length(bytes, capacity) != capacity) {
+            return -OPENRFS_EINVAL;
+        }
+        bytes[capacity] = 0U;
+    } else if (!validate_user_range(process, bytes_address, capacity, true)) {
+        return -OPENRFS_EFAULT;
+    }
+    cpu_interrupt_enable();
+    status = create ? openrfsfs_symlink(volume, path, (const char *)bytes) :
+        openrfsfs_readlink(volume, path, bytes, capacity, &count);
+    cpu_interrupt_disable();
+    if (status != OPENRFSFS_STATUS_OK) {
+        return filesystem_error(status);
+    }
+    if (!create && (count > capacity || !copy_to_user(process, bytes_address, bytes, count))) {
+        return -OPENRFS_EFAULT;
+    }
+    return (int64_t)count;
+}
+
+static int64_t syscall_file_sync(struct native_process *process, openrfs_handle_t handle)
+{
+    struct native_resource *resource;
+    const enum native_handle_status handle_status = native_handle_resolve(
+        &process->handles, handle, OPENRFS_HANDLE_FILE, &resource);
+    if (handle_status != NATIVE_HANDLE_OK) return handle_error(handle_status);
+    const openrfsfs_handle file = (openrfsfs_handle)resource->words[0];
+    cpu_interrupt_enable();
+    const enum openrfsfs_status status = openrfsfs_fsync(file);
+    cpu_interrupt_disable();
+    return filesystem_error(status);
+}
+
+static int64_t syscall_file_truncate(struct native_process *process, openrfs_handle_t handle, uint64_t size)
+{
+    struct native_resource *resource;
+    enum native_handle_status handle_status = native_handle_resolve(
+        &process->handles, handle, OPENRFS_HANDLE_FILE, &resource);
+    if (handle_status != NATIVE_HANDLE_OK) return handle_error(handle_status);
+    cpu_interrupt_enable();
+    enum openrfsfs_status status = openrfsfs_ftruncate((openrfsfs_handle)resource->words[0], size);
+    cpu_interrupt_disable();
+    return filesystem_error(status);
+}
+
+static int64_t syscall_chmod(struct native_process *process, uint64_t path_address, uint64_t mode)
+{
+    struct openrfs_path request;
+    char path[OPENRFSFS_MAX_PATH];
+    enum openrfsfs_volume volume;
+    if (mode > 07777U) return -OPENRFS_EINVAL;
+    if (!copy_from_user(process, &request, path_address, sizeof(request))) return -OPENRFS_EFAULT;
+    if (!path_from_user(process, &request, path, &volume)) return -OPENRFS_EINVAL;
+    if (volume != OPENRFSFS_VOLUME_DATA ||
+        (process->manifest.capabilities & OPENRFS_CAP_DATA_WRITE) == 0U) return -OPENRFS_EACCES;
+    cpu_interrupt_enable();
+    enum openrfsfs_status status = openrfsfs_chmod(volume, path, (uint16_t)mode);
+    cpu_interrupt_disable();
+    return filesystem_error(status);
+}
+
+static int64_t syscall_set_times(struct native_process *process, uint64_t address)
+{
+    struct openrfs_set_times_request request;
+    char path[OPENRFSFS_MAX_PATH];
+    enum openrfsfs_volume volume;
+    if (!copy_from_user(process, &request, address, sizeof(request))) return -OPENRFS_EFAULT;
+    if (request.size != sizeof(request) || request.version != OPENRFS_ABI_VERSION ||
+        !path_from_user(process, &request.path, path, &volume)) return -OPENRFS_EINVAL;
+    if (volume != OPENRFSFS_VOLUME_DATA ||
+        (process->manifest.capabilities & OPENRFS_CAP_DATA_WRITE) == 0U) return -OPENRFS_EACCES;
+    const struct openrfsfs_times times = { request.times.atime_seconds, request.times.mtime_seconds,
+        request.times.atime_nanos, request.times.mtime_nanos };
+    cpu_interrupt_enable();
+    enum openrfsfs_status status = openrfsfs_set_times(volume, path, &times);
+    cpu_interrupt_disable();
+    return filesystem_error(status);
+}
+
+static int64_t syscall_xattr(struct native_process *process, uint64_t address)
+{
+    struct openrfs_xattr_request request;
+    char path[OPENRFSFS_MAX_PATH];
+    char name[256];
+    uint8_t bytes[4096];
+    enum openrfsfs_volume volume;
+    enum openrfsfs_status status;
+    size_t length = 0U;
+    if (!copy_from_user(process, &request, address, sizeof(request))) return -OPENRFS_EFAULT;
+    if (request.size != sizeof(request) || request.version != OPENRFS_ABI_VERSION ||
+        request.reserved != 0U || request.operation > OPENRFS_XATTR_REMOVE ||
+        request.name_length == 0U || request.name_length >= sizeof(name) ||
+        request.value_length > sizeof(bytes) ||
+        (request.operation == OPENRFS_XATTR_REMOVE && request.value_length != 0U)) return -OPENRFS_EINVAL;
+    if (!path_from_user(process, &request.path, path, &volume)) return -OPENRFS_EINVAL;
+    if (request.operation != OPENRFS_XATTR_GET && (volume != OPENRFSFS_VOLUME_DATA ||
+        (process->manifest.capabilities & OPENRFS_CAP_DATA_WRITE) == 0U)) return -OPENRFS_EACCES;
+    if (!copy_from_user(process, name, request.name, request.name_length)) return -OPENRFS_EFAULT;
+    if (bounded_length((const uint8_t *)name, request.name_length) != request.name_length) return -OPENRFS_EINVAL;
+    name[request.name_length] = '\0';
+    if (request.value_length != 0U) {
+        if (request.operation == OPENRFS_XATTR_GET) {
+            if (!validate_user_range(process, request.value, request.value_length, true)) return -OPENRFS_EFAULT;
+        } else if (!copy_from_user(process, bytes, request.value, request.value_length)) return -OPENRFS_EFAULT;
+    }
+    cpu_interrupt_enable();
+    if (request.operation == OPENRFS_XATTR_GET) {
+        status = openrfsfs_get_xattr(volume, path, name, bytes, request.value_length, &length);
+    } else {
+        status = openrfsfs_set_xattr(volume, path, name, bytes, request.value_length,
+            request.operation == OPENRFS_XATTR_REMOVE);
+    }
+    cpu_interrupt_disable();
+    if (status != OPENRFSFS_STATUS_OK) return filesystem_error(status);
+    if (request.operation == OPENRFS_XATTR_GET && request.value_length != 0U &&
+        (length > request.value_length || !copy_to_user(process, request.value, bytes, length))) return -OPENRFS_EFAULT;
+    return (int64_t)length;
 }
 
 static bool replacement_backup_path(
@@ -3629,7 +4146,8 @@ static bool replacement_backup_path(
 static int64_t syscall_rename(
     struct native_process *process,
     uint64_t request_address,
-    bool replace
+    bool replace,
+    bool hard_link
 )
 {
     struct openrfs_rename_request request;
@@ -3660,6 +4178,16 @@ static int64_t syscall_rename(
         return -OPENRFS_EACCES;
     }
     cpu_interrupt_enable();
+    if (hard_link) {
+        status = openrfsfs_link(OPENRFSFS_VOLUME_DATA, source, destination);
+        cpu_interrupt_disable();
+        return filesystem_error(status);
+    }
+    if (replace && openrfsfs_has_atomic_replace(OPENRFSFS_VOLUME_DATA)) {
+        status = openrfsfs_rename_replace(OPENRFSFS_VOLUME_DATA, source, destination);
+        cpu_interrupt_disable();
+        return filesystem_error(status);
+    }
     status = openrfsfs_rename(OPENRFSFS_VOLUME_DATA, source, destination);
     if (status == OPENRFSFS_STATUS_EXISTS && replace &&
         replacement_backup_path(destination, backup) &&
@@ -3677,6 +4205,42 @@ static int64_t syscall_rename(
             }
         }
     }
+    cpu_interrupt_disable();
+    return filesystem_error(status);
+}
+
+static int64_t syscall_file_publication(struct native_process *process,
+    openrfs_handle_t handle, uint64_t request_address, bool unlink)
+{
+    struct openrfs_path source_request;
+    struct openrfs_rename_request request;
+    char source[OPENRFSFS_MAX_PATH];
+    char destination[OPENRFSFS_MAX_PATH];
+    enum openrfsfs_volume source_volume;
+    enum openrfsfs_volume destination_volume;
+    struct native_resource *resource;
+    if (unlink) {
+        if (!copy_from_user(process, &source_request, request_address, sizeof(source_request))) return -OPENRFS_EFAULT;
+    } else {
+        if (!copy_from_user(process, &request, request_address, sizeof(request))) return -OPENRFS_EFAULT;
+        if (request.size != sizeof(request) || request.version != OPENRFS_ABI_VERSION ||
+            request.flags != 0U || request.reserved != 0U) return -OPENRFS_EINVAL;
+        source_request = request.source;
+        if (!path_from_user(process, &request.destination, destination, &destination_volume)) return -OPENRFS_EINVAL;
+        if (destination_volume != OPENRFSFS_VOLUME_DATA) return -OPENRFS_EACCES;
+    }
+    if (!path_from_user(process, &source_request, source, &source_volume)) return -OPENRFS_EINVAL;
+    if (source_volume != OPENRFSFS_VOLUME_DATA ||
+        (process->manifest.capabilities & OPENRFS_CAP_DATA_WRITE) == 0U) return -OPENRFS_EACCES;
+    const enum native_handle_status handle_status = native_handle_resolve(
+        &process->handles, handle, OPENRFS_HANDLE_FILE, &resource);
+    if (handle_status != NATIVE_HANDLE_OK) return handle_error(handle_status);
+    // Copy the checked VFS generation before enabling interrupts. The backend
+    // checks write access and the source name's inode under the same lease.
+    const openrfsfs_handle file = (openrfsfs_handle)resource->words[0];
+    cpu_interrupt_enable();
+    const enum openrfsfs_status status = unlink ? openrfsfs_unlink_held_file(file, source) :
+        openrfsfs_publish_file(file, source, destination);
     cpu_interrupt_disable();
     return filesystem_error(status);
 }
@@ -5755,23 +6319,49 @@ static int64_t dispatch_syscall(
         return syscall_file_seek(process, frame->rdi);
     case OPENRFS_SYS_PATH_STAT:
         return syscall_path_stat(process, frame->rdi, frame->rsi);
+    case OPENRFS_SYS_PATH_METADATA:
+        return syscall_path_metadata(process, frame->rdi, frame->rsi, frame->rdx);
     case OPENRFS_SYS_DIRECTORY_OPEN:
         return syscall_directory_open(process, frame->rdi);
     case OPENRFS_SYS_DIRECTORY_READ:
-        return syscall_directory_read(process, frame->rdi, frame->rsi);
+        return syscall_directory_read(process, frame->rdi, frame->rsi, false);
+    case OPENRFS_SYS_DIRECTORY_READ_LONG:
+        return syscall_directory_read(process, frame->rdi, frame->rsi, true);
     case OPENRFS_SYS_PATH_MKDIR:
     case OPENRFS_SYS_PATH_UNLINK:
     case OPENRFS_SYS_PATH_TRUNCATE:
         return syscall_single_path_mutation(process, frame->rdi, frame->rsi,
             frame->rax);
     case OPENRFS_SYS_PATH_RENAME:
-        return syscall_rename(process, frame->rdi, false);
+        return syscall_rename(process, frame->rdi, false, false);
     case OPENRFS_SYS_PATH_REPLACE:
-        return syscall_rename(process, frame->rdi, true);
+        return syscall_rename(process, frame->rdi, true, false);
+    case OPENRFS_SYS_PATH_LINK:
+        return syscall_rename(process, frame->rdi, false, true);
     case OPENRFS_SYS_VOLUME_SYNC:
         return syscall_volume_sync(process, frame->rdi);
     case OPENRFS_SYS_VOLUME_SPACE:
         return syscall_volume_space(process, frame->rdi, frame->rsi);
+    case OPENRFS_SYS_PATH_SYMLINK:
+        return syscall_symlink(process, frame->rdi, frame->rsi, frame->rdx, true);
+    case OPENRFS_SYS_PATH_READLINK:
+        return syscall_symlink(process, frame->rdi, frame->rsi, frame->rdx, false);
+    case OPENRFS_SYS_PATH_CHMOD:
+        return syscall_chmod(process, frame->rdi, frame->rsi);
+    case OPENRFS_SYS_FILE_TRUNCATE:
+        return syscall_file_truncate(process, frame->rdi, frame->rsi);
+    case OPENRFS_SYS_FILE_SYNC:
+        return syscall_file_sync(process, frame->rdi);
+    case OPENRFS_SYS_FILE_METADATA:
+        return syscall_file_metadata(process, frame->rdi, frame->rsi);
+    case OPENRFS_SYS_FILE_PUBLISH:
+        return syscall_file_publication(process, frame->rdi, frame->rsi, false);
+    case OPENRFS_SYS_FILE_UNLINK:
+        return syscall_file_publication(process, frame->rdi, frame->rsi, true);
+    case OPENRFS_SYS_PATH_SET_TIMES:
+        return syscall_set_times(process, frame->rdi);
+    case OPENRFS_SYS_PATH_XATTR:
+        return syscall_xattr(process, frame->rdi);
     case OPENRFS_SYS_TIME_MONOTONIC:
         return (process->manifest.capabilities & OPENRFS_CAP_TIME) != 0U ?
             (int64_t)clock_monotonic_ns() : -OPENRFS_EACCES;
@@ -6389,6 +6979,7 @@ static void capture_result(
     result->exited = process->exiting;
     result->faulted = process->faulted;
     result->resources_released = false;
+    result->teardown_report = process->teardown_report;
 }
 
 static bool service_native_devices(void)
@@ -6428,6 +7019,7 @@ enum native_process_status native_process_run(struct native_process_result *resu
     struct native_process_result selected_result;
     bool have_result = false;
     bool cleanup_ok = true;
+    bool cleanup_blocked = false;
 
     if (result == NULL) {
         return NATIVE_PROCESS_NULL_ARGUMENT;
@@ -6554,15 +7146,22 @@ enum native_process_status native_process_run(struct native_process_result *resu
                 break;
             }
             capture_result(&processes[newest], &completed);
+            const bool process_retired = process_cleanup(&processes[newest],
+                &completed.teardown_report);
             if (!have_result || completed.generation >
                     selected_result.generation) {
                 selected_result = completed;
                 have_result = true;
             }
-            if (!process_cleanup(&processes[newest])) {
+            if (!process_retired) {
                 cleanup_ok = false;
+                cleanup_blocked = processes[newest].active &&
+                    completed.teardown_report.blocked;
                 break;
             }
+        }
+        if (cleanup_blocked) {
+            break;
         }
     }
     current_process = SIZE_MAX;
@@ -6671,6 +7270,10 @@ bool native_process_self_test(size_t *completed_tests)
         return false;
     }
     *completed_tests += handle_tests;
+    if (!process_cleanup_retry_self_test()) {
+        return false;
+    }
+    ++*completed_tests;
     /* Ordinary boots inspect capabilities without changing CR0/CR4 or FPU state. */
     if (!native_fpu_capability_self_test(&fpu_tests)) {
         return false;

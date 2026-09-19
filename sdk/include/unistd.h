@@ -5,7 +5,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifndef _SSIZE_T_DEFINED
 typedef long ssize_t;
+#define _SSIZE_T_DEFINED
+#endif
 typedef int64_t off_t;
 
 #define STDIN_FILENO 0
@@ -21,6 +24,9 @@ off_t lseek(int descriptor, off_t offset, int origin);
 int close(int descriptor);
 int access(const char *path, int mode);
 int unlink(const char *path);
+int symlink(const char *target, const char *path);
+int link(const char *source, const char *destination);
+ssize_t readlink(const char *path, char *output, size_t capacity);
 int rmdir(const char *path);
 int fsync(int descriptor);
 unsigned int sleep(unsigned int seconds);

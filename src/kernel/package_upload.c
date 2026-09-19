@@ -19,6 +19,7 @@ struct upload_slot {
     bool active;
     bool file_open;
     bool file_present;
+    bool inode_bound_cleanup;
     bool sealed;
     bool durable;
     bool poisoned;
@@ -27,6 +28,7 @@ struct upload_slot {
 static struct upload_slot slots[PACKAGE_UPLOAD_SLOT_LIMIT];
 static bool initialized;
 static bool servicing;
+static bool request_claim;
 
 static void zero_bytes(void *destination, size_t count)
 {
@@ -201,7 +203,7 @@ static enum openrfsfs_status remove_private_file(
     return status == OPENRFSFS_STATUS_NOT_FOUND ? OPENRFSFS_STATUS_OK : status;
 }
 
-enum package_upload_status package_upload_initialize(
+static enum package_upload_status upload_initialize_owned(
     struct package_upload_report *report
 )
 {
@@ -257,7 +259,7 @@ enum package_upload_status package_upload_initialize(
     return finish(report, PACKAGE_UPLOAD_STATUS_OK, OPENRFSFS_STATUS_OK, NULL, 0U);
 }
 
-enum package_upload_status package_upload_open(
+static enum package_upload_status upload_open_owned(
     uint64_t owner,
     struct package_upload_report *report
 )
@@ -265,6 +267,7 @@ enum package_upload_status package_upload_open(
     size_t index = PACKAGE_UPLOAD_SLOT_LIMIT;
     char path[OPENRFSFS_MAX_PATH];
     openrfsfs_handle file;
+    struct package_state_sha256_context sha256;
 
     report_clear(report);
     if (report == NULL || owner == 0U) {
@@ -291,26 +294,19 @@ enum package_upload_status package_upload_open(
         return finish(report, PACKAGE_UPLOAD_STATUS_NO_SLOT, OPENRFSFS_STATUS_OK,
             NULL, 0U);
     }
-    slot_path(index, path);
-    enum openrfsfs_status fs_status = openrfsfs_create(OPENRFSFS_VOLUME_DATA, path);
-
-    if (fs_status != OPENRFSFS_STATUS_OK) {
+    if (package_state_sha256_initialize(&sha256) != PACKAGE_STATE_STATUS_OK) {
         servicing = false;
-        return finish(report, PACKAGE_UPLOAD_STATUS_FILESYSTEM, fs_status,
+        return finish(report, PACKAGE_UPLOAD_STATUS_STATE, OPENRFSFS_STATUS_OK,
             NULL, 0U);
     }
-    fs_status = openrfsfs_open(OPENRFSFS_VOLUME_DATA, path, OPENRFSFS_ACCESS_WRITE, &file);
+    slot_path(index, path);
+    /* The ext4 prepared open reserves the handle and binds the newly created
+     * inode in one coordinator operation. No pathname cleanup is safe when
+     * that operation refuses to return an owned handle. */
+    enum openrfsfs_status fs_status = openrfsfs_open_options(OPENRFSFS_VOLUME_DATA,
+        path, OPENRFSFS_ACCESS_READ_WRITE, OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE,
+        0600U, &file);
     if (fs_status != OPENRFSFS_STATUS_OK) {
-        enum openrfsfs_status cleanup_status = openrfsfs_unlink(OPENRFSFS_VOLUME_DATA,
-            path);
-
-        if (cleanup_status == OPENRFSFS_STATUS_OK) {
-            cleanup_status = openrfsfs_sync(OPENRFSFS_VOLUME_DATA);
-        }
-        if (cleanup_status != OPENRFSFS_STATUS_OK &&
-            cleanup_status != OPENRFSFS_STATUS_NOT_FOUND) {
-            initialized = false;
-        }
         servicing = false;
         return finish(report, PACKAGE_UPLOAD_STATUS_FILESYSTEM, fs_status,
             NULL, 0U);
@@ -325,22 +321,14 @@ enum package_upload_status package_upload_open(
     slot->active = true;
     slot->file_open = true;
     slot->file_present = true;
-    if (package_state_sha256_initialize(&slot->sha256) !=
-            PACKAGE_STATE_STATUS_OK) {
-        (void)openrfsfs_close(file);
-        (void)openrfsfs_unlink(OPENRFSFS_VOLUME_DATA, path);
-        (void)openrfsfs_sync(OPENRFSFS_VOLUME_DATA);
-        release_slot(slot);
-        servicing = false;
-        return finish(report, PACKAGE_UPLOAD_STATUS_STATE, OPENRFSFS_STATUS_OK,
-            NULL, 0U);
-    }
+    slot->inode_bound_cleanup = openrfsfs_has_atomic_replace(OPENRFSFS_VOLUME_DATA);
+    slot->sha256 = sha256;
     servicing = false;
     return finish(report, PACKAGE_UPLOAD_STATUS_OK, OPENRFSFS_STATUS_OK, slot,
         index);
 }
 
-enum package_upload_status package_upload_write(
+static enum package_upload_status upload_write_owned(
     uint64_t owner,
     package_upload_token token,
     const uint8_t *bytes,
@@ -418,7 +406,7 @@ enum package_upload_status package_upload_write(
         index);
 }
 
-enum package_upload_status package_upload_seal(
+static enum package_upload_status upload_seal_owned(
     uint64_t owner,
     package_upload_token token,
     uint64_t expected_bytes,
@@ -449,16 +437,6 @@ enum package_upload_status package_upload_seal(
             slot, index);
     }
     servicing = true;
-    enum openrfsfs_status fs_status = openrfsfs_close(slot->file);
-
-    slot->file_open = false;
-    slot->file = 0U;
-    if (fs_status != OPENRFSFS_STATUS_OK) {
-        slot->poisoned = true;
-        servicing = false;
-        return finish(report, PACKAGE_UPLOAD_STATUS_FILESYSTEM, fs_status,
-            slot, index);
-    }
     if (package_state_sha256_finish(&slot->sha256, digest) !=
             PACKAGE_STATE_STATUS_OK) {
         slot->poisoned = true;
@@ -481,7 +459,10 @@ enum package_upload_status package_upload_seal(
         return finish(report, PACKAGE_UPLOAD_STATUS_DIGEST, OPENRFSFS_STATUS_OK,
             slot, index);
     }
-    fs_status = openrfsfs_sync(OPENRFSFS_VOLUME_DATA);
+    /* Retain this exact inode through sealing and reads. Reopening the slot's
+     * pathname would allow rename/unlink/recreate to substitute another file. */
+    enum openrfsfs_status fs_status = openrfsfs_fsync(slot->file);
+    if (fs_status == OPENRFSFS_STATUS_OK) fs_status = openrfsfs_sync(OPENRFSFS_VOLUME_DATA);
     if (fs_status != OPENRFSFS_STATUS_OK) {
         slot->poisoned = true;
         servicing = false;
@@ -495,7 +476,7 @@ enum package_upload_status package_upload_seal(
         index);
 }
 
-enum package_upload_status package_upload_read(
+static enum package_upload_status upload_read_owned(
     uint64_t owner,
     package_upload_token token,
     uint64_t offset,
@@ -507,8 +488,6 @@ enum package_upload_status package_upload_read(
 {
     struct upload_slot *slot;
     size_t index;
-    char path[OPENRFSFS_MAX_PATH];
-    openrfsfs_handle file;
 
     report_clear(report);
     if (report == NULL || read_bytes == NULL ||
@@ -526,7 +505,7 @@ enum package_upload_status package_upload_read(
         return finish(report, PACKAGE_UPLOAD_STATUS_BUSY, OPENRFSFS_STATUS_OK,
             slot, index);
     }
-    if (!slot->sealed || !slot->durable || slot->poisoned || slot->file_open) {
+    if (!slot->sealed || !slot->durable || slot->poisoned || !slot->file_open) {
         return finish(report, PACKAGE_UPLOAD_STATUS_STATE, OPENRFSFS_STATUS_OK,
             slot, index);
     }
@@ -535,25 +514,17 @@ enum package_upload_status package_upload_read(
             slot, index);
     }
     servicing = true;
-    slot_path(index, path);
-    enum openrfsfs_status fs_status = openrfsfs_open(OPENRFSFS_VOLUME_DATA, path,
-        OPENRFSFS_ACCESS_READ, &file);
-
-    if (fs_status == OPENRFSFS_STATUS_OK) {
-        fs_status = openrfsfs_pread(file, bytes, capacity, offset, read_bytes);
-        enum openrfsfs_status close_status = openrfsfs_close(file);
-
-        if (fs_status == OPENRFSFS_STATUS_OK && close_status != OPENRFSFS_STATUS_OK) {
-            fs_status = close_status;
-        }
-    }
+    if (capacity > slot->byte_count - offset)
+        capacity = (size_t)(slot->byte_count - offset);
+    enum openrfsfs_status fs_status = openrfsfs_pread(slot->file, bytes, capacity,
+        offset, read_bytes);
     servicing = false;
     return finish(report, fs_status == OPENRFSFS_STATUS_OK ?
         PACKAGE_UPLOAD_STATUS_OK : PACKAGE_UPLOAD_STATUS_FILESYSTEM,
         fs_status, slot, index);
 }
 
-enum package_upload_status package_upload_inspect(
+static enum package_upload_status upload_inspect_owned(
     uint64_t owner,
     package_upload_token token,
     struct package_upload_report *report
@@ -572,7 +543,7 @@ enum package_upload_status package_upload_inspect(
     if (status != PACKAGE_UPLOAD_STATUS_OK) {
         return finish(report, status, OPENRFSFS_STATUS_OK, NULL, 0U);
     }
-    if (!slot->sealed || !slot->durable || slot->poisoned || slot->file_open) {
+    if (!slot->sealed || !slot->durable || slot->poisoned || !slot->file_open) {
         return finish(report, PACKAGE_UPLOAD_STATUS_STATE, OPENRFSFS_STATUS_OK,
             slot, index);
     }
@@ -580,10 +551,11 @@ enum package_upload_status package_upload_inspect(
         index);
 }
 
-enum package_upload_status package_upload_close(
+static enum package_upload_status upload_close_owned(
     uint64_t owner,
     package_upload_token token,
-    struct package_upload_report *report
+    struct package_upload_report *report,
+    bool *consumed
 )
 {
     struct upload_slot *slot;
@@ -591,9 +563,10 @@ enum package_upload_status package_upload_close(
     char path[OPENRFSFS_MAX_PATH];
 
     report_clear(report);
-    if (report == NULL) {
+    if (report == NULL || consumed == NULL) {
         return PACKAGE_UPLOAD_STATUS_NULL_ARGUMENT;
     }
+    *consumed = false;
     enum package_upload_status status = resolve_slot(owner, token, &slot,
         &index);
 
@@ -605,12 +578,45 @@ enum package_upload_status package_upload_close(
             slot, index);
     }
     servicing = true;
+    /* Cleanup may durably trim the payload in several transactions before
+     * unlink or sync refuses. The retained token is then cleanup-only: it
+     * must never advertise the old digest or expose partly removed bytes. */
+    slot->poisoned = true;
+    slot->sealed = false;
+    slot->durable = false;
+    slot_path(index, path);
+    if (slot->inode_bound_cleanup && slot->file_open && slot->file_present) {
+        enum openrfsfs_status fs_status = openrfsfs_unlink_held_file(slot->file, path);
+        if (fs_status != OPENRFSFS_STATUS_OK && fs_status != OPENRFSFS_STATUS_NOT_FOUND &&
+            fs_status != OPENRFSFS_STATUS_STALE_HANDLE) {
+            servicing = false;
+            return finish(report, PACKAGE_UPLOAD_STATUS_FILESYSTEM, fs_status,
+                slot, index);
+        }
+        /* The name is gone or belongs to someone else. Final close releases
+         * only our held inode; sync finishes any bounded orphan reclamation.
+         * Never truncate or unlink a replacement by its reused pathname. */
+        slot->file_present = false;
+    }
+    enum package_upload_status close_status = PACKAGE_UPLOAD_STATUS_OK;
+    enum openrfsfs_status close_fs_status = OPENRFSFS_STATUS_OK;
     if (slot->file_open) {
-        (void)openrfsfs_close(slot->file);
+        bool file_consumed = false;
+        close_fs_status = openrfsfs_close_report(slot->file, &file_consumed);
+        if (!file_consumed) {
+            servicing = false;
+            return finish(report, PACKAGE_UPLOAD_STATUS_FILESYSTEM,
+                close_fs_status, slot, index);
+        }
+        /* The VFS identity is gone even when backend writeback failed. Keep
+         * the package token until its remaining private cleanup completes,
+         * then retire it with the close error. */
         slot->file_open = false;
         slot->file = 0U;
+        if (close_fs_status != OPENRFSFS_STATUS_OK) {
+            close_status = PACKAGE_UPLOAD_STATUS_FILESYSTEM;
+        }
     }
-    slot_path(index, path);
     if (slot->file_present) {
         bool changed = false;
         enum openrfsfs_status fs_status = remove_private_file(path, &changed);
@@ -630,11 +636,12 @@ enum package_upload_status package_upload_close(
             slot, index);
     }
     release_slot(slot);
+    *consumed = true;
     servicing = false;
-    return finish(report, PACKAGE_UPLOAD_STATUS_OK, OPENRFSFS_STATUS_OK, NULL, 0U);
+    return finish(report, close_status, close_fs_status, NULL, 0U);
 }
 
-bool package_upload_resources_released(void)
+static bool upload_resources_released_owned(void)
 {
     if (servicing) {
         return false;
@@ -645,6 +652,110 @@ bool package_upload_resources_released(void)
         }
     }
     return true;
+}
+
+/* Serialize the entire request, including token lookup and report copies.
+ * This is a try-claim, never a spin lock held across filesystem callbacks:
+ * competing and reentrant callers refuse before touching any slot state. */
+static bool claim_request(struct package_upload_report *report)
+{
+    if (__atomic_test_and_set(&request_claim, __ATOMIC_ACQUIRE)) {
+        report_clear(report);
+        (void)finish(report, PACKAGE_UPLOAD_STATUS_BUSY, OPENRFSFS_STATUS_OK,
+            NULL, 0U);
+        return false;
+    }
+    return true;
+}
+
+static enum package_upload_status release_request(enum package_upload_status status)
+{
+    __atomic_clear(&request_claim, __ATOMIC_RELEASE);
+    return status;
+}
+
+enum package_upload_status package_upload_initialize(struct package_upload_report *report)
+{
+    if (report == NULL) return PACKAGE_UPLOAD_STATUS_NULL_ARGUMENT;
+    if (!claim_request(report)) return PACKAGE_UPLOAD_STATUS_BUSY;
+    return release_request(upload_initialize_owned(report));
+}
+
+enum package_upload_status package_upload_open(uint64_t owner,
+    struct package_upload_report *report)
+{
+    if (report == NULL) return PACKAGE_UPLOAD_STATUS_NULL_ARGUMENT;
+    if (!claim_request(report)) return PACKAGE_UPLOAD_STATUS_BUSY;
+    return release_request(upload_open_owned(owner, report));
+}
+
+enum package_upload_status package_upload_write(uint64_t owner,
+    package_upload_token token, const uint8_t *bytes, size_t byte_count,
+    size_t *written_bytes, struct package_upload_report *report)
+{
+    if (written_bytes != NULL) *written_bytes = 0U;
+    if (report == NULL) return PACKAGE_UPLOAD_STATUS_NULL_ARGUMENT;
+    if (!claim_request(report)) return PACKAGE_UPLOAD_STATUS_BUSY;
+    return release_request(upload_write_owned(owner, token, bytes, byte_count,
+        written_bytes, report));
+}
+
+enum package_upload_status package_upload_seal(uint64_t owner,
+    package_upload_token token, uint64_t expected_bytes,
+    const uint8_t expected_sha256[PACKAGE_STATE_SHA256_BYTES],
+    struct package_upload_report *report)
+{
+    if (report == NULL) return PACKAGE_UPLOAD_STATUS_NULL_ARGUMENT;
+    if (!claim_request(report)) return PACKAGE_UPLOAD_STATUS_BUSY;
+    return release_request(upload_seal_owned(owner, token, expected_bytes,
+        expected_sha256, report));
+}
+
+enum package_upload_status package_upload_read(uint64_t owner,
+    package_upload_token token, uint64_t offset, uint8_t *bytes, size_t capacity,
+    size_t *read_bytes, struct package_upload_report *report)
+{
+    if (read_bytes != NULL) *read_bytes = 0U;
+    if (report == NULL) return PACKAGE_UPLOAD_STATUS_NULL_ARGUMENT;
+    if (!claim_request(report)) return PACKAGE_UPLOAD_STATUS_BUSY;
+    return release_request(upload_read_owned(owner, token, offset, bytes,
+        capacity, read_bytes, report));
+}
+
+enum package_upload_status package_upload_inspect(uint64_t owner,
+    package_upload_token token, struct package_upload_report *report)
+{
+    if (report == NULL) return PACKAGE_UPLOAD_STATUS_NULL_ARGUMENT;
+    if (!claim_request(report)) return PACKAGE_UPLOAD_STATUS_BUSY;
+    return release_request(upload_inspect_owned(owner, token, report));
+}
+
+enum package_upload_status package_upload_close_report(uint64_t owner,
+    package_upload_token token, struct package_upload_report *report,
+    bool *consumed)
+{
+    if (report == NULL || consumed == NULL) {
+        return PACKAGE_UPLOAD_STATUS_NULL_ARGUMENT;
+    }
+    *consumed = false;
+    if (!claim_request(report)) return PACKAGE_UPLOAD_STATUS_BUSY;
+    return release_request(upload_close_owned(owner, token, report, consumed));
+}
+
+enum package_upload_status package_upload_close(uint64_t owner,
+    package_upload_token token, struct package_upload_report *report)
+{
+    bool consumed;
+
+    return package_upload_close_report(owner, token, report, &consumed);
+}
+
+bool package_upload_resources_released(void)
+{
+    if (__atomic_test_and_set(&request_claim, __ATOMIC_ACQUIRE)) return false;
+    const bool released = upload_resources_released_owned();
+    (void)release_request(PACKAGE_UPLOAD_STATUS_OK);
+    return released;
 }
 
 const char *package_upload_status_string(enum package_upload_status status)

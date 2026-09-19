@@ -29,6 +29,10 @@ enum openrfsfs_access {
     OPENRFSFS_ACCESS_READ_WRITE = 3U
 };
 
+#define OPENRFSFS_OPEN_CREATE 1U
+#define OPENRFSFS_OPEN_TRUNCATE 2U
+#define OPENRFSFS_OPEN_EXCLUSIVE 4U
+
 enum openrfsfs_seek_origin {
     OPENRFSFS_SEEK_START = 0,
     OPENRFSFS_SEEK_CURRENT,
@@ -60,6 +64,8 @@ enum openrfsfs_status {
     OPENRFSFS_STATUS_PATH,
     OPENRFSFS_STATUS_WRITEBACK,
     OPENRFSFS_STATUS_RESET,
+    OPENRFSFS_STATUS_NAME_TOO_LONG,
+    OPENRFSFS_STATUS_SYMLINK_LOOP,
     OPENRFSFS_STATUS_COUNT
 };
 
@@ -78,6 +84,19 @@ struct openrfsfs_stat {
     uint8_t attributes;
     bool directory;
     bool read_only;
+    int64_t atime_seconds;
+    int64_t mtime_seconds;
+    int64_t ctime_seconds;
+    uint32_t atime_nanos;
+    uint32_t mtime_nanos;
+    uint32_t ctime_nanos;
+};
+
+struct openrfsfs_times {
+    uint64_t atime_seconds;
+    uint64_t mtime_seconds;
+    uint32_t atime_nanos;
+    uint32_t mtime_nanos;
 };
 
 struct openrfsfs_list_entry {
@@ -102,6 +121,8 @@ struct openrfsfs_drive_info {
 
 bool openrfsfs_self_test(size_t *completed_tests);
 void openrfsfs_initialize(void);
+/* Quiescent VFS census after all mounts have been cleanly released. */
+bool openrfsfs_resources_released(void);
 enum openrfsfs_status openrfsfs_mount(enum openrfsfs_volume volume);
 enum openrfsfs_status openrfsfs_unmount(enum openrfsfs_volume volume);
 enum openrfsfs_status openrfsfs_sync(enum openrfsfs_volume volume);
@@ -113,7 +134,16 @@ enum openrfsfs_status openrfsfs_open(
     enum openrfsfs_access access,
     openrfsfs_handle *handle
 );
+enum openrfsfs_status openrfsfs_open_options(enum openrfsfs_volume volume, const char *path,
+    enum openrfsfs_access access, uint8_t flags, uint16_t mode, openrfsfs_handle *handle);
 enum openrfsfs_status openrfsfs_close(openrfsfs_handle handle);
+/* Report ownership separately from writeback status for enclosing registries. */
+enum openrfsfs_status openrfsfs_close_report(openrfsfs_handle handle, bool *consumed);
+enum openrfsfs_status openrfsfs_fsync(openrfsfs_handle handle);
+enum openrfsfs_status openrfsfs_fstat(openrfsfs_handle handle, struct openrfsfs_stat *stat);
+enum openrfsfs_status openrfsfs_publish_file(openrfsfs_handle handle, const char *source, const char *destination);
+/* Remove path only if it still names this writable handle's regular inode. */
+enum openrfsfs_status openrfsfs_unlink_held_file(openrfsfs_handle handle, const char *path);
 enum openrfsfs_status openrfsfs_read(
     openrfsfs_handle handle,
     uint8_t *destination,
@@ -139,6 +169,7 @@ enum openrfsfs_status openrfsfs_seek(
     enum openrfsfs_seek_origin origin,
     uint64_t *position
 );
+enum openrfsfs_status openrfsfs_lstat_path(enum openrfsfs_volume volume, const char *path, struct openrfsfs_stat *stat);
 enum openrfsfs_status openrfsfs_stat_path(
     enum openrfsfs_volume volume,
     const char *path,
@@ -162,6 +193,9 @@ enum openrfsfs_status openrfsfs_directory_read(
     bool *present
 );
 enum openrfsfs_status openrfsfs_directory_close(openrfsfs_directory_handle handle);
+/* Report ownership separately from backend close/writeback status. */
+enum openrfsfs_status openrfsfs_directory_close_report(
+    openrfsfs_directory_handle handle, bool *consumed);
 enum openrfsfs_status openrfsfs_create(enum openrfsfs_volume volume, const char *path);
 enum openrfsfs_status openrfsfs_create_mode(enum openrfsfs_volume volume,
     const char *path, uint16_t mode);
@@ -171,12 +205,14 @@ enum openrfsfs_status openrfsfs_truncate(
     uint64_t size
 );
 enum openrfsfs_status openrfsfs_mkdir(enum openrfsfs_volume volume, const char *path);
+enum openrfsfs_status openrfsfs_mkdir_mode(enum openrfsfs_volume volume, const char *path, uint16_t mode);
 enum openrfsfs_status openrfsfs_rename(
     enum openrfsfs_volume volume,
     const char *source,
     const char *destination
 );
 enum openrfsfs_status openrfsfs_unlink(enum openrfsfs_volume volume, const char *path);
+enum openrfsfs_status openrfsfs_remove(enum openrfsfs_volume volume, const char *path);
 enum openrfsfs_status openrfsfs_rmdir(enum openrfsfs_volume volume, const char *path);
 enum openrfsfs_status openrfsfs_link(
     enum openrfsfs_volume volume,
@@ -184,5 +220,24 @@ enum openrfsfs_status openrfsfs_link(
     const char *destination
 );
 const char *openrfsfs_status_string(enum openrfsfs_status status);
+enum openrfsfs_status openrfsfs_rename_replace(enum openrfsfs_volume volume,
+    const char *source, const char *destination);
+bool openrfsfs_has_atomic_replace(enum openrfsfs_volume volume);
+enum openrfsfs_status openrfsfs_set_append(openrfsfs_handle handle, bool append);
+enum openrfsfs_status openrfsfs_ftruncate(openrfsfs_handle handle, uint64_t size);
+enum openrfsfs_status openrfsfs_set_times(enum openrfsfs_volume volume, const char *path,
+    const struct openrfsfs_times *times);
+enum openrfsfs_status openrfsfs_symlink(enum openrfsfs_volume volume,
+    const char *path, const char *target);
+/* Copies at most capacity literal target bytes, without adding a NUL. */
+enum openrfsfs_status openrfsfs_readlink(enum openrfsfs_volume volume,
+    const char *path, uint8_t *output, size_t capacity, size_t *read_bytes);
+
+enum openrfsfs_status openrfsfs_chmod(enum openrfsfs_volume volume,
+    const char *path, uint16_t mode);
+enum openrfsfs_status openrfsfs_set_xattr(enum openrfsfs_volume volume,
+    const char *path, const char *name, const uint8_t *value, size_t length, bool remove);
+enum openrfsfs_status openrfsfs_get_xattr(enum openrfsfs_volume volume,
+    const char *path, const char *name, uint8_t *output, size_t capacity, size_t *length);
 
 #endif

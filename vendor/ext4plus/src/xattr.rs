@@ -8,9 +8,10 @@
 //! Extended attribute support.
 
 use crate::Ext4;
+use crate::checksum::Checksum;
 use crate::error::{CorruptKind, Ext4Error};
 use crate::features::{CompatibleFeatures, FilesystemFeature};
-use crate::inode::Inode;
+use crate::inode::{Inode, InodeMode};
 use crate::util::{read_u16le, read_u32le, write_u16le, write_u32le};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -69,8 +70,10 @@ fn align_4(size: usize) -> usize {
 }
 
 fn xattr_body_start(inode: &Inode) -> usize {
-    if inode.inode_data.len() < 0x80 + 2 {
-        128
+    if inode.inode_data.len() < 0x80 + 2 || read_u16le(&inode.inode_data, 0x80) == 0 {
+        // i_extra_isize itself must be declared before inode-body attributes
+        // can exist. Treat the remaining undeclared bytes as opaque padding.
+        inode.inode_data.len()
     } else {
         128 + usize::from(read_u16le(&inode.inode_data, 0x80))
     }
@@ -120,6 +123,61 @@ fn parse_xattr_name(name: &[u8]) -> Result<(u8, Vec<u8>), Ext4Error> {
     Err(Ext4Error::InvalidXattrName)
 }
 
+// ext4 ACL version 1 uses four-byte entries, except named users/groups
+// which also carry a 32-bit ID. These are not the version 2 xattr ABI bytes.
+struct PosixAcl {
+    owner: usize,
+    group: usize,
+    other: usize,
+    extended: bool,
+}
+
+impl PosixAcl {
+    fn parse(value: &[u8]) -> Option<Self> {
+        if value.len() < 16 || read_u32le(value, 0) != 1 { return None; }
+        let mut state = 0;
+        let mut offset = 4;
+        let mut group = None;
+        let mut mask = None;
+        let mut other = None;
+        let mut named = Vec::new();
+        while offset < value.len() {
+            if value.len() - offset < 4 || read_u16le(value, offset + 2) > 7 { return None; }
+            let tag = read_u16le(value, offset);
+            match tag {
+                1 if state == 0 => state = 1,
+                2 | 8 if (tag == 2 && state == 1) || (tag == 8 && state == 2) => {
+                    if value.len() - offset < 8 { return None; }
+                    let id = read_u32le(value, offset + 4);
+                    if id == u32::MAX || named.contains(&(tag, id)) { return None; }
+                    named.push((tag, id));
+                }
+                4 if state == 1 => { group = Some(offset); state = 2; }
+                16 if state == 2 => { mask = Some(offset); state = 3; }
+                32 if state == 3 || (state == 2 && named.is_empty()) => {
+                    other = Some(offset); state = 4;
+                }
+                _ => return None,
+            }
+            offset += if tag == 2 || tag == 8 { 8 } else { 4 };
+        }
+        if state != 4 { return None; }
+        Some(Self { owner: 4, group: mask.or(group)?, other: other?, extended: mask.is_some() })
+    }
+
+    fn apply_mode(&self, value: &mut [u8], mut mode: u16, inherit: bool) -> u16 {
+        // Linux posix_acl_create_masq / __posix_acl_chmod_masq: named
+        // permissions and the owning group are unchanged when a mask exists.
+        for (offset, shift) in [(self.owner, 6), (self.group, 3), (self.other, 0)] {
+            let requested = (mode >> shift) & 7;
+            let permissions = if inherit { requested & read_u16le(value, offset + 2) } else { requested };
+            write_u16le(value, offset + 2, permissions);
+            mode = (mode & !(7 << shift)) | (permissions << shift);
+        }
+        mode
+    }
+}
+
 fn parse_xattr_entries(
     inode: &Inode,
     storage: &[u8],
@@ -128,12 +186,16 @@ fn parse_xattr_entries(
 ) -> Result<Vec<XattrEntry>, Ext4Error> {
     let mut entries = Vec::new();
     let mut entry_offset = entries_start;
+    let mut first_value = storage.len();
 
     loop {
         let sentinel = storage
             .get(entry_offset..entry_offset.checked_add(4).unwrap())
             .ok_or_else(|| Ext4Error::from(CorruptKind::Xattr(inode.index)))?;
         if sentinel == [0, 0, 0, 0] {
+            if entry_offset + 4 > first_value {
+                return Err(CorruptKind::Xattr(inode.index).into());
+            }
             break;
         }
 
@@ -146,8 +208,8 @@ fn parse_xattr_entries(
             )
             .ok_or_else(|| Ext4Error::from(CorruptKind::Xattr(inode.index)))?;
         let name_len = usize::from(entry[0]);
-        if name_len == 0 {
-            break;
+        if name_len == 0 && !matches!(entry[1], EXT4_XATTR_POSIX_ACL_ACCESS | EXT4_XATTR_POSIX_ACL_DEFAULT) {
+            return Err(CorruptKind::Xattr(inode.index).into());
         }
 
         let record_len =
@@ -175,10 +237,17 @@ fn parse_xattr_entries(
         let name = entry
             [EXT4_XATTR_ENTRY_BASE_SIZE..EXT4_XATTR_ENTRY_BASE_SIZE + name_len]
             .to_vec();
-        let value = storage
-            .get(value_start..value_end)
-            .ok_or_else(|| Ext4Error::from(CorruptKind::Xattr(inode.index)))?
-            .to_vec();
+        if name.contains(&0) { return Err(CorruptKind::Xattr(inode.index).into()); }
+        let value = if value_size == 0 { Vec::new() } else {
+            let padded_end = value_start.checked_add(align_4(value_size))
+                .ok_or(CorruptKind::Xattr(inode.index))?;
+            if value_offs % 4 != 0 || padded_end > storage.len() {
+                return Err(CorruptKind::Xattr(inode.index).into());
+            }
+            first_value = first_value.min(value_start);
+            storage.get(value_start..value_end)
+                .ok_or_else(|| Ext4Error::from(CorruptKind::Xattr(inode.index)))?.to_vec()
+        };
 
         entries.push(XattrEntry {
             name_index: entry[1],
@@ -194,23 +263,32 @@ fn parse_xattr_entries(
     Ok(entries)
 }
 
-fn serialize_xattrs_to_ibody(
+fn serialize_xattrs(
     storage_len: usize,
     entries: &[XattrEntry],
+    external: bool,
 ) -> Result<Vec<u8>, Ext4Error> {
     let mut storage = vec![0; storage_len];
     if entries.is_empty() {
         return Ok(storage);
     }
 
-    if storage_len < EXT4_XATTR_IBODY_HEADER_SIZE + 4 {
+    let header = if external { EXT4_XATTR_BLOCK_HEADER_SIZE } else { EXT4_XATTR_IBODY_HEADER_SIZE };
+    let value_base = if external { 0 } else { EXT4_XATTR_IBODY_HEADER_SIZE };
+    if storage_len < header + 4 {
         return Err(Ext4Error::NoSpace);
     }
 
     write_u32le(&mut storage, 0, EXT4_XATTR_MAGIC);
+    if external {
+        write_u32le(&mut storage, 4, 1); // one owning inode
+        write_u32le(&mut storage, 8, 1); // one filesystem block
+    }
 
-    let mut entry_offset = EXT4_XATTR_IBODY_HEADER_SIZE;
+    let mut entry_offset = header;
     let mut value_cursor = storage_len;
+    let mut block_hash = 0u32;
+    let mut hashable = true;
 
     for entry in entries {
         let record_len = align_4(
@@ -247,7 +325,7 @@ fn serialize_xattrs_to_ibody(
         } else {
             u16::try_from(
                 value_cursor
-                    .checked_sub(EXT4_XATTR_IBODY_HEADER_SIZE)
+                    .checked_sub(value_base)
                     .ok_or(Ext4Error::NoSpace)?,
             )
             .map_err(|_| Ext4Error::NoSpace)?
@@ -275,14 +353,154 @@ fn serialize_xattrs_to_ibody(
             storage[value_cursor..value_cursor.checked_add(value_len).unwrap()]
                 .copy_from_slice(&entry.value);
         }
+        if external {
+            // Linux ext4_xattr_hash_entry: unsigned name bytes followed by
+            // little-endian words of the zero-padded value.
+            let mut hash = 0u32;
+            for byte in &entry.name { hash = hash.rotate_left(5) ^ u32::from(*byte); }
+            for word in storage[value_cursor..value_cursor + value_padded_len].chunks_exact(4) {
+                hash = hash.rotate_left(16) ^ read_u32le(word, 0);
+            }
+            write_u32le(&mut storage, entry_offset + 12, hash);
+            hashable &= hash != 0;
+            block_hash = block_hash.rotate_left(16) ^ hash;
+        }
 
         entry_offset = entry_offset.checked_add(record_len).unwrap();
     }
+
+    if external { write_u32le(&mut storage, 12, if hashable { block_hash } else { 0 }); }
 
     Ok(storage)
 }
 
 impl Inode {
+    /// Pack the small attributes into the inode and the remainder into one
+    /// external block. Allocate a private block before detaching a shared one;
+    /// exclusive blocks can be rewritten through the metadata journal.
+    #[maybe_async::maybe_async]
+    async fn write_xattrs(&mut self, ext4: &Ext4, mut entries: Vec<XattrEntry>) -> Result<(), Ext4Error> {
+        entries.sort_by(|a, b| (a.name_index, a.name.len(), a.name.as_slice())
+            .cmp(&(b.name_index, b.name.len(), b.name.as_slice())));
+        let start = xattr_body_start(self);
+        let length = self.inode_data.len().saturating_sub(start);
+        // Maximize the bytes packed inline. First-fit can report ENOSPC even
+        // when swapping one inline entry for two smaller ones makes the full
+        // set fit. Record sizes are multiples of four; the admitted256-byte
+        // inode needs at most32 states. Each state keeps its first predecessor
+        // so reconstruction cannot reuse an entry added by a later iteration.
+        let capacity = length.saturating_sub(EXT4_XATTR_IBODY_HEADER_SIZE + 4) / 4;
+        let mut choices = vec![None; capacity + 1];
+        choices[0] = Some((usize::MAX, 0));
+        for (index, entry) in entries.iter().enumerate() {
+            let cost = (align_4(EXT4_XATTR_ENTRY_BASE_SIZE + entry.name.len()) + align_4(entry.value.len())) / 4;
+            if cost <= capacity {
+                for used in (cost..=capacity).rev() {
+                    if choices[used].is_none() && choices[used - cost].is_some() {
+                        choices[used] = Some((index, used - cost));
+                    }
+                }
+            }
+        }
+        let mut selected = vec![false; entries.len()];
+        let mut used = choices.iter().rposition(Option::is_some).unwrap();
+        while used != 0 {
+            let (index, previous) = choices[used].unwrap();
+            selected[index] = true;
+            used = previous;
+        }
+        let mut inside = Vec::new();
+        let mut outside = Vec::new();
+        for (index, entry) in entries.into_iter().enumerate() {
+            if selected[index] { inside.push(entry); } else { outside.push(entry); }
+        }
+        let body = serialize_xattrs(length, &inside, false)?;
+        // Complete both packing checks before touching allocator reservations.
+        let external = if outside.is_empty() { None } else {
+            Some(serialize_xattrs(ext4.superblock().block_size().to_usize(), &outside, true)?)
+        };
+        if let Some(mut image) = external {
+            let old = self.file_acl();
+            let exclusive = old != 0 && read_u32le(&self.read_xattr_block(ext4).await?, 4) == 1;
+            let block = if exclusive { old } else { ext4.alloc_block(self.index).await? };
+            if block >= 1u64 << 48 { return Err(Ext4Error::FileTooLarge); }
+            if ext4.has_metadata_checksums() {
+                let checksum = Self::xattr_block_checksum(ext4, block, &image);
+                write_u32le(&mut image, 16, checksum);
+            }
+            ext4.write_to_block(block, 0, &image).await?;
+            if !exclusive {
+                self.release_xattr_block(ext4).await?;
+                let count = self.fs_blocks(ext4)?.checked_add(1).ok_or(CorruptKind::TooManyBlocksInFile)?;
+                self.set_fs_blocks(count, ext4)?;
+                self.set_file_acl(block);
+            }
+        } else {
+            self.release_xattr_block(ext4).await?;
+        }
+        self.inode_data[start..].copy_from_slice(&body);
+        self.write(ext4).await
+    }
+
+    fn xattr_block_checksum(ext4: &Ext4, block_index: u64, block: &[u8]) -> u32 {
+        let mut checksum = Checksum::with_seed(ext4.0.superblock.checksum_seed());
+        checksum.update(&block_index.to_le_bytes());
+        checksum.update(&block[..16]);
+        checksum.update_u32_le(0);
+        checksum.update(&block[20..]);
+        checksum.finalize()
+    }
+
+    #[maybe_async::maybe_async]
+    async fn read_xattr_block(&self, ext4: &Ext4) -> Result<Vec<u8>, Ext4Error> {
+        let block_index = self.file_acl();
+        let block = ext4.read_block(block_index).await?;
+        if block.len() < EXT4_XATTR_BLOCK_HEADER_SIZE
+            || read_u32le(&block, 0) != EXT4_XATTR_MAGIC
+            || !(1..=1024).contains(&read_u32le(&block, 4))
+            || read_u32le(&block, 8) != 1
+            || (ext4.has_metadata_checksums()
+                && read_u32le(&block, 16) != Self::xattr_block_checksum(ext4, block_index, &block))
+        {
+            return Err(CorruptKind::Xattr(self.index).into());
+        }
+        Ok(block)
+    }
+
+    /// Checked external block reference for a read-only ownership census.
+    #[maybe_async::maybe_async]
+    pub(crate) async fn external_xattr_reference(&self, ext4: &Ext4)
+        -> Result<Option<(u64, u32)>, Ext4Error> {
+        if self.file_acl() == 0 { return Ok(None); }
+        let block = self.read_xattr_block(ext4).await?;
+        Ok(Some((self.file_acl(), read_u32le(&block, 4))))
+    }
+
+    /// Detach an external attribute block, preserving other inode references.
+    /// All writes and any final free are captured by the caller's transaction.
+    #[maybe_async::maybe_async]
+    pub(crate) async fn release_xattr_block(&mut self, ext4: &Ext4) -> Result<(), Ext4Error> {
+        let block_index = self.file_acl();
+        if block_index == 0 { return Ok(()); }
+        let mut block = self.read_xattr_block(ext4).await?;
+        let fs_blocks = self.fs_blocks(ext4)?.checked_sub(1)
+            .ok_or(CorruptKind::Xattr(self.index))?;
+        let references = read_u32le(&block, 4);
+        if references == 1 {
+            ext4.free_block(block_index).await?;
+        } else {
+            write_u32le(&mut block, 4, references - 1);
+            if ext4.has_metadata_checksums() {
+                let checksum = Self::xattr_block_checksum(ext4, block_index, &block);
+                write_u32le(&mut block, 16, checksum);
+            }
+            ext4.write_to_block(block_index, 0, &block).await?;
+        }
+        self.set_file_acl(0);
+        self.set_fs_blocks(fs_blocks, ext4)?;
+        Ok(())
+    }
+
     #[maybe_async::maybe_async]
     async fn read_xattrs(
         &self,
@@ -305,29 +523,23 @@ impl Inode {
             let ibody = &self.inode_data[ibody_start..];
             if ibody.len() >= EXT4_XATTR_IBODY_HEADER_SIZE {
                 let magic = read_u32le(ibody, 0);
-                if magic == 0 {
-                    // No inode-body xattrs.
-                } else if magic == EXT4_XATTR_MAGIC {
+                if magic == EXT4_XATTR_MAGIC {
                     entries.extend(parse_xattr_entries(
                         self,
                         ibody,
                         EXT4_XATTR_IBODY_HEADER_SIZE,
                         EXT4_XATTR_IBODY_HEADER_SIZE,
                     )?);
-                } else {
-                    return Err(CorruptKind::Xattr(self.index).into());
                 }
+                // Linux/e2fsprogs recognize inode-body attributes only by
+                // this magic. Shortened extra fields can leave old timestamp
+                // bytes here; they are not an attribute header.
             }
         }
 
         let file_acl = self.file_acl();
         if file_acl != 0 {
-            let block = ext4.read_block(file_acl).await?;
-            if block.len() < EXT4_XATTR_BLOCK_HEADER_SIZE
-                || read_u32le(&block, 0) != EXT4_XATTR_MAGIC
-            {
-                return Err(CorruptKind::Xattr(self.index).into());
-            }
+            let block = self.read_xattr_block(ext4).await?;
             entries.extend(parse_xattr_entries(
                 self,
                 &block,
@@ -349,7 +561,56 @@ impl Inode {
             }
         }
 
+        for entry in &entries {
+            if entry.name_index == EXT4_XATTR_POSIX_ACL_ACCESS || entry.name_index == EXT4_XATTR_POSIX_ACL_DEFAULT {
+                // Linux treats a version-only ACL as absent. Otherwise reject
+                // malformed ACLs before mount recovery or any mutation uses them.
+                if (entry.value != 1u32.to_le_bytes() && PosixAcl::parse(&entry.value).is_none())
+                    || (entry.name_index == EXT4_XATTR_POSIX_ACL_DEFAULT && !self.file_type().is_dir()) {
+                    return Err(CorruptKind::Xattr(self.index).into());
+                }
+            }
+        }
+
         Ok(entries)
+    }
+
+    /// Initialize a newly allocated child's ACLs before publishing its name.
+    /// The caller must keep inode, xattrs and namespace in the same transaction.
+    #[maybe_async::maybe_async]
+    pub async fn inherit_default_acl(&mut self, ext4: &Ext4, parent: &Inode) -> Result<(), Ext4Error> {
+        if self.file_type().is_symlink() { return Ok(()); }
+        let Some(default) = parent.get_xattr(ext4, b"system.posix_acl_default").await? else { return Ok(()); };
+        if default == 1u32.to_le_bytes() { return Ok(()); }
+        let acl = PosixAcl::parse(&default).ok_or(CorruptKind::Xattr(parent.index))?;
+        let mut access = default.clone();
+        let mode = acl.apply_mode(&mut access, self.mode().bits(), true);
+        self.set_mode(InodeMode::from_bits_retain(mode))?;
+        if self.file_type().is_dir() {
+            self.set_xattr(ext4, b"system.posix_acl_default", default).await?;
+        }
+        if acl.extended {
+            self.set_xattr(ext4, b"system.posix_acl_access", access).await?;
+        }
+        self.write(ext4).await
+    }
+
+    /// Change mode and any existing access ACL within the caller's stage.
+    #[maybe_async::maybe_async]
+    pub async fn chmod_with_acl(&mut self, ext4: &Ext4, mode: InodeMode) -> Result<(), Ext4Error> {
+        let access = self.get_xattr(ext4, b"system.posix_acl_access").await?;
+        self.set_mode(mode)?;
+        if let Some(mut access) = access {
+            if access == 1u32.to_le_bytes() {
+                self.remove_xattr(ext4, b"system.posix_acl_access").await?;
+            } else {
+                let acl = PosixAcl::parse(&access).ok_or(CorruptKind::Xattr(self.index))?;
+                acl.apply_mode(&mut access, mode.bits(), false);
+                if acl.extended { self.set_xattr(ext4, b"system.posix_acl_access", access).await?; }
+                else { self.remove_xattr(ext4, b"system.posix_acl_access").await?; }
+            }
+        }
+        self.write(ext4).await
     }
 
     /// List the inode's extended attribute names.
@@ -409,10 +670,9 @@ impl Inode {
     ///
     /// The attribute is replaced if it already exists.
     ///
-    /// Currently, writes are limited to attribute sets that fit entirely
-    /// inside the inode body. Existing external xattr blocks can still be
-    /// read, and will be removed if all attributes fit inline after the
-    /// update.
+    /// Attributes must fit in the inode body and one external block. Shared
+    /// external blocks are copied before modification; external value inodes
+    /// remain unsupported.
     #[maybe_async::maybe_async]
     pub async fn set_xattr<N, V>(
         &mut self,
@@ -450,30 +710,7 @@ impl Inode {
             });
         }
 
-        entries.sort_by(|a, b| {
-            (a.name_index, a.name.as_slice())
-                .cmp(&(b.name_index, b.name.as_slice()))
-        });
-
-        let ibody_start = xattr_body_start(self);
-        let ibody_len = self.inode_data.len().saturating_sub(ibody_start);
-        let serialized = serialize_xattrs_to_ibody(ibody_len, &entries)?;
-
-        if ibody_start < self.inode_data.len() {
-            self.inode_data[ibody_start..].copy_from_slice(&serialized);
-        } else if !serialized.is_empty() {
-            return Err(Ext4Error::NoSpace);
-        }
-
-        let file_acl = self.file_acl();
-        if file_acl != 0 {
-            ext4.free_block(file_acl).await?;
-            self.set_file_acl(0);
-            let fs_blocks = self.fs_blocks(ext4)?;
-            self.set_fs_blocks(fs_blocks.checked_sub(1).unwrap(), ext4)?;
-        }
-
-        self.write(ext4).await
+        self.write_xattrs(ext4, entries).await
     }
 
     /// Remove an extended attribute from the inode.
@@ -507,23 +744,7 @@ impl Inode {
             return Err(Ext4Error::NotFound);
         }
 
-        let ibody_start = xattr_body_start(self);
-        let ibody_len = self.inode_data.len().saturating_sub(ibody_start);
-        let serialized = serialize_xattrs_to_ibody(ibody_len, &entries)?;
-
-        if ibody_start < self.inode_data.len() {
-            self.inode_data[ibody_start..].copy_from_slice(&serialized);
-        }
-
-        let file_acl = self.file_acl();
-        if file_acl != 0 {
-            ext4.free_block(file_acl).await?;
-            self.set_file_acl(0);
-            let fs_blocks = self.fs_blocks(ext4)?;
-            self.set_fs_blocks(fs_blocks.checked_sub(1).unwrap(), ext4)?;
-        }
-
-        self.write(ext4).await
+        self.write_xattrs(ext4, entries).await
     }
 }
 

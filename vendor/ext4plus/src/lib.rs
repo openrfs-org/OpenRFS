@@ -135,6 +135,7 @@ mod label;
 mod mem_io_error;
 mod metadata;
 mod mmp;
+mod orphan;
 pub mod path;
 pub mod prelude;
 mod reader;
@@ -154,6 +155,7 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use bitmap::BitmapHandle;
+pub use bitmap::{BlockAllocationSnapshot, InodeAllocationSnapshot};
 use block_group::{BlockGroupDescriptor, BlockGroupIndex};
 use block_index::FsBlockIndex;
 use core::fmt::{self, Debug, Formatter};
@@ -206,6 +208,7 @@ pub use uuid::Uuid;
 pub use writer::Ext4Write;
 
 struct Ext4Inner {
+    mutation_seconds: core::sync::atomic::AtomicU64,
     superblock: Superblock,
     block_group_descriptors: Vec<BlockGroupDescriptor>,
     journal: Journal,
@@ -226,6 +229,20 @@ struct Ext4Inner {
 pub struct Ext4(PtrPrimitive<Ext4Inner>);
 
 impl Ext4 {
+    /// Set the transaction's non-negative Unix time. Call only while mutation
+    /// access is exclusive; None preserves timestamps for generic callers.
+    pub fn set_mutation_time(&self, seconds: Option<u64>) -> Result<(), Ext4Error> {
+        if seconds.is_some_and(|value| value > 0x3_7fff_ffff) {
+            return Err(Ext4Error::InvalidTimestamp);
+        }
+        self.0.mutation_seconds.store(seconds.unwrap_or(u64::MAX), core::sync::atomic::Ordering::Relaxed);
+        Ok(())
+    }
+
+    pub(crate) fn mutation_time(&self) -> Option<Duration> {
+        let seconds = self.0.mutation_seconds.load(core::sync::atomic::Ordering::Relaxed);
+        (seconds != u64::MAX).then(|| Duration::from_secs(seconds))
+    }
     /// Load an `Ext4` instance from the given `reader`.
     ///
     /// This reads and validates the superblock, block group
@@ -286,6 +303,7 @@ impl Ext4 {
             writer = None;
         }
         let mut fs = Self(PtrPrimitive::new(Ext4Inner {
+            mutation_seconds: core::sync::atomic::AtomicU64::new(u64::MAX),
             block_group_descriptors: BlockGroupDescriptor::read_all(
                 &superblock,
                 &mut *reader,
@@ -356,6 +374,24 @@ impl Ext4 {
     #[must_use]
     pub fn superblock(&self) -> &Superblock {
         &self.0.superblock
+    }
+
+    /// Check allocation independently of the inode body, which can retain a
+    /// valid checksum after Linux frees it. This never initializes lazy bitmaps.
+    #[maybe_async::maybe_async]
+    pub async fn inode_is_allocated(&self, index: InodeIndex) -> Result<bool, Ext4Error> {
+        self.inode_allocation_snapshot().is_allocated(index).await
+    }
+
+    /// Cache encountered inode bitmaps for one namespace validation pass.
+    /// Callers must discard the snapshot before changing the filesystem.
+    pub fn inode_allocation_snapshot(&self) -> InodeAllocationSnapshot<'_> {
+        InodeAllocationSnapshot::new(self)
+    }
+
+    /// Cache checked block bitmaps for one validation pass, without writes.
+    pub fn block_allocation_snapshot(&self) -> BlockAllocationSnapshot<'_> {
+        BlockAllocationSnapshot::new(self)
     }
 
     /// Read the inode of the root `/` directory.
@@ -596,20 +632,73 @@ impl Ext4 {
         &self.0.block_group_descriptors[usize_from_u32(block_group_index)]
     }
 
-    fn get_block_bitmap_handle(
-        &self,
-        block_group_index: BlockGroupIndex,
-    ) -> BitmapHandle {
-        let block_group = self.get_block_group_descriptor(block_group_index);
-        BitmapHandle::new(block_group.block_bitmap_block(), false)
+    fn blocks_in_group(&self, group: u32) -> Result<u32, Ext4Error> {
+        let size = self.0.superblock.blocks_per_group().get();
+        let start = u64::from(group) * u64::from(size) + u64::from(self.0.superblock.first_data_block());
+        let count = self.0.superblock.blocks_count().checked_sub(start)
+            .ok_or(CorruptKind::BlockGroupDescriptor(group))?.min(u64::from(size));
+        u32::try_from(count).ok().filter(|count| *count != 0)
+            .ok_or_else(|| CorruptKind::BlockGroupDescriptor(group).into())
     }
 
-    fn get_inode_bitmap_handle(
+    /// Identify fixed allocator metadata in the non-flex, non-resize profile.
+    /// Directory, extent-tree, xattr and journal blocks require their own
+    /// ownership checks; false alone does not prove a block belongs to a file.
+    pub fn is_fixed_metadata_block(&self, block: u64) -> Result<bool, Ext4Error> {
+        let sb = &self.0.superblock;
+        if sb.incompatible_features().intersects(IncompatibleFeatures::META_BLOCK_GROUPS | IncompatibleFeatures::FLEXIBLE_BLOCK_GROUPS)
+            || sb.compatible_features().contains(features::CompatibleFeatures::RESIZE_INODE)
+            || sb.compatible_features().bits() & 0x200 != 0 {
+            return Err(Ext4Error::Readonly);
+        }
+        if block >= sb.blocks_count() { return Err(CorruptKind::BlockGroupDescriptor(0).into()); }
+        let first = u64::from(sb.first_data_block());
+        if block < first { return Ok(true); }
+        let group = u32::try_from((block - first) / u64::from(sb.blocks_per_group().get()))
+            .map_err(|_| CorruptKind::BlockGroupDescriptor(0))?;
+        let power = |mut value: u32, base: u32| {
+            while value > 1 && value % base == 0 { value /= base; }
+            value == 1
+        };
+        let has_super = !sb.read_only_compatible_features().contains(ReadOnlyCompatibleFeatures::SPARSE_SUPERBLOCKS)
+            || group == 0 || group == 1 || power(group, 3) || power(group, 5) || power(group, 7);
+        let group_start = first + u64::from(group) * u64::from(sb.blocks_per_group().get());
+        let descriptor_blocks = (u64::from(sb.num_block_groups()) * u64::from(sb.block_group_descriptor_size()))
+            .div_ceil(sb.block_size().to_u64());
+        if has_super && block - group_start <= descriptor_blocks { return Ok(true); }
+        let table_blocks = (u64::from(sb.inodes_per_block_group().get()) * u64::from(sb.inode_size()))
+            .div_ceil(sb.block_size().to_u64());
+        for descriptor in &self.0.block_group_descriptors {
+            if block == descriptor.block_bitmap_block() || block == descriptor.inode_bitmap_block()
+                || block.checked_sub(descriptor.inode_table_first_block()).is_some_and(|offset| offset < table_blocks) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    #[maybe_async::maybe_async]
+    async fn get_block_bitmap_handle(
         &self,
         block_group_index: BlockGroupIndex,
-    ) -> BitmapHandle {
+    ) -> Result<BitmapHandle, Ext4Error> {
         let block_group = self.get_block_group_descriptor(block_group_index);
-        BitmapHandle::new(block_group.inode_bitmap_block(), true)
+        let bitmap = BitmapHandle::new(block_group.block_bitmap_block(), false);
+        bitmap.initialize(self, block_group_index).await?;
+        bitmap.validate(self, block_group_index).await?;
+        Ok(bitmap)
+    }
+
+    #[maybe_async::maybe_async]
+    async fn get_inode_bitmap_handle(
+        &self,
+        block_group_index: BlockGroupIndex,
+    ) -> Result<BitmapHandle, Ext4Error> {
+        let block_group = self.get_block_group_descriptor(block_group_index);
+        let bitmap = BitmapHandle::new(block_group.inode_bitmap_block(), true);
+        bitmap.initialize(self, block_group_index).await?;
+        bitmap.validate(self, block_group_index).await?;
+        Ok(bitmap)
     }
 
     #[maybe_async::maybe_async]
@@ -649,7 +738,7 @@ impl Ext4 {
     ) -> Result<bool, Ext4Error> {
         let (block_group_index, block_offset) =
             self.block_block_group_location(block_index)?;
-        let bitmap_handle = self.get_block_bitmap_handle(block_group_index);
+        let bitmap_handle = self.get_block_bitmap_handle(block_group_index).await?;
         bitmap_handle.query(block_offset, self).await
     }
 
@@ -678,7 +767,11 @@ impl Ext4 {
             let used_dirs = bg.used_dirs_count();
 
             if free_inodes > 0 {
-                let inode_bitmap_handle = self.get_inode_bitmap_handle(bg_id);
+                if self.0.superblock.free_inodes_count() == 0
+                    || free_inodes > self.0.superblock.inodes_per_block_group().get() {
+                    return Err(CorruptKind::BlockGroupDescriptor(bg_id).into());
+                }
+                let inode_bitmap_handle = self.get_inode_bitmap_handle(bg_id).await?;
                 let Some(inode_num) = inode_bitmap_handle
                     .find_first(
                         false,
@@ -687,8 +780,16 @@ impl Ext4 {
                     )
                     .await?
                 else {
-                    continue;
+                    return Err(CorruptKind::BlockGroupDescriptor(bg_id).into());
                 };
+                let number = self.0.superblock.inodes_per_block_group().get()
+                    .checked_mul(bg_id).and_then(|base| base.checked_add(inode_num))
+                    .and_then(|value| value.checked_add(1))
+                    .filter(|value| *value >= self.0.superblock.first_allocatable_inode()
+                        && self.0.superblock.first_allocatable_inode() >= 11
+                        && *value <= self.0.superblock.inodes_count())
+                    .and_then(InodeIndex::new)
+                    .ok_or(CorruptKind::BlockGroupDescriptor(bg_id))?;
                 inode_bitmap_handle.set(inode_num, true, self).await?;
                 self.update_inode_bitmap_checksum(bg_id, inode_bitmap_handle)
                     .await?;
@@ -699,13 +800,6 @@ impl Ext4 {
                     .inodes_per_block_group()
                     .get()
                     .checked_sub(bg.unused_inodes_count())
-                    .ok_or(
-                        CorruptKind::BlockGroupDescriptorTooManyUnusedInodes {
-                            block_group_num: bg_id,
-                            num_unused_inodes: bg.unused_inodes_count(),
-                        },
-                    )?
-                    .checked_sub(1)
                     .ok_or(
                         CorruptKind::BlockGroupDescriptorTooManyUnusedInodes {
                             block_group_num: bg_id,
@@ -727,7 +821,7 @@ impl Ext4 {
                 }
 
                 if matches!(inode_type, FileType::Directory) {
-                    bg.set_used_dirs_count(used_dirs.saturating_add(1));
+                    bg.set_used_dirs_count(used_dirs.checked_add(1).ok_or(CorruptKind::BlockGroupDescriptor(bg_id))?);
                 }
                 bg.write(self).await?;
                 let total_free_inodes = self.0.superblock.free_inodes_count();
@@ -736,21 +830,7 @@ impl Ext4 {
                 );
                 self.0.superblock.write(self).await?;
 
-                return Ok(InodeIndex::try_from(
-                    inode_num
-                        .checked_add(
-                            self.0
-                                .superblock
-                                .inodes_per_block_group()
-                                .get()
-                                .checked_mul(bg_id)
-                                .unwrap(),
-                        )
-                        .unwrap()
-                        .checked_add(1)
-                        .unwrap(),
-                )
-                .unwrap());
+                return Ok(number);
             }
 
             // Will never overflow
@@ -766,8 +846,23 @@ impl Ext4 {
     ) -> Result<(), Ext4Error> {
         let (block_group_index, inode_offset) =
             get_inode_block_group_location(&self.0.superblock, inode.index)?;
+        let bad = || CorruptKind::BlockGroupDescriptor(block_group_index);
+        if inode.index.get() < self.0.superblock.first_allocatable_inode()
+            || self.0.superblock.first_allocatable_inode() < 11
+            || inode.index.get() > self.0.superblock.inodes_count() { return Err(bad().into()); }
+        let bg = self.0.block_group_descriptors.get(block_group_index as usize).ok_or_else(bad)?;
+        let free_inodes = bg.free_inodes_count().checked_add(1)
+            .filter(|count| *count <= self.0.superblock.inodes_per_block_group().get()).ok_or_else(bad)?;
+        let total_free_inodes = self.0.superblock.free_inodes_count().checked_add(1)
+            .filter(|count| *count <= self.0.superblock.inodes_count()).ok_or_else(bad)?;
+        let used_dirs = if inode.file_type().is_dir() {
+            bg.used_dirs_count().checked_sub(1).ok_or_else(bad)?
+        } else { bg.used_dirs_count() };
         let inode_bitmap_handle =
-            self.get_inode_bitmap_handle(block_group_index);
+            self.get_inode_bitmap_handle(block_group_index).await?;
+        if !inode_bitmap_handle.query(inode_offset, self).await? {
+            return Err(CorruptKind::BlockGroupDescriptor(block_group_index).into());
+        }
         inode_bitmap_handle.set(inode_offset, false, self).await?;
         self.update_inode_bitmap_checksum(
             block_group_index,
@@ -775,19 +870,13 @@ impl Ext4 {
         )
         .await?;
         // Set number of free inodes in block group
-        let bg = self.get_block_group_descriptor(block_group_index);
-        let free_inodes = bg.free_inodes_count();
-        bg.set_free_inodes_count(free_inodes.saturating_add(1));
-        if inode.file_type().is_dir() {
-            let used_dirs = bg.used_dirs_count();
-            bg.set_used_dirs_count(used_dirs.saturating_sub(1));
-        }
+        bg.set_free_inodes_count(free_inodes);
+        bg.set_used_dirs_count(used_dirs);
         bg.write(self).await?;
         // Set number of free inodes in superblock
-        let total_free_inodes = self.0.superblock.free_inodes_count();
         self.0
             .superblock
-            .set_free_inodes_count(total_free_inodes.saturating_add(1));
+            .set_free_inodes_count(total_free_inodes);
         self.0.superblock.write(self).await?;
         Ok(())
     }
@@ -796,6 +885,9 @@ impl Ext4 {
         &self,
         block_index: FsBlockIndex,
     ) -> Result<(BlockGroupIndex, u32), Ext4Error> {
+        if block_index >= self.0.superblock.blocks_count() {
+            return Err(CorruptKind::TooManyBlockGroups.into());
+        }
         let blocks_per_group =
             NonZeroU64::from(self.0.superblock.blocks_per_group());
         let relative_block_index = block_index
@@ -838,7 +930,7 @@ impl Ext4 {
         let (block_group_index, block_offset) =
             self.block_block_group_location(block)?;
         let block_bitmap_handle =
-            self.get_block_bitmap_handle(block_group_index);
+            self.get_block_bitmap_handle(block_group_index).await?;
         if block_bitmap_handle.query(block_offset, self).await? {
             return Err(Ext4Error::AlreadyExists);
         }
@@ -885,11 +977,15 @@ impl Ext4 {
             // idiomatically: if free_blocks > 0
             // Done with guard to remove unwrap
             if let Some(free_blocks) = NonZeroU32::new(free_blocks) {
-                let block_bitmap_handle = self.get_block_bitmap_handle(bg_id);
+                let group_blocks = self.blocks_in_group(bg_id)?;
+                if free_blocks.get() > group_blocks || self.0.superblock.free_blocks_count() == 0 {
+                    return Err(CorruptKind::BlockGroupDescriptor(bg_id).into());
+                }
+                let block_bitmap_handle = self.get_block_bitmap_handle(bg_id).await?;
                 let Some(block_num) =
-                    block_bitmap_handle.find_first(false, .., self).await?
+                    block_bitmap_handle.find_first(false, ..group_blocks, self).await?
                 else {
-                    continue;
+                    return Err(CorruptKind::BlockGroupDescriptor(bg_id).into());
                 };
                 block_bitmap_handle.set(block_num, true, self).await?;
                 self.update_block_bitmap_checksum(bg_id, block_bitmap_handle)
@@ -938,11 +1034,18 @@ impl Ext4 {
             let free_blocks = bg.free_blocks_count();
 
             if free_blocks >= num_blocks.get() {
-                let block_bitmap_handle = self.get_block_bitmap_handle(bg_id);
+                let group_blocks = self.blocks_in_group(bg_id)?;
+                if free_blocks > group_blocks || self.0.superblock.free_blocks_count() < u64::from(num_blocks.get()) {
+                    return Err(CorruptKind::BlockGroupDescriptor(bg_id).into());
+                }
+                let block_bitmap_handle = self.get_block_bitmap_handle(bg_id).await?;
                 let Some(block_num) = block_bitmap_handle
-                    .find_first_n(num_blocks.into(), false, .., self)
+                    .find_first_n(num_blocks.into(), false, ..group_blocks, self)
                     .await?
                 else {
+                    // Fragmented free space need not contain a long enough
+                    // run. Advance instead of retrying this group forever.
+                    bg_id = bg_id.saturating_add(1);
                     continue;
                 };
                 for i in 0..num_blocks.get() {
@@ -1004,12 +1107,12 @@ impl Ext4 {
         num_blocks: NonZeroU32,
     ) -> Result<(FsBlockIndex, NonZeroU32), Ext4Error> {
         // TODO: very inefficient on full disk
-        for i in (0..num_blocks.get()).rev() {
+        for i in (1..=num_blocks.get()).rev() {
             let i = NonZeroU32::new(i).ok_or(Ext4Error::NoSpace)?;
-            if let Ok(block_index) =
-                self.alloc_contiguous_blocks(inode_index, i).await
-            {
-                return Ok((block_index, i));
+            match self.alloc_contiguous_blocks(inode_index, i).await {
+                Ok(block_index) => return Ok((block_index, i)),
+                Err(Ext4Error::NoSpace) => {},
+                Err(error) => return Err(error),
             }
         }
         Err(Ext4Error::NoSpace)
@@ -1064,27 +1167,7 @@ impl Ext4 {
         &self,
         block_index: FsBlockIndex,
     ) -> Result<(), Ext4Error> {
-        assert_ne!(block_index, 0);
-        self.revoke_blocks(block_index, NonZeroU32::new(1).unwrap())
-            .await?;
-        let (block_group_index, block_offset) =
-            self.block_block_group_location(block_index)?;
-        let block_bitmap_handle =
-            self.get_block_bitmap_handle(block_group_index);
-        block_bitmap_handle.set(block_offset, false, self).await?;
-        self.update_block_bitmap_checksum(
-            block_group_index,
-            block_bitmap_handle,
-        )
-        .await?;
-        // Set number of free blocks in block group
-        let bg = self.get_block_group_descriptor(block_group_index);
-        let free_blocks = bg.free_blocks_count();
-        bg.set_free_blocks_count(free_blocks.saturating_add(1));
-        bg.write(self).await?;
-        self.0.superblock.inc_free_blocks_count(1);
-        self.0.superblock.write(self).await?;
-        Ok(())
+        self.free_blocks(block_index, NonZeroU32::new(1).unwrap()).await
     }
 
     /// Frees `num_blocks` contiguous blocks starting at `block_index`.
@@ -1094,12 +1177,31 @@ impl Ext4 {
         block_index: FsBlockIndex,
         num_blocks: NonZeroU32,
     ) -> Result<(), Ext4Error> {
-        assert_ne!(block_index, 0);
-        self.revoke_blocks(block_index, num_blocks).await?;
+        if block_index == 0 {
+            return Err(CorruptKind::FirstDataBlock(0).into());
+        }
         let (block_group_index, block_offset) =
             self.block_block_group_location(block_index)?;
+        let group_blocks = self.blocks_in_group(block_group_index)?;
+        let end = block_offset.checked_add(num_blocks.get())
+            .filter(|end| *end <= group_blocks)
+            .ok_or(CorruptKind::BlockGroupDescriptor(block_group_index))?;
+        let bg = self.get_block_group_descriptor(block_group_index);
+        let free_blocks = bg.free_blocks_count().checked_add(num_blocks.get())
+            .filter(|count| *count <= group_blocks)
+            .ok_or(CorruptKind::BlockGroupDescriptor(block_group_index))?;
+        if self.0.superblock.free_blocks_count().checked_add(u64::from(num_blocks.get()))
+            .is_none_or(|count| count > self.0.superblock.blocks_count()) {
+            return Err(CorruptKind::BlockGroupDescriptor(block_group_index).into());
+        }
         let block_bitmap_handle =
-            self.get_block_bitmap_handle(block_group_index);
+            self.get_block_bitmap_handle(block_group_index).await?;
+        for bit in block_offset..end {
+            if !block_bitmap_handle.query(bit, self).await? {
+                return Err(CorruptKind::BlockGroupDescriptor(block_group_index).into());
+            }
+        }
+        self.revoke_blocks(block_index, num_blocks).await?;
         for i in 0..num_blocks.get() {
             block_bitmap_handle
                 .set(block_offset.checked_add(i).unwrap(), false, self)
@@ -1111,13 +1213,7 @@ impl Ext4 {
         )
         .await?;
         // Set number of free blocks in block group
-        let bg = self.get_block_group_descriptor(block_group_index);
-        let free_blocks = bg.free_blocks_count();
-        bg.set_free_blocks_count(
-            free_blocks
-                .checked_add(num_blocks.get())
-                .ok_or(Ext4Error::NoSpace)?,
-        );
+        bg.set_free_blocks_count(free_blocks);
         bg.write(self).await?;
         self.0
             .superblock
@@ -1135,8 +1231,12 @@ impl Ext4 {
         &self,
         mut inode: Inode,
     ) -> Result<(), Ext4Error> {
-        let blocks = FileBlocks::from_inode(&inode, self.clone())?;
-        blocks.free_all().await?;
+        inode.release_xattr_block(self).await?;
+        // Fast symlinks keep target bytes in i_block, not block pointers.
+        if !(inode.file_type().is_symlink() && inode.size_in_bytes() < 60) {
+            let blocks = FileBlocks::from_inode(&inode, self.clone())?;
+            blocks.free_all().await?;
+        }
         inode.set_size_in_bytes(0);
         inode.set_links_count(0);
         inode.write(self).await?;
@@ -1149,11 +1249,33 @@ impl Ext4 {
     #[maybe_async::maybe_async]
     pub async fn create_inode(
         &self,
-        options: InodeCreationOptions,
+        mut options: InodeCreationOptions,
     ) -> Result<Inode, Ext4Error> {
+        if let Some(time) = self.mutation_time() { options.time = time; }
         // TODO: for the purposes of fscking during recovery, it is proper to write inode data, then mark as used
         let inode_index = self.alloc_inode(options.file_type).await?;
         Inode::create(inode_index, options, self).await
+    }
+
+    /// Create an unpublished child with its parent's setgid and default ACL
+    /// inheritance. Allocation, attributes and the later link must share the
+    /// caller's transaction; `create_inode` remains a raw allocation primitive.
+    #[maybe_async::maybe_async]
+    pub async fn create_child_inode(
+        &self,
+        parent: &Inode,
+        mut options: InodeCreationOptions,
+    ) -> Result<Inode, Ext4Error> {
+        if !parent.file_type().is_dir() { return Err(Ext4Error::NotADirectory); }
+        // Linux inode_init_owner: inherit the group for every child type,
+        // and propagate S_ISGID only to subdirectories.
+        if parent.mode().contains(InodeMode::S_ISGID) {
+            options.gid = parent.gid();
+            if options.file_type.is_dir() { options.mode |= InodeMode::S_ISGID; }
+        }
+        let mut inode = self.create_inode(options).await?;
+        inode.inherit_default_acl(self, parent).await?;
+        Ok(inode)
     }
 
     /// Read the entire contents of a file into a `Vec<u8>`.
@@ -1211,16 +1333,16 @@ impl Ext4 {
         time: Duration,
     ) -> Result<Inode, Ext4Error> {
         let mut inode = self
-            .create_inode(InodeCreationOptions {
+            .create_child_inode(parent_dir.inode(), InodeCreationOptions {
                 file_type: FileType::Symlink,
-                mode: InodeMode::S_IFLNK,
+                mode: InodeMode::S_IFLNK | InodeMode::from_bits_truncate(0o777),
                 uid,
                 gid,
                 time,
                 flags: InodeFlags::empty(),
             })
             .await?;
-        if target.as_ref().len() <= 60 {
+        if target.as_ref().len() < 60 {
             // Fast symlink: store the target in the inode itself.
             let mut target_bytes = [0; 60];
             target_bytes[..target.as_ref().len()]
@@ -1350,6 +1472,13 @@ impl Ext4 {
         resolve::resolve_path(self, path, FollowSymlinks::All)
             .await
             .map(|v| v.1)
+    }
+
+    /// Resolve a regular-file creation target, including dangling symlinks.
+    /// Only the final component may be missing; this performs no mutation.
+    #[maybe_async::maybe_async]
+    pub async fn canonicalize_for_create(&self, path: Path<'_>) -> Result<PathBuf, Ext4Error> {
+        resolve::resolve_creation_path(self, path).await
     }
 
     /// Check if `path` exists.

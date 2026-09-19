@@ -1,0 +1,795 @@
+{
+  "source_head": "8dcaf7d81d4b0ebdde554402c1f9e48103748891",
+  "source_base": "804c6ac065d92813e604b971f912383c3addf350",
+  "integration_base": "05ff3fe48be0b60d0d47d41f4a9898e4a2386e56",
+  "files": [
+    {
+      "source": ".github/workflows/filesystem-compatibility.yml",
+      "target": ".github/workflows/filesystem-compatibility.yml",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "CHANGELOG.md",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "Makefile",
+      "target": "Makefile",
+      "three_way_conflicts_resolved": 8,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "README.md",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "apps/phip/remove-manifest.json",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "docs/ARCHITECTURE.md",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "docs/BRAND.md",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "docs/EXT4-WRITABLE-AUDIT.md",
+      "target": "docs/EXT4-WRITABLE-AUDIT.md",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "docs/EXT4.md",
+      "target": "docs/EXT4.md",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "docs/NATIVE_ABI.md",
+      "target": "docs/NATIVE_ABI.md",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "docs/NATIVE_GRAPHICS.md",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "docs/PACKAGE_MANAGER.md",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "docs/PHIPIA.md",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "docs/THIRD_PARTY_ASSETS.md",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "docs/VERIFICATION.md",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "docs/third-party/3d-dock-LICENSE",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "evidence/v2.1.0/SHA256SUMS",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "evidence/v2.1.0/phipia-v2.1.0-networking-serial.log",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "include/phipia/abi/base.h",
+      "target": "include/openrfs/abi/base.h",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "include/phipia/abi/storage.h",
+      "target": "include/openrfs/abi/storage.h",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "include/phipia/audio.h",
+      "target": "include/openrfs/audio.h",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "include/phipia/dock3d.h",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "include/phipia/ext4_fs.h",
+      "target": "include/openrfs/ext4_fs.h",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "include/phipia/fat32_fs.h",
+      "target": "include/openrfs/fat32_fs.h",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "include/phipia/keyboard.h",
+      "target": "include/openrfs/keyboard.h",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "include/phipia/msix.h",
+      "target": "include/openrfs/msix.h",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "include/phipia/native_handle.h",
+      "target": "include/openrfs/native_handle.h",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "include/phipia/native_process.h",
+      "target": "include/openrfs/native_process.h",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "include/phipia/native_teardown_diagnostics.h",
+      "target": "include/openrfs/native_teardown_diagnostics.h",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "include/phipia/package_upload.h",
+      "target": "include/openrfs/package_upload.h",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "include/phipia/slot_claim.h",
+      "target": "include/openrfs/slot_claim.h",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "include/phipia/ui.h",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "include/phipia/vfs_backend.h",
+      "target": "include/openrfs/vfs_backend.h",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "sdk/include/dirent.h",
+      "target": "sdk/include/dirent.h",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "sdk/include/errno.h",
+      "target": "sdk/include/errno.h",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "sdk/include/fcntl.h",
+      "target": "sdk/include/fcntl.h",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "sdk/include/phipia/runtime.h",
+      "target": "sdk/include/openrfs/runtime.h",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "sdk/include/sys/stat.h",
+      "target": "sdk/include/sys/stat.h",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "sdk/include/unistd.h",
+      "target": "sdk/include/unistd.h",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "sdk/src/posix.c",
+      "target": "sdk/src/posix.c",
+      "three_way_conflicts_resolved": 6,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "sdk/src/runtime.c",
+      "target": "sdk/src/runtime.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "sdk/src/stdio.c",
+      "target": "sdk/src/stdio.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "src/kernel/audio.c",
+      "target": "src/kernel/audio.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "src/kernel/dock3d.c",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "src/kernel/ext4_fs.c",
+      "target": "src/kernel/ext4_fs.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "src/kernel/fat32_fs.c",
+      "target": "src/kernel/fat32_fs.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "src/kernel/kernel.c",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "src/kernel/keyboard.c",
+      "target": "src/kernel/keyboard.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "src/kernel/msix.c",
+      "target": "src/kernel/msix.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "src/kernel/native_handle.c",
+      "target": "src/kernel/native_handle.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "src/kernel/native_process.c",
+      "target": "src/kernel/native_process.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "src/kernel/native_process_teardown.c",
+      "target": "src/kernel/native_process_teardown.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "src/kernel/native_teardown_diagnostics.c",
+      "target": "src/kernel/native_teardown_diagnostics.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "src/kernel/nvme.c",
+      "target": "src/kernel/nvme.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "src/kernel/package_control.c",
+      "target": "src/kernel/package_control.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "src/kernel/package_service.c",
+      "target": "src/kernel/package_service.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "src/kernel/package_upload.c",
+      "target": "src/kernel/package_upload.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "src/kernel/shell.c",
+      "target": "src/kernel/shell.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "port filesystem calls and idle wakeup fix; preserve main version identity"
+    },
+    {
+      "source": "src/kernel/test.c",
+      "target": "src/kernel/test.c",
+      "three_way_conflicts_resolved": 3,
+      "resolution": "port all filesystem probes; preserve main UI and native OpenRFS package scenarios"
+    },
+    {
+      "source": "src/kernel/ui.c",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "src/kernel/vfs.c",
+      "target": "src/kernel/vfs.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "src/rust/abi.rs",
+      "target": "src/rust/abi.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "src/rust/ext4.rs",
+      "target": "src/rust/ext4.rs",
+      "three_way_conflicts_resolved": 3,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "src/rust/lib.rs",
+      "target": "src/rust/lib.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/capture-networking.py",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "tools/capture-phipia-proof.py",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "tools/capture-phipia-tour.py",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "tools/capture-phipia.py",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "tools/compare-phipia-proof-screenshot.py",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "tools/ext4-append-contention-host-test.c",
+      "target": "tools/ext4-append-contention-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4-fsync-host-test.c",
+      "target": "tools/ext4-fsync-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4-handle-claims-host-test.c",
+      "target": "tools/ext4-handle-claims-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4-msix-close-host-test.c",
+      "target": "tools/ext4-msix-close-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4-nvme-close-host-test.c",
+      "target": "tools/ext4-nvme-close-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4-registry-host-test.c",
+      "target": "tools/ext4-registry-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4-sparse-truncate-host-test.c",
+      "target": "tools/ext4-sparse-truncate-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4-storage-cut-host-test.c",
+      "target": "tools/ext4-storage-cut-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4-transaction-tests/src/lib.rs",
+      "target": "tools/ext4-transaction-tests/src/lib.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4-transaction-tests/tests/coordinator.rs",
+      "target": "tools/ext4-transaction-tests/tests/coordinator.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4-transaction-tests/tests/revoke_allocations.rs",
+      "target": "tools/ext4-transaction-tests/tests/revoke_allocations.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4-vfs-host-test.c",
+      "target": "tools/ext4-vfs-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4_admission_test.py",
+      "target": "tools/ext4_admission_test.py",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4_application_space_test.py",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "tools/ext4_application_test.py",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "tools/ext4_dense_file_test.py",
+      "target": "tools/ext4_dense_file_test.py",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4_geometry_test.py",
+      "target": "tools/ext4_geometry_test.py",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4_guest_capture_test.py",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "tools/ext4_host_test.py",
+      "target": "tools/ext4_host_test.py",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4_image.py",
+      "target": "tools/ext4_image.py",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4_journal_corruption_test.py",
+      "target": "tools/ext4_journal_corruption_test.py",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4_journal_wrap_test.py",
+      "target": "tools/ext4_journal_wrap_test.py",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4_kernel_read.py",
+      "target": "tools/ext4_kernel_read.py",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4_overwrite_device_test.py",
+      "target": "tools/ext4_overwrite_device_test.py",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4_powercut_test.py",
+      "target": "tools/ext4_powercut_test.py",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4_space_test.py",
+      "target": "tools/ext4_space_test.py",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4_unlink_powercut_test.py",
+      "target": "tools/ext4_unlink_powercut_test.py",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/keyboard-channel-host-test.c",
+      "target": "tools/keyboard-channel-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/native-audio-close-host-test.c",
+      "target": "tools/native-audio-close-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/native-file-close-host-test.c",
+      "target": "tools/native-file-close-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/native-teardown-diagnostics-host-test.c",
+      "target": "tools/native-teardown-diagnostics-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/native-teardown-history-host-test.c",
+      "target": "tools/native-teardown-history-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/native-teardown-report-host-test.c",
+      "target": "tools/native-teardown-report-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/native-window-close-host-test.c",
+      "target": "tools/native-window-close-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/notes-ext4-host-test.c",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "tools/package-control-host-test.c",
+      "target": "tools/package-control-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/package-service-host-test.c",
+      "target": "tools/package-service-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/package-upload-claims-host-test.c",
+      "target": "tools/package-upload-claims-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/package-upload-host-test.c",
+      "target": "tools/package-upload-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/run_network_scenario.py",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "tools/sdk-filesystem-host-test.c",
+      "target": "tools/sdk-filesystem-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/shell-ext4-host-test.c",
+      "target": "tools/shell-ext4-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/tls-client-host-test.c",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "tools/ui-animation-clip-host-test.c",
+      "action": "excluded unrelated UI/application/history"
+    },
+    {
+      "source": "tools/vfs-directory-host-test.c",
+      "target": "tools/vfs-directory-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/vfs-mount-host-test.c",
+      "target": "tools/vfs-mount-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/vfs-mutation-host-test.c",
+      "target": "tools/vfs-mutation-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/vfs-vnode-host-test.c",
+      "target": "tools/vfs-vnode-host-test.c",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/PHIPIA-PORT.md",
+      "target": "vendor/ext4plus/OPENRFS-PORT.md",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/src/bitmap.rs",
+      "target": "vendor/ext4plus/src/bitmap.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/src/block_group.rs",
+      "target": "vendor/ext4plus/src/block_group.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/src/dir.rs",
+      "target": "vendor/ext4plus/src/dir.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/src/dir_block.rs",
+      "target": "vendor/ext4plus/src/dir_block.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/src/dir_entry.rs",
+      "target": "vendor/ext4plus/src/dir_entry.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/src/error.rs",
+      "target": "vendor/ext4plus/src/error.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/src/extent.rs",
+      "target": "vendor/ext4plus/src/extent.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/src/file.rs",
+      "target": "vendor/ext4plus/src/file.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/src/file_blocks/block_map.rs",
+      "target": "vendor/ext4plus/src/file_blocks/block_map.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/src/file_blocks/extent_tree.rs",
+      "target": "vendor/ext4plus/src/file_blocks/extent_tree.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/src/file_blocks/mod.rs",
+      "target": "vendor/ext4plus/src/file_blocks/mod.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/src/file_blocks/utils.rs",
+      "target": "vendor/ext4plus/src/file_blocks/utils.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/src/inode.rs",
+      "target": "vendor/ext4plus/src/inode.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/src/iters/extents.rs",
+      "target": "vendor/ext4plus/src/iters/extents.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/src/journal/revocation_block.rs",
+      "target": "vendor/ext4plus/src/journal/revocation_block.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/src/journal/staging.rs",
+      "target": "vendor/ext4plus/src/journal/staging.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/src/journal/transaction.rs",
+      "target": "vendor/ext4plus/src/journal/transaction.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/src/lib.rs",
+      "target": "vendor/ext4plus/src/lib.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/src/orphan.rs",
+      "target": "vendor/ext4plus/src/orphan.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/src/resolve.rs",
+      "target": "vendor/ext4plus/src/resolve.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/src/superblock.rs",
+      "target": "vendor/ext4plus/src/superblock.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "vendor/ext4plus/src/xattr.rs",
+      "target": "vendor/ext4plus/src/xattr.rs",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "target": "src/kernel/ui.c",
+      "action": "add minimal redraw-pending query required by shell wakeup; preserve main UI"
+    },
+    {
+      "target": "include/openrfs/ui.h",
+      "action": "declare redraw-pending query"
+    }
+  ]
+}

@@ -9,6 +9,7 @@ import json
 import shutil
 import subprocess
 import tempfile
+import threading
 from pathlib import Path
 
 import ext4_image
@@ -46,7 +47,14 @@ def _build_iso(
     grub_mkrescue: str,
     grub_module_dir: Path | None,
     cut: int | None,
+    storage_cut: int | None = None,
+    *,
+    scenario: str = "ext4-recovery",
 ) -> None:
+    if scenario not in ("ext4-recovery", "ext4-geometry-refusal", "ext4-admission-refusal"):
+        raise PowerCutError("unsupported ext4 test scenario")
+    if cut is not None and storage_cut is not None:
+        raise PowerCutError("durability and device-command cuts are mutually exclusive")
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="openrfs-ext4-cut-", dir=output.parent) as raw:
         root = Path(raw)
@@ -54,9 +62,11 @@ def _build_iso(
         grub = boot / "grub"
         grub.mkdir(parents=True)
         shutil.copyfile(kernel, boot / "openrfs.elf")
-        command_line = "openrfs.test=ext4-recovery"
+        command_line = f"openrfs.test={scenario}"
         if cut is not None:
             command_line += f" openrfs.ext4-cut={cut}"
+        if storage_cut is not None:
+            command_line += f" openrfs.ext4-storage-cut={storage_cut}"
         (grub / "grub.cfg").write_text(
             "\n".join(
                 (
@@ -90,6 +100,49 @@ def _build_iso(
             )
 
 
+def _capture_guest(command, log: Path, timeout: int) -> tuple[int, str]:
+    """Preserve serial evidence and stop immediately on an explicit guest failure."""
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    completed = threading.Event()
+    lines, failures = [], []
+
+    def read_serial():
+        try:
+            for line in process.stdout:
+                lines.append(line)
+                if "OpenRFS PANIC:" in line or line.startswith("ST FAIL"):
+                    failures.append("guest reported a terminal failure")
+                    completed.set()
+        except Exception as error:
+            failures.append(f"serial capture failed: {error}")
+        finally:
+            completed.set()
+
+    reader = threading.Thread(target=read_serial, name="ext4-guest-serial")
+    try:
+        reader.start()
+        timed_out = not completed.wait(timeout)
+        if timed_out or failures:
+            process.kill()
+        try:
+            status = process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            failures.append("guest did not exit after closing its serial stream")
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+        if reader.ident is not None:
+            reader.join()
+        process.stdout.close()
+        transcript = "".join(lines)
+        log.write_text(transcript, encoding="utf-8", newline="\n")
+    if timed_out or failures:
+        reason = "QEMU timed out" if timed_out else failures[0]
+        raise PowerCutError(f"{reason}; transcript: {log}\n" + _transcript_tail(transcript))
+    return status, transcript
+
+
 def _run_qemu(
     qemu: str,
     accel: str,
@@ -97,7 +150,11 @@ def _run_qemu(
     image: Path,
     log: Path,
     timeout: int,
+    *,
+    logical_block_bytes: int = 4096,
 ) -> tuple[int, str]:
+    if logical_block_bytes not in (512, 4096):
+        raise PowerCutError("unsupported QEMU logical block size")
     command = (
         qemu,
         "-machine",
@@ -113,7 +170,7 @@ def _run_qemu(
         "-blockdev",
         "driver=raw,file=ext4-file,node-name=ext4-raw,read-only=off",
         "-device",
-        "nvme,serial=openrfs-ext4-powercut,drive=ext4-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1",
+        f"nvme,serial=openrfs-ext4-powercut,drive=ext4-raw,logical_block_size={logical_block_bytes},physical_block_size={logical_block_bytes},max_ioqpairs=1,msix_qsize=1",
         "-cdrom",
         str(iso),
         "-display",
@@ -126,23 +183,7 @@ def _run_qemu(
         "isa-debug-exit,iobase=0xf4,iosize=0x04",
         "-no-reboot",
     )
-    try:
-        result = subprocess.run(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as error:
-        transcript = error.stdout or ""
-        if isinstance(transcript, bytes):
-            transcript = transcript.decode("utf-8", errors="replace")
-        log.write_text(transcript, encoding="utf-8", newline="\n")
-        raise PowerCutError(f"QEMU timed out; transcript: {log}") from error
-    log.write_text(result.stdout, encoding="utf-8", newline="\n")
-    return result.returncode, result.stdout
+    return _capture_guest(command, log, timeout)
 
 
 def _verify_guest_result(image: Path, tools: dict[str, str], temporary: Path) -> None:
@@ -180,6 +221,11 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         raise PowerCutError("kernel or clean ext4 fixture is missing")
     output.mkdir(parents=True, exist_ok=True)
     tools = ext4_image.require_tools()
+    (output / "head.txt").write_text(subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], text=True), encoding="ascii")
+    for name, executable in {**tools, "dumpe2fs": "dumpe2fs"}.items():
+        version = subprocess.run([executable, "-V"], capture_output=True, text=True, check=False)
+        (output / f"{name}-version.txt").write_text(version.stdout + version.stderr, encoding="utf-8")
     verify_iso = output / "verify.iso"
     _build_iso(kernel, verify_iso, args.grub_mkrescue, args.grub_module_dir, None)
 
@@ -224,6 +270,17 @@ def run(args: argparse.Namespace) -> dict[str, object]:
                 + _transcript_tail(transcript)
             )
         after_report = ext4_image.inspect_image(image, tools=tools)
+        for executable, arguments, suffix in (
+            (tools["e2fsck"], ["-f", "-n"], "e2fsck"),
+            ("dumpe2fs", ["-h"], "dumpe2fs"),
+            (tools["debugfs"], ["-R", "stat /system/README.TXT"], "debugfs"),
+        ):
+            inspected = subprocess.run([executable, *arguments, str(image)],
+                capture_output=True, text=True, check=False)
+            (output / f"cut-{cut:02d}.{suffix}.txt").write_text(
+                inspected.stdout + inspected.stderr, encoding="utf-8")
+            if inspected.returncode != 0:
+                raise PowerCutError(f"boundary {cut}: {suffix} refused the cleanly unmounted image")
         with tempfile.TemporaryDirectory(prefix="openrfs-ext4-result-", dir=output) as raw:
             _verify_guest_result(image, tools, Path(raw))
         image_sha256 = hashlib.sha256(image.read_bytes()).hexdigest()
@@ -271,7 +328,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--grub-mkrescue", default="grub-mkrescue")
     parser.add_argument("--grub-module-dir", type=Path)
     parser.add_argument("--accel", default="tcg")
-    parser.add_argument("--timeout", type=int, default=90)
+    # The uncut reference also exercises the full VFS directory growth/shrink case.
+    parser.add_argument("--timeout", type=int, default=600)
     parser.add_argument("--keep-images", action="store_true")
     return parser
 
