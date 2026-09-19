@@ -104,6 +104,9 @@ long openrfs_random(void *buffer, size_t length)
 
 long openrfs_random_strong(void *buffer, size_t length)
 {
+    if (getenv("OPENRFS_TEST_ENTROPY_FAILURE") != NULL) {
+        return -1;
+    }
     return openrfs_random(buffer, length);
 }
 
@@ -301,6 +304,26 @@ int main(int argc, char **argv)
     }
     if (status != OPENRFS_TLS_OK) {
         printf("TLS refusal: %s\n", openrfs_tls_status_string(status));
+        return 0;
+    }
+    if (strcmp(argv[5], "read-refusal") == 0 ||
+        strcmp(argv[5], "replay-refusal") == 0) {
+        const bool replay = strcmp(argv[5], "replay-refusal") == 0;
+
+        if (openrfs_tls_client_write(client, "GET / HTTP/1.0\r\n\r\n", 18U,
+                deadline) != 18 ||
+            openrfs_tls_client_flush(client, deadline) != OPENRFS_TLS_OK ||
+            (replay && (openrfs_tls_client_read(client, response, 1U,
+                deadline) != 1 || response[0] != 'O')) ||
+            openrfs_tls_client_read(client, response,
+                replay ? 1U : sizeof(response), deadline) >= 0 ||
+            openrfs_tls_client_status(client) != OPENRFS_TLS_IO) {
+            (void)openrfs_tls_client_close(client, deadline);
+            fputs("TLS host test: unauthenticated record accepted\n", stderr);
+            return 1;
+        }
+        (void)openrfs_tls_client_close(client, deadline);
+        puts("TLS record authentication refusal passed");
         return 0;
     }
     if (strcmp(argv[5], "request") != 0 ||

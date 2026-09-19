@@ -15,9 +15,24 @@ The profile is bounded:
   only through 4,096 bits; P-256 EC trust anchors are also accepted;
 - lowercase canonical DNS hostnames, 253 bytes total and 63 bytes per label;
 - at most 16 external CA trust anchors and 80 KiB of admitted DN/key bytes;
+- at most four peer certificates and 64 KiB of DER certificate bytes per
+  chain; oversized chains fail validation;
+- SHA-256, SHA-384, and SHA-512 certificate signatures only; MD5, SHA-1,
+  and SHA-224 are disabled in the X.509 validator;
 - no renegotiation or session resumption;
-- a fixed 4,096-step handshake work bound plus monotonic deadlines on every
-  underlying transport operation.
+- a fixed 4,096-step handshake work bound, 128 KiB of aggregate handshake
+  transport I/O, and monotonic deadlines on every transport operation.
+
+The SDK has no built-in system roots. Callers explicitly supply CA anchors;
+the proof application embeds only the checksum-pinned offline test CA. A
+production root-distribution, rotation, and revocation service is not part of
+this profile. The X.509 validator checks certificate signatures, CA status,
+key usage, unknown critical extensions, validity time, and DNS SAN (or subject
+CN only when SAN is absent). BearSSL admits exact DNS names and a `*.` wildcard
+for one leftmost label. The requested hostname must be lowercase ASCII DNS
+labels; IP literals, Unicode/IDNA input, trailing dots, empty labels, and
+underscores are refused. TLS 1.0, 1.1, 1.3, CBC suites, anonymous suites,
+client certificates, and plaintext fallback are unsupported.
 
 `openrfs_tls_client_open()` refuses an empty or malformed trust store. It passes
 the same nonempty hostname to DNS, SNI, and BearSSL's minimal X.509 validator,
@@ -63,8 +78,11 @@ interval.
 POSIX adapter, then connects it over real loopback TCP to a Python TLS 1.2 peer
 using the committed offline CA. It proves a valid chain, hostname, fixed
 certificate time, application bytes, and authenticated close. Separate peers
-prove wrong-host, unknown-root, expired, not-yet-valid, truncated-handshake, and
-deadline refusal. The certificates and public test keys are fixed inputs with
+prove wrong-host, unknown-root, expired, not-yet-valid, corrupted certificate
+signature, TLS 1.3-only peer, tampered AEAD record, truncated record, replayed
+record, entropy-source failure, truncated handshake, and deadline refusal.
+The certificates and public
+test keys are fixed inputs with
 recorded checksums; no Internet service or host trust store is consulted.
 
 The SDK now also contains the bounded HTTPS profile documented in

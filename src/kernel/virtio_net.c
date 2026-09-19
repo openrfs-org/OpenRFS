@@ -828,14 +828,17 @@ static enum virtio_net_status cleanup(bool reset)
     if (reset && runtime.common.base != NULL && !reset_device()) {
         result = VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
     }
-    if (runtime.bus_master_enabled &&
-        pci_claim_disable_bus_master(&runtime.claim) !=
-            PCI_RESOURCE_STATUS_OK) {
-        result = VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
+    if (runtime.bus_master_enabled || runtime.claim.bus_master_enabled) {
+        if (pci_claim_disable_bus_master(&runtime.claim) !=
+                PCI_RESOURCE_STATUS_OK) {
+            result = VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
+            goto done;
+        }
+        runtime.bus_master_enabled = false;
     }
-    runtime.bus_master_enabled = false;
     if (runtime.msix.active && msix_unbind(&runtime.msix) != MSIX_STATUS_OK) {
         result = VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
+        goto done;
     }
     struct dma_allocation *const allocations[3] = {
         &runtime.arena, &runtime.tx.dma, &runtime.rx.dma
@@ -856,14 +859,27 @@ static enum virtio_net_status cleanup(bool reset)
             result = VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
         }
     }
+    if (runtime.arena.active || runtime.tx.dma.active ||
+        runtime.rx.dma.active) {
+        result = VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
+        goto done;
+    }
     if (runtime.claim.active && pci_release_device(&runtime.claim) !=
             PCI_RESOURCE_STATUS_OK) {
         result = VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
     }
+done:
     if (restore_interrupts) {
         cpu_interrupt_enable();
     }
     return result;
+}
+
+static enum virtio_net_status initialization_refusal(
+    enum virtio_net_status reason, bool reset)
+{
+    return cleanup(reset) == VIRTIO_NET_STATUS_OK ? reason :
+        VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
 }
 
 enum virtio_net_status virtio_net_initialize(void)
@@ -874,6 +890,12 @@ enum virtio_net_status virtio_net_initialize(void)
 
     if (runtime.public.active) {
         return VIRTIO_NET_STATUS_ALREADY_INITIALIZED;
+    }
+    if (runtime.claim.active || runtime.msix.active ||
+        runtime.bus_master_enabled || runtime.claim.bus_master_enabled ||
+        runtime.arena.active || runtime.tx.dma.active ||
+        runtime.rx.dma.active) {
+        return VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
     }
     zero_bytes(&runtime, sizeof(runtime));
     function = pci_find_device(VIRTIO_VENDOR_ID,
@@ -901,66 +923,56 @@ enum virtio_net_status virtio_net_initialize(void)
         map_capability(&runtime.device) != VIRTIO_NET_STATUS_OK) {
         status = status == VIRTIO_NET_STATUS_OK ?
             VIRTIO_NET_STATUS_MAPPING_FAILURE : status;
-        (void)cleanup(false);
-        return status;
+        return initialization_refusal(status, false);
     }
     if (!reset_device()) {
-        (void)cleanup(false);
-        return VIRTIO_NET_STATUS_RESET_FAILURE;
+        return initialization_refusal(VIRTIO_NET_STATUS_RESET_FAILURE, false);
     }
     status = negotiate_features();
     if (status != VIRTIO_NET_STATUS_OK) {
         mmio_write8(runtime.common.base, VIRTIO_COMMON_DEVICE_STATUS,
             VIRTIO_STATUS_FAILED);
-        (void)cleanup(true);
-        return status;
+        return initialization_refusal(status, true);
     }
     status = read_device_configuration();
     if (status != VIRTIO_NET_STATUS_OK &&
         status != VIRTIO_NET_STATUS_LINK_DOWN) {
-        (void)cleanup(true);
-        return status;
+        return initialization_refusal(status, true);
     }
     if (mmio_read16(runtime.common.base, VIRTIO_COMMON_NUM_QUEUES) < 2U) {
-        (void)cleanup(true);
-        return VIRTIO_NET_STATUS_QUEUE_FAILURE;
+        return initialization_refusal(VIRTIO_NET_STATUS_QUEUE_FAILURE, true);
     }
     status = allocate_dma();
     if (status != VIRTIO_NET_STATUS_OK) {
-        (void)cleanup(true);
-        return status;
+        return initialization_refusal(status, true);
     }
     if (msix_bind(&runtime.claim, VIRTIO_MSIX_ENTRY, network_interrupt,
             &runtime, &runtime.msix) != MSIX_STATUS_OK) {
-        (void)cleanup(true);
-        return VIRTIO_NET_STATUS_MSIX_FAILURE;
+        return initialization_refusal(VIRTIO_NET_STATUS_MSIX_FAILURE, true);
     }
     mmio_write16(runtime.common.base, VIRTIO_COMMON_CONFIG_MSIX_VECTOR,
         VIRTIO_MSIX_ENTRY);
     if (mmio_read16(runtime.common.base,
             VIRTIO_COMMON_CONFIG_MSIX_VECTOR) == VIRTIO_QUEUE_NO_VECTOR) {
-        (void)cleanup(true);
-        return VIRTIO_NET_STATUS_MSIX_FAILURE;
+        return initialization_refusal(VIRTIO_NET_STATUS_MSIX_FAILURE, true);
     }
     status = configure_queue(&runtime.rx, VIRTIO_NET_RX_QUEUE);
     if (status == VIRTIO_NET_STATUS_OK) {
         status = configure_queue(&runtime.tx, VIRTIO_NET_TX_QUEUE);
     }
     if (status != VIRTIO_NET_STATUS_OK) {
-        (void)cleanup(true);
-        return status;
+        return initialization_refusal(status, true);
     }
     for (uint16_t descriptor = 0U; descriptor < runtime.rx.size;
          ++descriptor) {
         if (!post_rx_descriptor(descriptor)) {
-            (void)cleanup(true);
-            return VIRTIO_NET_STATUS_QUEUE_FAILURE;
+            return initialization_refusal(VIRTIO_NET_STATUS_QUEUE_FAILURE,
+                true);
         }
     }
     status = prepare_bus_master();
     if (status != VIRTIO_NET_STATUS_OK) {
-        (void)cleanup(true);
-        return status;
+        return initialization_refusal(status, true);
     }
     runtime.public.rx_queue_size = runtime.rx.size;
     runtime.public.tx_queue_size = runtime.tx.size;
@@ -1113,7 +1125,10 @@ enum virtio_net_status virtio_net_shutdown(void)
 {
     enum virtio_net_status status;
 
-    if (!runtime.public.present && !runtime.claim.active) {
+    if (!runtime.claim.active && !runtime.msix.active &&
+        !runtime.bus_master_enabled && !runtime.claim.bus_master_enabled &&
+        !runtime.arena.active && !runtime.tx.dma.active &&
+        !runtime.rx.dma.active) {
         return VIRTIO_NET_STATUS_NOT_INITIALIZED;
     }
     for (size_t index = 0U; index < VIRTIO_NET_PACKET_COUNT; ++index) {

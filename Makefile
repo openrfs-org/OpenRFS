@@ -1252,6 +1252,7 @@ $(HTTPS_HOST_TEST): $(HTTPS_HOST_OBJECT) $(TLS_HOST_WRAPPER_OBJECT) \
 	$(CC) $^ $(HOST_THREAD_FLAGS) $(HOST_SOCKET_LIBS) -o $@
 
 https-tests: $(HTTPS_HOST_TEST) tools/https_host_test.py \
+		tools/network_packet_audit_test.py tools/network_packet_audit.py \
 		tools/https_anchor.py tools/https_network_fixture.py \
 		tests/fixtures/tls/ca.pem tests/fixtures/tls/valid.pem \
 		tests/fixtures/tls/valid-key.pem tests/fixtures/tls/expired.pem \
@@ -1259,6 +1260,7 @@ https-tests: $(HTTPS_HOST_TEST) tools/https_host_test.py \
 		tests/fixtures/tls/future-key.pem tests/fixtures/tls/untrusted.pem \
 		tests/fixtures/tls/untrusted-key.pem
 	$(PYTHON) tools/https_anchor.py audit
+	$(PYTHON) tools/network_packet_audit_test.py
 	$(PYTHON) tools/https_network_fixture.py --self-test
 	$(PYTHON) -u tools/https_host_test.py $(HTTPS_HOST_TEST)
 
