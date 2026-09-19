@@ -127,7 +127,7 @@
 
 <p align="center"><samp>The preview covers keymap, hostname, components, disk layout, networking, timezone, startup policy, kernel hardening, and account choices. Arrow keys move, Enter accepts, Escape goes back, and F1 opens contextual help.</samp></p>
 
-<p align="center"><samp>The preview does not partition, format, or copy files to a disk. Its final boundary states this on screen and keeps Back selected by default. A real installer backend still requires bounded storage transactions, read-back verification, and recovery.</samp></p>
+<p align="center"><samp>The preview now follows the supplied OpenBSD-style transcript: questions stay in scrollback, choices are stated in the prompt, and no box or colour is required. It does not partition, format, or copy files to a disk. Its final boundary states this on screen and keeps Back selected by default. A real installer backend still requires bounded storage transactions, read-back verification, and recovery.</samp></p>
 
 <p align="center"><samp>Create the local account:</samp></p>
 
@@ -150,6 +150,8 @@
 <p align="center"><samp>Password:</samp></p>
 
 <p align="center"><samp>The current account model supports one local user. It is a foundation for authentication work, not a complete multi-user security model.</samp></p>
+
+<p align="center"><samp><strong>openrfs$ gfetch</strong> prints the monochrome fish mark and a live system summary. <strong>fetch</strong> remains as a compatibility alias.</samp></p>
 
 <h2 id="architecture" align="center"><samp>Architecture</samp></h2>
 
