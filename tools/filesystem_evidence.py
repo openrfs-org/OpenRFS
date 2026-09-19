@@ -52,7 +52,7 @@ def source(path):
     pr = event.get('pull_request', {})
     head = command('git', 'rev-parse', 'HEAD')
     tree = command('git', 'rev-parse', 'HEAD^{tree}')
-    entries = command('git', 'ls-tree', '-r', 'HEAD')
+    entries = command('git', 'ls-tree', '-r', 'HEAD') + '\n'
     write_json(path, {'checkout_commit': head, 'checkout_tree': tree,
         'pull_request_head': pr.get('head', {}).get('sha'),
         'pull_request_base': pr.get('base', {}).get('sha'),
@@ -61,7 +61,7 @@ def source(path):
         'run_attempt': os.environ.get('GITHUB_RUN_ATTEMPT'),
         'git_tree_manifest_sha256': hashlib.sha256(entries.encode()).hexdigest(),
         'scenarios': scenarios(), 'sweeps_required': 10})
-    path.with_suffix('.tree.txt').write_text(entries + '\n')
+    path.with_suffix('.tree.txt').write_text(entries)
 
 
 def main():
