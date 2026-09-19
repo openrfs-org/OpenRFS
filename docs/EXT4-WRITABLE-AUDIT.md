@@ -15,7 +15,7 @@ The implementation is ported from writable-ext4plus
 `804c6ac065d92813e604b971f912383c3addf350`, onto OpenRFS main
 `05ff3fe48be0b60d0d47d41f4a9898e4a2386e56`. Main includes the subsequently
 squashed foundation fixes and product rename; the port uses three-way content
-integration after mapping Phipia identifiers to main's OpenRFS identifiers.
+integration after mapping legacy identifiers to main's OpenRFS identifiers.
 The exact file mapping and exclusions are in `EXT4-PORT-MAP.json`.
 
 The filesystem changes include the project-maintained `vendor/ext4plus` fork;
