@@ -11,13 +11,13 @@ use core::fmt::{self, Display, Formatter};
 use core::time::Duration;
 use ext4plus::dir::Dir;
 use ext4plus::error::Ext4Error;
-use ext4plus::inode::{InodeCreationOptions, InodeFlags, InodeMode};
-use ext4plus::path::Path;
+use ext4plus::inode::{Inode, InodeCreationOptions, InodeFlags, InodeMode};
+use ext4plus::path::{Path, PathBuf};
 use ext4plus::{
-    DirEntryName, Ext4, Ext4Read, FileType, FilesystemSuperblockCheckpoint,
+    DirEntryName, Ext4, Ext4Read, FileType, FilesystemSuperblockCheckpoint, FilesystemSuperblockImage,
     FollowSymlinks, JOURNAL_BLOCK_BYTES, JournalCommitOperation,
-    JournalExecutionError, JournalFlush, JournalInodeMap, JournalInodeMapError,
-    JournalMutationStage, JournalPreparedTransaction, JournalRing, JournalStorage,
+    JournalBlockImage, JournalExecutionError, JournalFlush, JournalInodeMap, JournalInodeMapError,
+    JournalMutationStage, JournalMutationStageError, JournalPreparedTransaction, JournalRing, JournalStorage,
     execute_commit_operations, load_journal_inode_map, recover_committed_ring,
 };
 
@@ -31,6 +31,9 @@ const READ_ONLY_FEATURES: u32 = 0x046b;
 const MAX_VALIDATED_ENTRIES: usize = 8_192;
 const MAX_PENDING_DIRECTORIES: usize = 512;
 const MAX_PROBE_WRITE_BYTES: usize = 64 * JOURNAL_BLOCK_BYTES;
+const TRANSACTION_WRITE_BYTES: usize = 32 * JOURNAL_BLOCK_BYTES;
+const MAX_MUTABLE_FILE_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_SPLIT_ORPHAN_BYTES: u64 = MAX_MUTABLE_FILE_BYTES;
 
 /// A pointer-free identity copied from a validated ext4 superblock.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -57,6 +60,12 @@ pub(crate) struct Metadata {
     pub(crate) links: u16,
     pub(crate) file_type: u8,
     pub(crate) reserved: [u8; 7],
+    pub(crate) atime_seconds: i64,
+    pub(crate) mtime_seconds: i64,
+    pub(crate) ctime_seconds: i64,
+    pub(crate) atime_nanos: u32,
+    pub(crate) mtime_nanos: u32,
+    pub(crate) ctime_nanos: u32,
 }
 
 /// One ext4 directory entry returned without borrowing Rust storage.
@@ -83,12 +92,31 @@ impl Default for DirectoryEntry {
 /// A filesystem whose only upstream writer is an in-memory journal stage.
 /// C installs a short NVMe lease per operation.
 pub(crate) struct Mounted {
-    filesystem: Ext4,
+    filesystem: Option<Ext4>,
     journal: JournalRing,
     stage: Rc<JournalMutationStage>,
     pending_mutation: Option<PendingMutation>,
+    pending_write: Option<PendingWrite>,
+    pending_reclaim: Option<PendingReclaim>,
+    pending_open: Option<PendingOpen>,
     context: usize,
     image_bytes: u64,
+}
+
+impl Mounted {
+    fn filesystem(&self) -> Result<&Ext4, Status> {
+        self.filesystem.as_ref().ok_or(Status::Io)
+    }
+
+    fn readable_filesystem(&self) -> Result<&Ext4, Status> {
+        // A retained transaction may contain uncommitted namespace and allocator
+        // updates. Only the reloaded checkpointed view is public.
+        if self.pending_write.is_some() || self.pending_mutation.is_some() || self.pending_reclaim.is_some()
+            || !self.stage.is_empty() || self.stage.is_sealed() {
+            return Err(Status::Io);
+        }
+        self.filesystem()
+    }
 }
 
 /// Return the allocator's current capacity for the admitted 4 KiB profile.
@@ -96,7 +124,7 @@ pub(crate) struct Mounted {
 /// confuse unused NVMe namespace bytes with allocatable ext4 blocks.
 pub(crate) fn free_bytes(mounted: &Mounted) -> Result<u64, Status> {
     mounted
-        .filesystem
+        .readable_filesystem()?
         .superblock()
         .free_blocks_count()
         .checked_mul(BLOCK_BYTES)
@@ -116,10 +144,19 @@ enum PendingMutationKind {
     Truncate,
     CreateFile,
     UnlinkFile,
+    UnlinkHeldFile,
+    FinalizeOrphan,
     LinkFile,
     CreateDirectory,
     RemoveDirectory,
     Rename,
+    RenameReplace,
+    PublishFile,
+    Symlink,
+    Chmod,
+    SetXattr,
+    RemoveXattr,
+    SetTimes,
 }
 
 struct PendingMutation {
@@ -128,8 +165,46 @@ struct PendingMutation {
     source: Vec<u8>,
     offset: u64,
     written: usize,
+    /// Stable inode identity for file-scoped durability retries. Namespace
+    /// plans without one file target retain `None`.
+    target_inode: Option<u64>,
     checkpointed_superblock: Option<FilesystemSuperblockCheckpoint>,
     phase: PendingMutationPhase,
+}
+
+struct PendingWrite {
+    path: Vec<u8>,
+    source: Vec<u8>,
+    offset: u64,
+    completed: usize,
+    append: bool,
+    chunk_bytes: usize,
+    inode: u64,
+}
+
+struct PendingOpen {
+    path: Vec<u8>,
+    create_path: Option<Vec<u8>>,
+    mode: u16,
+    access: u8,
+    flags: u8,
+    // None while creating; Some binds truncation to the resolved inode.
+    inode: Option<u64>,
+}
+
+struct PendingReclaim {
+    kind: PendingMutationKind,
+    path: Vec<u8>,
+    argument: u64,
+    inode: u64,
+    retain_unlinked: bool,
+    namespace_committed: bool,
+}
+
+enum WriteTransactionOutcome {
+    Written(usize),
+    StageFull,
+    Refused(Status),
 }
 
 #[derive(Debug)]
@@ -176,6 +251,35 @@ struct OpenRFSOSJournalStorage {
     context: usize,
 }
 
+/// Read-only post-replay view used to validate recovered metadata before any home
+/// write. Clearing recovery here only disables upstream's second replay; this
+/// image is never sent to the platform executor.
+struct RecoveryValidationReader {
+    context: usize,
+    images: Vec<JournalBlockImage>,
+    superblock: FilesystemSuperblockImage,
+}
+
+impl Ext4Read for RecoveryValidationReader {
+    fn read(&self, start: u64, destination: &mut [u8])
+        -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+        OpenRFSOSReader { context: self.context }.read(start, destination)?;
+        let end = start.checked_add(destination.len() as u64)
+            .ok_or_else(|| Box::new(BlockReadError) as Box<dyn Error + Send + Sync>)?;
+        let mut overlay = |offset: u64, bytes: &[u8]| {
+            let first = start.max(offset);
+            let last = end.min(offset + bytes.len() as u64);
+            if first < last {
+                destination[(first - start) as usize..(last - start) as usize]
+                    .copy_from_slice(&bytes[(first - offset) as usize..(last - offset) as usize]);
+            }
+        };
+        for image in &self.images { overlay(image.block_index() * BLOCK_BYTES, image.bytes()); }
+        overlay(SUPERBLOCK_START, self.superblock.bytes());
+        Ok(())
+    }
+}
+
 impl JournalStorage for OpenRFSOSJournalStorage {
     type Error = BlockStorageError;
 
@@ -220,9 +324,10 @@ fn load_staged_view(
     context: usize,
     image_bytes: u64,
     needs_recovery: bool,
+    block_limit: usize,
 ) -> Result<(Ext4, Rc<JournalMutationStage>), Status> {
     let stage = Rc::new(
-        JournalMutationStage::new(Box::new(OpenRFSOSReader { context }), image_bytes)
+        JournalMutationStage::with_block_limit(Box::new(OpenRFSOSReader { context }), image_bytes, block_limit)
             .map_err(|_| Status::Invalid)?,
     );
     let filesystem = if needs_recovery {
@@ -243,16 +348,45 @@ fn load_staged_view(
 }
 
 fn replace_staged_view(mounted: &mut Mounted, needs_recovery: bool) -> Result<(), Status> {
+    // Drop the old allocator view before any fallible read. If reload fails,
+    // every public reader refuses the absent view and sync can retry the load.
+    mounted.filesystem = None;
     let (filesystem, stage) =
-        load_staged_view(mounted.context, mounted.image_bytes, needs_recovery)?;
-    mounted.filesystem = filesystem;
+        load_staged_view(mounted.context, mounted.image_bytes, needs_recovery, mounted.stage.block_limit())?;
+    mounted.filesystem = Some(filesystem);
     mounted.stage = stage;
     Ok(())
 }
 
 fn discard_uncommitted_stage(mounted: &mut Mounted, needs_recovery: bool) -> Result<(), Status> {
+    mounted.filesystem = None;
     mounted.stage.rollback();
     replace_staged_view(mounted, needs_recovery)
+}
+
+#[cfg(test)]
+pub(crate) fn staging_storage_released(mounted: &Mounted) -> bool {
+    mounted.stage.is_empty() && !mounted.stage.is_sealed()
+}
+
+#[cfg(test)]
+pub(crate) fn set_stage_block_limit(mounted: &mut Mounted, block_limit: usize) -> Result<(), Status> {
+    mounted.readable_filesystem()?;
+    let recovery = mounted.journal.filesystem_recovery_marker_is_durable().map_err(|_| Status::Invalid)?;
+    let (filesystem, stage) = load_staged_view(mounted.context, mounted.image_bytes, recovery, block_limit)?;
+    mounted.filesystem = Some(filesystem);
+    mounted.stage = stage;
+    Ok(())
+}
+
+fn ensure_staged_view(mounted: &mut Mounted) -> Result<(), Status> {
+    if mounted.pending_reclaim.is_some() { return Err(Status::Busy); }
+    if mounted.filesystem.is_none() {
+        let needs_recovery = mounted.journal.filesystem_recovery_marker_is_durable()
+            .map_err(|_| Status::Invalid)?;
+        replace_staged_view(mounted, needs_recovery)?;
+    }
+    Ok(())
 }
 
 fn read_u16(bytes: &[u8], offset: usize) -> Option<u16> {
@@ -267,7 +401,7 @@ fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
     ))
 }
 
-fn validate_profile(context: usize, media_bytes: u64) -> Result<u64, Status> {
+pub(crate) fn validate_profile(context: usize, media_bytes: u64) -> Result<u64, Status> {
     let mut superblock = [0u8; SUPERBLOCK_BYTES];
     if !crate::abi::ext4_block_read(context, SUPERBLOCK_START, &mut superblock) {
         return Err(Status::Io);
@@ -285,6 +419,8 @@ fn validate_profile(context: usize, media_bytes: u64) -> Result<u64, Status> {
         | (u64::from(read_u32(&superblock, 0x158).ok_or(Status::Invalid)?) << 32);
     let inodes = read_u32(&superblock, 0x00).ok_or(Status::Invalid)?;
     let free_inodes = read_u32(&superblock, 0x10).ok_or(Status::Invalid)?;
+    let blocks_per_group = read_u32(&superblock, 0x20).ok_or(Status::Invalid)?;
+    let inodes_per_group = read_u32(&superblock, 0x28).ok_or(Status::Invalid)?;
     let image_bytes = blocks.checked_mul(BLOCK_BYTES).ok_or(Status::Invalid)?;
 
     if magic != 0xef53
@@ -292,6 +428,13 @@ fn validate_profile(context: usize, media_bytes: u64) -> Result<u64, Status> {
         || inode_size != 256
         || descriptor_size != 64
         || read_u32(&superblock, 0x14) != Some(0)
+        || read_u32(&superblock, 0x1c) != Some(log_block_size)
+        || read_u32(&superblock, 0x24) != Some(blocks_per_group)
+        || read_u32(&superblock, 0x48) != Some(0) // Linux inode osd2 layout
+        || read_u32(&superblock, 0x4c) != Some(1) // dynamic inode format
+        || superblock[0x175] != 1 // CRC32C metadata checksums
+        || read_u16(&superblock, 0x15c).is_none_or(|size| size > 128 || size % 4 != 0)
+        || read_u16(&superblock, 0x15e).is_none_or(|size| size > 128 || size % 4 != 0)
         || compat != COMPAT_FEATURES
         || incompat & !INCOMPAT_RECOVERY_FEATURE != INCOMPAT_FEATURES
         || read_only != READ_ONLY_FEATURES
@@ -300,9 +443,19 @@ fn validate_profile(context: usize, media_bytes: u64) -> Result<u64, Status> {
         || free_blocks > blocks
         || inodes == 0
         || free_inodes > inodes
-        || read_u32(&superblock, 0x20) == Some(0)
-        || read_u32(&superblock, 0x28) == Some(0)
+        || blocks_per_group == 0 || u64::from(blocks_per_group) > BLOCK_BYTES * 8
+        || inodes_per_group == 0 || u64::from(inodes_per_group) > BLOCK_BYTES * 8
+        || blocks_per_group % 8 != 0 || inodes_per_group % 8 != 0
+        || read_u32(&superblock, 0x54) != Some(11)
     {
+        return Err(Status::Invalid);
+    }
+    // Match Linux ext4_check_geometry before any inode-table or journal load.
+    if blocks.div_ceil(u64::from(blocks_per_group)).checked_mul(u64::from(inodes_per_group)) != Some(u64::from(inodes)) {
+        return Err(Status::Invalid);
+    }
+    let orphan = read_u32(&superblock, 0xe8).ok_or(Status::Invalid)?;
+    if orphan != 0 && (orphan < 11 || orphan > inodes || incompat & INCOMPAT_RECOVERY_FEATURE == 0) {
         return Err(Status::Invalid);
     }
     Ok(image_bytes)
@@ -312,9 +465,8 @@ fn absolute_path(path: &[u8]) -> Result<Vec<u8>, Status> {
     if path == b"." {
         return Ok(Vec::from(&b"/"[..]));
     }
-    if path.is_empty() || path.len() >= 4096 {
-        return Err(Status::Range);
-    }
+    if path.is_empty() { return Err(Status::Range); }
+    if path.len() >= 4096 { return Err(Status::NameTooLong); }
     let capacity = path.len().checked_add(1).ok_or(Status::Range)?;
     let mut absolute = Vec::new();
     absolute
@@ -322,7 +474,10 @@ fn absolute_path(path: &[u8]) -> Result<Vec<u8>, Status> {
         .map_err(|_| Status::Range)?;
     absolute.push(b'/');
     absolute.extend_from_slice(path);
-    Path::try_from(absolute.as_slice()).map_err(|_| Status::Invalid)?;
+    Path::try_from(absolute.as_slice()).map_err(|error| match error {
+        ext4plus::path::PathError::ComponentTooLong => Status::NameTooLong,
+        _ => Status::Invalid,
+    })?;
     Ok(absolute)
 }
 
@@ -374,6 +529,8 @@ fn classify(file_type: FileType) -> Result<u8, Status> {
 }
 
 fn inode_metadata(inode: &ext4plus::inode::Inode) -> Result<Metadata, Status> {
+    let [(atime_seconds, atime_nanos), (mtime_seconds, mtime_nanos), (ctime_seconds, ctime_nanos)] =
+        inode.unix_times().map_err(map_error)?;
     Ok(Metadata {
         inode: u64::from(inode.index.get()),
         size: inode.size_in_bytes(),
@@ -383,18 +540,28 @@ fn inode_metadata(inode: &ext4plus::inode::Inode) -> Result<Metadata, Status> {
         links: inode.links_count(),
         file_type: classify(inode.file_type())?,
         reserved: [0; 7],
+        atime_seconds, mtime_seconds, ctime_seconds, atime_nanos, mtime_nanos, ctime_nanos,
     })
 }
 
 fn map_error(error: Ext4Error) -> Status {
+    // The staging writer transports bounded-capacity refusal in its I/O error
+    // wrapper. It is not a device failure and must reach VFS as ENOSPC.
+    if mutation_capacity_error(&error) { return Status::Full; }
     match error {
         Ext4Error::Io(_) => Status::Io,
+        Ext4Error::NoSpace => Status::Full,
+        Ext4Error::Readonly => Status::ReadOnly,
         Ext4Error::NotFound => Status::NotFound,
         Ext4Error::AlreadyExists => Status::Exists,
         Ext4Error::DirectoryNotEmpty => Status::NotEmpty,
         Ext4Error::NotADirectory => Status::NotDirectory,
         Ext4Error::IsADirectory => Status::IsDirectory,
-        Ext4Error::PathTooLong | Ext4Error::FileTooLarge => Status::Range,
+        Ext4Error::PathTooLong => Status::NameTooLong,
+        Ext4Error::TooManySymlinks => Status::SymlinkLoop,
+        Ext4Error::MalformedPath => Status::Argument,
+        Ext4Error::FileTooLarge => Status::Range,
+        Ext4Error::InvalidTimestamp => Status::Range,
         Ext4Error::IsASpecialFile => Status::Special,
         _ => Status::Invalid,
     }
@@ -475,63 +642,187 @@ fn recover_dirty_journal(
     let operations = recovery
         .checkpoint_plan(journal_superblock_block, journal.filesystem_superblock())
         .map_err(|_| Status::Invalid)?;
+    let checkpointed = operations.iter().find_map(|operation| match operation {
+        JournalCommitOperation::WriteFilesystemSuperblock { image, .. } => Some(image),
+        _ => None,
+    }).ok_or(Status::Invalid)?;
+    let projected = Ext4::load(Box::new(RecoveryValidationReader {
+        context, images: recovery.try_replay_images().map_err(|_| Status::Range)?,
+        superblock: checkpointed.with_recovery_state(false),
+    })).map_err(map_error)?;
+    projected.orphan_inodes().map_err(map_error)?;
+    validate_namespace(&projected)?;
+    drop(projected);
     execute_storage_plan(context, &operations)?;
     Ok(report)
 }
 
-fn validate_xattrs(filesystem: &Ext4, path: &[u8]) -> Result<(), Status> {
-    let xattrs = filesystem.list_xattrs(path).map_err(map_error)?;
+fn validate_inode_storage(filesystem: &Ext4, path: &[u8],
+    blocks: &mut ext4plus::BlockAllocationSnapshot<'_>) -> Result<Inode, Status> {
+    // Validate the entry itself: dangling/looping symlinks are valid namespace
+    // objects and their targets must not replace their own xattr validation.
+    let path = Path::try_from(path).map_err(|_| Status::Invalid)?;
+    let inode = filesystem.path_to_inode(path, FollowSymlinks::ExcludeFinalComponent)
+        .map_err(map_error)?;
+    validate_inode_record(filesystem, inode, blocks)
+}
+
+fn validate_inode_record(filesystem: &Ext4, inode: Inode,
+    blocks: &mut ext4plus::BlockAllocationSnapshot<'_>) -> Result<Inode, Status> {
+    blocks.validate_inode_extents(&inode).map_err(map_error)?;
+    inode.unix_times().map_err(map_error)?;
+    let xattrs = inode.list_xattrs(filesystem).map_err(map_error)?;
     for name in xattrs {
-        let _value = filesystem
-            .get_xattr(path, name.as_slice())
+        let _value = inode
+            .get_xattr(filesystem, name.as_slice())
             .map_err(map_error)?;
     }
-    Ok(())
+    Ok(inode)
+}
+
+fn untracked_directory_links(filesystem: &Ext4, inode: &Inode) -> bool {
+    inode.file_type().is_dir() && inode.flags().contains(InodeFlags::DIRECTORY_HTREE)
+        && filesystem.superblock().features().read_only_compatible().bits() & 0x20 != 0
+        && inode.links_count() == 1
+}
+
+type NamespaceReference = (u32, (u16, u32, bool));
+
+fn namespace_reference(references: &mut Vec<NamespaceReference>, inode: u32,
+    links: u16, untracked: bool) -> Result<&mut (u16, u32, bool), Status> {
+    let index = match references.binary_search_by_key(&inode, |entry| entry.0) {
+        Ok(index) => index,
+        Err(index) => {
+            references.try_reserve(1).map_err(|_| Status::Range)?;
+            references.insert(index, (inode, (links, 0, untracked)));
+            index
+        }
+    };
+    Ok(&mut references[index].1)
 }
 
 fn validate_namespace(filesystem: &Ext4) -> Result<(), Status> {
+    // Count directory entries, including dot/dotdot, per distinct inode.
+    // A zero-link orphan is deliberately absent from the live namespace.
+    let mut references = Vec::new();
+    let mut blocks = filesystem.block_allocation_snapshot();
+    blocks.reserve_fixed_metadata().map_err(map_error)?;
+    blocks.validate_internal_journal().map_err(map_error)?;
+    for index in filesystem.orphan_inodes().map_err(map_error)? {
+        let inode = Inode::read(filesystem, index).map_err(map_error)?;
+        blocks.validate_inode_extents(&inode).map_err(map_error)?;
+        namespace_reference(&mut references, index.get(), inode.links_count(), false)?;
+    }
+    let mut allocations = filesystem.inode_allocation_snapshot();
+    if !allocations.is_allocated(core::num::NonZeroU32::new(2).unwrap()).map_err(map_error)? {
+        return Err(Status::Invalid);
+    }
     let mut pending = Vec::new();
     pending.try_reserve_exact(1).map_err(|_| Status::Range)?;
     let mut root = Vec::new();
     root.try_reserve_exact(1).map_err(|_| Status::Range)?;
     root.push(b'/');
-    validate_xattrs(filesystem, root.as_slice())?;
-    pending.push(root);
+    let root_inode = validate_inode_storage(filesystem, root.as_slice(), &mut blocks)?;
+    let root_index = root_inode.index;
+    namespace_reference(&mut references, root_index.get(), root_inode.links_count(),
+        untracked_directory_links(filesystem, &root_inode))?;
+    let mut directories = Vec::new();
+    directories.try_reserve(1).map_err(|_| Status::Range)?;
+    directories.push(root_index);
+    // Paths share a LIFO byte arena: a wide directory must not retain one
+    // kernel heap allocation for every pending child directory.
+    let mut pending_paths = root;
+    pending.push((0usize, root_index, root_index));
     let mut visited = 0usize;
-    while let Some(path) = pending.pop() {
+    while let Some((path_start, index, parent)) = pending.pop() {
+        let mut path = Vec::new();
+        path.try_reserve_exact(pending_paths.len() - path_start).map_err(|_| Status::Range)?;
+        path.extend_from_slice(&pending_paths[path_start..]);
+        pending_paths.truncate(path_start);
+        let indexed = Inode::read(filesystem, index).map_err(map_error)?
+            .flags().contains(InodeFlags::DIRECTORY_HTREE);
         let mut directory = filesystem.read_dir(path.as_slice()).map_err(map_error)?;
+        // One allocation per name exhausts the kernel's bounded heap descriptor
+        // table even for the ordinary 256-entry Linux fixture. Keep complete
+        // names packed, then check exact duplicates before admitting the view.
+        let mut names: Vec<[u8; 256]> = Vec::new();
+        let (mut dot, mut dotdot) = (false, false);
         for result in &mut directory {
             let entry = result.map_err(map_error)?;
+            // Validate before metadata() computes an inode-table location.
+            // A checksummed directory can still point outside the inode table
+            // or at a freed inode whose old body remains checksummed.
+            if !allocations.is_allocated(entry.inode).map_err(map_error)? {
+                return Err(Status::Invalid);
+            }
             let name = entry.file_name();
             if name == "." || name == ".." {
+                let (seen, expected) = if name == "." { (&mut dot, index) } else { (&mut dotdot, parent) };
+                if *seen || entry.inode != expected || !entry.file_type().map_err(map_error)?.is_dir() {
+                    return Err(Status::Invalid);
+                }
+                *seen = true;
+                let reference_index = references.binary_search_by_key(&entry.inode.get(), |entry| entry.0)
+                    .map_err(|_| Status::Invalid)?;
+                let (_, count, _) = &mut references[reference_index].1;
+                *count = count.checked_add(1).ok_or(Status::Range)?;
                 continue;
             }
             visited = visited.checked_add(1).ok_or(Status::Range)?;
             if visited > MAX_VALIDATED_ENTRIES {
                 return Err(Status::Range);
             }
+            let name_bytes: &[u8] = name.as_ref();
+            let mut name_key = [0u8; 256];
+            name_key[0] = u8::try_from(name_bytes.len()).map_err(|_| Status::Range)?;
+            name_key[1..1 + name_bytes.len()].copy_from_slice(name_bytes);
+            names.try_reserve(1).map_err(|_| Status::Range)?;
+            names.push(name_key);
             let entry_path = entry.path();
-            let metadata = entry.metadata().map_err(map_error)?;
-            validate_xattrs(filesystem, entry_path.as_ref())?;
+            // Linear iteration already binds this checked name to its inode.
+            // Re-searching that directory for every entry makes admission
+            // quadratic in directory size. Indexed directories additionally
+            // prove that their htree lookup resolves each leaf entry correctly.
+            let inode = if indexed {
+                validate_inode_storage(filesystem, entry_path.as_ref(), &mut blocks)?
+            } else {
+                let inode = Inode::read(filesystem, entry.inode).map_err(map_error)?;
+                validate_inode_record(filesystem, inode, &mut blocks)?
+            };
+            if inode.index != entry.inode { return Err(Status::Invalid); }
+            let metadata = inode.metadata();
+            // A zero-link orphan must never remain reachable by a directory.
+            if metadata.links_count == 0 || metadata.file_type() != entry.file_type().map_err(map_error)? {
+                return Err(Status::Invalid);
+            }
+            let (links, seen, untracked) = namespace_reference(&mut references, entry.inode.get(),
+                metadata.links_count, untracked_directory_links(filesystem, &inode))?;
+            if *links != metadata.links_count { return Err(Status::Invalid); }
+            *seen = seen.checked_add(1).ok_or(Status::Range)?;
+            if !*untracked && *seen > u32::from(*links) { return Err(Status::Invalid); }
             let kind = classify(metadata.file_type())?;
             if kind == 2 {
+                // Directories have one namespace parent. Reject aliases and
+                // cycles before following another path to the same inode.
+                let insertion = directories.binary_search(&entry.inode).err().ok_or(Status::Invalid)?;
+                directories.try_reserve(1).map_err(|_| Status::Range)?;
+                directories.insert(insertion, entry.inode);
                 if pending.len() >= MAX_PENDING_DIRECTORIES {
                     return Err(Status::Range);
                 }
                 pending.try_reserve(1).map_err(|_| Status::Range)?;
                 let path_bytes: &[u8] = entry_path.as_ref();
-                let mut owned_path = Vec::new();
-                owned_path
-                    .try_reserve_exact(path_bytes.len())
-                    .map_err(|_| Status::Range)?;
-                owned_path.extend_from_slice(path_bytes);
-                pending.push(owned_path);
+                if path_bytes.len() >= 4096 { return Err(Status::Range); }
+                pending_paths.try_reserve(path_bytes.len()).map_err(|_| Status::Range)?;
+                let path_start = pending_paths.len();
+                pending_paths.extend_from_slice(path_bytes);
+                pending.push((path_start, entry.inode, index));
             } else if kind == 3 {
                 let _target = filesystem
                     .read_link(entry_path.as_ref())
                     .map_err(map_error)?;
             } else if metadata.size_in_bytes != 0 {
-                let mut file = filesystem.open(entry_path.as_ref()).map_err(map_error)?;
+                let mut file = ext4plus::file::File::open_inode(filesystem, inode).map_err(map_error)?;
                 let mut byte = [0u8; 1];
                 let first = file.read_bytes_at(&mut byte, 0).map_err(map_error)?;
                 let last = file
@@ -542,8 +833,15 @@ fn validate_namespace(filesystem: &Ext4) -> Result<(), Status> {
                 }
             }
         }
+        names.sort_unstable();
+        if !dot || !dotdot || names.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(Status::Invalid);
+        }
     }
-    Ok(())
+    if references.iter().any(|(_, (links, seen, untracked))| !*untracked && *seen != u32::from(*links)) {
+        return Err(Status::Invalid);
+    }
+    blocks.finish(&mut allocations).map_err(map_error)
 }
 
 /// Load and validate the exact OpenRFS ext4 profile and reachable namespace.
@@ -561,24 +859,19 @@ pub(crate) fn mount(context: usize, media_bytes: u64) -> Result<(Box<Mounted>, I
         image_bytes = validate_profile(context, media_bytes)?;
         filesystem = Ext4::load(Box::new(OpenRFSOSReader { context })).map_err(map_error)?;
         journal = load_journal_inode_map(&filesystem).map_err(map_journal_error)?;
-        if journal.filesystem_needs_recovery() {
+        if journal.filesystem_needs_recovery() && journal.filesystem_superblock().last_orphan() == 0 {
             return Err(Status::Invalid);
         }
     }
+    let needs_orphan_cleanup = journal.filesystem_needs_recovery();
     drop(journal);
     drop(filesystem);
-    let stage = Rc::new(
-        JournalMutationStage::new(Box::new(OpenRFSOSReader { context }), image_bytes)
-            .map_err(|_| Status::Invalid)?,
-    );
-    let filesystem = Ext4::load_with_writer(Box::new(stage.clone()), Some(Box::new(stage.clone())))
-        .map_err(map_error)?;
+    let (filesystem, stage) = load_staged_view(context, image_bytes, needs_orphan_cleanup,
+        ext4plus::JOURNAL_TRANSACTION_MAX_METADATA_BLOCKS)?;
     let journal = load_journal_inode_map(&filesystem).map_err(map_journal_error)?;
-    if journal.filesystem_needs_recovery() || !stage.is_empty() {
-        return Err(Status::Invalid);
-    }
-    let clean_ring = journal.into_clean_ring().map_err(|_| Status::Invalid)?;
-    validate_namespace(&filesystem)?;
+    let orphans = filesystem.orphan_inodes().map_err(map_error)?;
+    let ring = if needs_orphan_cleanup { journal.into_orphan_cleanup_ring() }
+        else { journal.into_clean_ring() }.map_err(|_| Status::Invalid)?;
     let identity = Identity {
         label: *filesystem.label().as_bytes(),
         uuid: *filesystem.uuid().as_bytes(),
@@ -588,25 +881,36 @@ pub(crate) fn mount(context: usize, media_bytes: u64) -> Result<(Box<Mounted>, I
         recovery_performed,
         reserved: [0; 3],
     };
-    Ok((
-        Box::new(Mounted {
-            filesystem,
-            journal: clean_ring,
+    let mut mounted = Box::new(Mounted {
+            filesystem: Some(filesystem),
+            journal: ring,
             stage,
             pending_mutation: None,
+            pending_write: None,
+            pending_reclaim: None,
+            pending_open: None,
             context,
             image_bytes,
-        }),
-        identity,
-    ))
+        });
+    for inode in orphans { finalize_orphan(&mut mounted, u64::from(inode.get()))?; }
+    if needs_orphan_cleanup { prepare_unmount(&mut mounted)?; }
+    Ok((mounted, identity))
 }
 
 fn arm_recovery_marker(mounted: &mut Mounted) -> Result<(), Status> {
+    let seconds = crate::abi::ext4_current_time(mounted.context);
+    if seconds > 0x3_7fff_ffff { return Err(Status::Io); }
+    arm_recovery_marker_inner(mounted)?;
+    mounted.filesystem()?.set_mutation_time(Some(seconds)).map_err(map_error)
+}
+
+fn arm_recovery_marker_inner(mounted: &mut Mounted) -> Result<(), Status> {
+    ensure_staged_view(mounted)?;
     let durable = mounted
         .journal
         .filesystem_recovery_marker_is_durable()
         .map_err(|_| Status::Invalid)?;
-    let view_needs_recovery = load_journal_inode_map(&mounted.filesystem)
+    let view_needs_recovery = load_journal_inode_map(mounted.filesystem()?)
         .map_err(map_journal_error)?
         .filesystem_needs_recovery();
     if durable {
@@ -637,6 +941,7 @@ fn resume_pending_mutation(
     offset: u64,
     source: &[u8],
 ) -> Result<usize, Status> {
+    if mounted.pending_reclaim.is_some() { return Err(Status::Busy); }
     let pending = mounted.pending_mutation.as_ref().ok_or(Status::Invalid)?;
     if pending.kind != kind
         || pending.path != path
@@ -678,6 +983,7 @@ fn resume_pending_mutation_inner(mounted: &mut Mounted) -> Result<usize, Status>
                             .abort_precommit(ticket)
                             .map_err(|_| Status::Invalid)?;
                         mounted.pending_mutation = None;
+                        mounted.pending_open = None;
                         discard_uncommitted_stage(mounted, true)?;
                         return Err(Status::Invalid);
                     }
@@ -743,8 +1049,18 @@ fn resume_pending_mutation_inner(mounted: &mut Mounted) -> Result<usize, Status>
                 .as_ref()
                 .ok_or(Status::Invalid)?
                 .written;
+            // Both home checkpoint and journal-tail flush have succeeded. The
+            // sealed overlay is no longer needed for retries, which now only
+            // reload disk state. Release its block images before allocating the
+            // namespace census; retaining both exhausts kernel heap descriptors.
+            mounted.filesystem = None;
+            mounted.stage.rollback();
             replace_staged_view(mounted, true)?;
             mounted.pending_mutation = None;
+            // An external exact retry may finish a failed open's plan. Its
+            // cached inode must not survive into an unrelated later mutation.
+            // prepare_open keeps its own request locally while executing.
+            mounted.pending_open = None;
             return Ok(written);
         }
         return Err(Status::Invalid);
@@ -775,6 +1091,29 @@ fn commit_staged_mutation(
             return Err(Status::Invalid);
         }
     };
+    let allocation_check = (|| -> Result<(), Status> {
+        let mut blocks = mounted.filesystem()?.block_allocation_snapshot();
+        for block in ordered_data {
+            if !blocks.range_is_allocated(*block, 1).map_err(map_error)? {
+                return Err(Status::Invalid);
+            }
+        }
+        Ok(())
+    })();
+    if let Err(error) = allocation_check {
+        discard_uncommitted_stage(mounted, true)?;
+        return Err(error);
+    }
+    for block in transaction.revoked_blocks() {
+        match mounted.filesystem()?.is_fixed_metadata_block(*block) {
+            Ok(false) => {}
+            result => {
+                let error = result.err().map(map_error).unwrap_or(Status::Invalid);
+                discard_uncommitted_stage(mounted, true)?;
+                return Err(error);
+            }
+        }
+    }
     if let Some(block) = expected_revoke {
         if !transaction.revokes_block(block) {
             discard_uncommitted_stage(mounted, true)?;
@@ -788,9 +1127,10 @@ fn commit_staged_mutation(
             return Err(Status::Invalid);
         }
     };
+    let target_inode = mutation_target_inode(mounted, &path);
     let checkpointed_superblock = match mounted
         .stage
-        .staged_images()
+        .try_staged_images().map_err(|_| Status::Range)?
         .into_iter()
         .find(|image| image.block_index() == 0)
         .map(|image| {
@@ -816,26 +1156,250 @@ fn commit_staged_mutation(
         source,
         offset,
         written,
+        target_inode,
         checkpointed_superblock,
         phase: PendingMutationPhase::Commit(prepared),
     });
     resume_pending_mutation_inner(mounted)
 }
 
-/// Execute one controlled staged write through the native journal executor.
+/// Recover the stable inode identity for a retained plan without introducing
+/// a second ownership table. Inode-key requests already carry their identity;
+/// ordinary file and inode-metadata paths can still be resolved through the
+/// staged view because the inode remains present for those operations. A
+/// namespace pair intentionally returns `None`: its parent-directory change is
+/// a volume operation and must be retried by the matching namespace request or
+/// by volume sync, never by an arbitrary file handle.
+fn mutation_target_inode(mounted: &Mounted, path: &[u8]) -> Option<u64> {
+    if path.first() == Some(&0) && path.len() == 1 + core::mem::size_of::<u64>() {
+        return path
+            .get(1..)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u64::from_le_bytes);
+    }
+    if let Some(reclaim) = mounted.pending_reclaim.as_ref() {
+        if reclaim.path == path {
+            return Some(reclaim.inode);
+        }
+    }
+    let path = Path::try_from(path).ok()?;
+    mounted
+        .filesystem()
+        .ok()?
+        .path_to_inode(path, FollowSymlinks::All)
+        .ok()
+        .map(|inode| u64::from(inode.index.get()))
+}
+
+/// Execute a bounded write request as checkpointed journal transactions.
 ///
 /// The same request retries a retained commit/checkpoint plan after storage I/O
 /// refusal; different input is rejected while a request remains pending.
+/// Completed chunks can survive a crash independently. A later precommit
+/// refusal returns their byte count as a short write, never whole-write atomicity.
 pub(crate) fn transaction_probe(
     mounted: &mut Mounted,
     path: &[u8],
     offset: u64,
     source: &[u8],
 ) -> Result<usize, Status> {
+    write_target(mounted, absolute_path(path)?, offset, source, false)
+}
+
+fn inode_key(inode: u64) -> Result<Vec<u8>, Status> {
+    inode_index(inode)?;
+    let mut key = Vec::from([0]);
+    key.extend_from_slice(&inode.to_le_bytes());
+    Ok(key)
+}
+
+fn inode_index(inode: u64) -> Result<core::num::NonZeroU32, Status> {
+    u32::try_from(inode).ok().and_then(core::num::NonZeroU32::new).ok_or(Status::Invalid)
+}
+
+fn allocated_inode(filesystem: &Ext4, number: u64) -> Result<Inode, Status> {
+    let index = inode_index(number)?;
+    if !filesystem.inode_is_allocated(index).map_err(map_error)? { return Err(Status::NotFound); }
+    Inode::read(filesystem, index).map_err(map_error)
+}
+
+fn open_io_target(filesystem: &Ext4, key: &[u8]) -> Result<ext4plus::file::File, Status> {
+    if key.first() != Some(&0) { return filesystem.open(key).map_err(map_error); }
+    let number = u64::from_le_bytes(key.get(1..).ok_or(Status::Invalid)?.try_into().map_err(|_| Status::Invalid)?);
+    let inode = allocated_inode(filesystem, number)?;
+    if !inode.file_type().is_regular_file() { return Err(Status::Special); }
+    ext4plus::file::File::open_inode(filesystem, inode).map_err(map_error)
+}
+
+pub(crate) fn write_inode(mounted: &mut Mounted, inode: u64, offset: u64, source: &[u8]) -> Result<usize, Status> {
+    write_target(mounted, inode_key(inode)?, offset, source, false)
+}
+
+fn write_target(mounted: &mut Mounted, absolute: Vec<u8>, offset: u64, source: &[u8], append: bool) -> Result<usize, Status> {
     if source.is_empty() || source.len() > MAX_PROBE_WRITE_BYTES {
         return Err(Status::Range);
     }
-    let absolute = absolute_path(path)?;
+    let end = offset.checked_add(source.len() as u64).ok_or(Status::Range)?;
+    if end > MAX_MUTABLE_FILE_BYTES {
+        return Err(Status::Range);
+    }
+    if let Some(pending) = &mounted.pending_write {
+        if pending.path != absolute || pending.source != source || pending.offset != offset || pending.append != append {
+            return Err(Status::Invalid);
+        }
+    } else {
+        if mounted.pending_mutation.is_some() {
+            return Err(Status::Invalid);
+        }
+        let file = open_io_target(mounted.readable_filesystem()?, &absolute)?;
+        let inode = file.inode_number();
+        if file.inode().flags().contains(InodeFlags::APPEND_ONLY) && !append {
+            return Err(Status::ReadOnly);
+        }
+        let mut copy = Vec::new();
+        copy.try_reserve_exact(source.len()).map_err(|_| Status::Range)?;
+        copy.extend_from_slice(source);
+        mounted.pending_write = Some(PendingWrite {
+            path: absolute, source: copy, offset, completed: 0, append,
+            chunk_bytes: TRANSACTION_WRITE_BYTES, inode,
+        });
+    }
+    resume_write_request(mounted)
+}
+
+fn resume_write_request(mounted: &mut Mounted) -> Result<usize, Status> {
+    let mut request = mounted.pending_write.take().ok_or(Status::Invalid)?;
+    while request.completed < request.source.len() {
+        let offset = request.offset + request.completed as u64;
+        // Start with at most 32 data blocks. Fragmented allocation can need
+        // more metadata than the remaining stage budget, so a precommit-only
+        // capacity refusal halves the touched-block count after full rollback.
+        let capacity = request.chunk_bytes - (offset % BLOCK_BYTES) as usize;
+        let length = capacity.min(request.source.len() - request.completed);
+        let end = request.completed + length;
+        let outcome = write_transaction(mounted, &request.path, offset,
+            &request.source[request.completed..end]);
+        let refused_before_commit = matches!(outcome, Ok(WriteTransactionOutcome::Refused(_)));
+        let outcome = match outcome {
+            Ok(WriteTransactionOutcome::StageFull) => {
+                let touched = ((offset % BLOCK_BYTES) as usize + length).div_ceil(JOURNAL_BLOCK_BYTES);
+                if touched > 1 {
+                    // Persist this exact choice through commit/checkpoint I/O
+                    // failures; retry must not recompute a larger chunk.
+                    request.chunk_bytes = (touched / 2) * JOURNAL_BLOCK_BYTES;
+                    continue;
+                }
+                Err(Status::Full)
+            }
+            Ok(WriteTransactionOutcome::Written(written)) => Ok(written),
+            Ok(WriteTransactionOutcome::Refused(error)) => Err(error),
+            Err(error) => Err(error),
+        };
+        match outcome {
+            Ok(written) if written != 0 && written <= length => request.completed += written,
+            Ok(_) => return Err(Status::Invalid),
+            Err(error) => {
+                // Retain uncertain storage failures, including marker activation
+                // before a prepared mutation exists. A deterministic precommit
+                // refusal has already rolled back: retaining it would wedge all
+                // later requests and make a short write's suffix execute twice.
+                let completed = request.completed;
+                if !refused_before_commit && (error == Status::Io || mounted.pending_mutation.is_some()) {
+                    mounted.pending_write = Some(request);
+                }
+                // Publish only the checkpointed prefix. The caller owns any
+                // suffix after a normal capacity-limited short write.
+                return if error == Status::Full && completed != 0 {
+                    Ok(completed)
+                } else {
+                    Err(error)
+                };
+            }
+        }
+    }
+    Ok(request.completed)
+}
+
+/// Choose EOF under the caller's exclusive volume lease. A refused append
+/// retains its original start through the same bounded write request retry.
+pub(crate) fn append_probe(
+    mounted: &mut Mounted, path: &[u8], source: &[u8], maximum_size: u64,
+) -> Result<(u64, usize), Status> {
+    append_target(mounted, absolute_path(path)?, source, maximum_size)
+}
+
+pub(crate) fn append_inode(mounted: &mut Mounted, inode: u64, source: &[u8], maximum_size: u64) -> Result<(u64, usize), Status> {
+    append_target(mounted, inode_key(inode)?, source, maximum_size)
+}
+
+/// Make one regular inode durable through the existing retained-plan executor.
+///
+/// Unlike volume sync, this function never clears the filesystem recovery
+/// marker or reclaims an unrelated orphan. It only resumes a pending request
+/// whose stable inode identity matches the caller. When there is no matching
+/// retained request, the checkpointed view has already crossed the durable
+/// boundary, so validation followed by success is an idempotent no-op.
+pub(crate) fn fsync_inode(mounted: &mut Mounted, inode: u64) -> Result<(), Status> {
+    let inode = inode_index(inode)?;
+    let number = u64::from(inode.get());
+
+    if let Some(reclaim) = mounted.pending_reclaim.as_ref() {
+        if reclaim.inode != number {
+            return Err(Status::Busy);
+        }
+        resume_reclaim_request(mounted)?;
+        return Ok(());
+    }
+    if let Some(pending) = mounted.pending_write.as_ref() {
+        if pending.inode != number {
+            return Err(Status::Busy);
+        }
+        let expected = mounted.pending_write.as_ref().ok_or(Status::Invalid)?.source.len();
+        if resume_write_request(mounted)? != expected {
+            return Err(Status::Full);
+        }
+        return Ok(());
+    }
+    if let Some(pending) = mounted.pending_mutation.as_ref() {
+        if pending.target_inode != Some(number) {
+            return Err(Status::Busy);
+        }
+        let _ = resume_pending_mutation_inner(mounted)?;
+        return Ok(());
+    }
+
+    let target = allocated_inode(mounted.readable_filesystem()?, number)?;
+    if !target.file_type().is_regular_file() {
+        return Err(Status::Special);
+    }
+    Ok(())
+}
+
+fn append_target(mounted: &mut Mounted, key: Vec<u8>, source: &[u8], maximum_size: u64) -> Result<(u64, usize), Status> {
+    let offset = if let Some(pending) = &mounted.pending_write {
+        if pending.path != key || pending.source != source || !pending.append {
+            return Err(Status::Invalid);
+        }
+        pending.offset
+    } else {
+        open_io_target(mounted.readable_filesystem()?, &key)?.inode().size_in_bytes()
+    };
+    if offset.checked_add(source.len() as u64).is_none_or(|end| end > maximum_size) {
+        return Err(Status::Range);
+    }
+    write_target(mounted, key, offset, source, true).map(|written| (offset, written))
+}
+
+fn write_transaction(
+    mounted: &mut Mounted,
+    path: &[u8],
+    offset: u64,
+    source: &[u8],
+) -> Result<WriteTransactionOutcome, Status> {
+    if source.is_empty() || source.len() > MAX_PROBE_WRITE_BYTES {
+        return Err(Status::Range);
+    }
+    let absolute = Vec::from(path);
     if mounted.pending_mutation.is_some() {
         return resume_pending_mutation(
             mounted,
@@ -843,7 +1407,7 @@ pub(crate) fn transaction_probe(
             &absolute,
             offset,
             source,
-        );
+        ).map(WriteTransactionOutcome::Written);
     }
     if !mounted.stage.is_empty() || mounted.stage.is_sealed() {
         let recovery = mounted
@@ -859,10 +1423,7 @@ pub(crate) fn transaction_probe(
     source_copy.extend_from_slice(source);
     arm_recovery_marker(mounted)?;
 
-    let mut file = match mounted.filesystem.open(absolute.as_slice()) {
-        Ok(file) => file,
-        Err(error) => return Err(map_error(error)),
-    };
+    let mut file = open_io_target(mounted.filesystem()?, &absolute)?;
     let written = match file.write_bytes_at(source, offset) {
         Ok(0) => {
             discard_uncommitted_stage(mounted, true)?;
@@ -870,8 +1431,16 @@ pub(crate) fn transaction_probe(
         }
         Ok(written) => written,
         Err(error) => {
-            discard_uncommitted_stage(mounted, true)?;
-            return Err(map_error(error));
+            let stage_full = matches!(&error, Ext4Error::Io(cause)
+                if cause.downcast_ref::<JournalMutationStageError>() == Some(&JournalMutationStageError::TooManyBlocks));
+            drop(file);
+            if let Err(rollback_error) = discard_uncommitted_stage(mounted, true) {
+                // Reload failure keeps the view absent, not the rejected write.
+                // Sync may restore that view but must not reapply this request.
+                return Ok(WriteTransactionOutcome::Refused(rollback_error));
+            }
+            if stage_full { return Ok(WriteTransactionOutcome::StageFull); }
+            return Ok(WriteTransactionOutcome::Refused(map_error(error)));
         }
     };
     let written_u64 = match u64::try_from(written) {
@@ -918,6 +1487,19 @@ pub(crate) fn transaction_probe(
                 return Err(map_error(error));
             }
         };
+        // A checksummed but hostile extent can point at allocator metadata.
+        // Never let file-data classification turn that image into a home
+        // write before journal commit. The journal planner separately rejects
+        // overlap with the journal's physical storage.
+        match mounted.filesystem()?.is_fixed_metadata_block(block) {
+            Ok(false) => {}
+            result => {
+                let error = result.err().map(map_error).unwrap_or(Status::Invalid);
+                drop(file);
+                discard_uncommitted_stage(mounted, true)?;
+                return Err(error);
+            }
+        }
         if ordered_data.contains(&block) {
             discard_uncommitted_stage(mounted, true)?;
             return Err(Status::Invalid);
@@ -946,7 +1528,7 @@ pub(crate) fn transaction_probe(
         written,
         &ordered_data,
         None,
-    )
+    ).map(WriteTransactionOutcome::Written)
 }
 
 /// Execute one controlled truncate through the native journal executor.
@@ -958,7 +1540,22 @@ pub(crate) fn truncate_probe(
     path: &[u8],
     size: u64,
 ) -> Result<(), Status> {
-    let absolute = absolute_path(path)?;
+    truncate_target(mounted, absolute_path(path)?, size)
+}
+
+pub(crate) fn truncate_inode(mounted: &mut Mounted, inode: u64, size: u64) -> Result<(), Status> {
+    truncate_target(mounted, inode_key(inode)?, size)
+}
+
+fn truncate_target(mounted: &mut Mounted, absolute: Vec<u8>, size: u64) -> Result<(), Status> {
+    if size > MAX_MUTABLE_FILE_BYTES {
+        return Err(Status::Range);
+    }
+    if let Some(pending) = &mounted.pending_reclaim {
+        if pending.kind != PendingMutationKind::Truncate || pending.path != absolute
+            || pending.argument != size { return Err(Status::Invalid); }
+        return resume_reclaim_request(mounted);
+    }
     if mounted.pending_mutation.is_some() {
         let resumed = resume_pending_mutation(
             mounted,
@@ -980,22 +1577,58 @@ pub(crate) fn truncate_probe(
             .map_err(|_| Status::Invalid)?;
         discard_uncommitted_stage(mounted, recovery)?;
     }
-    let file = mounted
-        .filesystem
-        .open(absolute.as_slice())
-        .map_err(map_error)?;
+    ensure_staged_view(mounted)?;
+    let file = open_io_target(mounted.filesystem()?, &absolute)?;
+    if file.inode().flags().intersects(InodeFlags::IMMUTABLE | InodeFlags::APPEND_ONLY) {
+        return Err(Status::ReadOnly);
+    }
     let old_size = file.inode().size_in_bytes();
     drop(file);
     if size == old_size {
         return Ok(());
     }
     arm_recovery_marker(mounted)?;
-    let mut file = mounted
-        .filesystem
-        .open(absolute.as_slice())
-        .map_err(map_error)?;
+    let mut file = open_io_target(mounted.filesystem()?, &absolute)?;
+    if size < old_size && size % BLOCK_BYTES != 0 {
+        // Tail zeroing is journaled as metadata, so the ordered-data and
+        // freed-block classifiers never see it. Check its physical owner
+        // class before upstream can stage bytes over fixed allocator metadata.
+        let validation = (|| {
+            if let Some(block) = file.filesystem_block_at_offset(size).map_err(map_error)? {
+                if mounted.filesystem()?.is_fixed_metadata_block(block).map_err(map_error)? {
+                    return Err(Status::Invalid);
+                }
+                if !mounted.filesystem()?.block_allocation_snapshot()
+                    .range_is_allocated(block, 1).map_err(map_error)? {
+                    return Err(Status::Invalid);
+                }
+            }
+            Ok(())
+        })();
+        if let Err(error) = validation {
+            drop(file);
+            discard_uncommitted_stage(mounted, true)?;
+            return Err(error);
+        }
+    }
     if let Err(error) = file.truncate(size) {
+        let capacity = mutation_capacity_error(&error);
+        let inode = file.inode().index;
+        let linked = file.inode().links_count() != 0;
+        drop(file);
         discard_uncommitted_stage(mounted, true)?;
+        if capacity && size < old_size && old_size <= MAX_SPLIT_ORPHAN_BYTES {
+            arm_recovery_marker(mounted)?;
+            if let Err(error) = mounted.filesystem()?.begin_truncate_orphan(inode, size) {
+                discard_uncommitted_stage(mounted, true)?;
+                return Err(map_error(error));
+            }
+            mounted.pending_reclaim = Some(PendingReclaim {
+                kind: PendingMutationKind::Truncate, path: absolute, argument: size,
+                inode: u64::from(inode.get()), retain_unlinked: !linked, namespace_committed: false,
+            });
+            return resume_reclaim_request(mounted);
+        }
         return Err(map_error(error));
     }
     if file.inode().size_in_bytes() != size {
@@ -1056,13 +1689,176 @@ fn commit_namespace_mutation(
     }
 }
 
+/// Apply one inode mutation with an exact-input retry key and staged rollback.
+fn mutate_inode<F>(mounted: &mut Mounted, path: &[u8], kind: PendingMutationKind,
+    input: Vec<u8>, mutation: F) -> Result<(), Status>
+where F: FnOnce(&Ext4, &mut Inode) -> Result<(), Ext4Error> {
+    let absolute = absolute_path(path)?;
+    if mounted.pending_mutation.is_some() {
+        return resume_pending_mutation(mounted, kind, &absolute, 0, &input).map(|_| ());
+    }
+    if mounted.pending_write.is_some() { return Err(Status::Invalid); }
+    if !mounted.stage.is_empty() || mounted.stage.is_sealed() {
+        let recovery = mounted.journal.filesystem_recovery_marker_is_durable()
+            .map_err(|_| Status::Invalid)?;
+        discard_uncommitted_stage(mounted, recovery)?;
+    }
+    arm_recovery_marker(mounted)?;
+    let filesystem = mounted.filesystem()?;
+    let result = (|| {
+        let path = Path::try_from(absolute.as_slice()).map_err(|_| Ext4Error::MalformedPath)?;
+        let mut inode = filesystem.path_to_inode(path, FollowSymlinks::All)?;
+        if inode.flags().intersects(InodeFlags::IMMUTABLE | InodeFlags::APPEND_ONLY) { return Err(Ext4Error::Readonly); }
+        mutation(filesystem, &mut inode)
+    })();
+    if let Err(error) = result {
+        discard_uncommitted_stage(mounted, true)?;
+        return Err(map_error(error));
+    }
+    if mounted.stage.is_empty() {
+        discard_uncommitted_stage(mounted, true)?;
+        return Err(Status::Invalid);
+    }
+    commit_staged_mutation(mounted, kind, absolute, input, 0, 0, &[], None).map(|_| ())
+}
+
+pub(crate) fn chmod(mounted: &mut Mounted, path: &[u8], mode: u16) -> Result<(), Status> {
+    // chmod(2) operates on permission and special bits; the file-type bits
+    // returned by stat are ignored, so stat -> chmod must round-trip.
+    let mode = mode & 0o7777;
+    mutate_inode(mounted, path, PendingMutationKind::Chmod, Vec::from(mode.to_le_bytes()),
+        |filesystem, inode| {
+            inode.chmod_with_acl(filesystem,
+                InodeMode::from_bits_retain((inode.mode().bits() & !0o7777) | mode))
+        })
+}
+
+pub(crate) fn set_times(mounted: &mut Mounted, path: &[u8], atime_seconds: u64,
+    atime_nanos: u32, mtime_seconds: u64, mtime_nanos: u32) -> Result<(), Status> {
+    if atime_seconds > 0x3_7fff_ffff || mtime_seconds > 0x3_7fff_ffff ||
+        atime_nanos >= 1_000_000_000 || mtime_nanos >= 1_000_000_000 { return Err(Status::Range); }
+    let mut input = Vec::from(atime_seconds.to_le_bytes());
+    input.extend_from_slice(&atime_nanos.to_le_bytes());
+    input.extend_from_slice(&mtime_seconds.to_le_bytes());
+    input.extend_from_slice(&mtime_nanos.to_le_bytes());
+    mutate_inode(mounted, path, PendingMutationKind::SetTimes, input, |filesystem, inode| {
+        inode.set_times(Duration::new(atime_seconds, atime_nanos),
+            Duration::new(mtime_seconds, mtime_nanos))?;
+        inode.write(filesystem)
+    })
+}
+
+fn validate_user_xattr(name: &[u8]) -> Result<(), Status> {
+    if !name.starts_with(b"user.") || name.len() <= 5 || name.len() > 255 || name.contains(&0) {
+        return Err(Status::Argument);
+    }
+    Ok(())
+}
+
+pub(crate) fn set_xattr(mounted: &mut Mounted, path: &[u8], name: &[u8],
+    value: Option<&[u8]>) -> Result<(), Status> {
+    validate_user_xattr(name)?;
+    if value.is_some_and(|bytes| bytes.len() > 4096) { return Err(Status::Range); }
+    let mut input = Vec::from(name);
+    input.push(0);
+    if let Some(value) = value { input.extend_from_slice(value); }
+    let kind = if value.is_some() { PendingMutationKind::SetXattr } else { PendingMutationKind::RemoveXattr };
+    mutate_inode(mounted, path, kind, input, |filesystem, inode| {
+        if let Some(value) = value { inode.set_xattr(filesystem, name, value) }
+        else { inode.remove_xattr(filesystem, name) }
+    })
+}
+
+pub(crate) fn get_xattr(mounted: &Mounted, path: &[u8], name: &[u8],
+    output: &mut [u8]) -> Result<usize, Status> {
+    validate_user_xattr(name)?;
+    let filesystem = mounted.readable_filesystem()?;
+    let absolute = absolute_path(path)?;
+    let path = Path::try_from(absolute.as_slice()).map_err(|_| Status::Invalid)?;
+    let inode = filesystem.path_to_inode(path, FollowSymlinks::All).map_err(map_error)?;
+    let value = inode.get_xattr(filesystem, name).map_err(map_error)?.ok_or(Status::NotFound)?;
+    if output.is_empty() { return Ok(value.len()); }
+    if output.len() < value.len() { return Err(Status::Range); }
+    output[..value.len()].copy_from_slice(&value);
+    Ok(value.len())
+}
+
+/// Resolve/create and optionally truncate under the caller's single volume
+/// lease. A failed open owns no handle, but retains its exact mutation identity
+/// until retry or filesystem sync finishes the outstanding storage plan.
+pub(crate) fn prepare_open(mounted: &mut Mounted, path: &[u8], access: u8,
+    flags: u8, mode: u16) -> Result<Metadata, Status> {
+    const CREATE: u8 = 1;
+    const TRUNCATE: u8 = 2;
+    const EXCLUSIVE: u8 = 4;
+    if !(1..=3).contains(&access) || flags & !(CREATE | TRUNCATE | EXCLUSIVE) != 0 || mode & !0o7777 != 0
+        || (flags & EXCLUSIVE != 0 && flags & CREATE == 0) {
+        return Err(Status::Invalid);
+    }
+    if flags & TRUNCATE != 0 && access & 2 == 0 { return Err(Status::ReadOnly); }
+    let absolute = absolute_path(path)?;
+    let pending = mounted.pending_mutation.is_some() || mounted.pending_reclaim.is_some()
+        || mounted.pending_write.is_some();
+    // A sync or another exact retry may already have completed the plan. Never
+    // reuse its cached inode after that point: the name may have been replaced.
+    if !pending { mounted.pending_open = None; }
+    if let Some(request) = &mounted.pending_open {
+        if request.path != absolute || request.access != access || request.flags != flags || request.mode != mode {
+            return Err(Status::Invalid);
+        }
+    } else if pending { return Err(Status::Busy); }
+    let retry = mounted.pending_open.is_some();
+    let mut request = mounted.pending_open.take().unwrap_or(PendingOpen {
+        path: absolute, create_path: None, mode, access, flags, inode: None,
+    });
+    let result = (|| {
+        if request.inode.is_none() {
+            if retry {
+                create_file_probe(mounted, request.create_path.as_deref().ok_or(Status::Invalid)?, mode)?;
+            } else {
+                if flags & EXCLUSIVE != 0 {
+                    // Even a dangling final symlink is an existing name. Do
+                    // this before creating or truncating, under the same lease.
+                    match lstat(mounted, &request.path) {
+                        Ok(_) => return Err(Status::Exists),
+                        Err(Status::NotFound) => {},
+                        Err(status) => return Err(status),
+                    }
+                }
+                match stat(mounted, &request.path) {
+                    Ok(_) => {},
+                    Err(Status::NotFound) if flags & CREATE != 0 => {
+                        let target = mounted.readable_filesystem()?.canonicalize_for_create(
+                            Path::try_from(request.path.as_slice()).map_err(|_| Status::Invalid)?)
+                            .map_err(map_error)?;
+                        request.create_path = Some(Vec::from(target.as_ref()));
+                        create_file_probe(mounted, request.create_path.as_deref().ok_or(Status::Invalid)?, mode)?;
+                    }
+                    Err(status) => return Err(status),
+                }
+            }
+            let metadata = stat(mounted, &request.path)?;
+            if metadata.file_type == 2 { return Err(Status::IsDirectory); }
+            if metadata.file_type != 1 { return Err(Status::Special); }
+            request.inode = Some(metadata.inode);
+        }
+        let inode = request.inode.ok_or(Status::Invalid)?;
+        if flags & TRUNCATE != 0 { truncate_inode(mounted, inode, 0)?; }
+        stat_inode(mounted, inode)
+    })();
+    if result.is_err() && (mounted.pending_mutation.is_some() || mounted.pending_reclaim.is_some()) {
+        mounted.pending_open = Some(request);
+    }
+    result
+}
+
 /// Create one empty regular file through the journaled mutation path.
 pub(crate) fn create_file_probe(
     mounted: &mut Mounted,
     path: &[u8],
     mode: u16,
 ) -> Result<(), Status> {
-    if mode & !0o777 != 0 {
+    if mode & !0o7777 != 0 {
         return Err(Status::Invalid);
     }
     let absolute = absolute_path(path)?;
@@ -1090,12 +1886,12 @@ pub(crate) fn create_file_probe(
     }
     arm_recovery_marker(mounted)?;
     let (parent, name) = parent_and_name(&absolute)?;
+    let filesystem = mounted.filesystem()?;
     let mutation = (|| {
-        let parent_inode = mounted
-            .filesystem
+        let parent_inode = filesystem
             .path_to_inode(parent, FollowSymlinks::All)?;
-        let mut directory = Dir::open_inode(&mounted.filesystem, parent_inode)?;
-        let mut inode = mounted.filesystem.create_inode(InodeCreationOptions {
+        let mut directory = Dir::open_inode(filesystem, parent_inode)?;
+        let mut inode = filesystem.create_child_inode(directory.inode(), InodeCreationOptions {
             file_type: FileType::Regular,
             mode: InodeMode::S_IFREG | InodeMode::from_bits_retain(mode),
             uid: 0,
@@ -1130,14 +1926,117 @@ pub(crate) fn create_file_probe(
     }
 }
 
-/// Remove one regular-file link through the journaled mutation path.
+/// Create a symlink with its literal target journaled alongside its inode.
+pub(crate) fn symlink_probe(
+    mounted: &mut Mounted,
+    path: &[u8],
+    target: &[u8],
+) -> Result<(), Status> {
+    if target.is_empty() || target.len() >= 4096 {
+        return Err(Status::Range);
+    }
+    let target_path = PathBuf::try_from(target).map_err(|_| Status::Invalid)?;
+    let absolute = absolute_path(path)?;
+    let key = namespace_pair_key(&absolute, target)?;
+    if mounted.pending_mutation.is_some() {
+        return resume_namespace_mutation(mounted, PendingMutationKind::Symlink, &key);
+    }
+    if !mounted.stage.is_empty() || mounted.stage.is_sealed() {
+        let recovery = mounted.journal.filesystem_recovery_marker_is_durable()
+            .map_err(|_| Status::Invalid)?;
+        discard_uncommitted_stage(mounted, recovery)?;
+    }
+    arm_recovery_marker(mounted)?;
+    let (parent, name) = parent_and_name(&absolute)?;
+    let filesystem = mounted.filesystem()?;
+    let mutation = (|| {
+        let parent_inode = filesystem.path_to_inode(parent, FollowSymlinks::All)?;
+        let mut directory = Dir::open_inode(filesystem, parent_inode)?;
+        filesystem.symlink(&mut directory, name, target_path, 0, 0,
+            Duration::from_secs(0)).map(|_| ())
+    })();
+    if let Err(error) = mutation {
+        discard_uncommitted_stage(mounted, true)?;
+        return Err(map_error(error));
+    }
+    if mounted.stage.is_empty() || mounted.stage.revoked_block_count() != 0 {
+        discard_uncommitted_stage(mounted, true)?;
+        return Err(Status::Invalid);
+    }
+    // Long-target data is metadata for this operation: journal the complete
+    // target with its namespace publication instead of using ordered data.
+    commit_namespace_mutation(mounted, PendingMutationKind::Symlink, key)
+}
+
+/// Copy a literal target without following the final component or adding NUL.
+pub(crate) fn readlink(
+    mounted: &Mounted,
+    path: &[u8],
+    output: &mut [u8],
+) -> Result<usize, Status> {
+    let absolute = absolute_path(path)?;
+    let target = mounted.readable_filesystem()?.read_link(absolute.as_slice())
+        .map_err(map_error)?;
+    let bytes = target.as_ref();
+    let count = output.len().min(bytes.len());
+    output[..count].copy_from_slice(&bytes[..count]);
+    Ok(count)
+}
+
+/// Remove an entry of either kind, resuming the original journal operation.
+pub(crate) fn remove_entry_guarded(mounted: &mut Mounted, path: &[u8], open_inodes: &[u64]) -> Result<(), Status> {
+    if mounted.pending_mutation.as_ref().is_some_and(|pending| pending.kind == PendingMutationKind::RemoveDirectory) {
+        return remove_directory_guarded(mounted, path, open_inodes);
+    }
+    match unlink_file_guarded(mounted, path, open_inodes) {
+        Err(Status::IsDirectory) => remove_directory_guarded(mounted, path, open_inodes),
+        result => result,
+    }
+}
+
+/// Remove one regular-file or symbolic link through the journaled mutation path.
 pub(crate) fn unlink_file_probe(
     mounted: &mut Mounted,
     path: &[u8],
 ) -> Result<(), Status> {
+    unlink_file_guarded(mounted, path, &[])
+}
+
+/// Retain an open regular inode on the journaled orphan chain after its final
+/// namespace link is removed. C supplies every live inode under the lease.
+pub(crate) fn unlink_file_guarded(
+    mounted: &mut Mounted,
+    path: &[u8],
+    open_inodes: &[u64],
+) -> Result<(), Status> {
+    unlink_file_transaction(mounted, path, open_inodes, None)
+}
+
+/// Remove a temporary name only while it still names the held regular inode.
+/// The live handle prevents inode reuse; retries bind both path and identity.
+pub(crate) fn unlink_held_file(mounted: &mut Mounted, path: &[u8],
+    inode: u64, open_inodes: &[u64]) -> Result<(), Status> {
+    inode_index(inode)?;
+    if !open_inodes.contains(&inode) { return Err(Status::Stale); }
+    unlink_file_transaction(mounted, path, open_inodes, Some(inode))
+}
+
+fn unlink_file_transaction(mounted: &mut Mounted, path: &[u8],
+    open_inodes: &[u64], expected_inode: Option<u64>) -> Result<(), Status> {
     let absolute = absolute_path(path)?;
+    let kind = if expected_inode.is_some() { PendingMutationKind::UnlinkHeldFile }
+        else { PendingMutationKind::UnlinkFile };
+    let mut key = absolute.clone();
+    if let Some(inode) = expected_inode {
+        key.push(0);
+        key.extend_from_slice(&inode.to_le_bytes());
+    }
+    if let Some(pending) = &mounted.pending_reclaim {
+        if pending.kind != kind || pending.path != key { return Err(Status::Invalid); }
+        return resume_reclaim_request(mounted);
+    }
     if mounted.pending_mutation.is_some() {
-        return resume_namespace_mutation(mounted, PendingMutationKind::UnlinkFile, &absolute);
+        return resume_namespace_mutation(mounted, kind, &key);
     }
     if !mounted.stage.is_empty() || mounted.stage.is_sealed() {
         let recovery = mounted
@@ -1146,25 +2045,61 @@ pub(crate) fn unlink_file_probe(
             .map_err(|_| Status::Invalid)?;
         discard_uncommitted_stage(mounted, recovery)?;
     }
+    if let Some(expected) = expected_inode {
+        let metadata = lstat(mounted, path)?;
+        if metadata.inode != expected || metadata.file_type != 1 { return Err(Status::Stale); }
+    }
     arm_recovery_marker(mounted)?;
     let (parent, name) = parent_and_name(&absolute)?;
+    let filesystem = mounted.filesystem()?;
+    let path = Path::try_from(absolute.as_slice()).map_err(|_| Status::Invalid)?;
+    let mut reclaim = None;
     let mutation = (|| {
-        let path = Path::try_from(absolute.as_slice())
-            .map_err(|_| Ext4Error::MalformedPath)?;
-        let inode = mounted
-            .filesystem
+        let inode = filesystem
             .path_to_inode(path, FollowSymlinks::ExcludeFinalComponent)?;
-        if !inode.file_type().is_regular_file() {
+        if !inode.file_type().is_regular_file() && !inode.file_type().is_symlink() {
             return Err(Ext4Error::IsADirectory);
         }
-        let parent_inode = mounted
-            .filesystem
+        let retain = inode.file_type().is_regular_file()
+            && open_inodes.contains(&u64::from(inode.index.get()));
+        if !retain && inode.file_type().is_regular_file() && inode.links_count() == 1
+            && inode.size_in_bytes() <= MAX_SPLIT_ORPHAN_BYTES {
+            reclaim = Some(u64::from(inode.index.get()));
+        }
+        let parent_inode = filesystem
             .path_to_inode(parent, FollowSymlinks::All)?;
-        let mut directory = Dir::open_inode(&mounted.filesystem, parent_inode)?;
-        directory.unlink(name, inode).map(|_| ())
+        let mut directory = Dir::open_inode(filesystem, parent_inode)?;
+        if retain { directory.unlink_open(name, inode) } else { directory.unlink(name, inode) }
+            .map(|_| ())
     })();
     if let Err(error) = mutation {
+        let capacity = mutation_capacity_error(&error);
         discard_uncommitted_stage(mounted, true)?;
+        if let Some(inode) = reclaim.filter(|_| capacity) {
+            // Publish the final unlink and durable orphan link atomically,
+            // then reclaim its allocation in bounded transactions. Retain the
+            // original pathname/phase across failures so retry never looks up
+            // an already removed name or unlinks a newly created replacement.
+            arm_recovery_marker(mounted)?;
+            let filesystem = mounted.filesystem()?;
+            filesystem.validate_extent_reclaim(inode_index(inode)?,
+                (MAX_SPLIT_ORPHAN_BYTES / BLOCK_BYTES) as u32).map_err(map_error)?;
+            let node = allocated_inode(filesystem, inode)?;
+            let (parent, name) = parent_and_name(&absolute)?;
+            let mutation = (|| {
+                let parent_inode = filesystem.path_to_inode(parent, FollowSymlinks::All)?;
+                Dir::open_inode(filesystem, parent_inode)?.unlink_open(name, node)
+            })();
+            if let Err(error) = mutation {
+                discard_uncommitted_stage(mounted, true)?;
+                return Err(map_error(error));
+            }
+            mounted.pending_reclaim = Some(PendingReclaim {
+                kind,
+                path: key, argument: 0, inode, retain_unlinked: false, namespace_committed: false,
+            });
+            return resume_reclaim_request(mounted);
+        }
         return Err(map_error(error));
     }
     /*
@@ -1178,10 +2113,115 @@ pub(crate) fn unlink_file_probe(
         discard_uncommitted_stage(mounted, true)?;
         return Err(Status::Invalid);
     }
-    commit_namespace_mutation(mounted, PendingMutationKind::UnlinkFile, absolute)
+    commit_namespace_mutation(mounted, kind, key)
 }
 
-/// Create one regular-file hard link through the journaled mutation path.
+fn resume_reclaim_request(mounted: &mut Mounted) -> Result<(), Status> {
+    let mut request = mounted.pending_reclaim.take().ok_or(Status::Invalid)?;
+    let result = (|| {
+        if !request.namespace_committed {
+            if mounted.pending_mutation.is_some() {
+                resume_pending_mutation(mounted, request.kind, &request.path, request.argument, &[])?;
+            } else {
+                commit_staged_mutation(mounted, request.kind, request.path.clone(), Vec::new(),
+                    request.argument, 0, &[], None)?;
+            }
+            request.namespace_committed = true;
+        }
+        if request.retain_unlinked {
+            let key = inode_key(request.inode)?;
+            if mounted.pending_mutation.is_some() {
+                resume_namespace_mutation(mounted, PendingMutationKind::FinalizeOrphan, &key)?;
+            }
+            while !complete_truncate_orphan_transaction(mounted, request.inode, &key, true)? {}
+            Ok(())
+        } else { finalize_orphan(mounted, request.inode) }
+    })();
+    if result.is_err() && (request.namespace_committed || mounted.pending_mutation.is_some()) {
+        mounted.pending_reclaim = Some(request);
+    }
+    result
+}
+
+/// Finalize one orphan through the same retryable coordinator used by unlink.
+pub(crate) fn finalize_orphan(mounted: &mut Mounted, inode: u64) -> Result<(), Status> {
+    let key = inode_key(inode)?;
+    if mounted.pending_write.is_some() { return Err(Status::Busy); }
+    if mounted.pending_mutation.is_some() {
+        resume_namespace_mutation(mounted, PendingMutationKind::FinalizeOrphan, &key)?;
+    }
+    let index = inode_index(inode)?;
+    loop {
+        ensure_staged_view(mounted)?;
+        if !mounted.readable_filesystem()?.orphan_inodes().map_err(map_error)?.contains(&index) {
+            return Ok(());
+        }
+        if allocated_inode(mounted.filesystem()?, inode)?.links_count() != 0 {
+            if complete_truncate_orphan_transaction(mounted, inode, &key, false)? { return Ok(()); }
+            continue;
+        }
+        arm_recovery_marker(mounted)?;
+        match mounted.filesystem()?.release_orphan(index) {
+            Ok(()) => return commit_namespace_mutation(mounted, PendingMutationKind::FinalizeOrphan, key),
+            Err(error) => {
+                let capacity = mutation_capacity_error(&error);
+                discard_uncommitted_stage(mounted, true)?;
+                if !capacity { return Err(map_error(error)); }
+            }
+        }
+        // The inode is unreachable and has no live handle. Keep it on the
+        // durable orphan chain while releasing a bounded suffix. A crash or
+        // failed checkpoint can resume either that exact plan or the next
+        // suffix; the inode number is freed only by the final transaction.
+        trim_orphan_for_release(mounted, inode, &key)?;
+    }
+}
+
+fn mutation_capacity_error(error: &Ext4Error) -> bool {
+    matches!(error, Ext4Error::Io(cause) if matches!(cause.downcast_ref::<JournalMutationStageError>(),
+        Some(JournalMutationStageError::TooManyBlocks | JournalMutationStageError::TooManyRevocations)))
+}
+
+fn complete_truncate_orphan_transaction(mounted: &mut Mounted, inode: u64, key: &[u8],
+    retain_unlinked: bool) -> Result<bool, Status> {
+    let index = inode_index(inode)?;
+    let mut blocks = ext4plus::JOURNAL_TRANSACTION_MAX_REVOKED_BLOCKS as u32;
+    loop {
+        arm_recovery_marker(mounted)?;
+        let complete = match mounted.filesystem()?.complete_truncate_orphan(index, blocks, retain_unlinked) {
+            Ok(complete) => complete,
+            Err(error) => {
+                let capacity = mutation_capacity_error(&error);
+                discard_uncommitted_stage(mounted, true)?;
+                if capacity && blocks > 1 { blocks /= 2; continue; }
+                return Err(map_error(error));
+            }
+        };
+        if mounted.stage.is_empty() {
+            return if complete && retain_unlinked { Ok(true) } else { Err(Status::Invalid) };
+        }
+        commit_namespace_mutation(mounted, PendingMutationKind::FinalizeOrphan, Vec::from(key))?;
+        return Ok(complete);
+    }
+}
+
+fn trim_orphan_for_release(mounted: &mut Mounted, inode: u64, key: &[u8]) -> Result<(), Status> {
+    let index = inode_index(inode)?;
+    let mut blocks = ext4plus::JOURNAL_TRANSACTION_MAX_REVOKED_BLOCKS as u32;
+    loop {
+        arm_recovery_marker(mounted)?;
+        if let Err(error) = mounted.filesystem()?.trim_orphan_suffix(index, blocks,
+            (MAX_SPLIT_ORPHAN_BYTES / BLOCK_BYTES) as u32) {
+            let capacity = mutation_capacity_error(&error);
+            discard_uncommitted_stage(mounted, true)?;
+            if capacity && blocks > 1 { blocks /= 2; continue; }
+            return Err(map_error(error));
+        }
+        return commit_namespace_mutation(mounted, PendingMutationKind::FinalizeOrphan, Vec::from(key));
+    }
+}
+
+/// Hard-link a regular file or the final symbolic link without following it.
 pub(crate) fn link_file_probe(
     mounted: &mut Mounted,
     source: &[u8],
@@ -1208,17 +2248,16 @@ pub(crate) fn link_file_probe(
     let source_path = Path::try_from(source_absolute.as_slice())
         .map_err(|_| Status::Invalid)?;
     let (parent, name) = parent_and_name(&destination_absolute)?;
+    let filesystem = mounted.filesystem()?;
     let mutation = (|| {
-        let mut inode = mounted
-            .filesystem
+        let mut inode = filesystem
             .path_to_inode(source_path, FollowSymlinks::ExcludeFinalComponent)?;
-        if !inode.file_type().is_regular_file() {
+        if !inode.file_type().is_regular_file() && !inode.file_type().is_symlink() {
             return Err(Ext4Error::IsADirectory);
         }
-        let parent_inode = mounted
-            .filesystem
+        let parent_inode = filesystem
             .path_to_inode(parent, FollowSymlinks::All)?;
-        let mut directory = Dir::open_inode(&mounted.filesystem, parent_inode)?;
+        let mut directory = Dir::open_inode(filesystem, parent_inode)?;
         directory.link(name, &mut inode)
     })();
     if let Err(error) = mutation {
@@ -1237,13 +2276,16 @@ pub(crate) fn create_directory_probe(
     mounted: &mut Mounted,
     path: &[u8],
 ) -> Result<(), Status> {
+    create_directory_mode(mounted, path, 0o755)
+}
+
+pub(crate) fn create_directory_mode(mounted: &mut Mounted, path: &[u8], mode: u16) -> Result<(), Status> {
+    if mode & !0o7777 != 0 { return Err(Status::Invalid); }
+    let mode_bytes = mode.to_le_bytes();
     let absolute = absolute_path(path)?;
     if mounted.pending_mutation.is_some() {
-        return resume_namespace_mutation(
-            mounted,
-            PendingMutationKind::CreateDirectory,
-            &absolute,
-        );
+        return resume_pending_mutation(mounted, PendingMutationKind::CreateDirectory,
+            &absolute, 0, &mode_bytes).map(|_| ());
     }
     if !mounted.stage.is_empty() || mounted.stage.is_sealed() {
         let recovery = mounted
@@ -1254,29 +2296,23 @@ pub(crate) fn create_directory_probe(
     }
     arm_recovery_marker(mounted)?;
     let (parent, name) = parent_and_name(&absolute)?;
+    let filesystem = mounted.filesystem()?;
     let mutation = (|| {
-        let parent_inode = mounted
-            .filesystem
+        let parent_inode = filesystem
             .path_to_inode(parent, FollowSymlinks::All)?;
         let mut parent_directory =
-            Dir::open_inode(&mounted.filesystem, parent_inode)?;
-        let inode = mounted.filesystem.create_inode(InodeCreationOptions {
+            Dir::open_inode(filesystem, parent_inode)?;
+        let inode = filesystem.create_child_inode(parent_directory.inode(), InodeCreationOptions {
             file_type: FileType::Directory,
-            mode: InodeMode::S_IFDIR
-                | InodeMode::S_IRUSR
-                | InodeMode::S_IWUSR
-                | InodeMode::S_IXUSR
-                | InodeMode::S_IRGRP
-                | InodeMode::S_IXGRP
-                | InodeMode::S_IROTH
-                | InodeMode::S_IXOTH,
+            // Linux vfs_mkdir admits rwx/sticky; setgid comes from the parent.
+            mode: InodeMode::S_IFDIR | InodeMode::from_bits_retain(mode & 0o1777),
             uid: 0,
             gid: 0,
             time: Duration::from_secs(0),
             flags: InodeFlags::empty(),
         })?;
         let mut directory = Dir::init(
-            mounted.filesystem.clone(),
+            filesystem.clone(),
             inode,
             parent_directory.inode(),
         )?;
@@ -1290,11 +2326,8 @@ pub(crate) fn create_directory_probe(
         discard_uncommitted_stage(mounted, true)?;
         return Err(Status::Invalid);
     }
-    commit_namespace_mutation(
-        mounted,
-        PendingMutationKind::CreateDirectory,
-        absolute,
-    )
+    commit_staged_mutation(mounted, PendingMutationKind::CreateDirectory,
+        absolute, Vec::from(mode_bytes), 0, 0, &[], None).map(|_| ())
 }
 
 /// Remove one empty directory through the journaled mutation path.
@@ -1302,6 +2335,10 @@ pub(crate) fn remove_directory_probe(
     mounted: &mut Mounted,
     path: &[u8],
 ) -> Result<(), Status> {
+    remove_directory_guarded(mounted, path, &[])
+}
+
+pub(crate) fn remove_directory_guarded(mounted: &mut Mounted, path: &[u8], open_inodes: &[u64]) -> Result<(), Status> {
     let absolute = absolute_path(path)?;
     if mounted.pending_mutation.is_some() {
         return resume_namespace_mutation(
@@ -1319,21 +2356,25 @@ pub(crate) fn remove_directory_probe(
     }
     arm_recovery_marker(mounted)?;
     let (parent, name) = parent_and_name(&absolute)?;
+    let filesystem = mounted.filesystem()?;
     let mutation = (|| {
         let path = Path::try_from(absolute.as_slice())
             .map_err(|_| Ext4Error::MalformedPath)?;
-        let inode = mounted
-            .filesystem
+        let inode = filesystem
             .path_to_inode(path, FollowSymlinks::ExcludeFinalComponent)?;
         if !inode.file_type().is_dir() {
             return Err(Ext4Error::NotADirectory);
         }
-        let parent_inode = mounted
-            .filesystem
+        let parent_inode = filesystem
             .path_to_inode(parent, FollowSymlinks::All)?;
         let mut parent_directory =
-            Dir::open_inode(&mounted.filesystem, parent_inode)?;
-        parent_directory.remove_empty_directory(name, inode)
+            Dir::open_inode(filesystem, parent_inode)?;
+        if open_inodes.contains(&u64::from(inode.index.get())) {
+            parent_directory.remove_open_directory(name, inode)?;
+            Ok(None)
+        } else {
+            parent_directory.remove_empty_directory(name, inode).map(Some)
+        }
     })();
     let revoked_block = match mutation {
         Ok(block) => block,
@@ -1342,7 +2383,10 @@ pub(crate) fn remove_directory_probe(
             return Err(map_error(error));
         }
     };
-    if mounted.stage.is_empty() || mounted.stage.revoked_block_count() != 1 {
+    // Removing the child can also shrink its parent; an empty grown child may
+    // itself own several blocks. Keep every stage revoke, requiring at least
+    // the child's validated first block in the committed transaction below.
+    if mounted.stage.is_empty() || (revoked_block.is_some() && mounted.stage.revoked_block_count() == 0) {
         discard_uncommitted_stage(mounted, true)?;
         return Err(Status::Invalid);
     }
@@ -1354,7 +2398,7 @@ pub(crate) fn remove_directory_probe(
         0,
         0,
         &[],
-        Some(revoked_block),
+        revoked_block,
     )?;
     if resumed == 0 {
         Ok(())
@@ -1363,19 +2407,105 @@ pub(crate) fn remove_directory_probe(
     }
 }
 
-/// Rename one regular file or directory within its parent through JBD2.
+/// Rename without replacement through JBD2, including indexed directories
+/// across parents with their dotdot entry and parent link counts in one stage.
 pub(crate) fn rename_probe(
     mounted: &mut Mounted,
     source: &[u8],
     destination: &[u8],
 ) -> Result<(), Status> {
+    rename_transaction(mounted, source, destination, false, &[], None)
+}
+
+pub(crate) fn rename_replace_probe(
+    mounted: &mut Mounted,
+    source: &[u8],
+    destination: &[u8],
+) -> Result<(), Status> {
+    rename_replace_guarded(mounted, source, destination, &[])
+}
+
+/// Replace while preserving live regular inodes and open directory snapshots.
+pub(crate) fn rename_replace_guarded(mounted: &mut Mounted, source: &[u8],
+    destination: &[u8], open_inodes: &[u64]) -> Result<(), Status> {
+    rename_transaction(mounted, source, destination, true, open_inodes, None)
+}
+
+/// Publish only the regular inode still named by the caller's temporary path.
+pub(crate) fn publish_file(mounted: &mut Mounted, source: &[u8], destination: &[u8],
+    inode: u64, open_inodes: &[u64]) -> Result<(), Status> {
+    inode_index(inode)?;
+    rename_transaction(mounted, source, destination, true, open_inodes, Some(inode))
+}
+
+fn remove_rename_destination(
+    directory: &mut Dir,
+    name: DirEntryName<'_>,
+    source: &ext4plus::inode::Inode,
+    open_inodes: &[u64],
+    defer_target: Option<u64>,
+    reclaim: &mut Option<u64>,
+) -> Result<bool, Ext4Error> {
+    let target = match directory.get_entry(name) {
+        Ok(target) => target,
+        Err(Ext4Error::NotFound) => return Ok(true),
+        Err(error) => return Err(error),
+    };
+    if target.index == source.index {
+        return Ok(false); // POSIX same-inode replacement is a no-op.
+    }
+    if target.flags().intersects(InodeFlags::IMMUTABLE | InodeFlags::APPEND_ONLY) {
+        return Err(Ext4Error::Readonly);
+    }
+    if target.file_type().is_dir() {
+        if !source.file_type().is_dir() { return Err(Ext4Error::IsADirectory); }
+        if open_inodes.contains(&u64::from(target.index.get())) {
+            directory.remove_open_directory(name, target)?;
+        } else {
+            directory.remove_empty_directory(name, target)?;
+        }
+    } else {
+        if source.file_type().is_dir() { return Err(Ext4Error::NotADirectory); }
+        if !target.file_type().is_regular_file() && !target.file_type().is_symlink() {
+            return Err(Ext4Error::IsASpecialFile);
+        }
+        let number = u64::from(target.index.get());
+        let retain = target.file_type().is_regular_file() && open_inodes.contains(&number);
+        if target.file_type().is_regular_file() && !retain && target.links_count() == 1
+            && target.size_in_bytes() <= MAX_SPLIT_ORPHAN_BYTES {
+            *reclaim = Some(number);
+        }
+        if retain || defer_target == Some(number) {
+            directory.unlink_open(name, target)?;
+        } else {
+            directory.unlink(name, target)?;
+        }
+    }
+    Ok(true)
+}
+
+fn rename_transaction(
+    mounted: &mut Mounted,
+    source: &[u8],
+    destination: &[u8],
+    replace: bool,
+    open_inodes: &[u64],
+    expected_source: Option<u64>,
+) -> Result<(), Status> {
+    let kind = if expected_source.is_some() { PendingMutationKind::PublishFile }
+        else if replace { PendingMutationKind::RenameReplace } else { PendingMutationKind::Rename };
     let source_absolute = absolute_path(source)?;
     let destination_absolute = absolute_path(destination)?;
-    let pending_key = namespace_pair_key(&source_absolute, &destination_absolute)?;
+    let mut pending_key = namespace_pair_key(&source_absolute, &destination_absolute)?;
+    if let Some(inode) = expected_source { pending_key.extend_from_slice(&inode.to_le_bytes()); }
+    if let Some(pending) = &mounted.pending_reclaim {
+        if pending.kind != kind || pending.path != pending_key { return Err(Status::Invalid); }
+        return resume_reclaim_request(mounted);
+    }
     if mounted.pending_mutation.is_some() {
         return resume_namespace_mutation(
             mounted,
-            PendingMutationKind::Rename,
+            kind,
             &pending_key,
         );
     }
@@ -1386,52 +2516,127 @@ pub(crate) fn rename_probe(
             .map_err(|_| Status::Invalid)?;
         discard_uncommitted_stage(mounted, recovery)?;
     }
-    arm_recovery_marker(mounted)?;
-    let source_path = Path::try_from(source_absolute.as_slice())
-        .map_err(|_| Status::Invalid)?;
-    let (source_parent, source_name) = parent_and_name(&source_absolute)?;
-    let (destination_parent, destination_name) =
-        parent_and_name(&destination_absolute)?;
-    if source_parent != destination_parent {
-        discard_uncommitted_stage(mounted, true)?;
-        return Err(Status::Invalid);
+    if let Some(expected) = expected_source {
+        let source = lstat(mounted, source)?;
+        if source.inode != expected || source.file_type != 1 { return Err(Status::Stale); }
     }
-    let mutation = (|| {
-        let inode = mounted
-            .filesystem
-            .path_to_inode(source_path, FollowSymlinks::ExcludeFinalComponent)?;
-        if !inode.file_type().is_regular_file() && !inode.file_type().is_dir() {
-            return Err(Ext4Error::IsASpecialFile);
+    let mut defer_target = None;
+    loop {
+        arm_recovery_marker(mounted)?;
+        let source_path = Path::try_from(source_absolute.as_slice())
+            .map_err(|_| Status::Invalid)?;
+        let (source_parent, source_name) = parent_and_name(&source_absolute)?;
+        let (destination_parent, destination_name) =
+            parent_and_name(&destination_absolute)?;
+        let filesystem = mounted.filesystem()?;
+        let mut inode = filesystem
+            .path_to_inode(source_path, FollowSymlinks::ExcludeFinalComponent)
+            .map_err(map_error)?;
+        if inode.flags().intersects(InodeFlags::IMMUTABLE | InodeFlags::APPEND_ONLY) {
+            return Err(Status::ReadOnly);
         }
-        let parent_inode = mounted
-            .filesystem
-            .path_to_inode(source_parent, FollowSymlinks::All)?;
-        let mut parent_directory =
-            Dir::open_inode(&mounted.filesystem, parent_inode)?;
-        parent_directory.rename_entry(source_name, destination_name, inode)
-    })();
-    if let Err(error) = mutation {
-        discard_uncommitted_stage(mounted, true)?;
-        return Err(map_error(error));
+        if !inode.file_type().is_regular_file() && !inode.file_type().is_dir()
+            && !inode.file_type().is_symlink() {
+            return Err(Status::Special);
+        }
+        let source_parent_inode = filesystem
+            .path_to_inode(source_parent, FollowSymlinks::All).map_err(map_error)?;
+        let destination_parent_inode = filesystem
+            .path_to_inode(destination_parent, FollowSymlinks::All).map_err(map_error)?;
+        if source_parent_inode.flags().intersects(InodeFlags::IMMUTABLE | InodeFlags::APPEND_ONLY)
+            || destination_parent_inode.flags().contains(InodeFlags::IMMUTABLE) {
+            return Err(Status::ReadOnly);
+        }
+        // Different path strings can resolve to the same directory through a
+        // symlink. Use one directory object in that case so inode size updates
+        // cannot be lost between two independently cached parent inodes.
+        let same_parent = source_parent_inode.index == destination_parent_inode.index;
+        let mut reclaim = None;
+        let mutation = (|| {
+            let mut source_directory = Dir::open_inode(filesystem, source_parent_inode)?;
+            if same_parent {
+                if replace && !remove_rename_destination(&mut source_directory, destination_name, &inode,
+                    open_inodes, defer_target, &mut reclaim)? {
+                    return Ok(());
+                }
+                return source_directory.rename_entry(source_name, destination_name, inode);
+            }
+            let mut destination_directory = Dir::open_inode(filesystem, destination_parent_inode)?;
+            if replace && !remove_rename_destination(&mut destination_directory, destination_name, &inode,
+                open_inodes, defer_target, &mut reclaim)? {
+                return Ok(());
+            }
+            if inode.file_type().is_dir() {
+                return source_directory.move_directory(source_name,
+                    &mut destination_directory, destination_name, inode);
+            }
+            // Both changes remain in one stage. Link-before-unlink keeps the inode
+            // allocated; its temporary extra link never reaches home metadata.
+            destination_directory.link(destination_name, &mut inode)?;
+            source_directory.unlink(source_name, inode).map(|_| ())
+        })();
+        if let Err(error) = mutation {
+            let capacity = mutation_capacity_error(&error);
+            discard_uncommitted_stage(mounted, true)?;
+            if let Some(inode) = reclaim.filter(|_| capacity && defer_target.is_none()) {
+                mounted.filesystem()?.validate_extent_reclaim(inode_index(inode)?,
+                    (MAX_SPLIT_ORPHAN_BYTES / BLOCK_BYTES) as u32).map_err(map_error)?;
+                defer_target = Some(inode);
+                continue;
+            }
+            return Err(map_error(error));
+        }
+        if mounted.stage.is_empty() {
+            discard_uncommitted_stage(mounted, true)?;
+            return if replace { Ok(()) } else { Err(Status::Invalid) };
+        }
+        if let Some(inode) = defer_target {
+            // The new name and the old target's orphan link become durable in
+            // one transaction. Cleanup retries retain both pathname arguments.
+            mounted.pending_reclaim = Some(PendingReclaim {
+                kind, path: pending_key, argument: 0, inode, retain_unlinked: false, namespace_committed: false,
+            });
+            return resume_reclaim_request(mounted);
+        }
+        return commit_namespace_mutation(mounted, kind, pending_key);
     }
-    if mounted.stage.is_empty() || mounted.stage.revoked_block_count() != 0 {
-        discard_uncommitted_stage(mounted, true)?;
-        return Err(Status::Invalid);
-    }
-    commit_namespace_mutation(mounted, PendingMutationKind::Rename, pending_key)
 }
 
 /// Retry and durably execute the final clean plan while C holds a write lease.
 pub(crate) fn prepare_unmount(mounted: &mut Mounted) -> Result<(), Status> {
-    if mounted.pending_mutation.is_some() {
+    sync_with_open_inodes(mounted, &[])?;
+    unmount(mounted)
+}
+
+/// Drain durable mutations and reclaim only orphans with no live C handle.
+/// Live orphans keep the recovery marker set even after a successful sync.
+pub(crate) fn sync_with_open_inodes(mounted: &mut Mounted, open_inodes: &[u64]) -> Result<(), Status> {
+    if mounted.pending_reclaim.is_some() {
+        resume_reclaim_request(mounted)?;
+    } else if mounted.pending_write.is_some() {
+        let expected = mounted.pending_write.as_ref().ok_or(Status::Invalid)?.source.len();
+        if resume_write_request(mounted)? != expected {
+            return Err(Status::Full);
+        }
+    } else if mounted.pending_mutation.is_some() {
         let _ = resume_pending_mutation_inner(mounted)?;
     }
+    mounted.pending_open = None;
+    ensure_staged_view(mounted)?;
     if !mounted.stage.is_empty() || mounted.stage.is_sealed() {
         return Err(Status::Invalid);
     }
+    let orphans = mounted.filesystem()?.orphan_inodes().map_err(map_error)?;
+    for inode in orphans {
+        if !open_inodes.contains(&u64::from(inode.get()))
+            || allocated_inode(mounted.filesystem()?, u64::from(inode.get()))?.links_count() != 0 {
+            finalize_orphan(mounted, u64::from(inode.get()))?;
+        }
+    }
+    if mounted.filesystem()?.superblock().last_orphan() != 0 { return Ok(()); }
     match mounted.journal.filesystem_is_clean() {
         Ok(true) => {
-            let view_needs_recovery = load_journal_inode_map(&mounted.filesystem)
+            let view_needs_recovery = load_journal_inode_map(mounted.filesystem()?)
                 .map_err(map_journal_error)?
                 .filesystem_needs_recovery();
             if view_needs_recovery {
@@ -1441,6 +2646,14 @@ pub(crate) fn prepare_unmount(mounted: &mut Mounted) -> Result<(), Status> {
         }
         Ok(false) => {}
         Err(_) => return Err(Status::Invalid),
+    }
+    if !mounted.journal.filesystem_recovery_marker_is_durable()
+        .map_err(|_| Status::Invalid)?
+    {
+        // A failed activation write/flush owns a retryable marker plan even
+        // though no upstream mutation has started. Finish that exact plan
+        // before attempting the final clear; otherwise sync cannot release it.
+        arm_recovery_marker(mounted)?;
     }
     let operations = mounted
         .journal
@@ -1455,18 +2668,21 @@ pub(crate) fn prepare_unmount(mounted: &mut Mounted) -> Result<(), Status> {
     unmount(mounted)
 }
 
-/// Force all retained journal state clean without releasing the live mount.
+/// Synchronize a caller with no live inode handles without releasing the mount.
 ///
 /// Every mutation commit is already synchronous through checkpoint. Sync adds
 /// the retry-stable final marker clear; a later mutation must durably re-arm
 /// recovery before it can start another journal transaction.
 pub(crate) fn sync(mounted: &mut Mounted) -> Result<(), Status> {
-    prepare_unmount(mounted)
+    sync_with_open_inodes(mounted, &[])
 }
 
 /// Refuse to release a mount unless its retained journal state is idle and clean.
 pub(crate) fn unmount(mounted: &Mounted) -> Result<(), Status> {
-    if mounted.pending_mutation.is_some()
+    if mounted.filesystem.is_none()
+        || mounted.pending_write.is_some()
+        || mounted.pending_reclaim.is_some()
+        || mounted.pending_mutation.is_some()
         || !mounted.stage.is_empty()
         || mounted.stage.is_sealed()
     {
@@ -1480,13 +2696,48 @@ pub(crate) fn unmount(mounted: &Mounted) -> Result<(), Status> {
 
 /// Resolve a path and return inode-stable metadata.
 pub(crate) fn stat(mounted: &Mounted, path: &[u8]) -> Result<Metadata, Status> {
+    metadata_at(mounted, path, FollowSymlinks::All)
+}
+
+pub(crate) fn lstat(mounted: &Mounted, path: &[u8]) -> Result<Metadata, Status> {
+    metadata_at(mounted, path, FollowSymlinks::ExcludeFinalComponent)
+}
+
+fn metadata_at(mounted: &Mounted, path: &[u8], follow: FollowSymlinks) -> Result<Metadata, Status> {
     let absolute = absolute_path(path)?;
     let checked = Path::try_from(absolute.as_slice()).map_err(|_| Status::Invalid)?;
     let inode = mounted
-        .filesystem
-        .path_to_inode(checked, FollowSymlinks::All)
+        .readable_filesystem()?
+        .path_to_inode(checked, follow)
         .map_err(map_error)?;
     inode_metadata(&inode)
+}
+
+/// Read bytes at a 64-bit offset without changing any shared cursor.
+pub(crate) fn stat_inode(mounted: &Mounted, number: u64) -> Result<Metadata, Status> {
+    let inode = allocated_inode(mounted.readable_filesystem()?, number)?;
+    inode_metadata(&inode)
+}
+
+pub(crate) fn pread_inode(mounted: &Mounted, number: u64, offset: u64, destination: &mut [u8]) -> Result<usize, Status> {
+    let mut file = open_io_target(mounted.readable_filesystem()?, &inode_key(number)?)?;
+    read_file_range(&mut file, offset, destination)
+}
+
+// Upstream reads stop at a filesystem block boundary. The bridge holds the
+// volume's read lease for this entire request, so coalesce those pieces without
+// changing the inode or cursor. On I/O failure retain the existing error contract
+// (no successful byte count; the caller must disregard the destination buffer).
+fn read_file_range(file: &mut ext4plus::file::File, offset: u64, destination: &mut [u8]) -> Result<usize, Status> {
+    let mut completed = 0usize;
+    while completed < destination.len() {
+        let position = offset.checked_add(completed as u64).ok_or(Status::Range)?;
+        let count = file.read_bytes_at(&mut destination[completed..], position).map_err(map_error)?;
+        if count == 0 { break; }
+        if count > destination.len() - completed { return Err(Status::Invalid); }
+        completed += count;
+    }
+    Ok(completed)
 }
 
 /// Read bytes at a 64-bit offset without changing any shared cursor.
@@ -1498,10 +2749,48 @@ pub(crate) fn pread(
 ) -> Result<usize, Status> {
     let absolute = absolute_path(path)?;
     let mut file = mounted
-        .filesystem
+        .readable_filesystem()?
         .open(absolute.as_slice())
         .map_err(map_error)?;
-    file.read_bytes_at(destination, offset).map_err(map_error)
+    read_file_range(&mut file, offset, destination)
+}
+
+/// Owned point-in-time directory entries, released with their VFS handle.
+pub(crate) struct DirectorySnapshot {
+    pub(crate) metadata: Metadata,
+    entries: Vec<DirectoryEntry>,
+}
+
+impl DirectorySnapshot {
+    pub(crate) fn entry(&self, index: u64) -> Option<DirectoryEntry> {
+        usize::try_from(index).ok().and_then(|index| self.entries.get(index)).copied()
+    }
+}
+
+/// Capture a bounded, owned directory view under one read lease. Later
+/// namespace mutations cannot reorder, duplicate or skip this iterator's names.
+pub(crate) fn directory_snapshot(mounted: &Mounted, path: &[u8]) -> Result<Box<DirectorySnapshot>, Status> {
+    let metadata = stat(mounted, path)?;
+    let filesystem = mounted.readable_filesystem()?;
+    let absolute = absolute_path(path)?;
+    let mut entries = Vec::new();
+    for result in filesystem.read_dir(absolute.as_slice()).map_err(map_error)? {
+        let entry = result.map_err(map_error)?;
+        let name = entry.file_name();
+        if name == "." || name == ".." { continue; }
+        if entries.len() == MAX_VALIDATED_ENTRIES { return Err(Status::Range); }
+        let bytes = name.as_ref();
+        let inode = Inode::read(filesystem, entry.inode).map_err(map_error)?;
+        let mut output = DirectoryEntry {
+            metadata: inode_metadata(&inode)?,
+            name_length: u16::try_from(bytes.len()).map_err(|_| Status::Range)?,
+            ..DirectoryEntry::default()
+        };
+        output.name[..bytes.len()].copy_from_slice(bytes);
+        entries.try_reserve(1).map_err(|_| Status::Range)?;
+        entries.push(output);
+    }
+    Ok(Box::new(DirectorySnapshot { metadata, entries }))
 }
 
 /// Return the visible directory entry at `wanted_index`.
@@ -1512,7 +2801,7 @@ pub(crate) fn directory_entry(
 ) -> Result<Option<DirectoryEntry>, Status> {
     let absolute = absolute_path(path)?;
     let mut directory = mounted
-        .filesystem
+        .readable_filesystem()?
         .read_dir(absolute.as_slice())
         .map_err(map_error)?;
     let mut visible = 0u64;
@@ -1524,7 +2813,7 @@ pub(crate) fn directory_entry(
         }
         if visible == wanted_index {
             let bytes = name.as_ref();
-            let inode = ext4plus::inode::Inode::read(&mounted.filesystem, entry.inode)
+            let inode = ext4plus::inode::Inode::read(mounted.readable_filesystem()?, entry.inode)
                 .map_err(map_error)?;
             let mut output = DirectoryEntry {
                 metadata: inode_metadata(&inode)?,
@@ -1571,6 +2860,20 @@ pub(crate) enum Status {
     Exists = 10,
     /// A directory removal targeted a directory with live children.
     NotEmpty = 11,
+    /// Filesystem blocks or inodes are exhausted.
+    Full = 12,
+    /// The filesystem or inode refuses mutation.
+    ReadOnly = 13,
+    /// An open inode requires unsupported orphan handling before deletion.
+    Busy = 14,
+    /// A path or expanded component exceeds the admitted byte limit.
+    NameTooLong = 15,
+    /// Path resolution exceeded the symbolic-link traversal limit.
+    SymlinkLoop = 16,
+    /// A supplied inode no longer matches the named object.
+    Stale = 17,
+    /// The request is malformed; the filesystem itself is not corrupt.
+    Argument = 18,
 }
 
 const _: i32 = Status::Volume as i32;

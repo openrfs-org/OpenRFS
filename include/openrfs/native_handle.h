@@ -10,6 +10,9 @@
 
 #define NATIVE_HANDLE_LIMIT 128U
 #define NATIVE_RESOURCE_WORDS 4U
+#define NATIVE_HANDLE_CLOSE_REPORT_CAPACITY 32U
+#define NATIVE_HANDLE_CLOSE_TYPE_COUNT \
+    (OPENRFS_HANDLE_PACKAGE_CONTROL + 1U)
 
 enum native_handle_status {
     NATIVE_HANDLE_OK = 0,
@@ -50,7 +53,75 @@ struct native_handle_table {
     bool initialized;
 };
 
-typedef bool (*native_handle_close_fn)(
+enum native_resource_close_result {
+    NATIVE_RESOURCE_RETAINED = 0,
+    NATIVE_RESOURCE_CLOSED = 1,
+    NATIVE_RESOURCE_CLOSED_WITH_ERROR = 2
+};
+
+/* One bounded census entry describes a slot visited by close_all. */
+enum native_handle_close_outcome {
+    NATIVE_HANDLE_CLOSE_OUTCOME_CLOSED = 0,
+    NATIVE_HANDLE_CLOSE_OUTCOME_CONSUMED_ERROR,
+    NATIVE_HANDLE_CLOSE_OUTCOME_RETAINED,
+    NATIVE_HANDLE_CLOSE_OUTCOME_DUPLICATE,
+    NATIVE_HANDLE_CLOSE_OUTCOME_STALE,
+    NATIVE_HANDLE_CLOSE_OUTCOME_INVALID,
+    NATIVE_HANDLE_CLOSE_OUTCOME_COUNT
+};
+
+struct native_handle_close_report_entry {
+    openrfs_handle_t handle;
+    uint16_t object_index;
+    uint16_t references;
+    uint8_t type;
+    uint8_t outcome;
+};
+
+struct native_handle_close_type_summary {
+    uint16_t attempted_handles;
+    uint16_t callback_attempts;
+    uint16_t closed_resources;
+    uint16_t consumed_error_resources;
+    uint16_t retained_resources;
+    uint16_t duplicate_references;
+    uint16_t stale_entries;
+    uint16_t invalid_entries;
+    uint16_t retired_handles;
+};
+
+/*
+ * close_all reports exact counters even when the handle list is truncated.
+ * The fixed list keeps teardown diagnostics allocation-free and stack-safe.
+ */
+struct native_handle_close_report {
+    struct native_handle_close_report_entry entries[
+        NATIVE_HANDLE_CLOSE_REPORT_CAPACITY];
+    uint16_t attempted_handles;
+    uint16_t callback_attempts;
+    uint16_t closed_resources;
+    uint16_t consumed_error_resources;
+    uint16_t retained_resources;
+    uint16_t stale_entries;
+    uint16_t invalid_entries;
+    uint16_t invalid_arguments;
+    uint16_t duplicate_references;
+    uint16_t retired_handles;
+    uint16_t omitted_entries;
+    uint16_t active_handles_before;
+    uint16_t active_handles_after;
+    uint16_t active_objects_before;
+    uint16_t active_objects_after;
+    struct native_handle_close_type_summary types[
+        NATIVE_HANDLE_CLOSE_TYPE_COUNT];
+    enum native_handle_status status;
+    bool retryable;
+    bool progress;
+    bool truncated;
+};
+
+/* A consumed resource must retire even when its final writeback failed. */
+typedef enum native_resource_close_result (*native_handle_close_fn)(
     uint8_t type,
     const struct native_resource *resource,
     void *context
@@ -87,6 +158,29 @@ enum native_handle_status native_handle_close_all(
     struct native_handle_table *table,
     native_handle_close_fn close_resource,
     void *context
+);
+/* Report whether close_all left a wrapper that can be retried by teardown. */
+enum native_handle_status native_handle_close_all_report(
+    struct native_handle_table *table,
+    native_handle_close_fn close_resource,
+    void *context,
+    bool *retryable
+);
+void native_handle_close_report_reset(
+    struct native_handle_close_report *report
+);
+enum native_handle_status native_handle_close_with_report(
+    struct native_handle_table *table,
+    openrfs_handle_t handle,
+    native_handle_close_fn close_resource,
+    void *context,
+    struct native_handle_close_report *report
+);
+enum native_handle_status native_handle_close_all_diagnostics(
+    struct native_handle_table *table,
+    native_handle_close_fn close_resource,
+    void *context,
+    struct native_handle_close_report *report
 );
 bool native_handle_self_test(size_t *completed_tests);
 

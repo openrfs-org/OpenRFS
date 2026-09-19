@@ -88,6 +88,9 @@ impl NodeHeader {
         if eh_depth > 5 {
             return Err(CorruptKind::ExtentDepth(inode).into());
         }
+        if eh_max == 0 || eh_entries > eh_max || (eh_depth != 0 && eh_entries == 0) {
+            return Err(CorruptKind::ExtentNodeSize(inode).into());
+        }
 
         Ok(Self {
             depth: eh_depth,
@@ -121,6 +124,7 @@ impl ToVisitItem {
         if node.len() < header.node_size_in_bytes() {
             return Err(CorruptKind::ExtentNotEnoughData(inode).into());
         }
+        crate::extent::validate_extent_entries(&node, header.depth, header.num_entries, inode)?;
 
         // Remove unused data at the end (e.g. checksum data).
         node.truncate(header.node_size_in_bytes());
@@ -155,10 +159,14 @@ pub(crate) struct Extents {
     to_visit: Vec<ToVisitItem>,
     checksum_base: Checksum,
     is_done: bool,
+    next_logical: u32,
 }
 
 impl Extents {
     pub(crate) fn new(ext4: Ext4, inode: &Inode) -> Result<Self, Ext4Error> {
+        if NodeHeader::from_bytes(&inode.inline_data(), inode.index)?.max_entries != 4 {
+            return Err(CorruptKind::ExtentNodeSize(inode.index).into());
+        }
         Ok(Self {
             ext4,
             inode: inode.index,
@@ -168,6 +176,7 @@ impl Extents {
             )?],
             checksum_base: inode.checksum_base().clone(),
             is_done: false,
+            next_logical: 0,
         })
     }
 
@@ -188,6 +197,27 @@ impl Extents {
     //   there are nodes left to process.
     #[maybe_async::maybe_async]
     async fn next_impl(&mut self) -> Result<Option<Extent>, Ext4Error> {
+        self.next_checked_impl(None).await
+    }
+
+    /// Validate allocation while descending so even empty extent leaves must
+    /// reside in allocated blocks, without retaining a second tree walk.
+    #[maybe_async::maybe_async]
+    pub(crate) async fn validate_allocation(mut self,
+        allocations: &mut crate::BlockAllocationSnapshot<'_>, allow_unwritten: bool) -> Result<(), Ext4Error> {
+        while !self.is_done {
+            if let Some(extent) = self.next_checked_impl(Some(&mut *allocations)).await? {
+                if !allow_unwritten && !extent.is_initialized {
+                    return Err(CorruptKind::ExtentBlock(self.inode).into());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[maybe_async::maybe_async]
+    async fn next_checked_impl(&mut self,
+        allocations: Option<&mut crate::BlockAllocationSnapshot<'_>>) -> Result<Option<Extent>, Ext4Error> {
         let Some(item) = self.to_visit.last_mut() else {
             self.is_done = true;
             return Ok(None);
@@ -217,11 +247,35 @@ impl Extents {
             let start_block =
                 u64_from_hilo(u32::from(ee_start_hi), ee_start_low);
 
-            return Ok(Some(Extent::new(ee_block, start_block, ee_len)));
+            let extent = Extent::new(ee_block, start_block, ee_len);
+            if extent.block_within_file < self.next_logical
+                || extent.start_block.checked_add(u64::from(extent.num_blocks))
+                    .is_none_or(|end| end > self.ext4.superblock().blocks_count())
+            {
+                return Err(CorruptKind::ExtentBlock(self.inode).into());
+            }
+            self.next_logical = extent.block_within_file
+                .checked_add(u32::from(extent.num_blocks))
+                .ok_or(CorruptKind::ExtentBlock(self.inode))?;
+            if let Some(allocations) = allocations {
+                allocations.claim_extent_range(extent.start_block, u32::from(extent.num_blocks), self.inode)?;
+                if !allocations.range_is_allocated(extent.start_block, u32::from(extent.num_blocks)).await? {
+                    return Err(CorruptKind::ExtentBlock(self.inode).into());
+                }
+            }
+            return Ok(Some(extent));
         } else {
+            let parent_depth = item.depth;
+            let parent_first_logical = read_u32le(entry, 0);
             let ei_leaf_lo = read_u32le(entry, 4);
             let ei_leaf_hi = read_u16le(entry, 8);
             let child_block = u64_from_hilo(u32::from(ei_leaf_hi), ei_leaf_lo);
+            if let Some(allocations) = allocations {
+                allocations.claim_extent_range(child_block, 1, self.inode)?;
+                if !allocations.range_is_allocated(child_block, 1).await? {
+                    return Err(CorruptKind::ExtentBlock(self.inode).into());
+                }
+            }
 
             // Read just the header of the child node. This is needed to
             // find out how much data is in the full child node.
@@ -231,6 +285,9 @@ impl Extents {
                 .await?;
             let child_header =
                 NodeHeader::from_bytes(&child_header, self.inode)?;
+            if child_header.depth.checked_add(1) != Some(parent_depth) {
+                return Err(CorruptKind::ExtentDepth(self.inode).into());
+            }
 
             // The checksum is written in the four bytes directly after
             // the node.
@@ -271,8 +328,16 @@ impl Extents {
                 }
             }
 
-            self.to_visit
-                .push(ToVisitItem::new(child_node, self.inode)?);
+            let child = ToVisitItem::new(child_node, self.inode)?;
+            if child.depth.checked_add(1) != Some(parent_depth) {
+                return Err(CorruptKind::ExtentDepth(self.inode).into());
+            }
+            if child.node.len() > ENTRY_SIZE_IN_BYTES
+                && read_u32le(&child.node, ENTRY_SIZE_IN_BYTES) != parent_first_logical
+            {
+                return Err(CorruptKind::ExtentBlock(self.inode).into());
+            }
+            self.to_visit.push(child);
         }
 
         // This does not indicate end of iteration, we just haven't

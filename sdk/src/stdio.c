@@ -110,7 +110,7 @@ static int mode_flags(const char *mode, uint32_t *open_flags)
             OPENRFS_OPEN_TRUNCATE | (update ? OPENRFS_OPEN_READ : 0U);
     } else if (mode[0] == 'a') {
         flags = FILE_WRITE | FILE_APPEND | (update ? FILE_READ : 0);
-        *open_flags = OPENRFS_OPEN_WRITE | OPENRFS_OPEN_CREATE |
+        *open_flags = OPENRFS_OPEN_WRITE | OPENRFS_OPEN_CREATE | OPENRFS_OPEN_APPEND |
             (update ? OPENRFS_OPEN_READ : 0U);
     }
     return flags;
@@ -625,7 +625,7 @@ int rename(const char *source, const char *destination)
     request.destination = (struct openrfs_path){(uint64_t)(uintptr_t)to.text,
         (uint32_t)to.length, to.volume, 0U};
     request.flags = 0U; request.reserved = 0U;
-    return openrfs_result(openrfs_syscall1(OPENRFS_SYS_PATH_RENAME,
+    return openrfs_result(openrfs_syscall1(OPENRFS_SYS_PATH_REPLACE,
         (uint64_t)(uintptr_t)&request));
 }
 int setvbuf(FILE *stream, char *buffer, int mode, size_t size)

@@ -13,13 +13,17 @@
 #define OPENRFS_AUX_TLS_IMAGE UINT64_C(0x53500002)
 #define OPENRFS_AUX_TLS_SIZE UINT64_C(0x53500003)
 #define OPENRFS_AUX_TLS_ALIGN UINT64_C(0x53500004)
+#ifndef OPENRFS_HOSTED
 #define OPENRFS_ATEXIT_MAX 16U
+#endif
 
 _Thread_local int errno;
 static struct openrfs_startup startup;
+#ifndef OPENRFS_HOSTED
 static void (*exit_functions[OPENRFS_ATEXIT_MAX])(void);
 static size_t exit_function_count;
 static volatile uint32_t exit_lock;
+#endif
 
 void openrfs_runtime_initialize(int argc, char **argv, char **environment)
 {
@@ -94,7 +98,7 @@ long openrfs_memory_release(uint64_t address, uint64_t length)
     return openrfs_syscall2(OPENRFS_SYS_MEMORY_UNMAP, address, length);
 }
 
-long openrfs_file_open(uint16_t volume, const char *path, uint32_t flags)
+static long file_open_request(uint16_t volume, const char *path, uint32_t flags, uint16_t mode)
 {
     struct openrfs_file_open_request request;
 
@@ -108,9 +112,20 @@ long openrfs_file_open(uint16_t volume, const char *path, uint32_t flags)
     request.path.volume = volume;
     request.path.reserved = 0U;
     request.flags = flags;
-    request.reserved = 0U;
+    request.reserved = mode;
     return openrfs_syscall1(OPENRFS_SYS_FILE_OPEN,
         (uint64_t)(uintptr_t)&request);
+}
+
+long openrfs_file_open(uint16_t volume, const char *path, uint32_t flags)
+{
+    return file_open_request(volume, path, flags, 0U);
+}
+
+long openrfs_file_open_mode(uint16_t volume, const char *path, uint32_t flags, uint16_t mode)
+{
+    if ((flags & OPENRFS_OPEN_CREATE) == 0U || (mode & ~07777U) != 0U) return -OPENRFS_EINVAL;
+    return file_open_request(volume, path, flags | OPENRFS_OPEN_MODE_PRESENT, mode);
 }
 
 static long file_io(
@@ -194,6 +209,16 @@ long openrfs_path_stat(
         (uint64_t)(uintptr_t)&input, (uint64_t)(uintptr_t)result);
 }
 
+long openrfs_path_metadata(uint16_t volume, const char *path, uint32_t flags,
+    struct openrfs_path_metadata *result)
+{
+    if (path == NULL || result == NULL) return -OPENRFS_EFAULT;
+    if ((flags & ~OPENRFS_METADATA_NOFOLLOW) != 0U) return -OPENRFS_EINVAL;
+    const struct openrfs_path input = make_path(volume, path);
+    return openrfs_syscall3(OPENRFS_SYS_PATH_METADATA, (uint64_t)(uintptr_t)&input,
+        (uint64_t)(uintptr_t)result, flags);
+}
+
 long openrfs_directory_open(uint16_t volume, const char *path)
 {
     struct openrfs_path input;
@@ -205,6 +230,11 @@ long openrfs_directory_open(uint16_t volume, const char *path)
 
     return openrfs_syscall1(OPENRFS_SYS_DIRECTORY_OPEN,
         (uint64_t)(uintptr_t)&input);
+}
+
+long openrfs_directory_read_long(openrfs_handle_t handle, struct openrfs_directory_entry_long *entry)
+{
+    return openrfs_syscall2(OPENRFS_SYS_DIRECTORY_READ_LONG, handle, (uint64_t)(uintptr_t)entry);
 }
 
 long openrfs_directory_read(
@@ -244,6 +274,11 @@ long openrfs_path_rename(uint16_t volume, const char *source,
     return rename_path(OPENRFS_SYS_PATH_RENAME, volume, source, destination);
 }
 
+long openrfs_path_link(uint16_t volume, const char *source, const char *destination)
+{
+    return rename_path(OPENRFS_SYS_PATH_LINK, volume, source, destination);
+}
+
 long openrfs_path_replace(uint16_t volume, const char *source,
     const char *destination)
 {
@@ -253,6 +288,101 @@ long openrfs_path_replace(uint16_t volume, const char *source,
 long openrfs_path_unlink(uint16_t volume, const char *path)
 {
     return single_path(OPENRFS_SYS_PATH_UNLINK, volume, path, 0U);
+}
+
+long openrfs_path_set_times(uint16_t volume, const char *path, const struct openrfs_file_times *times)
+{
+    if (path == NULL || times == NULL) return -OPENRFS_EFAULT;
+    const struct openrfs_set_times_request request = {
+        sizeof(request), OPENRFS_ABI_VERSION, make_path(volume, path), *times
+    };
+    return openrfs_syscall1(OPENRFS_SYS_PATH_SET_TIMES, (uint64_t)(uintptr_t)&request);
+}
+
+long openrfs_file_truncate(openrfs_handle_t handle, uint64_t size)
+{
+    return openrfs_syscall2(OPENRFS_SYS_FILE_TRUNCATE, handle, size);
+}
+
+long openrfs_file_sync(openrfs_handle_t handle)
+{
+    return openrfs_syscall1(OPENRFS_SYS_FILE_SYNC, handle);
+}
+
+long openrfs_file_metadata(openrfs_handle_t handle, struct openrfs_path_metadata *result)
+{
+    if (result == NULL) return -OPENRFS_EFAULT;
+    return openrfs_syscall2(OPENRFS_SYS_FILE_METADATA, handle, (uint64_t)(uintptr_t)result);
+}
+
+long openrfs_file_publish(openrfs_handle_t handle, uint16_t volume,
+    const char *source, const char *destination)
+{
+    if (source == NULL || destination == NULL) return -OPENRFS_EFAULT;
+    const struct openrfs_rename_request request = {
+        sizeof(request), OPENRFS_ABI_VERSION, make_path(volume, source),
+        make_path(volume, destination), 0U, 0U
+    };
+    return openrfs_syscall2(OPENRFS_SYS_FILE_PUBLISH, handle, (uint64_t)(uintptr_t)&request);
+}
+
+long openrfs_file_unlink(openrfs_handle_t handle, uint16_t volume, const char *path)
+{
+    if (path == NULL) return -OPENRFS_EFAULT;
+    const struct openrfs_path request = make_path(volume, path);
+    return openrfs_syscall2(OPENRFS_SYS_FILE_UNLINK, handle, (uint64_t)(uintptr_t)&request);
+}
+
+long openrfs_path_chmod(uint16_t volume, const char *path, uint16_t mode)
+{
+    return single_path(OPENRFS_SYS_PATH_CHMOD, volume, path, mode);
+}
+
+static long path_xattr(uint16_t volume, const char *path, const char *name,
+    uint64_t value, size_t length, uint32_t operation)
+{
+    if (path == NULL || name == NULL || (length != 0U && value == 0U)) return -OPENRFS_EFAULT;
+    const size_t name_length = strlen(name);
+    if (name_length == 0U || name_length > 255U || length > 4096U) return -OPENRFS_EINVAL;
+    struct openrfs_xattr_request request = {
+        sizeof(request), OPENRFS_ABI_VERSION, make_path(volume, path),
+        (uint64_t)(uintptr_t)name, (uint32_t)name_length, operation,
+        value, (uint32_t)length, 0U
+    };
+    return openrfs_syscall1(OPENRFS_SYS_PATH_XATTR, (uint64_t)(uintptr_t)&request);
+}
+
+long openrfs_path_set_xattr(uint16_t volume, const char *path, const char *name,
+    const void *value, size_t length)
+{
+    return path_xattr(volume, path, name, (uint64_t)(uintptr_t)value, length, OPENRFS_XATTR_SET);
+}
+
+long openrfs_path_remove_xattr(uint16_t volume, const char *path, const char *name)
+{
+    return path_xattr(volume, path, name, 0U, 0U, OPENRFS_XATTR_REMOVE);
+}
+
+long openrfs_path_get_xattr(uint16_t volume, const char *path, const char *name,
+    void *output, size_t capacity)
+{
+    return path_xattr(volume, path, name, (uint64_t)(uintptr_t)output, capacity, OPENRFS_XATTR_GET);
+}
+
+long openrfs_path_symlink(uint16_t volume, const char *path, const char *target)
+{
+    if (path == NULL || target == NULL) return -OPENRFS_EFAULT;
+    struct openrfs_path request = make_path(volume, path);
+    return openrfs_syscall3(OPENRFS_SYS_PATH_SYMLINK, (uint64_t)(uintptr_t)&request,
+        (uint64_t)(uintptr_t)target, strlen(target));
+}
+
+long openrfs_path_readlink(uint16_t volume, const char *path, void *output, size_t capacity)
+{
+    if (path == NULL || output == NULL) return -OPENRFS_EFAULT;
+    struct openrfs_path request = make_path(volume, path);
+    return openrfs_syscall3(OPENRFS_SYS_PATH_READLINK, (uint64_t)(uintptr_t)&request,
+        (uint64_t)(uintptr_t)output, capacity);
 }
 
 long openrfs_path_truncate(uint16_t volume, const char *path, uint64_t length)
@@ -356,6 +486,7 @@ void openrfs_runtime_unlock(volatile uint32_t *lock)
         (uint64_t)(uintptr_t)&request);
 }
 
+#ifndef OPENRFS_HOSTED
 int atexit(void (*function)(void))
 {
     if (function == NULL) {
@@ -391,6 +522,7 @@ _Noreturn void abort(void)
         (uint64_t)(uintptr_t)message, sizeof(message) - 1U);
     exit(134);
 }
+#endif
 
 char *getenv(const char *name)
 {

@@ -32,7 +32,7 @@ use crate::iters::file_blocks::FileBlocks;
 use crate::superblock::Superblock;
 use crate::util::{read_u32be, read_u32le, write_u32le};
 use crate::uuid::Uuid;
-use alloc::collections::{BTreeMap, VecDeque};
+use alloc::collections::VecDeque;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::error::Error;
@@ -45,7 +45,9 @@ pub const JOURNAL_BLOCK_BYTES: usize = 4096;
 pub const JOURNAL_TRANSACTION_MAX_METADATA_BLOCKS: usize = 64;
 
 /// The maximum number of block revocations represented by one transaction.
-pub const JOURNAL_TRANSACTION_MAX_REVOKED_BLOCKS: usize = 64;
+pub const JOURNAL_TRANSACTION_MAX_REVOKED_BLOCKS: usize = 8192;
+const REVOKES_PER_RECORD: usize = (JOURNAL_BLOCK_BYTES - 16 - 4) / 8;
+const MAX_REVOKE_RECORDS: usize = JOURNAL_TRANSACTION_MAX_REVOKED_BLOCKS.div_ceil(REVOKES_PER_RECORD);
 
 /// The maximum clean-journal data slots admitted by the bounded ring planner.
 pub const JOURNAL_RING_MAX_SLOTS: usize = 8192;
@@ -90,6 +92,19 @@ pub struct JournalBlockImage {
 }
 
 impl JournalBlockImage {
+    /// Copy an image without aborting when the recovery allocation budget is exhausted.
+    pub fn try_clone(&self) -> Result<Self, JournalTransactionError> {
+        Ok(Self { block_index: self.block_index, bytes: try_copy_bytes(&self.bytes)? })
+    }
+
+    #[cfg(feature = "sync")]
+    pub(super) fn try_from_staged(
+        block_index: u64,
+        bytes: &[u8],
+    ) -> Result<Self, JournalTransactionError> {
+        Ok(Self { block_index, bytes: try_copy_bytes(bytes)? })
+    }
+
     #[cfg(feature = "sync")]
     pub(super) fn from_staged(block_index: u64, bytes: Vec<u8>) -> Self {
         debug_assert_eq!(bytes.len(), JOURNAL_BLOCK_BYTES);
@@ -171,6 +186,24 @@ pub enum JournalCommitOperation {
     },
     /// Checkpoint committed metadata to its final home block.
     WriteHomeMetadata(JournalBlockImage),
+}
+
+impl JournalCommitOperation {
+    fn try_clone(&self) -> Result<Self, JournalTransactionError> {
+        Ok(match self {
+            Self::WriteFilesystemSuperblock { start_byte, image } =>
+                Self::WriteFilesystemSuperblock { start_byte: *start_byte, image: image.clone() },
+            Self::WriteOrderedData(image) => Self::WriteOrderedData(image.try_clone()?),
+            Self::Flush(boundary) => Self::Flush(*boundary),
+            Self::WriteJournal { journal_block, kind, bytes } => Self::WriteJournal {
+                journal_block: *journal_block, kind: *kind, bytes: try_copy_bytes(bytes)?,
+            },
+            Self::WriteJournalSuperblock { journal_block, image } => Self::WriteJournalSuperblock {
+                journal_block: *journal_block, image: image.try_clone()?,
+            },
+            Self::WriteHomeMetadata(image) => Self::WriteHomeMetadata(image.try_clone()?),
+        })
+    }
 }
 
 /// Synchronous storage used to execute an already validated journal plan.
@@ -439,6 +472,12 @@ impl FilesystemSuperblockImage {
         self.needs_recovery
     }
 
+    /// Legacy orphan-chain head; these inodes still require journaled cleanup.
+    #[must_use]
+    pub fn last_orphan(&self) -> u32 {
+        read_u32le(&self.bytes, 0xe8)
+    }
+
     /// Produce the requested recovery state while preserving every other byte.
     #[must_use]
     pub fn with_recovery_state(&self, needs_recovery: bool) -> Self {
@@ -506,7 +545,7 @@ impl FilesystemSuperblockImage {
             return Err(JournalTransactionError::RecoveryStateMismatch);
         }
 
-        // ext4plus mutations currently change only the allocation counters.
+        // ext4plus mutations change allocation counters and the orphan head.
         // Require every other byte to match the admitted, recovery-marked
         // image so a staged metadata block cannot silently replace filesystem
         // identity, geometry, features, or policy fields.
@@ -517,9 +556,10 @@ impl FilesystemSuperblockImage {
             .enumerate()
         {
             let mutable_counter = (0x0c..0x14).contains(&index) || (0x158..0x15c).contains(&index);
+            let orphan_head = (0xe8..0xec).contains(&index);
             let checksum = (FILESYSTEM_CHECKSUM_OFFSET..FILESYSTEM_SUPERBLOCK_BYTES)
                 .contains(&index);
-            if !mutable_counter && !checksum && before != after {
+            if !mutable_counter && !orphan_head && !checksum && before != after {
                 return Err(JournalTransactionError::RecoveryStateMismatch);
             }
         }
@@ -539,7 +579,9 @@ impl FilesystemSuperblockImage {
             | (u64::from(read_u32le(&candidate.bytes, 0x158)) << 32);
         let inodes = read_u32le(&candidate.bytes, 0x00);
         let free_inodes = read_u32le(&candidate.bytes, 0x10);
-        if free_blocks > blocks || free_inodes > inodes {
+        let orphan = candidate.last_orphan();
+        if free_blocks > blocks || free_inodes > inodes
+            || (orphan != 0 && (orphan < 11 || orphan > inodes)) {
             return Err(JournalTransactionError::RecoveryStateMismatch);
         }
         Ok(())
@@ -610,6 +652,15 @@ pub struct JournalRecovery {
 }
 
 impl JournalRecovery {
+    /// Copy the projected recovery view fallibly before any checkpoint writes.
+    pub fn try_replay_images(&self) -> Result<Vec<JournalBlockImage>, JournalTransactionError> {
+        let mut images = Vec::new();
+        images.try_reserve_exact(self.replay_images.len())
+            .map_err(|_| JournalTransactionError::TooManyBlocks)?;
+        for image in &self.replay_images { images.push(image.try_clone()?); }
+        Ok(images)
+    }
+
     /// Return the number of consecutive committed transactions admitted.
     #[must_use]
     pub fn committed_transactions(&self) -> usize {
@@ -638,7 +689,8 @@ impl JournalRecovery {
     ///
     /// Home metadata is flushed before the clean journal state is written.
     /// The journal state is then flushed before ext4's recovery marker is
-    /// cleared and independently flushed. When replay updates the primary
+    /// cleared and independently flushed, unless orphan cleanup remains.
+    /// When replay updates the primary
     /// ext4 superblock, the clean marker is derived from that validated replay
     /// image rather than the stale mount-time image. This mirrors the
     /// separation Linux keeps between recovery replay, journal cleanup, and
@@ -663,16 +715,13 @@ impl JournalRecovery {
         operations
             .try_reserve_exact(capacity)
             .map_err(|_| JournalTransactionError::TooManyBlocks)?;
-        operations.extend(
-            self.replay_images
-                .iter()
-                .cloned()
-                .map(JournalCommitOperation::WriteHomeMetadata),
-        );
+        for image in &self.replay_images {
+            operations.push(JournalCommitOperation::WriteHomeMetadata(image.try_clone()?));
+        }
         operations.push(JournalCommitOperation::Flush(JournalFlush::Checkpoint));
         operations.push(JournalCommitOperation::WriteJournalSuperblock {
             journal_block: journal_superblock_block,
-            image: self.clean_superblock.clone(),
+            image: self.clean_superblock.try_clone()?,
         });
         operations.push(JournalCommitOperation::Flush(JournalFlush::JournalState));
         let checkpointed_filesystem_superblock = self
@@ -689,7 +738,8 @@ impl JournalRecovery {
             .unwrap_or_else(|| filesystem_superblock.clone());
         operations.push(JournalCommitOperation::WriteFilesystemSuperblock {
             start_byte: FILESYSTEM_SUPERBLOCK_START_BYTE,
-            image: checkpointed_filesystem_superblock.with_recovery_state(false),
+            image: checkpointed_filesystem_superblock.with_recovery_state(
+                checkpointed_filesystem_superblock.last_orphan() != 0),
         });
         operations.push(JournalCommitOperation::Flush(JournalFlush::FilesystemState));
         Ok(operations)
@@ -729,7 +779,7 @@ impl JournalInodeMap {
 
     /// Admit the discovered map only when ext4 and JBD2 both prove it clean.
     pub fn into_clean_ring(self) -> Result<JournalRing, JournalTransactionError> {
-        if self.filesystem_needs_recovery {
+        if self.filesystem_needs_recovery || self.filesystem_superblock.last_orphan() != 0 {
             return Err(JournalTransactionError::RecoveryStateMismatch);
         }
         let mut ring = self
@@ -737,6 +787,21 @@ impl JournalInodeMap {
             .map_clean_ring(self.maximum_block, &self.physical_blocks)?;
         ring.filesystem_superblock = Some(self.filesystem_superblock);
         ring.filesystem_recovery_state = Some(FilesystemRecoveryState::Clean);
+        Ok(ring)
+    }
+
+    /// Admit an empty, durably checkpointed journal for orphan cleanup only.
+    /// The caller must validate the complete orphan chain before mutating it.
+    /// A nonempty journal must first go through ordinary replay/checkpoint.
+    pub fn into_orphan_cleanup_ring(self) -> Result<JournalRing, JournalTransactionError> {
+        let orphan = self.filesystem_superblock.last_orphan();
+        if !self.filesystem_needs_recovery || !self.filesystem_superblock.needs_recovery()
+            || orphan < 11 || orphan > read_u32le(&self.filesystem_superblock.bytes, 0) {
+            return Err(JournalTransactionError::RecoveryStateMismatch);
+        }
+        let mut ring = self.superblock.map_clean_ring(self.maximum_block, &self.physical_blocks)?;
+        ring.filesystem_superblock = Some(self.filesystem_superblock);
+        ring.filesystem_recovery_state = Some(FilesystemRecoveryState::Durable);
         Ok(ring)
     }
 }
@@ -798,6 +863,14 @@ pub async fn load_journal_inode_map(fs: &Ext4) -> Result<JournalInodeMap, Journa
 }
 
 impl JournalSuperblockImage {
+    fn try_clone(&self) -> Result<Self, JournalTransactionError> {
+        Ok(Self {
+            bytes: try_copy_bytes(&self.bytes)?, maximum_length: self.maximum_length,
+            sequence: self.sequence, start_block: self.start_block, uuid: self.uuid,
+            block_revocations: self.block_revocations,
+        })
+    }
+
     /// Build a canonical clean JBD2 superblock for deterministic image tooling.
     pub fn new_clean(
         next_sequence: u32,
@@ -909,7 +982,7 @@ impl JournalSuperblockImage {
             return Err(JournalTransactionError::SequenceOverflow);
         }
         Ok(Self {
-            bytes: Vec::from(bytes),
+            bytes: try_copy_bytes(bytes)?,
             maximum_length,
             sequence,
             start_block,
@@ -960,7 +1033,7 @@ impl JournalSuperblockImage {
         if start_block != 0 && (start_block < 1 || start_block >= self.maximum_length) {
             return Err(JournalTransactionError::RingGeometry);
         }
-        let mut bytes = self.bytes.clone();
+        let mut bytes = try_copy_bytes(&self.bytes)?;
         write_u32be(&mut bytes, JOURNAL_SUPERBLOCK_SEQUENCE_OFFSET, sequence);
         write_u32be(
             &mut bytes,
@@ -1019,7 +1092,7 @@ fn validate_physical_journal_blocks(
 impl Error for JournalTransactionError {}
 
 /// A bounded, single-descriptor JBD2 transaction.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct JournalTransaction {
     sequence: u32,
     uuid: Uuid,
@@ -1030,6 +1103,14 @@ pub struct JournalTransaction {
 }
 
 impl JournalTransaction {
+    pub(super) fn try_clone(&self) -> Result<Self, JournalTransactionError> {
+        let mut transaction = Self::new(self.sequence, *self.uuid.as_bytes(), self.maximum_block)?;
+        for image in &self.ordered_data { transaction.stage_ordered_data(image.block_index, &image.bytes)?; }
+        for image in &self.metadata { transaction.stage_metadata(image.block_index, &image.bytes)?; }
+        transaction.stage_revocations(&self.revoked_blocks)?;
+        Ok(transaction)
+    }
+
     /// Start a transaction for one admitted filesystem and journal sequence.
     ///
     /// `maximum_block` is the highest valid absolute filesystem block index,
@@ -1063,7 +1144,33 @@ impl JournalTransaction {
         if self.revoked_blocks.contains(&block_index) {
             return Err(JournalTransactionError::DuplicateBlock);
         }
+        self.revoked_blocks.try_reserve(1).map_err(|_| JournalTransactionError::TooManyBlocks)?;
         self.revoked_blocks.push(block_index);
+        Ok(())
+    }
+
+    /// Append an already collected batch without quadratic duplicate scans.
+    /// Refusal leaves the transaction unchanged; insertion order is preserved
+    /// so journal bytes match individual successful stage_revocation calls.
+    pub(super) fn stage_revocations(&mut self, blocks: &[u64]) -> Result<(), JournalTransactionError> {
+        if blocks.len() > JOURNAL_TRANSACTION_MAX_REVOKED_BLOCKS - self.revoked_blocks.len() {
+            return Err(JournalTransactionError::TooManyBlocks);
+        }
+        if blocks.iter().any(|block| *block > self.maximum_block) {
+            return Err(JournalTransactionError::BlockOutOfRange);
+        }
+        let mut seen = Vec::new();
+        seen.try_reserve_exact(self.revoked_blocks.len() + blocks.len())
+            .map_err(|_| JournalTransactionError::TooManyBlocks)?;
+        seen.extend_from_slice(&self.revoked_blocks);
+        seen.extend_from_slice(blocks);
+        seen.sort_unstable();
+        if seen.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(JournalTransactionError::DuplicateBlock);
+        }
+        self.revoked_blocks.try_reserve_exact(blocks.len())
+            .map_err(|_| JournalTransactionError::TooManyBlocks)?;
+        self.revoked_blocks.extend_from_slice(blocks);
         Ok(())
     }
 
@@ -1071,6 +1178,12 @@ impl JournalTransaction {
     #[must_use]
     pub fn revokes_block(&self, block_index: u64) -> bool {
         self.revoked_blocks.contains(&block_index)
+    }
+
+    /// Blocks whose older journal images this transaction invalidates.
+    #[must_use]
+    pub fn revoked_blocks(&self) -> &[u64] {
+        &self.revoked_blocks
     }
 
     /// Return the exact descriptor/data/revoke/commit slot requirement.
@@ -1081,7 +1194,7 @@ impl JournalTransaction {
         self.metadata
             .len()
             .checked_add(2)
-            .and_then(|count| count.checked_add(usize::from(!self.revoked_blocks.is_empty())))
+            .and_then(|count| count.checked_add(self.revoked_blocks.len().div_ceil(REVOKES_PER_RECORD)))
             .ok_or(JournalTransactionError::TooManyBlocks)
     }
 
@@ -1134,13 +1247,11 @@ impl JournalTransaction {
         }
         let image = JournalBlockImage {
             block_index,
-            bytes: Vec::from(bytes),
+            bytes: try_copy_bytes(bytes)?,
         };
-        if metadata {
-            self.metadata.push(image);
-        } else {
-            self.ordered_data.push(image);
-        }
+        let images = if metadata { &mut self.metadata } else { &mut self.ordered_data };
+        images.try_reserve(1).map_err(|_| JournalTransactionError::TooManyBlocks)?;
+        images.push(image);
         Ok(())
     }
 
@@ -1181,37 +1292,34 @@ impl JournalTransaction {
             .try_reserve_exact(
                 self.ordered_data.len()
                     + self.metadata.len() * 2
-                    + usize::from(!self.revoked_blocks.is_empty())
+                    + self.revoked_blocks.len().div_ceil(REVOKES_PER_RECORD)
                     + 7,
             )
             .map_err(|_| JournalTransactionError::TooManyBlocks)?;
-        operations.extend(
-            self.ordered_data
-                .iter()
-                .cloned()
-                .map(JournalCommitOperation::WriteOrderedData),
-        );
+        for image in &self.ordered_data {
+            operations.push(JournalCommitOperation::WriteOrderedData(image.try_clone()?));
+        }
         if !self.ordered_data.is_empty() {
             operations.push(JournalCommitOperation::Flush(JournalFlush::OrderedData));
         }
         operations.push(JournalCommitOperation::WriteJournal {
             journal_block: journal_blocks[0],
             kind: JournalRecordKind::Descriptor,
-            bytes: self.descriptor_block(),
+            bytes: self.descriptor_block()?,
         });
         for (index, image) in self.metadata.iter().enumerate() {
             operations.push(JournalCommitOperation::WriteJournal {
                 journal_block: journal_blocks[index + 1],
                 kind: JournalRecordKind::Metadata,
-                bytes: image.bytes.clone(),
+                bytes: try_copy_bytes(&image.bytes)?,
             });
         }
         let mut commit_slot = self.metadata.len() + 1;
-        if !self.revoked_blocks.is_empty() {
+        for revoked in self.revoked_blocks.chunks(REVOKES_PER_RECORD) {
             operations.push(JournalCommitOperation::WriteJournal {
                 journal_block: journal_blocks[commit_slot],
                 kind: JournalRecordKind::Revocation,
-                bytes: self.revocation_block(),
+                bytes: self.revocation_block(revoked)?,
             });
             commit_slot += 1;
         }
@@ -1219,25 +1327,22 @@ impl JournalTransaction {
         operations.push(JournalCommitOperation::WriteJournal {
             journal_block: journal_blocks[commit_slot],
             kind: JournalRecordKind::Commit,
-            bytes: self.commit_block(),
+            bytes: self.commit_block()?,
         });
         operations.push(JournalCommitOperation::Flush(JournalFlush::Commit));
-        operations.extend(
-            self.metadata
-                .iter()
-                .cloned()
-                .map(JournalCommitOperation::WriteHomeMetadata),
-        );
+        for image in &self.metadata {
+            operations.push(JournalCommitOperation::WriteHomeMetadata(image.try_clone()?));
+        }
         operations.push(JournalCommitOperation::Flush(JournalFlush::Checkpoint));
         Ok(operations)
     }
 
-    fn descriptor_block(&self) -> Vec<u8> {
+    fn descriptor_block(&self) -> Result<Vec<u8>, JournalTransactionError> {
         const UUID_OMITTED: u32 = 0x2;
         const LAST_TAG: u32 = 0x8;
         const TAG_BYTES: usize = 16;
 
-        let mut block = vec![0; JOURNAL_BLOCK_BYTES];
+        let mut block = try_zeroed_journal_block()?;
         write_u32be(&mut block, 0, JournalBlockHeader::MAGIC);
         write_u32be(&mut block, 4, JournalBlockType::DESCRIPTOR.0);
         write_u32be(&mut block, 8, self.sequence);
@@ -1273,13 +1378,13 @@ impl JournalTransaction {
         checksum.update(&block[..checksum_offset]);
         checksum.update_u32_be(0);
         write_u32be(&mut block, checksum_offset, checksum.finalize());
-        block
+        Ok(block)
     }
 
-    fn commit_block(&self) -> Vec<u8> {
+    fn commit_block(&self) -> Result<Vec<u8>, JournalTransactionError> {
         const CHECKSUM_OFFSET: usize = 16;
 
-        let mut block = vec![0; JOURNAL_BLOCK_BYTES];
+        let mut block = try_zeroed_journal_block()?;
         write_u32be(&mut block, 0, JournalBlockHeader::MAGIC);
         write_u32be(&mut block, 4, JournalBlockType::COMMIT.0);
         write_u32be(&mut block, 8, self.sequence);
@@ -1289,25 +1394,25 @@ impl JournalTransaction {
         checksum.update_u32_be(0);
         checksum.update(&block[CHECKSUM_OFFSET + 4..]);
         write_u32be(&mut block, CHECKSUM_OFFSET, checksum.finalize());
-        block
+        Ok(block)
     }
 
-    fn revocation_block(&self) -> Vec<u8> {
+    fn revocation_block(&self, revoked_blocks: &[u64]) -> Result<Vec<u8>, JournalTransactionError> {
         const TABLE_BYTES_OFFSET: usize = JournalBlockHeader::SIZE;
         const TABLE_OFFSET: usize = TABLE_BYTES_OFFSET + 4;
 
-        let mut block = vec![0; JOURNAL_BLOCK_BYTES];
+        let mut block = try_zeroed_journal_block()?;
         write_u32be(&mut block, 0, JournalBlockHeader::MAGIC);
         write_u32be(&mut block, 4, JournalBlockType::REVOCATION.0);
         write_u32be(&mut block, 8, self.sequence);
-        let table_bytes = self
-            .revoked_blocks
+        let table_bytes = revoked_blocks
             .len()
             .checked_mul(8)
+            .and_then(|bytes| bytes.checked_add(TABLE_OFFSET))
             .and_then(|bytes| u32::try_from(bytes).ok())
             .expect("bounded revocation table fits u32");
         write_u32be(&mut block, TABLE_BYTES_OFFSET, table_bytes);
-        for (index, revoked) in self.revoked_blocks.iter().enumerate() {
+        for (index, revoked) in revoked_blocks.iter().enumerate() {
             let offset = TABLE_OFFSET + index * 8;
             block[offset..offset + 8].copy_from_slice(&revoked.to_be_bytes());
         }
@@ -1317,7 +1422,7 @@ impl JournalTransaction {
         checksum.update(&block[..checksum_offset]);
         checksum.update_u32_be(0);
         write_u32be(&mut block, checksum_offset, checksum.finalize());
-        block
+        Ok(block)
     }
 }
 
@@ -1500,6 +1605,7 @@ impl JournalRing {
             return Err(JournalTransactionError::RecoveryStateMismatch);
         }
         Ok(state == FilesystemRecoveryState::Clean
+            && filesystem.last_orphan() == 0
             && self.active.is_empty()
             && self.used == 0
             && self.head == self.tail
@@ -1654,6 +1760,9 @@ impl JournalRing {
         if !marker.needs_recovery() {
             return Err(JournalTransactionError::RecoveryStateMismatch);
         }
+        if marker.last_orphan() != 0 {
+            return Err(JournalTransactionError::JournalNotClean);
+        }
         let clean = marker.with_recovery_state(false);
         self.filesystem_recovery_state = Some(FilesystemRecoveryState::CleanPlanPrepared);
         Ok(vec![
@@ -1686,6 +1795,9 @@ impl JournalRing {
             .ok_or(JournalTransactionError::FilesystemStateUnavailable)?;
         if !marker.needs_recovery() {
             return Err(JournalTransactionError::RecoveryStateMismatch);
+        }
+        if marker.last_orphan() != 0 {
+            return Err(JournalTransactionError::JournalNotClean);
         }
         self.filesystem_superblock = Some(marker.with_recovery_state(false));
         self.filesystem_recovery_state = Some(FilesystemRecoveryState::Clean);
@@ -1898,7 +2010,7 @@ impl JournalRing {
             journal_block: superblock_block,
             image: live_superblock,
         });
-        operations.extend(prepared.operations.iter().cloned());
+        for operation in &prepared.operations { operations.push(operation.try_clone()?); }
         self.active
             .get_mut(index)
             .ok_or(JournalTransactionError::ReservationUnknown)?
@@ -1956,17 +2068,18 @@ impl JournalRing {
         } else {
             superblock.with_state(self.next_sequence, 0)?
         };
+        let mut operations = Vec::new();
+        operations.try_reserve_exact(2).map_err(|_| JournalTransactionError::TooManyBlocks)?;
+        operations.push(JournalCommitOperation::WriteJournalSuperblock {
+                journal_block: superblock_block,
+                image: state,
+            });
+        operations.push(JournalCommitOperation::Flush(JournalFlush::JournalState));
         self.active
             .front_mut()
             .ok_or(JournalTransactionError::ReservationUnknown)?
             .state = ReservationState::TailStatePrepared;
-        Ok(vec![
-            JournalCommitOperation::WriteJournalSuperblock {
-                journal_block: superblock_block,
-                image: state,
-            },
-            JournalCommitOperation::Flush(JournalFlush::JournalState),
-        ])
+        Ok(operations)
     }
 
     /// Mark a commit flush durable, preserving transaction sequence order.
@@ -2149,7 +2262,7 @@ pub fn recover_committed_ring(
             committed_transactions: 0,
             consumed_slots: 0,
             replay_images: Vec::new(),
-            clean_superblock: superblock.clone(),
+            clean_superblock: superblock.try_clone()?,
             maximum_block,
         });
     }
@@ -2158,7 +2271,7 @@ pub fn recover_committed_ring(
             committed_transactions: 0,
             consumed_slots: 0,
             replay_images: Vec::new(),
-            clean_superblock: superblock.clone(),
+            clean_superblock: superblock.try_clone()?,
             maximum_block,
         });
     }
@@ -2168,7 +2281,7 @@ pub fn recover_committed_ring(
     let mut consumed_slots = 0usize;
     let mut committed_transactions = 0usize;
     let mut sequence = superblock.sequence;
-    let mut replay = BTreeMap::new();
+    let mut replay: Vec<JournalBlockImage> = Vec::new();
 
     while consumed_slots < journal_blocks.len() {
         let descriptor = journal_blocks[cursor];
@@ -2208,15 +2321,18 @@ pub fn recover_committed_ring(
         if minimum_slots > journal_blocks.len() - consumed_slots {
             break;
         }
-        let record_index = (cursor + record_offset) % journal_blocks.len();
-        let record_header = JournalBlockHeader::read_bytes(journal_blocks[record_index]);
-        let has_revocation = record_header.is_some_and(|header| {
-            header.block_type == JournalBlockType::REVOCATION && header.sequence == sequence
-        });
-        if has_revocation && !superblock.block_revocations {
-            return Err(JournalTransactionError::RevocationsUnsupported);
+        let mut commit_offset = record_offset;
+        while commit_offset < journal_blocks.len() - consumed_slots {
+            let index = (cursor + commit_offset) % journal_blocks.len();
+            let header = JournalBlockHeader::read_bytes(journal_blocks[index]);
+            if !header.is_some_and(|header| header.block_type == JournalBlockType::REVOCATION
+                && header.sequence == sequence) { break; }
+            if !superblock.block_revocations { return Err(JournalTransactionError::RevocationsUnsupported); }
+            if commit_offset - record_offset >= MAX_REVOKE_RECORDS {
+                return Err(JournalTransactionError::TooManyBlocks);
+            }
+            commit_offset += 1;
         }
-        let commit_offset = record_offset + usize::from(has_revocation);
         let transaction_slots = commit_offset
             .checked_add(1)
             .ok_or(JournalTransactionError::TooManyBlocks)?;
@@ -2229,8 +2345,10 @@ pub fn recover_committed_ring(
             header.block_type == JournalBlockType::COMMIT && header.sequence == sequence
         });
         if !commit_present {
-            if !has_revocation {
-                let possible_commit_index = (commit_index + 1) % journal_blocks.len();
+            let lookahead = (MAX_REVOKE_RECORDS - (commit_offset - record_offset))
+                .min(journal_blocks.len() - consumed_slots - transaction_slots);
+            for ahead in 1..=lookahead {
+                let possible_commit_index = (commit_index + ahead) % journal_blocks.len();
                 let possible_commit =
                     JournalBlockHeader::read_bytes(journal_blocks[possible_commit_index]);
                 if possible_commit.is_some_and(|header| {
@@ -2255,16 +2373,26 @@ pub fn recover_committed_ring(
             maximum_block,
             &transaction,
         )?;
-        if has_revocation {
+        if commit_offset != record_offset {
             let mut revoked_blocks = Vec::new();
-            read_revocation_block_table(transaction[record_offset], &mut revoked_blocks)
-                .map_err(|_| JournalTransactionError::CorruptRevocation)?;
+            for record in &transaction[record_offset..commit_offset] {
+                read_revocation_block_table(record, &mut revoked_blocks)
+                    .map_err(|_| JournalTransactionError::CorruptRevocation)?;
+            }
             for revoked in revoked_blocks {
-                let _ = replay.remove(&revoked);
+                if let Ok(index) = replay.binary_search_by_key(&revoked, |image| image.block_index) {
+                    replay.remove(index);
+                }
             }
         }
         for image in images {
-            replay.insert(image.block_index, image);
+            match replay.binary_search_by_key(&image.block_index, |entry| entry.block_index) {
+                Ok(index) => replay[index] = image,
+                Err(index) => {
+                    replay.try_reserve(1).map_err(|_| JournalTransactionError::TooManyBlocks)?;
+                    replay.insert(index, image);
+                }
+            }
         }
 
         consumed_slots = consumed_slots
@@ -2285,7 +2413,7 @@ pub fn recover_committed_ring(
     Ok(JournalRecovery {
         committed_transactions,
         consumed_slots,
-        replay_images: replay.into_values().collect(),
+        replay_images: replay,
         clean_superblock: superblock.with_state(sequence, 0)?,
         maximum_block,
     })
@@ -2329,6 +2457,10 @@ pub fn replay_committed_transaction(
     }
     let mut tags = Vec::new();
     for tag in DescriptorBlockTagIter::new(&descriptor[JournalBlockHeader::SIZE..]) {
+        if tags.len() == JOURNAL_TRANSACTION_MAX_METADATA_BLOCKS {
+            return Err(JournalTransactionError::TooManyBlocks);
+        }
+        tags.try_reserve(1).map_err(|_| JournalTransactionError::TooManyBlocks)?;
         tags.push(tag.map_err(|_| JournalTransactionError::CorruptDescriptor)?);
     }
     let without_revocation = tags
@@ -2336,10 +2468,10 @@ pub fn replay_committed_transaction(
         .checked_add(2)
         .ok_or(JournalTransactionError::TooManyBlocks)?;
     let with_revocation = without_revocation
-        .checked_add(1)
+        .checked_add(MAX_REVOKE_RECORDS)
         .ok_or(JournalTransactionError::TooManyBlocks)?;
     if tags.is_empty()
-        || (journal_blocks.len() != without_revocation && journal_blocks.len() != with_revocation)
+        || journal_blocks.len() < without_revocation || journal_blocks.len() > with_revocation
     {
         return Err(JournalTransactionError::JournalSlotCount);
     }
@@ -2371,12 +2503,12 @@ pub fn replay_committed_transaction(
         }
         replay.push(JournalBlockImage {
             block_index: tag.block_index,
-            bytes: Vec::from(data),
+            bytes: try_copy_bytes(data)?,
         });
     }
 
-    if journal_blocks.len() == with_revocation {
-        let revocation = journal_blocks[tags.len() + 1];
+    let mut revoked_blocks = Vec::new();
+    for revocation in &journal_blocks[tags.len() + 1..journal_blocks.len() - 1] {
         let header = JournalBlockHeader::read_bytes(revocation)
             .ok_or(JournalTransactionError::CorruptRevocation)?;
         if header.block_type != JournalBlockType::REVOCATION
@@ -2385,19 +2517,18 @@ pub fn replay_committed_transaction(
         {
             return Err(JournalTransactionError::CorruptRevocation);
         }
-        let mut revoked_blocks = Vec::new();
         read_revocation_block_table(revocation, &mut revoked_blocks)
             .map_err(|_| JournalTransactionError::CorruptRevocation)?;
         if revoked_blocks.len() > JOURNAL_TRANSACTION_MAX_REVOKED_BLOCKS {
             return Err(JournalTransactionError::TooManyBlocks);
         }
-        for (index, revoked) in revoked_blocks.iter().enumerate() {
-            if *revoked > maximum_block || revoked_blocks[..index].contains(revoked) {
-                return Err(JournalTransactionError::CorruptRevocation);
-            }
-        }
-        replay.retain(|image| !revoked_blocks.contains(&image.block_index));
     }
+    revoked_blocks.sort_unstable();
+    if revoked_blocks.last().is_some_and(|block| *block > maximum_block) ||
+        revoked_blocks.windows(2).any(|pair| pair[0] == pair[1]) {
+        return Err(JournalTransactionError::CorruptRevocation);
+    }
+    replay.retain(|image| revoked_blocks.binary_search(&image.block_index).is_err());
 
     let commit = journal_blocks[journal_blocks.len() - 1];
     let commit_header =
@@ -2409,6 +2540,20 @@ pub fn replay_committed_transaction(
         return Err(JournalTransactionError::CorruptCommit);
     }
     Ok(replay)
+}
+
+fn try_copy_bytes(source: &[u8]) -> Result<Vec<u8>, JournalTransactionError> {
+    let mut bytes = Vec::new();
+    bytes.try_reserve_exact(source.len()).map_err(|_| JournalTransactionError::TooManyBlocks)?;
+    bytes.extend_from_slice(source);
+    Ok(bytes)
+}
+
+fn try_zeroed_journal_block() -> Result<Vec<u8>, JournalTransactionError> {
+    let mut bytes = Vec::new();
+    bytes.try_reserve_exact(JOURNAL_BLOCK_BYTES).map_err(|_| JournalTransactionError::TooManyBlocks)?;
+    bytes.resize(JOURNAL_BLOCK_BYTES, 0);
+    Ok(bytes)
 }
 
 fn write_u32be(bytes: &mut [u8], offset: usize, value: u32) {
@@ -2448,6 +2593,34 @@ mod tests {
         transaction.stage_metadata(200, &filled(0x22)).unwrap();
         transaction.stage_metadata(201, &filled(0x33)).unwrap();
         transaction
+    }
+
+    #[test]
+    fn batched_revocations_preserve_wire_order_and_roll_back_invalid_batches() {
+        let mut individual = transaction();
+        let mut batched = transaction();
+        for block in [6, 9, 4, 8] { individual.stage_revocation(block).unwrap(); }
+        batched.stage_revocation(6).unwrap();
+        batched.stage_revocations(&[9, 4, 8]).unwrap();
+        assert_eq!(batched.revoked_blocks(), &[6, 9, 4, 8]);
+        let slots = [3000, 3001, 3002, 3003, 3004];
+        let expected = individual.commit_plan(&slots).unwrap();
+        assert_eq!(batched.commit_plan(&slots).unwrap(), expected);
+        for (blocks, error) in [
+            (vec![7, 4], JournalTransactionError::DuplicateBlock),
+            (vec![7, 7], JournalTransactionError::DuplicateBlock),
+            (vec![7, MAXIMUM_BLOCK + 1], JournalTransactionError::BlockOutOfRange),
+            (vec![0; JOURNAL_TRANSACTION_MAX_REVOKED_BLOCKS], JournalTransactionError::TooManyBlocks),
+        ] {
+            assert_eq!(batched.stage_revocations(&blocks), Err(error));
+            assert_eq!(batched.commit_plan(&slots).unwrap(), expected);
+        }
+        let mut bounded = JournalTransaction::new(17, UUID, 16_384).unwrap();
+        let blocks: Vec<u64> = (0..JOURNAL_TRANSACTION_MAX_REVOKED_BLOCKS as u64).collect();
+        bounded.stage_revocations(&blocks).unwrap();
+        assert_eq!(bounded.revoked_blocks(), blocks.as_slice());
+        assert_eq!(bounded.stage_revocations(&[10_000]), Err(JournalTransactionError::TooManyBlocks));
+        assert_eq!(bounded.revoked_blocks(), blocks.as_slice());
     }
 
     fn mapped_ring(next_sequence: u32, slots: &[u64]) -> JournalRing {
@@ -2559,6 +2732,83 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    fn orphan_filesystem_image(head: u32) -> FilesystemSuperblockImage {
+        let mut image = FilesystemSuperblockImage {
+            bytes: [0; FILESYSTEM_SUPERBLOCK_BYTES], needs_recovery: false,
+        };
+        write_u32le(&mut image.bytes, 0, 1024);
+        write_u32le(&mut image.bytes, 0xe8, head);
+        write_u32le(&mut image.bytes, FILESYSTEM_READ_ONLY_FEATURES_OFFSET,
+            FILESYSTEM_METADATA_CHECKSUM_FEATURE);
+        image.with_recovery_state(true)
+    }
+
+    #[test]
+    fn orphan_head_is_checksummed_bounded_and_preserves_filesystem_identity() {
+        let original = orphan_filesystem_image(0);
+        for head in [0, 11, 1024] {
+            assert_eq!(original.validate_checkpointed_successor(&orphan_filesystem_image(head)), Ok(()));
+        }
+        for head in [1, 10, 1025, u32::MAX] {
+            assert_eq!(original.validate_checkpointed_successor(&orphan_filesystem_image(head)),
+                Err(JournalTransactionError::RecoveryStateMismatch));
+        }
+        let mut damaged = orphan_filesystem_image(11);
+        damaged.bytes[0xe8] ^= 1;
+        assert!(original.validate_checkpointed_successor(&damaged).is_err());
+        let mut foreign = orphan_filesystem_image(11);
+        foreign.bytes[0x68] ^= 1; // UUID changes remain forbidden, even with a valid CRC.
+        foreign = foreign.with_recovery_state(true);
+        assert!(original.validate_checkpointed_successor(&foreign).is_err());
+    }
+
+    #[test]
+    fn orphan_recovery_keeps_marker_and_refuses_clean_until_final_release() {
+        let ring = mapped_ring(17, &JOURNAL_SLOTS);
+        let journal = ring.superblock.clone().unwrap();
+        let original = orphan_filesystem_image(0);
+        for (before, after) in [(0, 11), (11, 12), (12, 0)] {
+            let mut home = vec![0; JOURNAL_BLOCK_BYTES];
+            let successor = orphan_filesystem_image(after);
+            home[1024..2048].copy_from_slice(successor.bytes());
+            let recovery = JournalRecovery {
+                committed_transactions: 1, consumed_slots: 3,
+                replay_images: vec![JournalBlockImage { block_index: 0, bytes: home }],
+                clean_superblock: journal.clone(), maximum_block: MAXIMUM_BLOCK,
+            };
+            let prior = orphan_filesystem_image(before);
+            let plan = recovery.checkpoint_plan(MAXIMUM_BLOCK, &prior).unwrap();
+            assert_eq!(plan, recovery.checkpoint_plan(MAXIMUM_BLOCK, &prior).unwrap());
+            assert!(matches!(&plan[0], JournalCommitOperation::WriteHomeMetadata(_)));
+            assert_eq!(plan[1], JournalCommitOperation::Flush(JournalFlush::Checkpoint));
+            assert!(matches!(&plan[2], JournalCommitOperation::WriteJournalSuperblock { image, .. }
+                if image.start_block() == 0));
+            assert_eq!(plan[3], JournalCommitOperation::Flush(JournalFlush::JournalState));
+            assert!(matches!(&plan[4], JournalCommitOperation::WriteFilesystemSuperblock { image, .. }
+                if image.last_orphan() == after && image.needs_recovery() == (after != 0)));
+            assert_eq!(plan[5], JournalCommitOperation::Flush(JournalFlush::FilesystemState));
+        }
+        let mut physical = vec![MAXIMUM_BLOCK];
+        physical.extend_from_slice(&JOURNAL_SLOTS);
+        let map = JournalInodeMap { superblock: journal.clone(),
+            filesystem_superblock: orphan_filesystem_image(11), maximum_block: MAXIMUM_BLOCK,
+            physical_blocks: physical, filesystem_needs_recovery: true };
+        assert!(map.clone().into_clean_ring().is_err());
+        let mut dirty = map.clone();
+        dirty.superblock = journal.with_state(17, 1).unwrap();
+        assert!(dirty.into_orphan_cleanup_ring().is_err());
+        let mut cleanup = map.into_orphan_cleanup_ring().unwrap();
+        assert_eq!(cleanup.filesystem_is_clean(), Ok(false));
+        assert_eq!(cleanup.filesystem_recovery_marker_is_durable(), Ok(true));
+        assert_eq!(cleanup.prepare_filesystem_clean_plan(), Err(JournalTransactionError::JournalNotClean));
+        // Model the already-checkpointed final deletion: only then may sync clear.
+        cleanup.filesystem_superblock = Some(original);
+        let clean = cleanup.prepare_filesystem_clean_plan().unwrap();
+        assert_eq!(clean, cleanup.prepare_filesystem_clean_plan().unwrap());
+        cleanup.mark_filesystem_clean_durable().unwrap();
+        assert_eq!(cleanup.filesystem_is_clean(), Ok(true));
     }
 
     #[test]

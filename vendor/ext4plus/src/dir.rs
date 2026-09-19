@@ -16,6 +16,7 @@ use crate::dir_htree::{
     insert_child_into_parent, split_index_path_for_new_child,
 };
 use crate::error::{CorruptKind, Ext4Error};
+use crate::features::ReadOnlyCompatibleFeatures;
 use crate::file::{truncate, write_at};
 use crate::file_type::FileType;
 use crate::inode::{Inode, InodeFlags, InodeIndex};
@@ -29,6 +30,30 @@ use crate::util::write_u32le;
 use crate::util::{read_u16le, read_u32le, write_u16le};
 use alloc::vec;
 use alloc::vec::Vec;
+
+fn untracked_directory_links(fs: &Ext4, inode: &Inode) -> bool {
+    inode.file_type().is_dir()
+        && inode.flags().contains(InodeFlags::DIRECTORY_HTREE)
+        && fs.superblock().read_only_compatible_features()
+            .contains(ReadOnlyCompatibleFeatures::LARGE_DIRECTORIES)
+}
+
+fn parent_links_after(fs: &Ext4, inode: &Inode, add: bool) -> Result<u16, Ext4Error> {
+    let old = inode.links_count();
+    let untracked = untracked_directory_links(fs, inode);
+    // Linux ext4_inc_count/ext4_dec_count keep the dir_nlink sentinel at one.
+    if old == 1 && untracked { return Ok(1); }
+    if old < 2 { return Err(dir_entry_error(inode.index)); }
+    if add {
+        if old >= 65000 {
+            return if untracked { Ok(1) } else { Err(Ext4Error::Readonly) };
+        }
+        Ok(old + 1)
+    } else {
+        old.checked_sub(1).filter(|links| *links >= 2)
+            .ok_or_else(|| dir_entry_error(inode.index))
+    }
+}
 
 /// Search a directory inode for an entry with the given `name`. If
 /// found, return the entry's inode, otherwise return a `NotFound`
@@ -118,6 +143,22 @@ pub(crate) async fn add_dir_entry(
     inode: InodeIndex,
     file_type: FileType,
 ) -> Result<(), Ext4Error> {
+    if dir_inode.flags().contains(InodeFlags::IMMUTABLE) {
+        return Err(Ext4Error::Readonly);
+    }
+    add_dir_entry_inner(fs, dir_inode, name, inode, file_type).await?;
+    if let Some(time) = fs.mutation_time() {
+        dir_inode.set_mutation_mtime(time)?;
+        dir_inode.write(fs).await?;
+    }
+    Ok(())
+}
+
+#[maybe_async::maybe_async]
+async fn add_dir_entry_inner(
+    fs: &Ext4, dir_inode: &mut Inode, name: DirEntryName<'_>,
+    inode: InodeIndex, file_type: FileType,
+) -> Result<(), Ext4Error> {
     assert!(dir_inode.file_type().is_dir());
 
     if dir_inode.flags().contains(InodeFlags::DIRECTORY_ENCRYPTED) {
@@ -129,14 +170,14 @@ pub(crate) async fn add_dir_entry(
     }
 
     // Fail if name already exists.
-    if get_dir_entry_inode_by_name(fs, dir_inode, name)
-        .await
-        .is_ok()
-    {
-        return Err(Ext4Error::AlreadyExists);
+    match get_dir_entry_inode_by_name(fs, dir_inode, name).await {
+        Ok(_) => return Err(Ext4Error::AlreadyExists),
+        Err(Ext4Error::NotFound) => {},
+        Err(error) => return Err(error),
     }
 
     let block_size = fs.0.superblock.block_size().to_usize();
+    let usable_size = block_size - if fs.has_metadata_checksums() { 12 } else { 0 };
     let mut file_blocks = FileBlocks::new(fs.clone(), dir_inode)?;
 
     let need = dir_entry_min_size(name.as_ref().len(), dir_inode.index)?;
@@ -145,11 +186,14 @@ pub(crate) async fn add_dir_entry(
 
     while let Some(block_index_res) = file_blocks.next().await {
         let block_index = block_index_res?;
-        fs.read_from_block(block_index, 0, &mut block_buf).await?;
+        DirBlock { fs, block_index, is_first, dir_inode: dir_inode.index,
+            has_htree: false, checksum_base: dir_inode.checksum_base().clone() }
+            .read(&mut block_buf).await?;
 
         // Walk entries in this block looking for usable slack space.
         let mut off = 0usize;
-        while off < block_size {
+        while off < usable_size {
+            if usable_size - off < 8 { return Err(dir_entry_error(dir_inode.index)); }
             let inode_field = read_u32le(&block_buf, off);
             let rec_len_offset = checked_add_usize(off, 4, dir_inode.index)?;
             let rec_len = read_u16le(&block_buf, rec_len_offset);
@@ -157,7 +201,7 @@ pub(crate) async fn add_dir_entry(
             let rec_end =
                 checked_add_usize(off, rec_len_usize, dir_inode.index)?;
 
-            if rec_len_usize < 8 || rec_end > block_size {
+            if rec_len_usize < 8 || rec_len_usize % 4 != 0 || rec_end > usable_size {
                 return Err(dir_entry_error(dir_inode.index));
             }
 
@@ -300,6 +344,21 @@ pub(crate) async fn remove_dir_entry(
     dir_inode: &mut Inode,
     name: DirEntryName<'_>,
 ) -> Result<(), Ext4Error> {
+    if dir_inode.flags().intersects(InodeFlags::IMMUTABLE | InodeFlags::APPEND_ONLY) {
+        return Err(Ext4Error::Readonly);
+    }
+    remove_dir_entry_inner(fs, dir_inode, name).await?;
+    if let Some(time) = fs.mutation_time() {
+        dir_inode.set_mutation_mtime(time)?;
+        dir_inode.write(fs).await?;
+    }
+    Ok(())
+}
+
+#[maybe_async::maybe_async]
+async fn remove_dir_entry_inner(
+    fs: &Ext4, dir_inode: &mut Inode, name: DirEntryName<'_>,
+) -> Result<(), Ext4Error> {
     assert!(dir_inode.file_type().is_dir());
 
     if dir_inode.flags().contains(InodeFlags::DIRECTORY_ENCRYPTED) {
@@ -316,15 +375,21 @@ pub(crate) async fn remove_dir_entry(
 
     let mut is_first = true;
     let mut logical_block_index = 0u64;
+    let mut last_nonempty_block = 0u64; // always retain the dot/dotdot block
 
     while let Some(block_index_res) = file_blocks.next().await {
         let block_index = block_index_res?;
-        fs.read_from_block(block_index, 0, &mut block_buf).await?;
+        DirBlock {
+            fs, block_index, is_first, dir_inode: dir_inode.index,
+            has_htree: false, checksum_base: dir_inode.checksum_base().clone(),
+        }.read(&mut block_buf).await?;
 
         let mut off = 0usize;
         let mut prev_off: Option<usize> = None;
+        let mut block_has_entries = false;
 
         while off < block_size_usize {
+            if block_size_usize - off < 8 { return Err(dir_entry_error(dir_inode.index)); }
             let inode_field = read_u32le(&block_buf, off);
             let rec_len_offset = checked_add_usize(off, 4, dir_inode.index)?;
             let rec_len = read_u16le(&block_buf, rec_len_offset);
@@ -332,11 +397,12 @@ pub(crate) async fn remove_dir_entry(
             let rec_end =
                 checked_add_usize(off, rec_len_usize, dir_inode.index)?;
 
-            if rec_len_usize < 8 || rec_end > block_size_usize {
+            if rec_len_usize < 8 || rec_len_usize % 4 != 0 || rec_end > block_size_usize {
                 return Err(dir_entry_error(dir_inode.index));
             }
 
             if inode_field != 0 {
+                block_has_entries = true;
                 let name_len_offset =
                     checked_add_usize(off, 6, dir_inode.index)?;
                 let name_len = usize::from(block_buf[name_len_offset]);
@@ -382,18 +448,19 @@ pub(crate) async fn remove_dir_entry(
                     let mut all_empty = true;
                     let mut verify_off = 0usize;
                     while verify_off < block_size_usize {
+                        if block_size_usize - verify_off < 8 { return Err(dir_entry_error(dir_inode.index)); }
                         let inode_field = read_u32le(&block_buf, verify_off);
                         let verify_rec_len_offset =
                             checked_add_usize(verify_off, 4, dir_inode.index)?;
                         let rec_len =
                             read_u16le(&block_buf, verify_rec_len_offset);
                         let rec_len_usize = usize::from(rec_len);
-                        if rec_len_usize == 0 {
-                            break;
+                        if rec_len_usize < 8 || rec_len_usize % 4 != 0
+                            || rec_len_usize > block_size_usize - verify_off {
+                            return Err(dir_entry_error(dir_inode.index));
                         }
                         if inode_field != 0 {
                             all_empty = false;
-                            break;
                         }
                         verify_off = checked_add_usize(
                             verify_off,
@@ -412,12 +479,15 @@ pub(crate) async fn remove_dir_entry(
                         && logical_block_index == last_file_block_index
                         && logical_block_index > 0
                     {
-                        // Truncate the file to remove the last empty block.
+                        // Remove the complete empty suffix, including blocks
+                        // emptied by earlier deletions. Those earlier blocks
+                        // were already read and checksum-checked during lookup.
+                        // Do not stage a directory image that is being freed.
                         truncate(
                             fs,
                             dir_inode,
                             checked_mul_u64(
-                                logical_block_index,
+                                checked_add_u64(last_nonempty_block, 1, dir_inode.index)?,
                                 block_size.to_u64(),
                                 dir_inode.index,
                             )?,
@@ -446,6 +516,7 @@ pub(crate) async fn remove_dir_entry(
             off = rec_end;
         }
 
+        if block_has_entries { last_nonempty_block = logical_block_index; }
         is_first = false;
         logical_block_index =
             checked_add_u64(logical_block_index, 1, dir_inode.index)?;
@@ -688,15 +759,17 @@ impl Dir {
         name: DirEntryName<'_>,
         target_inode: &mut Inode,
     ) -> Result<(), Ext4Error> {
+        if self.inode.flags().contains(InodeFlags::IMMUTABLE)
+            || target_inode.flags().intersects(InodeFlags::IMMUTABLE | InodeFlags::APPEND_ONLY) {
+            return Err(Ext4Error::Readonly);
+        }
         let old = target_inode.links_count();
         let new = old.checked_add(1).ok_or(Ext4Error::Readonly)?;
         target_inode.set_links_count(new);
         target_inode.write(&self.fs).await?;
 
         if target_inode.file_type() == FileType::Directory {
-            let parent_old = self.inode.links_count();
-            let parent_new =
-                parent_old.checked_add(1).ok_or(Ext4Error::Readonly)?;
+            let parent_new = parent_links_after(&self.fs, &self.inode, true)?;
             self.inode.set_links_count(parent_new);
             self.inode.write(&self.fs).await?;
         }
@@ -721,8 +794,12 @@ impl Dir {
         &mut self,
         source: DirEntryName<'_>,
         destination: DirEntryName<'_>,
-        inode: Inode,
+        mut inode: Inode,
     ) -> Result<(), Ext4Error> {
+        if self.inode.flags().intersects(InodeFlags::IMMUTABLE | InodeFlags::APPEND_ONLY)
+            || inode.flags().intersects(InodeFlags::IMMUTABLE | InodeFlags::APPEND_ONLY) {
+            return Err(Ext4Error::Readonly);
+        }
         if source.0 == b"."
             || source.0 == b".."
             || destination.0 == b"."
@@ -759,7 +836,109 @@ impl Dir {
             inode.file_type(),
         )
         .await?;
-        remove_dir_entry(&self.fs, &mut self.inode, source).await
+        remove_dir_entry(&self.fs, &mut self.inode, source).await?;
+        if self.fs.mutation_time().is_some() { inode.write(&self.fs).await?; }
+        Ok(())
+    }
+
+    /// Move a directory to a different parent in the same filesystem.
+    /// The caller must stage all writes atomically and discard the stage on error.
+    #[maybe_async::maybe_async]
+    pub async fn move_directory(
+        &mut self,
+        source: DirEntryName<'_>,
+        destination_parent: &mut Self,
+        destination: DirEntryName<'_>,
+        mut inode: Inode,
+    ) -> Result<(), Ext4Error> {
+        if source.0 == b"." || source.0 == b".."
+            || destination.0 == b"." || destination.0 == b".." {
+            return Err(Ext4Error::DotEntry);
+        }
+        if !inode.file_type().is_dir() {
+            return Err(Ext4Error::NotADirectory);
+        }
+        if self.inode.index == destination_parent.inode.index {
+            return self.rename_entry(source, destination, inode).await;
+        }
+        if self.inode.flags().intersects(InodeFlags::IMMUTABLE | InodeFlags::APPEND_ONLY)
+            || destination_parent.inode.flags().contains(InodeFlags::IMMUTABLE)
+            || inode.flags().intersects(InodeFlags::DIRECTORY_ENCRYPTED
+            | InodeFlags::IMMUTABLE | InodeFlags::APPEND_ONLY) {
+            return Err(Ext4Error::Readonly);
+        }
+        if self.get_entry(source).await?.index != inode.index {
+            return Err(dir_entry_error(self.inode.index));
+        }
+        match destination_parent.get_entry(destination).await {
+            Ok(_) => return Err(Ext4Error::AlreadyExists),
+            Err(Ext4Error::NotFound) => {}
+            Err(error) => return Err(error),
+        }
+        let dotdot = DirEntryName::try_from("..")
+            .map_err(|_| Ext4Error::MalformedPath)?;
+        // Follow inode identities, including destination paths reached through
+        // symlinks. Bound hostile ancestry and reject cycles before staging.
+        let mut ancestor = destination_parent.inode.clone();
+        let mut seen = Vec::new();
+        loop {
+            if ancestor.index == inode.index || seen.contains(&ancestor.index)
+                || seen.len() == 1024 {
+                return Err(Ext4Error::MalformedPath);
+            }
+            seen.push(ancestor.index);
+            let parent = get_dir_entry_inode_by_name(&self.fs, &ancestor, dotdot).await?;
+            if parent.index == ancestor.index {
+                if ancestor.index.get() != 2 {
+                    return Err(dir_entry_error(ancestor.index));
+                }
+                break;
+            }
+            if !parent.file_type().is_dir() {
+                return Err(dir_entry_error(parent.index));
+            }
+            ancestor = parent;
+        }
+        let source_links = parent_links_after(&self.fs, &self.inode, false)?;
+        let destination_links = parent_links_after(&self.fs, &destination_parent.inode, true)?;
+        let mut blocks = FileBlocks::new(self.fs.clone(), &inode)?;
+        let block_index = blocks.next().await
+            .ok_or_else(|| dir_entry_error(inode.index))??;
+        if block_index == 0 {
+            return Err(dir_entry_error(inode.index));
+        }
+        let descriptor = DirBlock {
+            fs: &self.fs,
+            block_index,
+            is_first: true,
+            dir_inode: inode.index,
+            has_htree: inode.flags().contains(InodeFlags::DIRECTORY_HTREE),
+            checksum_base: inode.checksum_base().clone(),
+        };
+        let mut block = vec![0; self.fs.0.superblock.block_size().to_usize()];
+        descriptor.read(&mut block).await?;
+        // Linux's dot and dotdot records start at 0 and 12 in a leaf root.
+        if read_u32le(&block, 0) != inode.index.get()
+            || read_u16le(&block, 4) != 12 || block[6] != 1 || block[7] != 2 || block[8] != b'.'
+            || read_u32le(&block, 12) != self.inode.index.get()
+            || read_u16le(&block, 16) < 12
+            || usize::from(read_u16le(&block, 16)) > block.len() - 12
+            || block[18] != 2 || block[19] != 2 || &block[20..22] != b".." {
+            return Err(dir_entry_error(inode.index));
+        }
+        write_u32le(&mut block, 12, destination_parent.inode.index.get());
+        descriptor.update_checksum(&mut block)?;
+
+        add_dir_entry(&self.fs, &mut destination_parent.inode, destination,
+            inode.index, inode.file_type()).await?;
+        remove_dir_entry(&self.fs, &mut self.inode, source).await?;
+        self.fs.write_to_block(block_index, 0, &block).await?;
+        self.inode.set_links_count(source_links);
+        self.inode.write(&self.fs).await?;
+        destination_parent.inode.set_links_count(destination_links);
+        destination_parent.inode.write(&self.fs).await?;
+        if self.fs.mutation_time().is_some() { inode.write(&self.fs).await?; }
+        Ok(())
     }
 
     /// Remove a directory entry at `path`.
@@ -776,24 +955,44 @@ impl Dir {
     pub async fn unlink(
         &mut self,
         name: DirEntryName<'_>,
-        mut inode: Inode,
+        inode: Inode,
     ) -> Result<Option<Inode>, Ext4Error> {
+        self.unlink_inner(name, inode, false).await
+    }
+
+    /// Unlink a regular file while retaining its final inode on the legacy
+    /// orphan chain. The caller owns the live handle and journal transaction.
+    #[maybe_async::maybe_async]
+    pub async fn unlink_open(&mut self, name: DirEntryName<'_>, inode: Inode)
+        -> Result<Option<Inode>, Ext4Error> {
+        if !inode.file_type().is_regular_file() { return Err(Ext4Error::IsASpecialFile); }
+        self.unlink_inner(name, inode, true).await
+    }
+
+    #[maybe_async::maybe_async]
+    async fn unlink_inner(&mut self, name: DirEntryName<'_>, mut inode: Inode, retain_open: bool)
+        -> Result<Option<Inode>, Ext4Error> {
+        if self.inode.flags().intersects(InodeFlags::IMMUTABLE | InodeFlags::APPEND_ONLY)
+            || inode.flags().intersects(InodeFlags::IMMUTABLE | InodeFlags::APPEND_ONLY) {
+            return Err(Ext4Error::Readonly);
+        }
         if name.0 == b"." || name.0 == b".." {
             return Err(Ext4Error::DotEntry);
         }
 
         let linked_inode =
             get_dir_entry_inode_by_name(&self.fs, &self.inode, name).await?;
-        assert_eq!(
-            linked_inode.index, inode.index,
-            "unlink called with inode that does not match directory entry"
-        );
+        if linked_inode.index != inode.index { return Err(dir_entry_error(self.inode.index)); }
 
         let old = inode.links_count();
-        inode.set_links_count(old.saturating_sub(1));
-        inode.write(&self.fs).await?;
+        inode.set_links_count(old.checked_sub(1).ok_or_else(|| dir_entry_error(inode.index))?);
+        if retain_open && inode.links_count() == 0 {
+            self.fs.defer_unlinked_inode(&mut inode).await?;
+        } else {
+            inode.write(&self.fs).await?;
+        }
         remove_dir_entry(&self.fs, &mut self.inode, name).await?;
-        if inode.links_count() == 0 {
+        if inode.links_count() == 0 && !retain_open {
             self.fs.delete_file(inode).await?;
             Ok(None)
         } else {
@@ -801,7 +1000,7 @@ impl Dir {
         }
     }
 
-    /// Remove an empty, single-block directory entry and return its freed block.
+    /// Remove an empty directory entry and return its first freed block.
     ///
     /// OpenRFS uses the returned physical block to require the matching JBD2
     /// revocation before checkpointing the inode, bitmap, counter, and parent
@@ -813,6 +1012,24 @@ impl Dir {
         name: DirEntryName<'_>,
         inode: Inode,
     ) -> Result<u64, Ext4Error> {
+        self.remove_empty_directory_inner(name, inode, false).await
+    }
+
+    /// Remove an empty directory while retaining its inode for live snapshots.
+    /// The caller must journal the orphan head and finalize after the last close.
+    #[maybe_async::maybe_async]
+    pub async fn remove_open_directory(&mut self, name: DirEntryName<'_>, inode: Inode) -> Result<(), Ext4Error> {
+        self.remove_empty_directory_inner(name, inode, true).await.map(|_| ())
+    }
+
+    #[maybe_async::maybe_async]
+    async fn remove_empty_directory_inner(
+        &mut self, name: DirEntryName<'_>, mut inode: Inode, retain_open: bool,
+    ) -> Result<u64, Ext4Error> {
+        if self.inode.flags().intersects(InodeFlags::IMMUTABLE | InodeFlags::APPEND_ONLY)
+            || inode.flags().intersects(InodeFlags::IMMUTABLE | InodeFlags::APPEND_ONLY) {
+            return Err(Ext4Error::Readonly);
+        }
         if name.0 == b"." || name.0 == b".." {
             return Err(Ext4Error::DotEntry);
         }
@@ -825,12 +1042,9 @@ impl Dir {
         if linked_inode.index != inode.index {
             return Err(dir_entry_error(self.inode.index));
         }
-        let parent_links = self.inode.links_count();
-        let parent_links_after = parent_links
-            .checked_sub(1)
-            .filter(|links| *links >= 2)
-            .ok_or_else(|| dir_entry_error(self.inode.index))?;
-        if inode.links_count() != 2 {
+        let parent_links_after = parent_links_after(&self.fs, &self.inode, false)?;
+        if inode.links_count() != 2
+            && !(inode.links_count() == 1 && untracked_directory_links(&self.fs, &inode)) {
             return Err(dir_entry_error(inode.index));
         }
 
@@ -863,8 +1077,8 @@ impl Dir {
         }
 
         let block_size = self.fs.0.superblock.block_size().to_u64();
-        if inode.size_in_bytes() != block_size {
-            return Err(Ext4Error::Readonly);
+        if inode.size_in_bytes() == 0 || inode.size_in_bytes() % block_size != 0 {
+            return Err(dir_entry_error(inode.index));
         }
         let mut file_blocks = FileBlocks::new(self.fs.clone(), &inode)?;
         let revoked_block = file_blocks
@@ -878,7 +1092,12 @@ impl Dir {
         remove_dir_entry(&self.fs, &mut self.inode, name).await?;
         self.inode.set_links_count(parent_links_after);
         self.inode.write(&self.fs).await?;
-        self.fs.delete_file(inode).await?;
+        if retain_open {
+            inode.set_links_count(0);
+            self.fs.defer_unlinked_inode(&mut inode).await?;
+        } else {
+            self.fs.delete_file(inode).await?;
+        }
         Ok(revoked_block)
     }
 
@@ -1025,14 +1244,16 @@ fn pack_htree_leaf_block(
     dir_inode: &Inode,
     entries: &[HtreeLeafEntryData],
 ) -> Result<Vec<u8>, Ext4Error> {
-    if entries.is_empty() {
-        return Err(dir_entry_error(dir_inode.index));
-    }
-
     let block_size = fs.0.superblock.block_size().to_usize();
     let usable = htree_leaf_usable_bytes(fs, dir_inode.index)?;
     let mut block = vec![0u8; block_size];
     let mut off = 0usize;
+
+    if entries.is_empty() {
+        // An empty leaf is one unused record followed by the checksum tail.
+        write_u16le(&mut block, 4, u16::try_from(usable)
+            .map_err(|_| dir_entry_error(dir_inode.index))?);
+    }
 
     for (idx, entry) in entries.iter().enumerate() {
         let rec_len = if idx.checked_add(1).unwrap() == entries.len() {
@@ -1092,11 +1313,10 @@ pub(crate) async fn add_dir_entry_htree(
     }
 
     // Fail if name already exists.
-    if get_dir_entry_inode_by_name(fs, dir_inode, name)
-        .await
-        .is_ok()
-    {
-        return Err(Ext4Error::AlreadyExists);
+    match get_dir_entry_inode_by_name(fs, dir_inode, name).await {
+        Ok(_) => return Err(Ext4Error::AlreadyExists),
+        Err(Ext4Error::NotFound) => {},
+        Err(error) => return Err(error),
     }
 
     let block_size = fs.0.superblock.block_size().to_usize();
@@ -1112,15 +1332,17 @@ pub(crate) async fn add_dir_entry_htree(
     let need = dir_entry_min_size(name.as_ref().len(), dir_inode.index)?;
 
     let mut off = 0usize;
+    let usable_size = htree_leaf_usable_bytes(fs, dir_inode.index)?;
 
-    while off < block_size {
+    while off < usable_size {
+        if usable_size - off < 8 { return Err(dir_entry_error(dir_inode.index)); }
         let inode_field = read_u32le(&block_buf, off);
         let rec_len_offset = checked_add_usize(off, 4, dir_inode.index)?;
         let rec_len = read_u16le(&block_buf, rec_len_offset);
         let rec_len_usize = usize::from(rec_len);
         let rec_end = checked_add_usize(off, rec_len_usize, dir_inode.index)?;
 
-        if rec_len_usize < 8 || rec_end > block_size {
+        if rec_len_usize < 8 || rec_len_usize % 4 != 0 || rec_end > usable_size {
             return Err(dir_entry_error(dir_inode.index));
         }
 
@@ -1247,6 +1469,70 @@ pub(crate) async fn add_dir_entry_htree(
     Ok(())
 }
 
+/// Collapse a small htree to its root and one leaf when deleting `name`
+/// makes the remaining entries fit. Keep the index flag: dir_nlink's sentinel
+/// link count remains valid, including when the caller removes a child dir.
+#[maybe_async::maybe_async]
+async fn compact_htree_after_removal(
+    fs: &Ext4,
+    dir_inode: &mut Inode,
+    name: DirEntryName<'_>,
+) -> Result<bool, Ext4Error> {
+    let block_size = fs.superblock().block_size().to_u64();
+    let blocks = dir_inode.file_size_in_blocks(fs)?;
+    // Bound this optional compaction's scan/revocations. Larger directories
+    // retain their existing htree and use ordinary leaf deletion.
+    if blocks <= 2 || blocks > 64 { return Ok(false); }
+    let usable = htree_leaf_usable_bytes(fs, dir_inode.index)?;
+    let mut entries = Vec::new();
+    let mut bytes = 0usize;
+    let mut found = false;
+    let mut iter = ReadDir::new(fs.clone(), dir_inode, PathBuf::empty())?;
+    while let Some(entry) = iter.next().await {
+        let entry = entry?;
+        let entry_name = entry.file_name();
+        if entry_name == "." || entry_name == ".." { continue; }
+        if entry_name == name {
+            if found { return Err(dir_entry_error(dir_inode.index)); }
+            found = true;
+            continue;
+        }
+        bytes = checked_add_usize(bytes,
+            dir_entry_min_size(entry_name.as_ref().len(), dir_inode.index)?,
+            dir_inode.index)?;
+        if bytes > usable { return Ok(false); }
+        // A single leaf covers every hash; its records need no hash ordering.
+        entries.push(HtreeLeafEntryData {
+            hash: 0, inode: entry.inode, name: entry_name.as_ref().to_vec(),
+            file_type: entry.file_type()?,
+        });
+    }
+    if !found { return Err(Ext4Error::NotFound); }
+    let leaf = pack_htree_leaf_block(fs, dir_inode, &entries)?;
+    let mut root = vec![0; block_size as usize];
+    crate::dir_htree::read_root_block(fs, dir_inode, &mut root).await?;
+    let mut mapping = FileBlocks::new(fs.clone(), dir_inode)?;
+    let root_block = mapping.next().await.ok_or_else(|| dir_entry_error(dir_inode.index))??;
+    let leaf_block = mapping.next().await.ok_or_else(|| dir_entry_error(dir_inode.index))??;
+    if root_block == 0 || leaf_block == 0 { return Err(dir_entry_error(dir_inode.index)); }
+    // Linux dx_root layout: retain dot/dotdot, hash algorithm and limit;
+    // reset depth/count/leftmost child, with a newly calculated dx_tail CRC.
+    root[0x1e] = 0;
+    write_u16le(&mut root, 0x22, 1);
+    write_u32le(&mut root, 0x24, 1);
+    root[0x28..].fill(0);
+    DirBlock {
+        fs, block_index: root_block, is_first: true, dir_inode: dir_inode.index,
+        has_htree: true, checksum_base: dir_inode.checksum_base().clone(),
+    }.update_checksum(&mut root)?;
+    // Both retained images and all suffix revocations belong to the caller's
+    // single stage. No home writes occur here; any error discards the stage.
+    fs.write_to_block(root_block, 0, &root).await?;
+    fs.write_to_block(leaf_block, 0, &leaf).await?;
+    truncate(fs, dir_inode, block_size * 2).await?;
+    Ok(true)
+}
+
 /// Remove an item from a directory with an htree.
 #[maybe_async::maybe_async]
 pub(crate) async fn remove_dir_entry_htree(
@@ -1269,6 +1555,10 @@ pub(crate) async fn remove_dir_entry_htree(
         return Err(Ext4Error::Readonly);
     }
 
+    if compact_htree_after_removal(fs, dir_inode, name).await? {
+        return Ok(());
+    }
+
     let mut leaf_lookup =
         crate::dir_htree::find_leaf_lookup(fs, dir_inode, name, &mut block_buf)
             .await?;
@@ -1279,6 +1569,7 @@ pub(crate) async fn remove_dir_entry_htree(
         let mut prev_off: Option<usize> = None;
 
         while off < block_size {
+            if block_size - off < 8 { return Err(dir_entry_error(dir_inode.index)); }
             let inode_field = read_u32le(&block_buf, off);
             let rec_len_offset = checked_add_usize(off, 4, dir_inode.index)?;
             let rec_len = read_u16le(&block_buf, rec_len_offset);
@@ -1286,7 +1577,7 @@ pub(crate) async fn remove_dir_entry_htree(
             let rec_end =
                 checked_add_usize(off, rec_len_usize, dir_inode.index)?;
 
-            if rec_len_usize < 8 || rec_end > block_size {
+            if rec_len_usize < 8 || rec_len_usize % 4 != 0 || rec_end > block_size {
                 return Err(dir_entry_error(dir_inode.index));
             }
 
