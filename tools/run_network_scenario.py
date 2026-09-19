@@ -45,6 +45,8 @@ FIXTURE_MODE = {
     "native-https": "https",
     "native-openrfs": "packages-lifecycle",
     "network-dhcp-timeout": "dhcp-timeout",
+    "network-dhcp": "dhcp-adversarial",
+    "network-udp": "udp-queue",
     "network-icmp-timeout": "silent",
     "network-dns-cname": "dns-cname",
     "network-dns-malformed": "dns-truncated",
@@ -301,6 +303,12 @@ def run(args: argparse.Namespace) -> int:
                passed == 1 and "ST FAIL" not in transcript and
                "OpenRFS PANIC" not in transcript and
                "ST NETWORK production path bounded and recoverable" in transcript)
+    if (args.scenario.startswith("network-") or args.scenario in
+            ("native-https", "native-openrfs")) and healthy:
+        teardown_receipts = (3 if args.scenario == "native-openrfs" else
+                             2 if args.scenario == "network-persistence" else 1)
+        healthy = transcript.count(
+            "ST NETWORK resource and teardown census clean\n") == teardown_receipts
     if args.scenario == "network-native" and healthy:
         healthy = (
             transcript.count(
@@ -312,6 +320,45 @@ def run(args: argparse.Namespace) -> int:
                 "cancellation passed\n"
             ) == 1
         )
+    if args.scenario == "network-dhcp" and healthy:
+        required = (
+            "ST DHCP retry and renewal passed\n",
+            "ST DHCP lease expiry cleared routes\n",
+        )
+        fixture_text = fixture_log.read_text(encoding="utf-8", errors="replace")
+        fixture_required = (
+            "DHCP malformed offer sent\n",
+            "DHCP valid offer after retry sent\n",
+            "DHCP contradictory ACK sent\n",
+            "DHCP valid ACK after retry sent\n",
+            "DHCP renewal ACK sent\n",
+            "DHCP renewal refusal retained until expiry\n",
+            "DHCP rebinding broadcast observed\n",
+        )
+        healthy = (all(transcript.count(marker) == 1 for marker in required)
+                   and all(fixture_text.count(marker) >= 1
+                           for marker in fixture_required))
+    if args.scenario == "network-dns-malformed" and healthy:
+        fixture_text = fixture_log.read_text(encoding="utf-8", errors="replace")
+        healthy = (
+            transcript.count(
+                "ST DNS malformed mismatch poison compression timeout "
+                "refused\n"
+            ) == 1
+            and all(f"DNS control {name}" in fixture_text for name in (
+                "openrfs.test", "mismatch.test", "poison.test",
+                "compression.test", "unrelated.test", "timeout.test"
+            ))
+        )
+    if args.scenario == "network-udp" and healthy:
+        fixture_text = fixture_log.read_text(encoding="utf-8", errors="replace")
+        healthy = (
+            transcript.count("ST UDP queue exhaustion and close passed\n") == 1
+            and fixture_text.count("UDP five-reply queue control sent\n") == 1
+        )
+    if args.scenario == "network-socket-isolation" and healthy:
+        healthy = transcript.count(
+            "ST NETWORK process exit released sockets\n") == 1
     if args.scenario == "native-https" and healthy:
         required = (
             "OPENRFS HTTPSAPP PHASE start\n",

@@ -39,20 +39,29 @@ Stale handles cannot alias a later device generation.
 - Ethernet II accepts only the configured unicast MAC, broadcast, and required
   IPv4 multicast forms. Unsupported EtherTypes and malformed lengths are
   counted and dropped.
-- ARP has eight authenticated entries, three 500 ms attempts, a 60 s lifetime,
-  conflict detection, and generation invalidation.
+- ARP has eight entries, three 500 ms attempts, a 60 s lifetime, duplicate
+  handling, conflict detection, and generation invalidation. Replies must
+  target the local address and MAC, and the Ethernet and ARP sender MACs must
+  agree.
 - IPv4 validates version, IHL, total length, TTL, header checksum, destination,
   and fragmentation flags before dispatch. Fragment reassembly is absent.
 - ICMP implements bounded echo request/reply and reports timeouts. UDP validates
   pseudo-header checksums when present; IPv4 UDP zero-checksum datagrams are
   accepted as the protocol permits.
-- DHCP performs DISCOVER/OFFER/REQUEST/ACK with three bounded attempts. It
-  validates transaction, client identity, message type, server identity,
-  subnet/router/DNS values, lease, renewal, and rebinding options. NAK and
-  timeout leave no partial configuration.
-- DNS supports bounded A and CNAME resolution, compression pointers with a
-  16-pointer loop bound, four CNAME follows, 512-byte messages, eight cached
-  entries, negative answers, TTL expiry, and configuration/device generations.
+- DHCP performs DISCOVER/OFFER/REQUEST/ACK with three bounded attempts per
+  phase and a 500 ms per-attempt deadline. It rejects duplicate and malformed
+  options, contradictory ACKs, unrelated servers, invalid subnet masks and
+  routes, and invalid renewal/rebinding times. Lease renewal sends a request
+  with the current client address to the selected server at T1, then broadcasts
+  a rebinding request at T2. Expiry or NAK clears the address, route, DNS cache,
+  and active connection state. A failed initial attempt leaves no partial
+  configuration.
+- DNS supports bounded A and CNAME resolution, backward-only compression
+  pointers with a 16-pointer loop bound, four CNAME follows, 512-byte messages,
+  eight cached entries, matched NXDOMAIN caching, TTL expiry, and
+  configuration/device generations. Only matching answer-section records can
+  satisfy a query; contradictory duplicate A answers and unrelated questions
+  are refused.
 - TCP provides eight connections, 8,192 receive bytes and one 1,460-byte
   retransmission segment per connection, four retransmissions, checked sequence
   and acknowledgement state, active and passive open, FIN close, RST handling
@@ -197,11 +206,19 @@ a port OpenRFS is listening on or to one with no listener. It writes
 classic PCAP with deterministic packet timestamps.
 
 `tools/network_packet_audit.py` independently reconstructs the captured
-Ethernet frames and requires traffic in both directions plus ARP, IPv4, ICMP,
-UDP, DHCP, DNS, TCP, and HTTP. The production proof is false if any layer is
-missing. `tools/run_network_scenario.py` owns fixture/QEMU lifecycle, isolated
-ports, per-test storage copies, link-down QMP control, stable exit codes, serial
-markers, and packet audit.
+Ethernet frames, validates IPv4 and transport checksums, and requires traffic
+in both directions plus ARP, IPv4, ICMP, UDP, DHCP, DNS, TCP, and HTTP for the
+HTTP capture. Its HTTPS profile reassembles TCP byte streams, validates TLS
+record framing and handshake metadata, records certificate and cipher-suite
+summaries, and scans the captured streams for plaintext HTTP payloads. The
+production proof is false if a required layer is missing, a packet is
+malformed, or HTTPS plaintext is found. `tools/run_network_scenario.py` owns
+fixture/QEMU lifecycle, isolated ports, per-test storage copies, link-down QMP
+control, stable exit codes, serial markers, and packet audit. Every network
+scenario now checks that sockets and timers are gone, shuts down the NIC, and
+emits a teardown receipt after checking the cleared address, route, caches,
+and PCI/DMA accounting. The native HTTPS and package proofs emit the same
+receipt before guest exit or reboot.
 
 ## Measured reference run
 

@@ -5308,6 +5308,29 @@ _Noreturn void kernel_test_complete_native_sqlite(void)
     kernel_test_pass();
 }
 
+static void network_native_teardown_census(void)
+{
+    struct network_state state = network_get_state();
+
+    if (state.udp_sockets != 0U || state.tcp_connections != 0U ||
+        state.tcp_listeners != 0U || state.timers != 0U ||
+        (state.active && network_shutdown() != NETWORK_STATUS_OK)) {
+        kernel_test_fail("native network teardown retained an endpoint");
+    }
+    state = network_get_state();
+    if (state.active || state.device.active || state.device.link_up ||
+        state.configuration.configured || state.configuration.address != 0U ||
+        state.configuration.gateway != 0U ||
+        state.configuration.dns_server != 0U || state.arp_entries != 0U ||
+        state.dns_entries != 0U || state.udp_sockets != 0U ||
+        state.tcp_connections != 0U || state.timers != 0U ||
+        pci_resource_verify() != PCI_RESOURCE_STATUS_OK ||
+        dma_verify() != DMA_STATUS_OK) {
+        kernel_test_fail("native network teardown census was not clean");
+    }
+    console_serial_write("ST NETWORK resource and teardown census clean\n");
+}
+
 _Noreturn void kernel_test_complete_native_network(void)
 {
     static const uint8_t expected[] = "hello from the OpenRFS network\n";
@@ -5367,6 +5390,7 @@ _Noreturn void kernel_test_complete_native_network(void)
     if (openrfsfs_close(file) != OPENRFSFS_STATUS_OK || !matches) {
         kernel_test_fail("native HTTP body framing or contents are wrong");
     }
+    network_native_teardown_census();
     console_write("OpenRFS: native DNS, TCP, UDP, timeout, reset and cancellation passed\n");
     console_write("ST NETWORK production path bounded and recoverable\n");
     kernel_test_pass();
@@ -5659,6 +5683,7 @@ _Noreturn void kernel_test_complete_native_https(void)
     if (openrfsfs_close(file) != OPENRFSFS_STATUS_OK || !matches) {
         kernel_test_fail("authenticated HTTPS body contents are wrong");
     }
+    network_native_teardown_census();
     console_write("OpenRFS: HTTPS strong hardware entropy passed\n");
     console_write(
         "OpenRFS: HTTPS TLS 1.2 hostname time trust framing close and teardown passed\n");
@@ -5789,6 +5814,7 @@ _Noreturn void kernel_test_complete_native_openrfs(void)
             !native_process_resources_released()) {
             kernel_test_fail("native openrfs ext4 reboot barrier leaked resources");
         }
+        network_native_teardown_census();
         console_write(
             "OpenRFS: signed HTTPS package install synchronized reboot phase\n");
         cpu_out8(UINT16_C(0x0064), UINT8_C(0xFE));
@@ -5820,6 +5846,7 @@ _Noreturn void kernel_test_complete_native_openrfs(void)
             !nvme_filesystem_session_resources_released()) {
             kernel_test_fail("native openrfs ext4 update did not commit cleanly");
         }
+        network_native_teardown_census();
         console_write(
             "OpenRFS: signed HTTPS package update synchronized reboot phase\n");
         cpu_out8(UINT16_C(0x0064), UINT8_C(0xFE));
@@ -5874,6 +5901,7 @@ _Noreturn void kernel_test_complete_native_openrfs(void)
         !nvme_filesystem_session_resources_released()) {
         kernel_test_fail("native openrfs upstream SDL launch did not cleanly sync");
     }
+    network_native_teardown_census();
     console_write(
         "OpenRFS: damaged SDL package repaired authenticated and launched from writable ext4 passed\n");
     console_write("ST NETWORK production path bounded and recoverable\n");
@@ -7473,6 +7501,7 @@ static void network_require_dhcp(void)
         configuration.address != NETWORK_TEST_GUEST ||
         configuration.gateway != NETWORK_TEST_GATEWAY ||
         configuration.dns_server != NETWORK_TEST_DNS ||
+        configuration.dhcp_server != NETWORK_TEST_GATEWAY ||
         configuration.lease_expires_ns == 0U) {
         kernel_test_fail("DHCP configuration is not the fixture lease");
     }
@@ -7699,6 +7728,8 @@ static void network_tcp_connect_close(bool expect_reset)
 {
     network_handle handle;
     enum network_status status;
+    uint32_t local_address = 0U;
+    uint16_t local_port = UINT16_MAX;
 
     network_require_dhcp();
     if (network_tcp_open(NETWORK_TEST_OWNER, &handle) != NETWORK_STATUS_OK) {
@@ -7706,6 +7737,12 @@ static void network_tcp_connect_close(bool expect_reset)
     }
     status = network_tcp_connect(NETWORK_TEST_OWNER, handle,
         NETWORK_TEST_HTTP, 80U, NETWORK_DEFAULT_OPERATION_TIMEOUT_NS);
+    if (expect_reset &&
+        (network_address(NETWORK_TEST_OWNER, handle, false,
+            &local_address, &local_port) != NETWORK_STATUS_OK ||
+         local_port != 0U)) {
+        kernel_test_fail("failed TCP connect retained its ephemeral port");
+    }
     if ((!expect_reset && status != NETWORK_STATUS_OK) ||
         (expect_reset && status != NETWORK_STATUS_CONNECTION_RESET) ||
         network_close(NETWORK_TEST_OWNER, handle) != NETWORK_STATUS_OK) {
@@ -8055,10 +8092,64 @@ static void network_udp_scenario(bool isolate)
          !network_bytes_equal(received, second_message, length))) {
         kernel_test_fail("one socket received another socket's datagram");
     }
-    if (network_close(NETWORK_TEST_OWNER, first) != NETWORK_STATUS_OK ||
-        (isolate && network_close(NETWORK_TEST_OWNER, second) !=
-            NETWORK_STATUS_OK)) {
+    if (!isolate) {
+        static const uint8_t flood[] = "flood";
+        const struct network_poll_request request = {
+            first, NETWORK_READY_ERROR
+        };
+        struct network_poll_result response;
+        size_t ready = 0U;
+
+        if (network_udp_send(NETWORK_TEST_OWNER, first,
+                NETWORK_TEST_HTTP, 4242U, flood, sizeof(flood) - 1U,
+                NETWORK_DEFAULT_OPERATION_TIMEOUT_NS) != NETWORK_STATUS_OK ||
+            network_poll(NETWORK_TEST_OWNER, &request, 1U, &response, 1U,
+                &ready, UINT64_C(1000000000)) != NETWORK_STATUS_OK ||
+            ready != 1U || response.ready != NETWORK_READY_ERROR ||
+            response.error != NETWORK_STATUS_NO_RESOURCES) {
+            kernel_test_fail("UDP full queue did not report exhaustion");
+        }
+        for (size_t index = 0U; index < NETWORK_UDP_QUEUE_DEPTH; ++index) {
+            if (network_udp_receive(NETWORK_TEST_OWNER, first, &source,
+                    &port, received, sizeof(received), &length,
+                    UINT64_C(1000000000)) != NETWORK_STATUS_OK ||
+                length != 6U || received[5] != (uint8_t)('0' + index)) {
+                kernel_test_fail("UDP queue lost or reordered a retained datagram");
+            }
+        }
+        if (network_udp_receive(NETWORK_TEST_OWNER, first, &source, &port,
+                received, sizeof(received), &length,
+                UINT64_C(1000000000)) != NETWORK_STATUS_NO_RESOURCES) {
+            kernel_test_fail("UDP queue overflow was silently accepted");
+        }
+    }
+    if (isolate) {
+        network_process_terminated(NETWORK_TEST_OWNER);
+        if (network_get_state().udp_sockets != 0U ||
+            network_get_state().timers != 0U ||
+            network_close(NETWORK_TEST_OWNER, first) !=
+                NETWORK_STATUS_STALE_HANDLE ||
+            network_close(NETWORK_TEST_OWNER, second) !=
+                NETWORK_STATUS_STALE_HANDLE) {
+            kernel_test_fail("process exit retained owned UDP endpoints");
+        }
+        console_serial_write("ST NETWORK process exit released sockets\n");
+    } else if (network_close(NETWORK_TEST_OWNER, first) !=
+            NETWORK_STATUS_OK) {
         kernel_test_fail("UDP endpoint teardown failed");
+    }
+    if (!isolate) {
+        if (network_udp_open(NETWORK_TEST_OWNER, &second) !=
+                NETWORK_STATUS_OK ||
+            network_udp_bind(NETWORK_TEST_OWNER, second, 50001U) !=
+                NETWORK_STATUS_OK ||
+            network_close(NETWORK_TEST_OWNER, first) !=
+                NETWORK_STATUS_STALE_HANDLE ||
+            network_close(NETWORK_TEST_OWNER, second) != NETWORK_STATUS_OK ||
+            network_get_state().udp_sockets != 0U) {
+            kernel_test_fail("closed UDP socket retained its port or slot");
+        }
+        console_serial_write("ST UDP queue exhaustion and close passed\n");
     }
 }
 
@@ -8119,14 +8210,60 @@ _Noreturn void kernel_test_complete_network(void)
             kernel_test_fail("link-down state was not retained");
         }
         break;
-    case KERNEL_TEST_NETWORK_DHCP:
+    case KERNEL_TEST_NETWORK_DHCP: {
         if (shell_execute("dhcp") != SHELL_STATUS_OK ||
             !network_get_state().configuration.configured) {
             (void)shell_execute("netstat");
             (void)shell_execute("network");
             kernel_test_fail("Terminal DHCP command did not configure IPv4");
         }
+        const struct network_ipv4_configuration initial =
+            network_get_state().configuration;
+        const uint64_t renewal_deadline = clock_monotonic_ns() +
+            UINT64_C(8000000000);
+        struct network_state renewed = network_get_state();
+
+        while (renewed.configuration.generation == initial.generation &&
+            clock_monotonic_ns() < renewal_deadline) {
+            if (network_service() != NETWORK_STATUS_OK) {
+                kernel_test_fail("DHCP renewal pump failed");
+            }
+            __asm__ volatile ("pause" : : : "memory");
+            renewed = network_get_state();
+        }
+        if (!renewed.configuration.configured ||
+            renewed.configuration.generation <= initial.generation ||
+            renewed.configuration.address != NETWORK_TEST_GUEST ||
+            renewed.configuration.dhcp_server != NETWORK_TEST_GATEWAY ||
+            renewed.configuration.lease_expires_ns <=
+                initial.lease_expires_ns) {
+            kernel_test_fail("DHCP renewal did not replace the lease");
+        }
+        console_serial_write("ST DHCP retry and renewal passed\n");
+        const uint64_t expiry_deadline =
+            renewed.configuration.lease_expires_ns + UINT64_C(1000000000);
+
+        while (network_get_state().configuration.configured &&
+            clock_monotonic_ns() < expiry_deadline) {
+            if (network_service() != NETWORK_STATUS_OK) {
+                kernel_test_fail("DHCP lease expiry pump failed");
+            }
+            __asm__ volatile ("pause" : : : "memory");
+        }
+        const struct network_state expired = network_get_state();
+
+        if (expired.configuration.configured ||
+            expired.configuration.address != 0U ||
+            expired.configuration.gateway != 0U ||
+            expired.configuration.dns_server != 0U ||
+            expired.configuration.dhcp_server != 0U ||
+            expired.arp_entries != 0U || expired.dns_entries != 0U ||
+            expired.timers != 0U) {
+            kernel_test_fail("DHCP expiry retained routes or timers");
+        }
+        console_serial_write("ST DHCP lease expiry cleared routes\n");
         break;
+    }
     case KERNEL_TEST_NETWORK_DHCP_TIMEOUT: {
         enum network_status status = network_start_dhcp(UINT64_C(1000000000));
 
@@ -8186,17 +8323,33 @@ _Noreturn void kernel_test_complete_network(void)
         break;
     }
     case KERNEL_TEST_NETWORK_DNS_MALFORMED: {
-        uint32_t address;
-        enum network_status status;
+        static const struct {
+            const char *name;
+            enum network_status expected;
+        } controls[] = {
+            {"openrfs.test", NETWORK_STATUS_DNS_FAILURE},
+            {"mismatch.test", NETWORK_STATUS_TIMEOUT},
+            {"poison.test", NETWORK_STATUS_DNS_FAILURE},
+            {"compression.test", NETWORK_STATUS_DNS_FAILURE},
+            {"unrelated.test", NETWORK_STATUS_DNS_FAILURE},
+            {"timeout.test", NETWORK_STATUS_TIMEOUT}
+        };
 
         network_require_dhcp();
-        status = network_resolve("openrfs.test", &address,
-            UINT64_C(1000000000));
-        if (status != NETWORK_STATUS_TIMEOUT &&
-            status != NETWORK_STATUS_DNS_FAILURE &&
-            status != NETWORK_STATUS_MALFORMED) {
-            kernel_test_fail("malformed DNS response was accepted");
+        for (size_t index = 0U;
+             index < sizeof(controls) / sizeof(controls[0]); ++index) {
+            uint32_t address = 0U;
+            const enum network_status status = network_resolve(
+                controls[index].name, &address, UINT64_C(1000000000));
+
+            if (status != controls[index].expected || address != 0U ||
+                network_get_state().dns_entries != 0U ||
+                network_get_state().timers != 0U) {
+                kernel_test_fail("DNS malformed or poisoned response was accepted");
+            }
         }
+        console_serial_write("ST DNS malformed mismatch poison compression "
+            "timeout refused\n");
         break;
     }
     case KERNEL_TEST_NETWORK_TCP:
@@ -8373,6 +8526,7 @@ _Noreturn void kernel_test_complete_network(void)
             if (openrfsfs_unmount(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK) {
                 kernel_test_fail("network download did not unmount cleanly");
             }
+            network_native_teardown_census();
             console_write("\nST NETWORK PERSISTENCE synchronized reboot phase\n");
             cpu_out8(UINT16_C(0x0064), UINT8_C(0xFE));
             kernel_test_fail("platform reset did not restart QEMU");
@@ -8396,6 +8550,36 @@ _Noreturn void kernel_test_complete_network(void)
     default:
         kernel_test_fail("unreachable network scenario");
     }
+    const struct network_state before_teardown = network_get_state();
+
+    if (before_teardown.udp_sockets != 0U ||
+        before_teardown.tcp_connections != 0U ||
+        before_teardown.tcp_listeners != 0U ||
+        before_teardown.timers != 0U) {
+        kernel_test_fail("network scenario retained sockets or timers");
+    }
+    if (before_teardown.active &&
+        network_shutdown() != NETWORK_STATUS_OK) {
+        kernel_test_fail("network scenario device teardown failed");
+    }
+    const struct network_state after_teardown = network_get_state();
+
+    if (after_teardown.active || after_teardown.device.active ||
+        after_teardown.device.link_up ||
+        after_teardown.configuration.configured ||
+        after_teardown.configuration.address != 0U ||
+        after_teardown.configuration.gateway != 0U ||
+        after_teardown.configuration.dns_server != 0U ||
+        after_teardown.arp_entries != 0U ||
+        after_teardown.dns_entries != 0U ||
+        after_teardown.udp_sockets != 0U ||
+        after_teardown.tcp_connections != 0U ||
+        after_teardown.timers != 0U ||
+        pci_resource_verify() != PCI_RESOURCE_STATUS_OK ||
+        dma_verify() != DMA_STATUS_OK) {
+        kernel_test_fail("network scenario teardown census was not clean");
+    }
+    console_serial_write("ST NETWORK resource and teardown census clean\n");
     console_write("\nST NETWORK production path bounded and recoverable\n");
     kernel_test_pass();
 }
