@@ -159,6 +159,8 @@ jobs:
                           --locked --offline --test coordinator "$regression" -- --exact --nocapture \
                           2>&1 | tee "evidence/ext4/${regression}.log"
                   done
+            # Run diagnostic cuts after a verification failure and retain their
+            # logs; the earlier failed step still fails the required job.
             - name: Exercise ext4 VFS recovery and durability boundaries
               if: ${{ !cancelled() }}
               shell: bash

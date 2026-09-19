@@ -61,7 +61,9 @@ pub(super) async fn free_freed_ranges(
             let mut remaining = len;
             while remaining != 0 {
                 let (group, offset) = ext4.block_block_group_location(block)?;
-                let count = remaining.min(ext4.blocks_in_group(group)? - offset);
+                let room = ext4.blocks_in_group(group)?.checked_sub(offset)
+                    .ok_or(CorruptKind::ExtentBlock(inode))?;
+                let count = remaining.min(room);
                 let count = NonZeroU32::new(count)
                     .ok_or(CorruptKind::ExtentBlock(inode))?;
                 ext4.free_blocks(block, count).await?;

@@ -4,6 +4,10 @@
   "integration_base": "05ff3fe48be0b60d0d47d41f4a9898e4a2386e56",
   "files": [
     {
+      "target": "docs/EXT4-PORT-MAP.json",
+      "action": "newly authored for main integration provenance"
+    },
+    {
       "source": ".github/workflows/filesystem-compatibility.yml",
       "target": ".github/workflows/filesystem-compatibility.yml",
       "three_way_conflicts_resolved": 0,
@@ -324,8 +328,8 @@
       "resolution": "port all filesystem probes; preserve main UI and native OpenRFS package scenarios"
     },
     {
-      "source": "src/kernel/ui.c",
-      "action": "excluded unrelated UI/application/history"
+      "target": "src/kernel/ui.c",
+      "action": "main UI preserved; local pending-event helper authored for shell wakeup"
     },
     {
       "source": "src/kernel/vfs.c",
@@ -418,6 +422,12 @@
       "target": "tools/ext4-storage-cut-host-test.c",
       "three_way_conflicts_resolved": 0,
       "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "source": "tools/ext4-transaction-tests/Cargo.toml",
+      "target": "tools/ext4-transaction-tests/Cargo.toml",
+      "three_way_conflicts_resolved": 0,
+      "resolution": "carried unchanged from the writable branch foundation"
     },
     {
       "source": "tools/ext4-transaction-tests/src/lib.rs",
@@ -526,6 +536,14 @@
       "target": "tools/ext4_unlink_powercut_test.py",
       "three_way_conflicts_resolved": 0,
       "resolution": "preserve current main identity and UI; port filesystem semantics"
+    },
+    {
+      "target": "tools/filesystem_evidence.py",
+      "action": "newly authored for exact-tree filesystem evidence"
+    },
+    {
+      "target": "tools/filesystem_evidence_test.py",
+      "action": "newly authored for exact-tree filesystem evidence"
     },
     {
       "source": "tools/keyboard-channel-host-test.c",
