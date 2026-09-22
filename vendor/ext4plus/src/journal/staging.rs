@@ -17,7 +17,7 @@ use crate::error::BoxedError;
 use crate::sync::RwLock;
 use crate::{Ext4Read, Ext4Write};
 use alloc::boxed::Box;
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::error::Error;
@@ -101,7 +101,9 @@ impl From<JournalTransactionError> for JournalMutationPlanError {
 struct JournalMutationState {
     sealed: bool,
     blocks: BTreeMap<u64, Vec<u8>>,
-    revoked_blocks: BTreeSet<u64>,
+    // Sorted unique blocks in one allocation. A tree node per few revokes
+    // exhausts the kernel's allocation records well before the byte budget.
+    revoked_blocks: Vec<u64>,
 }
 
 /// A bounded overlay that never writes through to its backing reader.
@@ -116,6 +118,7 @@ struct JournalMutationState {
 pub struct JournalMutationStage {
     reader: Box<dyn Ext4Read>,
     filesystem_bytes: u64,
+    block_limit: usize,
     state: RwLock<JournalMutationState>,
 }
 
@@ -126,18 +129,36 @@ impl JournalMutationStage {
         reader: Box<dyn Ext4Read>,
         filesystem_bytes: u64,
     ) -> Result<Self, JournalMutationStageError> {
-        if filesystem_bytes == 0 || filesystem_bytes % JOURNAL_BLOCK_BYTES as u64 != 0 {
+        Self::with_block_limit(reader, filesystem_bytes, JOURNAL_TRANSACTION_MAX_METADATA_BLOCKS)
+    }
+
+    /// Create a stage with a smaller memory budget, never exceeding the
+    /// transaction format's image bound. Reloads must preserve this budget.
+    pub fn with_block_limit(
+        reader: Box<dyn Ext4Read>,
+        filesystem_bytes: u64,
+        block_limit: usize,
+    ) -> Result<Self, JournalMutationStageError> {
+        if filesystem_bytes == 0 || filesystem_bytes % JOURNAL_BLOCK_BYTES as u64 != 0
+            || block_limit == 0 || block_limit > JOURNAL_TRANSACTION_MAX_METADATA_BLOCKS {
             return Err(JournalMutationStageError::Geometry);
         }
         Ok(Self {
             reader,
             filesystem_bytes,
+            block_limit,
             state: RwLock::new(JournalMutationState {
                 sealed: false,
                 blocks: BTreeMap::new(),
-                revoked_blocks: BTreeSet::new(),
+                revoked_blocks: Vec::new(),
             }),
         })
+    }
+
+    /// Maximum distinct block images retained by this stage.
+    #[must_use]
+    pub fn block_limit(&self) -> usize {
+        self.block_limit
     }
 
     fn range_end(&self, start_byte: u64, length: usize) -> Result<u64, JournalMutationStageError> {
@@ -189,6 +210,19 @@ impl JournalMutationStage {
             .collect()
     }
 
+    /// Fallibly snapshot every complete staged block image for kernel paths.
+    pub fn try_staged_images(&self) -> Result<Vec<JournalBlockImage>, JournalTransactionError> {
+        let state = self.state.read();
+        let mut images = Vec::new();
+        images
+            .try_reserve_exact(state.blocks.len())
+            .map_err(|_| JournalTransactionError::TooManyBlocks)?;
+        for (block_index, bytes) in state.blocks.iter() {
+            images.push(JournalBlockImage::try_from_staged(*block_index, bytes)?);
+        }
+        Ok(images)
+    }
+
     /// Classify one atomic stage snapshot into ordered data and metadata.
     ///
     /// Every named ordered-data block must occur exactly once in this stage.
@@ -216,12 +250,13 @@ impl JournalMutationStage {
                 return Err(JournalMutationPlanError::OrderedDataNotStaged);
             }
         }
-        let mut output = transaction.clone();
-        for block in state.revoked_blocks.iter() {
-            if !output.revokes_block(*block) {
-                output.stage_revocation(*block)?;
-            }
-        }
+        let mut output = transaction.try_clone()?;
+        let mut revoked = Vec::new();
+        revoked.try_reserve_exact(state.revoked_blocks.len())
+            .map_err(|_| JournalTransactionError::TooManyBlocks)?;
+        revoked.extend(state.revoked_blocks.iter().copied()
+            .filter(|block| !transaction.revokes_block(*block)));
+        output.stage_revocations(&revoked)?;
         for (block, bytes) in state.blocks.iter() {
             if output.revokes_block(*block) {
                 return Err(JournalMutationPlanError::StagedBlockRevoked);
@@ -294,7 +329,7 @@ impl Ext4Write for JournalMutationStage {
                 .map_err(|_| Box::new(JournalMutationStageError::Range) as BoxedError)?;
             let length = remaining.len().min(JOURNAL_BLOCK_BYTES - within);
             if !state.blocks.contains_key(&block_index) {
-                if state.blocks.len() >= JOURNAL_TRANSACTION_MAX_METADATA_BLOCKS {
+                if state.blocks.len() >= self.block_limit {
                     return Err(Box::new(JournalMutationStageError::TooManyBlocks));
                 }
                 let mut image = vec![0; JOURNAL_BLOCK_BYTES];
@@ -329,7 +364,7 @@ impl Ext4Write for JournalMutationStage {
             return Err(Box::new(JournalMutationStageError::Sealed));
         }
         let additions = (start_block..end)
-            .filter(|block| !state.revoked_blocks.contains(block))
+            .filter(|block| state.revoked_blocks.binary_search(block).is_err())
             .count();
         if state
             .revoked_blocks
@@ -339,10 +374,16 @@ impl Ext4Write for JournalMutationStage {
         {
             return Err(Box::new(JournalMutationStageError::TooManyRevocations));
         }
+        state.revoked_blocks.try_reserve_exact(additions)
+            .map_err(|_| Box::new(JournalMutationStageError::TooManyRevocations) as BoxedError)?;
+        let previous_count = state.revoked_blocks.len();
         for block in start_block..end {
             state.blocks.remove(&block);
-            state.revoked_blocks.insert(block);
+            if state.revoked_blocks[..previous_count].binary_search(&block).is_err() {
+                state.revoked_blocks.push(block);
+            }
         }
+        state.revoked_blocks.sort_unstable();
         Ok(())
     }
 }

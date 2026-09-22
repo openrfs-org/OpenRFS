@@ -501,6 +501,14 @@ static enum package_service_status count_tree_files(
     return PACKAGE_SERVICE_STATUS_OK;
 }
 
+static bool same_observed_inode_metadata(const struct openrfsfs_stat *expected,
+    const struct openrfsfs_stat *observed)
+{
+    return !observed->directory && observed->size == expected->size &&
+        observed->object_id == expected->object_id && observed->links == expected->links &&
+        observed->mode == expected->mode;
+}
+
 static enum package_service_status verify_file(
     struct service_context *context,
     const char *path,
@@ -532,6 +540,13 @@ static enum package_service_status verify_file(
         return filesystem_failure(context, fs_status);
     }
     handle_acquired(context);
+    fs_status = openrfsfs_fstat(handle, &after);
+    if (fs_status != OPENRFSFS_STATUS_OK || !same_observed_inode_metadata(&before, &after)) {
+        enum package_service_status refused = fs_status == OPENRFSFS_STATUS_OK ?
+            PACKAGE_SERVICE_STATUS_IMMUTABLE_FILE : filesystem_failure(context, fs_status);
+        enum package_service_status closed = close_file(context, handle);
+        return closed == PACKAGE_SERVICE_STATUS_OK ? refused : closed;
+    }
     enum package_state_status state_status =
         package_state_sha256_initialize(&sha);
     enum package_service_status status = PACKAGE_SERVICE_STATUS_OK;
@@ -565,6 +580,11 @@ static enum package_service_status verify_file(
             status = PACKAGE_SERVICE_STATUS_IMMUTABLE_FILE;
         }
     }
+    if (status == PACKAGE_SERVICE_STATUS_OK) {
+        fs_status = openrfsfs_fstat(handle, &after);
+        if (fs_status != OPENRFSFS_STATUS_OK) status = filesystem_failure(context, fs_status);
+        else if (!same_observed_inode_metadata(&before, &after)) status = PACKAGE_SERVICE_STATUS_IMMUTABLE_FILE;
+    }
     enum package_service_status close_status = close_file(context, handle);
     if (status == PACKAGE_SERVICE_STATUS_OK) {
         status = close_status;
@@ -581,9 +601,7 @@ static enum package_service_status verify_file(
     if (fs_status != OPENRFSFS_STATUS_OK) {
         return filesystem_failure(context, fs_status);
     }
-    if (after.directory || after.size != before.size ||
-        after.object_id != before.object_id || after.links != before.links ||
-        after.mode != before.mode) {
+    if (!same_observed_inode_metadata(&before, &after)) {
         return PACKAGE_SERVICE_STATUS_IMMUTABLE_FILE;
     }
     ++context->report->files_verified;
@@ -891,14 +909,9 @@ static enum package_service_status write_new_file(
     if (bytes == NULL && count != 0U) {
         return PACKAGE_SERVICE_STATUS_NULL_ARGUMENT;
     }
-    fs_status = openrfsfs_create(OPENRFSFS_VOLUME_DATA, path);
+    fs_status = openrfsfs_open_options(OPENRFSFS_VOLUME_DATA, path, OPENRFSFS_ACCESS_WRITE,
+        OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE, UINT16_C(0644), &handle);
     if (fs_status != OPENRFSFS_STATUS_OK) {
-        return filesystem_failure(context, fs_status);
-    }
-    fs_status = openrfsfs_open(OPENRFSFS_VOLUME_DATA, path, OPENRFSFS_ACCESS_WRITE,
-        &handle);
-    if (fs_status != OPENRFSFS_STATUS_OK) {
-        (void)openrfsfs_unlink(OPENRFSFS_VOLUME_DATA, path);
         return filesystem_failure(context, fs_status);
     }
     handle_acquired(context);
@@ -1198,16 +1211,9 @@ static enum package_service_status write_generation_file(
     } else {
         return PACKAGE_SERVICE_STATUS_STATE;
     }
-    fs_status = openrfsfs_create_mode(OPENRFSFS_VOLUME_DATA, destination,
-        (uint16_t)file->mode);
+    fs_status = openrfsfs_open_options(OPENRFSFS_VOLUME_DATA, destination, OPENRFSFS_ACCESS_WRITE,
+        OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE, (uint16_t)file->mode, &output);
     if (fs_status != OPENRFSFS_STATUS_OK) {
-        status = filesystem_failure(context, fs_status);
-        goto close_input;
-    }
-    fs_status = openrfsfs_open(OPENRFSFS_VOLUME_DATA, destination,
-        OPENRFSFS_ACCESS_WRITE, &output);
-    if (fs_status != OPENRFSFS_STATUS_OK) {
-        (void)openrfsfs_unlink(OPENRFSFS_VOLUME_DATA, destination);
         status = filesystem_failure(context, fs_status);
         goto close_input;
     }
@@ -1305,17 +1311,11 @@ static enum package_service_status write_authority_file(
     if (fs_status != OPENRFSFS_STATUS_OK && fs_status != OPENRFSFS_STATUS_NOT_FOUND) {
         return filesystem_failure(context, fs_status);
     }
-    fs_status = openrfsfs_create(OPENRFSFS_VOLUME_DATA,
-        PACKAGE_SERVICE_AUTHORITY_NEW_PATH);
-    if (fs_status != OPENRFSFS_STATUS_OK) {
-        return filesystem_failure(context, fs_status);
-    }
     openrfsfs_handle handle;
-    fs_status = openrfsfs_open(OPENRFSFS_VOLUME_DATA,
-        PACKAGE_SERVICE_AUTHORITY_NEW_PATH, OPENRFSFS_ACCESS_WRITE, &handle);
+    fs_status = openrfsfs_open_options(OPENRFSFS_VOLUME_DATA,
+        PACKAGE_SERVICE_AUTHORITY_NEW_PATH, OPENRFSFS_ACCESS_WRITE,
+        OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE, UINT16_C(0644), &handle);
     if (fs_status != OPENRFSFS_STATUS_OK) {
-        (void)openrfsfs_unlink(OPENRFSFS_VOLUME_DATA,
-            PACKAGE_SERVICE_AUTHORITY_NEW_PATH);
         return filesystem_failure(context, fs_status);
     }
     handle_acquired(context);
@@ -2453,7 +2453,7 @@ enum package_service_status package_service_recover(
     zero_bytes(report, sizeof(*report));
     report->filesystem_status = OPENRFSFS_STATUS_OK;
     report->state_status = PACKAGE_STATE_STATUS_OK;
-    if (servicing) {
+    if (__atomic_test_and_set(&servicing, __ATOMIC_ACQUIRE)) {
         report->status = PACKAGE_SERVICE_STATUS_BUSY;
         return report->status;
     }
@@ -2461,11 +2461,11 @@ enum package_service_status package_service_recover(
     if (!drive.present || !drive.mounted || !drive.healthy ||
         !heap_is_active()) {
         report->status = PACKAGE_SERVICE_STATUS_UNAVAILABLE;
+        __atomic_clear(&servicing, __ATOMIC_RELEASE);
         return report->status;
     }
     zero_bytes(&context, sizeof(context));
     context.report = report;
-    servicing = true;
     status = recover_internal(&context);
     enum package_service_status entries_release = release_bytes(&context,
         (void **)&context.entries);
@@ -2476,7 +2476,7 @@ enum package_service_status package_service_recover(
         report->live_allocations != 0U) {
         status = PACKAGE_SERVICE_STATUS_RESOURCE;
     }
-    servicing = false;
+    __atomic_clear(&servicing, __ATOMIC_RELEASE);
     report->status = status;
     return status;
 }
@@ -2503,7 +2503,7 @@ enum package_service_status package_service_snapshot(
     zero_bytes(report, sizeof(*report));
     report->filesystem_status = OPENRFSFS_STATUS_OK;
     report->state_status = PACKAGE_STATE_STATUS_OK;
-    if (servicing) {
+    if (__atomic_test_and_set(&servicing, __ATOMIC_ACQUIRE)) {
         report->status = PACKAGE_SERVICE_STATUS_BUSY;
         return report->status;
     }
@@ -2511,11 +2511,11 @@ enum package_service_status package_service_snapshot(
     if (!drive.present || !drive.mounted || !drive.healthy ||
         !heap_is_active()) {
         report->status = PACKAGE_SERVICE_STATUS_UNAVAILABLE;
+        __atomic_clear(&servicing, __ATOMIC_RELEASE);
         return report->status;
     }
     zero_bytes(&context, sizeof(context));
     context.report = report;
-    servicing = true;
     status = recover_internal(&context);
     if (status != PACKAGE_SERVICE_STATUS_OK) {
         goto release;
@@ -2578,7 +2578,7 @@ release:
     if (report->live_file_handles != 0U || report->live_allocations != 0U) {
         status = PACKAGE_SERVICE_STATUS_RESOURCE;
     }
-    servicing = false;
+    __atomic_clear(&servicing, __ATOMIC_RELEASE);
     report->status = status;
     return status;
 }
@@ -2605,7 +2605,7 @@ enum package_service_status package_service_repair_snapshot(
     zero_bytes(report, sizeof(*report));
     report->filesystem_status = OPENRFSFS_STATUS_OK;
     report->state_status = PACKAGE_STATE_STATUS_OK;
-    if (servicing) {
+    if (__atomic_test_and_set(&servicing, __ATOMIC_ACQUIRE)) {
         report->status = PACKAGE_SERVICE_STATUS_BUSY;
         return report->status;
     }
@@ -2613,11 +2613,11 @@ enum package_service_status package_service_repair_snapshot(
     if (!drive.present || !drive.mounted || !drive.healthy ||
         !heap_is_active()) {
         report->status = PACKAGE_SERVICE_STATUS_UNAVAILABLE;
+        __atomic_clear(&servicing, __ATOMIC_RELEASE);
         return report->status;
     }
     zero_bytes(&context, sizeof(context));
     context.report = report;
-    servicing = true;
     status = recover_internal(&context);
     if (status != PACKAGE_SERVICE_STATUS_OK &&
             (status != PACKAGE_SERVICE_STATUS_INCOMPLETE ||
@@ -2683,7 +2683,7 @@ release:
     if (report->live_file_handles != 0U || report->live_allocations != 0U) {
         status = PACKAGE_SERVICE_STATUS_RESOURCE;
     }
-    servicing = false;
+    __atomic_clear(&servicing, __ATOMIC_RELEASE);
     report->status = status;
     return status;
 }
@@ -2707,7 +2707,7 @@ enum package_service_status package_service_repository_floor_read(
     zero_bytes(report, sizeof(*report));
     report->filesystem_status = OPENRFSFS_STATUS_OK;
     report->state_status = PACKAGE_STATE_STATUS_OK;
-    if (servicing) {
+    if (__atomic_test_and_set(&servicing, __ATOMIC_ACQUIRE)) {
         report->status = PACKAGE_SERVICE_STATUS_BUSY;
         return report->status;
     }
@@ -2715,11 +2715,11 @@ enum package_service_status package_service_repository_floor_read(
     if (!drive.present || !drive.mounted || !drive.healthy ||
         !heap_is_active()) {
         report->status = PACKAGE_SERVICE_STATUS_UNAVAILABLE;
+        __atomic_clear(&servicing, __ATOMIC_RELEASE);
         return report->status;
     }
     zero_bytes(&context, sizeof(context));
     context.report = report;
-    servicing = true;
     status = repository_floor_read_internal(&context, repository_floor,
         &current_present, &current_version, &new_present, &new_version);
     if (report->live_file_handles != 0U || report->live_allocations != 0U) {
@@ -2728,7 +2728,7 @@ enum package_service_status package_service_repository_floor_read(
     if (status != PACKAGE_SERVICE_STATUS_OK) {
         *repository_floor = 0U;
     }
-    servicing = false;
+    __atomic_clear(&servicing, __ATOMIC_RELEASE);
     report->status = status;
     return status;
 }
@@ -2747,7 +2747,7 @@ enum package_service_status package_service_repository_floor_advance(
     zero_bytes(report, sizeof(*report));
     report->filesystem_status = OPENRFSFS_STATUS_OK;
     report->state_status = PACKAGE_STATE_STATUS_OK;
-    if (servicing) {
+    if (__atomic_test_and_set(&servicing, __ATOMIC_ACQUIRE)) {
         report->status = PACKAGE_SERVICE_STATUS_BUSY;
         return report->status;
     }
@@ -2755,16 +2755,16 @@ enum package_service_status package_service_repository_floor_advance(
     if (!drive.present || !drive.mounted || !drive.healthy || drive.read_only ||
         !heap_is_active()) {
         report->status = PACKAGE_SERVICE_STATUS_UNAVAILABLE;
+        __atomic_clear(&servicing, __ATOMIC_RELEASE);
         return report->status;
     }
     zero_bytes(&context, sizeof(context));
     context.report = report;
-    servicing = true;
     status = repository_floor_advance_internal(&context, repository_version);
     if (report->live_file_handles != 0U || report->live_allocations != 0U) {
         status = PACKAGE_SERVICE_STATUS_RESOURCE;
     }
-    servicing = false;
+    __atomic_clear(&servicing, __ATOMIC_RELEASE);
     report->status = status;
     return status;
 }
@@ -2783,7 +2783,7 @@ enum package_service_status package_service_prepare(
     zero_bytes(report, sizeof(*report));
     report->filesystem_status = OPENRFSFS_STATUS_OK;
     report->state_status = PACKAGE_STATE_STATUS_OK;
-    if (servicing) {
+    if (__atomic_test_and_set(&servicing, __ATOMIC_ACQUIRE)) {
         report->status = PACKAGE_SERVICE_STATUS_BUSY;
         return report->status;
     }
@@ -2791,11 +2791,11 @@ enum package_service_status package_service_prepare(
     if (!drive.present || !drive.mounted || !drive.healthy || drive.read_only ||
         !heap_is_active()) {
         report->status = PACKAGE_SERVICE_STATUS_UNAVAILABLE;
+        __atomic_clear(&servicing, __ATOMIC_RELEASE);
         return report->status;
     }
     zero_bytes(&context, sizeof(context));
     context.report = report;
-    servicing = true;
     status = prepare_internal(&context, request);
     enum package_service_status entries_release = release_bytes(&context,
         (void **)&context.entries);
@@ -2805,7 +2805,7 @@ enum package_service_status package_service_prepare(
     if (report->live_file_handles != 0U || report->live_allocations != 0U) {
         status = PACKAGE_SERVICE_STATUS_RESOURCE;
     }
-    servicing = false;
+    __atomic_clear(&servicing, __ATOMIC_RELEASE);
     report->status = status;
     return status;
 }
@@ -2824,7 +2824,7 @@ enum package_service_status package_service_bootstrap(
     zero_bytes(report, sizeof(*report));
     report->filesystem_status = OPENRFSFS_STATUS_OK;
     report->state_status = PACKAGE_STATE_STATUS_OK;
-    if (servicing) {
+    if (__atomic_test_and_set(&servicing, __ATOMIC_ACQUIRE)) {
         report->status = PACKAGE_SERVICE_STATUS_BUSY;
         return report->status;
     }
@@ -2832,11 +2832,11 @@ enum package_service_status package_service_bootstrap(
     if (!drive.present || !drive.mounted || !drive.healthy || drive.read_only ||
         !heap_is_active()) {
         report->status = PACKAGE_SERVICE_STATUS_UNAVAILABLE;
+        __atomic_clear(&servicing, __ATOMIC_RELEASE);
         return report->status;
     }
     zero_bytes(&context, sizeof(context));
     context.report = report;
-    servicing = true;
     status = bootstrap_internal(&context, request);
     enum package_service_status entries_release = release_bytes(&context,
         (void **)&context.entries);
@@ -2846,7 +2846,7 @@ enum package_service_status package_service_bootstrap(
     if (report->live_file_handles != 0U || report->live_allocations != 0U) {
         status = PACKAGE_SERVICE_STATUS_RESOURCE;
     }
-    servicing = false;
+    __atomic_clear(&servicing, __ATOMIC_RELEASE);
     report->status = status;
     return status;
 }
@@ -2864,7 +2864,7 @@ enum package_service_status package_service_commit(
     zero_bytes(report, sizeof(*report));
     report->filesystem_status = OPENRFSFS_STATUS_OK;
     report->state_status = PACKAGE_STATE_STATUS_OK;
-    if (servicing) {
+    if (__atomic_test_and_set(&servicing, __ATOMIC_ACQUIRE)) {
         report->status = PACKAGE_SERVICE_STATUS_BUSY;
         return report->status;
     }
@@ -2872,11 +2872,11 @@ enum package_service_status package_service_commit(
     if (!drive.present || !drive.mounted || !drive.healthy || drive.read_only ||
         !heap_is_active()) {
         report->status = PACKAGE_SERVICE_STATUS_UNAVAILABLE;
+        __atomic_clear(&servicing, __ATOMIC_RELEASE);
         return report->status;
     }
     zero_bytes(&context, sizeof(context));
     context.report = report;
-    servicing = true;
     status = commit_internal(&context);
     enum package_service_status entries_release = release_bytes(&context,
         (void **)&context.entries);
@@ -2886,7 +2886,7 @@ enum package_service_status package_service_commit(
     if (report->live_file_handles != 0U || report->live_allocations != 0U) {
         status = PACKAGE_SERVICE_STATUS_RESOURCE;
     }
-    servicing = false;
+    __atomic_clear(&servicing, __ATOMIC_RELEASE);
     report->status = status;
     return status;
 }

@@ -11,6 +11,7 @@
 #include <openrfs/cpu.h>
 #include <openrfs/framebuffer.h>
 #include <openrfs/fat32_fs.h>
+#include <openrfs/ext4_fs.h>
 #include <openrfs/heap.h>
 #include <openrfs/installer_ui.h>
 #include <openrfs/keyboard.h>
@@ -19,6 +20,8 @@
 #include <openrfs/memory.h>
 #include <openrfs/native_process.h>
 #include <openrfs/network.h>
+#include <openrfs/nvme.h>
+#include <openrfs/paging.h>
 #include <openrfs/pci.h>
 #include <openrfs/screen.h>
 #include <openrfs/shell.h>
@@ -198,8 +201,8 @@ static void command_help(void)
     console_write("  linux     run measured echo, uname, or bounded cat userspace\n");
     console_write("  native    launch one native application manifest\n");
     console_write("  native-start/native-go  stage and run several native apps\n");
-    console_write("  drives    mounted FAT32 system and data volumes\n");
-    console_write("  mount     retry a recoverable FAT32 mount\n");
+    console_write("  drives    mounted system and data volumes\n");
+    console_write("  mount     retry a recoverable filesystem mount\n");
     console_write("  ls/cd/pwd  browse the writable data volume\n");
     console_write("  mkdir/touch create files and directories\n");
     console_write("  read      print one file\n");
@@ -519,7 +522,12 @@ static bool line_content(
 static void print_drive(const char *name, struct openrfsfs_drive_info drive)
 {
     console_write(name);
-    console_write("  fat32  ");
+    if (drive.volume == OPENRFSFS_VOLUME_DATA &&
+            openrfsfs_has_atomic_replace(OPENRFSFS_VOLUME_DATA)) {
+        console_write("  ext4   ");
+    } else {
+        console_write("  fat32  ");
+    }
     if (!drive.present) {
         console_write("absent\n");
     } else if (!drive.healthy || !drive.mounted) {
@@ -645,6 +653,22 @@ static void command_mkdir(const char *arguments)
     }
 }
 
+static enum openrfsfs_status shell_create_file(const char *path)
+{
+    if (!openrfsfs_has_atomic_replace(OPENRFSFS_VOLUME_DATA)) {
+        return openrfsfs_create(OPENRFSFS_VOLUME_DATA, path);
+    }
+    openrfsfs_handle handle = 0U;
+    enum openrfsfs_status status = openrfsfs_open_options(OPENRFSFS_VOLUME_DATA, path,
+        OPENRFSFS_ACCESS_READ_WRITE, OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE,
+        0644U, &handle);
+    if (status == OPENRFSFS_STATUS_OK) status = openrfsfs_fsync(handle);
+    const enum openrfsfs_status close_status = openrfsfs_close(handle);
+    if (status == OPENRFSFS_STATUS_OK && close_status != OPENRFSFS_STATUS_OK)
+        status = close_status;
+    return status;
+}
+
 static void command_touch(const char *arguments)
 {
     char path[OPENRFSFS_MAX_PATH + 1U];
@@ -666,7 +690,7 @@ static void command_touch(const char *arguments)
         filesystem_error("touch", status);
         return;
     }
-    status = openrfsfs_create(OPENRFSFS_VOLUME_DATA, path);
+    status = shell_create_file(path);
     if (status != OPENRFSFS_STATUS_OK) {
         filesystem_error("touch", status);
     }
@@ -717,6 +741,7 @@ static void command_write_line(const char *arguments, bool append)
     size_t written = 0U;
     openrfsfs_handle handle;
     bool opened = false;
+    const bool inode_truncate = openrfsfs_has_atomic_replace(OPENRFSFS_VOLUME_DATA);
     enum openrfsfs_status status;
 
     if (!first_argument(arguments, argument_path, &text) ||
@@ -727,26 +752,36 @@ static void command_write_line(const char *arguments, bool append)
             "write: use write PATH \"text\"\n");
         return;
     }
-    struct openrfsfs_stat stat;
-    status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, path, &stat);
-    if (status == OPENRFSFS_STATUS_NOT_FOUND) {
-        status = openrfsfs_create(OPENRFSFS_VOLUME_DATA, path);
-    }
-    if (status == OPENRFSFS_STATUS_OK && !append) {
-        status = openrfsfs_truncate(OPENRFSFS_VOLUME_DATA, path, 0U);
-    }
-    if (status == OPENRFSFS_STATUS_OK) {
-        status = openrfsfs_open(OPENRFSFS_VOLUME_DATA, path,
-            OPENRFSFS_ACCESS_WRITE, &handle);
+    if (inode_truncate) {
+        status = openrfsfs_open_options(OPENRFSFS_VOLUME_DATA, path,
+            OPENRFSFS_ACCESS_WRITE, OPENRFSFS_OPEN_CREATE, UINT16_C(0644), &handle);
         opened = status == OPENRFSFS_STATUS_OK;
+    } else {
+        struct openrfsfs_stat stat;
+        status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, path, &stat);
+        if (status == OPENRFSFS_STATUS_NOT_FOUND) {
+            status = openrfsfs_create(OPENRFSFS_VOLUME_DATA, path);
+        }
+        // The compatibility backend refuses path truncation with open handles.
+        if (status == OPENRFSFS_STATUS_OK && !append) {
+            status = openrfsfs_truncate(OPENRFSFS_VOLUME_DATA, path, 0U);
+        }
+        if (status == OPENRFSFS_STATUS_OK) {
+            status = openrfsfs_open(OPENRFSFS_VOLUME_DATA, path, OPENRFSFS_ACCESS_WRITE, &handle);
+            opened = status == OPENRFSFS_STATUS_OK;
+        }
+    }
+    if (status == OPENRFSFS_STATUS_OK && !append && inode_truncate) {
+        status = openrfsfs_ftruncate(handle, 0U);
     }
     if (status == OPENRFSFS_STATUS_OK && append) {
-        uint64_t position;
-
-        status = openrfsfs_seek(handle, 0, OPENRFSFS_SEEK_END, &position);
+        status = openrfsfs_set_append(handle, true);
     }
     if (status == OPENRFSFS_STATUS_OK) {
         status = openrfsfs_write(handle, content, content_bytes, &written);
+    }
+    if (opened && status == OPENRFSFS_STATUS_OK) {
+        status = openrfsfs_fsync(handle);
     }
     if (opened && openrfsfs_close(handle) != OPENRFSFS_STATUS_OK &&
         status == OPENRFSFS_STATUS_OK) {
@@ -791,6 +826,9 @@ static void command_write_at(const char *arguments)
     }
     if (status == OPENRFSFS_STATUS_OK) {
         status = openrfsfs_write(handle, content, content_bytes, &written);
+    }
+    if (opened && status == OPENRFSFS_STATUS_OK) {
+        status = openrfsfs_fsync(handle);
     }
     if (opened && openrfsfs_close(handle) != OPENRFSFS_STATUS_OK &&
         status == OPENRFSFS_STATUS_OK) {
@@ -900,6 +938,7 @@ static void command_sync(void)
 
 static void command_reboot(void)
 {
+    const bool ext4_data = openrfsfs_has_atomic_replace(OPENRFSFS_VOLUME_DATA);
     enum openrfsfs_status status = openrfsfs_unmount(OPENRFSFS_VOLUME_DATA);
 
     if (status != OPENRFSFS_STATUS_OK && status != OPENRFSFS_STATUS_NOT_MOUNTED) {
@@ -911,6 +950,15 @@ static void command_reboot(void)
         filesystem_error("reboot", status);
         (void)openrfsfs_mount(OPENRFSFS_VOLUME_DATA);
         return;
+    }
+    if (ext4_data) {
+        if (!openrfsfs_resources_released() || !ext4_backend_resources_released() ||
+            !nvme_filesystem_session_resources_released() ||
+            heap_verify() != HEAP_STATUS_OK || paging_verify() != PAGING_STATUS_OK) {
+            console_write("reboot: ext4 release census failed\n");
+            return;
+        }
+        console_write("OpenRFS: reboot VFS ext4 handles mounts reservations snapshots zero NVMe released heap paging valid\n");
     }
     console_write("restarting after clean synchronization\n");
     cpu_interrupt_disable();
@@ -1029,7 +1077,13 @@ static void print_fetch_drive(struct openrfsfs_drive_info drive)
     if (!drive.present || !drive.healthy || !drive.mounted) {
         console_write("unavailable");
     } else {
-        console_write(drive.read_only ? "fat32 ro" : "fat32 rw");
+        const bool ext4 = drive.volume == OPENRFSFS_VOLUME_DATA &&
+            openrfsfs_has_atomic_replace(OPENRFSFS_VOLUME_DATA);
+        if (ext4) {
+            console_write(drive.read_only ? "ext4 ro" : "ext4 rw");
+        } else {
+            console_write(drive.read_only ? "fat32 ro" : "fat32 rw");
+        }
     }
 }
 
@@ -1983,6 +2037,19 @@ void shell_process_keyboard_events(void)
     }
 }
 
+static void shell_idle_if_no_input(bool ui_operational)
+{
+    // Filesystem work and rendering can receive input after the last drain.
+    // Pair the final queue check with STI/HLT; otherwise already-delivered
+    // interrupts leave that input asleep until an unrelated interrupt arrives.
+    cpu_interrupt_disable();
+    if (keyboard_events_pending() || (ui_operational && ui_events_pending())) {
+        cpu_interrupt_enable();
+        return;
+    }
+    cpu_enable_and_halt();
+}
+
 _Noreturn void shell_run(void)
 {
     bool ui_operational = ui_is_active();
@@ -2068,7 +2135,7 @@ _Noreturn void shell_run(void)
          * halting - which is exactly the race that would otherwise leave the
          * machine asleep with a keystroke already waiting.
          */
-        cpu_enable_and_halt();
+        shell_idle_if_no_input(ui_operational);
     }
 }
 

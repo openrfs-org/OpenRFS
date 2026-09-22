@@ -8,3 +8,10 @@ publish = false
 
 [dependencies]
 ext4plus = { path = "../../vendor/ext4plus", default-features = false, features = ["std", "sync"] }
+
+# Real crash matrices repeatedly validate complete images. Optimize that work
+# while retaining all test assertions and checked arithmetic.
+[profile.test]
+opt-level = 2
+debug-assertions = true
+overflow-checks = true

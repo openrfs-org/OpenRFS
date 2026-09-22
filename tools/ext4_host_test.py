@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import shutil
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -22,6 +23,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ext4_image as ext4  # noqa: E402
+import ext4_kernel_read as kernel_read  # noqa: E402
 
 
 def image_difference_summary(left: Path, right: Path) -> str:
@@ -105,6 +107,27 @@ class SuperblockTests(unittest.TestCase):
         struct.pack_into("<I", data, 1024 + 0x60, struct.unpack_from("<I", data, 1024 + 0x60)[0] | 0x10000)
         with self.assertRaisesRegex(ext4.Ext4ImageError, "unsupported incompatible"):
             ext4.parse_superblock(data)
+
+    def test_every_feature_bit_change_refuses_except_recovery(self) -> None:
+        # Recompute the checksum so refusal proves profile admission, rather
+        # than merely detecting a stale checksum after a feature-word edit.
+        for offset in (0x5C, 0x60, 0x64):
+            for bit in range(32):
+                with self.subTest(offset=offset, bit=bit):
+                    data = fake_profile_image()
+                    original = struct.unpack_from("<I", data, 1024 + offset)[0]
+                    struct.pack_into("<I", data, 1024 + offset, original ^ (1 << bit))
+                    struct.pack_into(
+                        "<I", data, 1024 + 0x3FC,
+                        ext4._crc32c_raw(data[1024:1024 + 0x3FC]),
+                    )
+                    before = bytes(data)
+                    if offset == 0x60 and bit == 2:
+                        self.assertTrue(ext4.parse_superblock(data)["needs_recovery"])
+                    else:
+                        with self.assertRaises(ext4.Ext4ImageError):
+                            ext4.parse_superblock(data)
+                    self.assertEqual(bytes(data), before)
 
     def test_refuses_missing_required_feature(self) -> None:
         data = fake_profile_image()
@@ -275,6 +298,132 @@ class E2fsprogsIntegrationTests(unittest.TestCase):
                     with self.assertRaises(ext4.Ext4ImageError):
                         ext4.inspect_image(malformed)
                     malformed.unlink()
+
+
+class KernelReadTests(unittest.TestCase):
+    def test_kernel_metadata_requires_exact_mode_and_nanoseconds(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            file = root / "metadata-target"
+            file.write_bytes(b"retained")
+            metadata = SimpleNamespace(st_size=8, st_mode=0o100640,
+                st_atime_ns=2200000000123456789, st_mtime_ns=2300000000987654321)
+            expected = {"bytes": 8, "sha256": kernel_read.digest(file), "mode": 0o640,
+                "atime_ns": metadata.st_atime_ns, "mtime_ns": metadata.st_mtime_ns}
+            with mock.patch.object(Path, "stat", return_value=metadata):
+                self.assertEqual(kernel_read.mounted_read(root, {file.name: expected}), {file.name: expected})
+                for field in ("mode", "atime_ns", "mtime_ns"):
+                    with self.subTest(field=field), self.assertRaises(RuntimeError):
+                        kernel_read.mounted_read(root, {file.name: {**expected, field: expected[field] + 1}})
+
+    def test_symlink_manifest_checks_literal_target_and_followed_contents(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            file = root / "alias"
+            file.write_bytes(b"linked bytes")
+            expected = {file.name: {"bytes": 12, "sha256": kernel_read.digest(file), "symlink": "source"}}
+            # Keep these verifier controls portable without Windows symlink privileges.
+            # The QEMU fixture supplies actual inline/external symlinks on Linux.
+            with mock.patch.object(Path, "is_symlink", return_value=True), \
+                    mock.patch.object(kernel_read.os, "readlink", return_value="source"):
+                self.assertEqual(kernel_read.mounted_read(root, expected), expected)
+            with mock.patch.object(Path, "is_symlink", return_value=True), \
+                    mock.patch.object(kernel_read.os, "readlink", return_value="other"):
+                with self.assertRaises(RuntimeError):
+                    kernel_read.mounted_read(root, expected)
+            with self.assertRaises(RuntimeError):
+                kernel_read.mounted_read(root, expected)
+
+    def test_kernel_xattrs_require_exact_value_and_presence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            file = root / "attribute-target"
+            file.write_bytes(b"retained")
+            value = bytes(index % 251 for index in range(300))
+            expected = {file.name: {"bytes": 8, "sha256": kernel_read.digest(file),
+                "xattrs": {"user.cut": value.hex()}}}
+            with mock.patch.object(kernel_read.os, "getxattr", return_value=value, create=True) as read:
+                self.assertEqual(kernel_read.mounted_read(root, expected), expected)
+                read.assert_called_once_with(file, "user.cut")
+            with mock.patch.object(kernel_read.os, "getxattr", return_value=value[:-1], create=True):
+                with self.assertRaises(RuntimeError):
+                    kernel_read.mounted_read(root, expected)
+            with mock.patch.object(kernel_read.os, "getxattr", side_effect=OSError("missing attribute"), create=True):
+                with self.assertRaises(OSError):
+                    kernel_read.mounted_read(root, expected)
+            expected[file.name]["xattrs"]["user.cut"] = None
+            with mock.patch.object(kernel_read.os, "getxattr",
+                    side_effect=OSError(kernel_read.errno.ENODATA, "removed"), create=True):
+                self.assertEqual(kernel_read.mounted_read(root, expected), expected)
+            with mock.patch.object(kernel_read.os, "getxattr", return_value=b"", create=True):
+                with self.assertRaises(RuntimeError):
+                    kernel_read.mounted_read(root, expected)
+            with mock.patch.object(kernel_read.os, "getxattr",
+                    side_effect=OSError(kernel_read.errno.EIO, "read failed"), create=True):
+                with self.assertRaises(OSError):
+                    kernel_read.mounted_read(root, expected)
+
+    def test_manifest_checks_exact_contents_and_confines_paths(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            file = root / "result with spaces"
+            file.write_bytes(b"guest data")
+            expected = {file.name: {"bytes": 10, "sha256": kernel_read.digest(file)}}
+            self.assertEqual(kernel_read.mounted_read(root, expected), expected)
+            self.assertEqual(kernel_read.mounted_read(root, {"removed": None}), {"removed": None})
+            (root / "directory").mkdir()
+            self.assertEqual(kernel_read.mounted_read(root, {"directory": {"entries": []}}),
+                {"directory": {"entries": []}})
+            (root / "directory" / "retained").write_bytes(b"x")
+            self.assertEqual(kernel_read.mounted_read(root, {"directory": {"entries": ["retained"]}}),
+                {"directory": {"entries": ["retained"]}})
+            for name, metadata in (("../escape", expected[file.name]),
+                    ("../escape", None), (file.name, None), ("directory", None),
+                    ("directory", {"entries": []}), (file.name, {"entries": []}),
+                    (file.name, {"bytes": 10, "sha256": "0" * 64}),
+                    (file.name, {"bytes": 11, "sha256": expected[file.name]["sha256"]})):
+                with self.assertRaises(RuntimeError):
+                    kernel_read.mounted_read(root, {name: metadata})
+
+    def test_failed_read_or_evidence_write_still_unmounts(self):
+        for failure in ("read", "evidence"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                image = root / "guest.raw"
+                image.write_bytes(fake_profile_image())
+                commands = []
+                write_text = Path.write_text
+                def run(command, **kwargs):
+                    commands.append(command[2])
+                    status = 1 if command[2] == "python3" else 0
+                    return subprocess.CompletedProcess(command, status, "{}", "read failed" if status else "")
+                def record(path, text, *args, **kwargs):
+                    if failure == "evidence" and path.name == "commands.json" and commands == ["mount"]:
+                        raise OSError("evidence write failed")
+                    return write_text(path, text, *args, **kwargs)
+                with mock.patch.dict(os.environ, {"OPENRFS_EXT4_KERNEL_INTEROP": "1"}), \
+                        mock.patch.object(kernel_read.platform, "system", return_value="Linux"), \
+                        mock.patch.object(kernel_read.subprocess, "run", side_effect=run), \
+                        mock.patch.object(Path, "write_text", record):
+                    with self.assertRaises((RuntimeError, OSError)):
+                        kernel_read.verify_files(image, root / "evidence", {})
+                self.assertEqual(commands, ["mount", "python3", "umount"] if failure == "read" else ["mount", "umount"])
+                self.assertFalse((root / "evidence" / "report.json").exists())
+
+    def test_dirty_image_refuses_before_mount(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            image = root / "dirty.raw"
+            data = fake_profile_image()
+            data[1024 + 0x60] |= 4
+            image.write_bytes(data)
+            with mock.patch.dict(os.environ, {"OPENRFS_EXT4_KERNEL_INTEROP": "1"}), \
+                    mock.patch.object(kernel_read.platform, "system", return_value="Linux"), \
+                    mock.patch.object(kernel_read.subprocess, "run") as command:
+                with self.assertRaisesRegex(RuntimeError, "cleanly unmounted"):
+                    kernel_read.verify_files(image, root / "evidence", {})
+                command.assert_not_called()
 
 
 if __name__ == "__main__":

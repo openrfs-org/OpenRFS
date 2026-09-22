@@ -145,6 +145,8 @@ jobs:
                       "$uname_proof" >>evidence/linux-abi/stable-uname-transcript.txt
                   grep -Fx 'ST PASS linux-abi-uname' "$uname_proof" \
                       >>evidence/linux-abi/stable-uname-transcript.txt
+                  # Recreate the ordinary boot-ledger receipt immediately before capture.
+                  make qemu-test-boot-ledger QEMU_ACCEL=tcg
                   cp build/tests/boot-ledger/serial.log \
                       evidence/linux-abi/ordinary-ledger.log
                   rm evidence/linux-abi/linux-abi-sweep-*.log

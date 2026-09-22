@@ -2,6 +2,12 @@
 
 # ext4 storage boundary
 
+The baseline capability matrix, public call graph, additional measured limits,
+and unresolved failure cases are recorded in the
+[Milestone 2 writable audit](EXT4-WRITABLE-AUDIT.md). It defines the finite 5/5 filesystem gate. Status remains 4.3/5 until
+final-tree evidence and normal protected integration are complete. Commit-specific
+receipts below are historical implementation evidence, not current-tree passes.
+
 OpenRFS has one ext4 implementation: the audited, pinned `ext4plus` source under
 `vendor/ext4plus`. It is built `no_std`, synchronously, and with default
 features disabled. Cargo is locked and forced offline through `.cargo/config.toml`;
@@ -13,11 +19,64 @@ The ext4 backend owns one opaque Rust `Ext4` object per admitted volume and
 generation-authenticated C file/directory cookies. It implements root and nested
 lookup, open, read, offset-preserving pread, 64-bit seek/stat, and directory
 enumeration, journaled regular-file writes and truncation, file and directory
-creation/removal, hard links, and same-parent no-overwrite rename. Hard-linked
+creation/removal, hard links, regular-file no-overwrite rename across parents,
+and directory rename across parents. Directory moves journal the
+`..` entry and both parent link counts with the namespace changes; ancestry is
+checked by inode identity, including symlink aliases, with a 1,024-ancestor
+refusal bound. Indexed directory moves preserve their htree checksum and
+passed Linux fixture verification at `7b47c59`.
+File handles perform reads, writes, append and sync refresh by inode identity.
+The Rust bridge coalesces block reads up to the requested length or EOF under
+the existing volume lease. A later block I/O error remains an error with no
+successful byte count or cursor advance; the destination buffer is unspecified.
+No-replace file/directory rename can therefore preserve open handles, including
+descendants of moved directories; directory iterators own their snapshots. Hard-linked
 paths report the same inode identity to the vnode table. Symlinks are resolved
-by ext4plus for lookup and open.
+by ext4plus for lookup and open. VFS `openrfsfs_symlink` journals literal targets
+shorter than 128 bytes; `openrfsfs_readlink` copies the literal target without a
+trailing NUL and supports short output buffers. The Rust coordinator accepts
+targets up to 4,095 bytes. Dangling and looping links remain valid on remount;
+unlink/rename and hard-link creation inspect the final link itself. Unlinking
+a non-final hard link preserves open inode handles. Removing an open regular
+inode's final link journals it onto the legacy orphan chain; inode-based I/O
+continues until its final handle is released. Native
+FILE_TRUNCATE and SDK ftruncate also use the
+handle's inode identity, preserve the cursor, and refresh all matching handles'
+sizes after a successful checkpoint.
+Native `PATH_SYMLINK`/`PATH_READLINK` and SDK `symlink()`/`readlink()` expose
+these operations to applications. Native unlink examines the entry itself
+before trying empty-directory removal, so dangling links can be removed.
+The remove-any API resumes the retained file or directory transaction directly;
+SDK unlink and rmdir select file-only and directory-only semantics. VFS mutations
+defer component validation to the journal coordinator, allowing retries while
+the staged view is hidden. Native PATH_LINK and SDK link expose hard links.
+`openrfsfs_rename` retains no-replace behavior; `openrfsfs_rename_replace` publishes
+replacement in one transaction, preserving same-inode no-ops and refusing
+nonempty directory destinations or incompatible file/directory types. The
+destination's freed blocks are revoked with the namespace change. An open regular
+destination is retained on the orphan chain, while source handles keep their
+inode identity. Empty directory destinations and rmdir targets with open
+snapshots now use the same retention path. Their inode numbers stay reserved
+until the last snapshot closes; captured entries remain readable. Directory
+retention and Linux-kernel recovery fixtures passed `make verify` at `f9ae36e`. The existing image/revoke limits still
+apply. Open-file replacement and Linux-kernel recovery/roundtrip fixtures
+passed Linux verification at f61d344.
+The existing native `PATH_REPLACE` syscall selects this
+operation when ext4 is admitted, and SDK `rename()` uses that syscall. Errors
+from the ext4 transaction return directly; they never trigger the multi-step
+backup-name replacement used by backends without atomic replacement.
 
-C never leaves an NVMe filesystem session open. Ordinary reads acquire a
+VFS `openrfsfs_unlink_held_file` removes a name only if it still names the caller's
+writable regular-file handle. The coordinator compares the final entry without
+following a symlink before arming recovery and binds the inode into a distinct
+retry key. Final-link removal uses the existing open-orphan chain; ordinary
+unlink cannot take over its retained plan. This supports owned scratch cleanup
+after draining failed application writes. New identity, storage-failure, replay,
+allocation and fsck fixtures require Linux verification before gate credit.
+
+C normally closes each NVMe filesystem session before returning. Failed
+teardown retains the ownership cookie and freezes ordinary I/O; explicit sync
+or unmount can retry teardown before resuming the journal coordinator. Ordinary reads acquire a
 read-only session and each synchronous mutation acquires a writable session.
 Mount also acquires a writable session so validated JBD2 recovery can checkpoint
 before the volume becomes visible. Rust points to the
@@ -34,13 +93,39 @@ descriptors, a zero first-data-block field, `has_journal`,
 `metadata_csum` plus its seed, sparse/large/huge files, `dir_nlink`, and
 `extra_isize`, with no additional feature bits other than the transient ext4
 incompat-recovery marker. The declared block count must
-fit the NVMe namespace and all free/total geometry is checked. Ext4plus then
+fit the NVMe namespace and all free/total geometry is checked. Legacy orphan
+cleanup is bounded to 128 allocated, zero-link regular inodes or empty
+directories. Retained directories must have valid dot records, checksummed
+blocks, a block-aligned size, and at most 8192 blocks. Zero-size Linux directory
+orphans are admitted only with an inline extent root and a contiguous,
+initialized logical prefix whose remaining blocks validate as empty. A fully
+data-free root must have zero allocation accounting and no external xattr.
+These states passed recovery/failure fixtures at `7b39693`; multi-level
+zero-size trees and linked Linux truncation orphans remain refused. Cycles,
+invalid allocation/checksum state, and reachable
+zero-link inodes are refused before recovery home writes. Recovery validates
+the post-replay view, checkpoints the journal while retaining the marker,
+then journals each orphan deletion before clearing recovery state.
+Ext4plus then
 validates the superblock, group descriptors, and existing journal. OpenRFS walks
 the reachable namespace (at most 8,192 entries and 512 queued directories),
 validating directory blocks,
 inode metadata and timestamps, extended-attribute names and values, symlink
-targets, and the first and last mapped byte of non-empty files. Remaining file
-extent/data checks are lazy and occur on pread.
+targets, and the first and last mapped byte of non-empty files. The complete
+mapping/allocation census also checks exclusive data and extent-node ownership,
+shared xattr reference counts, fixed metadata, reserved inodes and bitmap totals.
+Reads validate the requested file data through ext4plus.
+
+Names, inode references, cycle tracking and pending directory paths are packed
+into fallibly grown buffers. Linear directories validate the inode named by each
+checked entry directly; indexed directories additionally verify that htree lookup
+resolves every leaf entry to that same inode. Failed admission exposes no view.
+After a transaction's home checkpoint and clean journal-tail flush are durable,
+the coordinator releases the old view and sealed stage before reloading. Failed
+reload still hides the filesystem, and its exact retry does not repeat storage
+writes. The bounded ordinary VFS recovery journey, clean remount, resource census
+and read-only e2fsck passed at `31af4c3`; this evidence is included in the
+current project-tracked **4.3/5** status, with the remaining 0.7 still open.
 
 The drive report derives `free_bytes` from ext4plus's checked, in-memory
 superblock allocator counters, multiplies it by the admitted 4 KiB block size,
@@ -51,9 +136,9 @@ space rather than unused bytes at the end of the NVMe namespace.
 OpenRFS's VFS currently admits ASCII mount-relative paths shorter than 128 bytes
 and at most 16 components. Directory names may be 255 bytes on disk; entries
 that cannot fit the current VFS path contract can be enumerated but cannot be
-opened through ABI v1. Indexed directory reads are intentionally bounded and
-stateless at the Rust boundary, so advancing an iterator rescans to its checked
-index; this is correct but quadratic for large directories.
+opened through ABI v1. VFS directory handles own bounded snapshots of up to
+8192 entries, retaining captured inode identities and order across mutations.
+The legacy ordinal probe remains separate from snapshot iteration.
 
 ## Ownership and lock order
 
@@ -62,10 +147,68 @@ order is VFS object/generation state, ext4 backend handle state, ext4plus's
 internal synchronous read lock, native byte callback, active NVMe volume
 session. Code must not call back into VFS while it owns an ext4plus object or an
 NVMe session. Heap allocation may occur inside ext4plus, but no allocation
-survives a rejected mount and no NVMe lease survives an operation. This lock
-order applies to the current single-core execution model.
+survives a successfully cleaned-up rejected mount. Failed NVMe teardown retains
+its session until cleanup succeeds. File cursor changes and shared EOF updates
+occur under the operation guard. Close makes a handle stale immediately and
+defers backing-state/snapshot destruction when an active operation still uses
+it. Snapshot reads and seek also reserve this guard without opening storage
+unless SEEK_END needs a checked inode refresh. Production backend host tests
+exercise these reentrant close and deferred-release paths.
+An additional host contention test keeps sixteen backend handles open on one
+inode while writers compete for that volume guard. It checks 8,000 distinct
+append records, BUSY refusals with zero bytes, per-handle cursors, final shared
+EOF and balanced storage leases. Its coordinator/storage are controlled host
+substitutes; it establishes exclusion with stable handles, not disk durability
+or concurrent registry publication and close.
+
+VFS file/directory slots and ext4 handle slots retain atomic ownership claims
+from reservation through retirement. VFS vnode hash buckets, references,
+reservations and metadata snapshots use a short lock with local interrupts
+disabled. It covers bounded memory operations only and is released before any
+backend or storage call; the caller's interrupt state is restored. Mount
+reference increments refuse overflow. Host contention tests cover shared inode
+deduplication, coherent snapshots, reservation and final reclamation.
+Mount transitions reserve their state under the same metadata lock before
+backend calls. File/directory opens, path lookups and mutations, and filesystem
+sync pin their mount until completion, including error returns, preventing
+teardown between validation and backend access or vnode binding.
+Published VFS file descriptions, append flags and retirement use the same
+short metadata lock. File operations copy the backend token and vnode identity
+and pin the mount through the callback; they never retain a mutable slot pointer
+over backend execution. Reentrant close/reopen cannot redirect a fallback append
+to the replacement slot. Close retires the old vnode before backend cleanup,
+while retaining a separate mount pin until cleanup returns. Host tests cover
+that reuse, invalid/empty writes, pin overflow and exact reference cleanup.
+Directory publication and retirement use that lock too. Snapshot iteration
+copies one entry and advances its cursor while locked; sixteen competing host
+readers check each entry appears exactly once. Streaming reads copy their
+backend token and pin the mount before unlocking. Reentrant directory close
+and reuse preserve generations and release all pins, including overflow errors.
+The backend registry now protects publication, initial handle snapshots,
+cross-volume inode scans, cursor/EOF publication and retirement with a separate
+short metadata lock. Close marks a generation stale under that lock; the volume
+guard still owns deferred destruction, with snapshot freeing outside the lock.
+Host tests cover sixteen competing closes (one owner), deferred reclamation,
+8,000 cross-volume allocation generations and coherent inode censuses.
+These protections do not establish complete SMP filesystem support: backend
+mount state, coordinator and device execution still need end-to-end concurrency
+proof. The admitted execution model remains one core, with backend operations
+serialized by the volume guard.
 
 ## Read-write admission
+
+The platform backend admits only 4096-byte NVMe logical blocks, checked on
+every storage lease before mount or mutation. The executor issues one command
+per logical block; smaller sectors would split a journal or metadata image
+across commands. With 512-byte sectors, the recovery flag at superblock offset
+0x60 and checksum at 0x3fc fall in separate commands. A completed prefix can
+therefore leave the flag changed with the old checksum before any journal
+transaction exists. See the [Linux ext4 superblock layout](https://cdn.kernel.org/doc/html/latest/filesystems/ext4/super.html)
+and [NVMe NVM Command Set 1.0, section 2.1.4.2](https://nvmexpress.org/wp-content/uploads/NVM-Express-NVM-Command-Set-Specification-2021.06.02-Ratified.pdf).
+The host backend tests reject other logical sizes, including an equal-capacity
+geometry change, and verify session cleanup without admitting a Rust mount.
+This restriction matches the executed QEMU profile; completed-command power
+cuts do not prove torn-sector or volatile-cache-loss behavior on real hardware.
 
 Upstream reads an existing JBD2 journal but does not journal new mutations, so
 OpenRFS gives ext4plus only a bounded `JournalMutationStage` as its reader and
@@ -94,13 +237,17 @@ from the pinned upstream commit.
 The vendored crate contains a lower-level `no_std` transaction primitive.
 `JournalTransaction`
 accepts only complete 4 KiB block images, rejects duplicate or out-of-range
-home blocks, bounds ordered-data, metadata, and revocation sets to 64 blocks
-each, and
+home blocks, bounds ordered-data and metadata images to 64 blocks each and
+revocations to 8192 block numbers, and
 refuses metadata that would require the unsupported JBD2 magic-escape rule. A
 transaction serializes one checksum-v3/64-bit descriptor, its checksummed
-metadata images, an optional checksummed 64-bit revoke record, and one
+metadata images, up to 17 checksummed 64-bit revoke records (509 entries per
+full record), and one
 checksummed commit block. The serializer feeds the same descriptor-tag,
 revocation, and commit validators used by the existing replay reader.
+Independent e2fsprogs journal-only replay on disposable cut images additionally
+checks interoperability before read-only full fsck. Large truncate/unlink can
+now exceed the former 64-revoke limit while retaining the 64-image stage bound.
 
 `JournalRing` admits a distinct, bounded physical data-slot map for a clean
 journal and assigns those records without collision across wrap. It refuses
@@ -186,6 +333,48 @@ checked with debugfs plus read-only `e2fsck`. Per-cut serial transcripts, disk
 reports, and hashes are retained as a Linux workflow artifact. The same mounted
 backend is writable through ordinary VFS calls after the boundary sweep.
 
+`qemu-test-ext4-rename-device-powercuts` and its `rename-cross-device`
+counterpart additionally cut after each completed NVMe block-write command and
+flush. The private `openrfs.ext4-storage-cut` test option traces command ordinals
+and LBAs (or flush boundary identifiers); zero records the baseline, and a
+positive ordinal exits immediately at that command. It cannot be combined with
+the flush-only cut or storage-refusal injector. Failed commands do not count as
+completed. The runner checks old-or-new rename state, requires new state after
+a durable commit, then cuts every command in the first committed transaction's
+mount recovery. Each result must pass the ordinary VFS contents, inode and
+allocation checks, resource census, clean unmount, Linux readback and read-only
+fsck. These tests do not model torn sectors inside one device command or loss
+of an emulated volatile write cache; they do not establish all Stage 5 gates.
+
+`qemu-test-ext4-overwrite-device-powercuts` uses a separate command-cut fixture
+for an unaligned in-place overwrite spanning two existing blocks. The host
+requires the complete command prefix to match the baseline and checks both
+allocated blocks, including unchanged bytes and EOF slack, against exactly
+those completed data writes. Before retrying, the rebooted ordinary VFS reader
+must report the same changed-block mask. Both blocks must be new after the
+ordered-data flush and after commit. The original flush-boundary fixture still
+refuses mixed blocks. This models partial in-place overwrite visibility, not
+whole-write atomicity; successful retry, recovery cuts, Linux readback, clean
+fsck and resource checks remain required.
+
+`qemu-test-ext4-journal-wrap` issues 513 mode changes through ordinary VFS
+calls while retaining a reader. Its host inspector maps every journal logical
+block with debugfs and verifies that the recorded physical writes consume and
+reuse all 1,023 data slots in order. The final sequence must advance by exactly
+513, with unchanged inode/block accounting and contents. A second cold boot
+must retain the final mode without writing another journal record. Both boots
+require Linux readback, clean read-only fsck and the guest resource census.
+This is wrap during normal operation, not a crash-at-wrap guarantee.
+
+`qemu-test-ext4-rename-wrap-device-powercuts` prepares the same mounted ring
+with 340 ordinary VFS mode changes, then cuts the following rename after each
+completed device command. The preparation is explicitly outside the cut window;
+all real writes and barriers still execute. The host independently requires
+the rename's record map to start at logical slot 1021 and cross slot 1023 back
+to slot 1. The runner then applies the ordinary rename old-or-new checks and
+repeated mount-recovery cuts to that wrapped transaction. It records the
+preparation scope and exact wrapped slots in its report.
+
 The caller must supply a distinct physical journal block for the descriptor,
 each metadata image, and the commit. The resulting operation list has one legal
 order:
@@ -250,6 +439,12 @@ image. They also corrupt descriptor, data, and commit bytes independently.
 `tools/ext4-transaction-tests` with
 `--no-default-features --features sync`, followed by the hostile-image suite.
 
+The C backend host test also exercises repeated public truncate refusals while
+Rust hides its pending view. Truncate retries reach the coordinator before
+stat, then refresh all matching open-handle sizes from checkpointed metadata.
+The test checks read/write lease balance, shared-handle sizes, stale cookies,
+and preservation of FULL and READ_ONLY errors across the C boundary.
+
 The ring planner validates the journal map and produces recovery-marker, live,
 checkpoint, recovery-cleanup, and tail-state operations. A shared executor maps
 every operation to checked absolute byte writes and preserves every flush. The
@@ -270,15 +465,31 @@ pending phase and request bytes for an identical retry; a different request is
 refused. The QEMU recovery scenario injects a refusal at the live-journal
 superblock write after an allocation-bearing upstream mutation, then at the
 ordered-data flush while retrying that same pending request. Only the third,
-byte-identical attempt is allowed to complete. Writable namespace methods use
-the same retained planner through the public VFS table.
+byte-identical attempt is allowed to complete. Requests up to the existing
+256 KiB limit now split into transactions touching at most 32 file-data blocks
+each. When fragmented metadata exceeds the shared stage budget, an explicit
+capacity refusal discards the entire attempt and halves the touched-block
+count. The reduced chunk size survives storage retries. Real fixtures tested
+12-image pressure, byte-identical suffix retries, and one-image rollback at
+`7b39693`. The coordinator retains the full
+request and its checkpointed byte count across a storage refusal; the identical
+request or sync resumes only the unfinished chunk and remaining suffix. A
+precommit refusal such as ENOSPC after completed chunks returns their durable
+byte count as a short write and retires the refused suffix. The caller owns
+that suffix; sync must not apply it later. A retained I/O retry that reaches a
+short count makes fsync/sync return FULL rather than a false success. A failed
+rollback reload leaves an absent view, not an executable rejected mutation. A power cut can preserve a prefix of a split write;
+this is not whole-request atomicity. The C mutation limit is now 64 MiB; both
+direct C probes and the Rust coordinator reject an overflowing result before
+starting a lease or transaction. Writable namespace methods use the same
+retained planner through the public VFS table.
 A bounded `JournalMutationStage`
 now gives synchronous ext4plus mutations an immutable backing reader and a
 copy-on-write overlay: the first partial write reads a complete 4 KiB home
 block, later writes coalesce into it, reads see the overlay, and at most 64
 complete images can be exported without any home write. ext4plus reports every
 freed block range through its writer boundary before changing allocation
-metadata; the stage bounds and deduplicates 64 revocations and removes any
+metadata; the stage bounds and deduplicates 8,192 revocations and removes any
 same-transaction image of a block that was subsequently freed. Rollback clears
 both images and revocations and requires discarding the mutated ext4plus object
 as well. An atomic snapshot builder requires every caller-named ordered file-
@@ -311,6 +522,15 @@ JBD2 revoke record, returns the free-space counter to its original value, and
 requires a second clean `e2fsck` result. This is a
 host integration proof over the same operation executor used by VFS and QEMU.
 
+The focused `ext4-sparse-truncate-test` target adds the narrower contract matrix:
+hole-backed growth reads as zero, an unaligned overwrite can cross a sparse
+boundary, a partial-block shrink zeroes only its discarded tail, and a later
+extension recreates zero-filled space. It retries the exact retained operation
+after each storage event emitted by the real fixture, checks unrelated-file and
+shared-handle state, and rejects requests beyond the 64 MiB result bound without
+starting I/O. The Rust/e2fsck leg is conditional on the generated Linux fixture;
+no QEMU or whole-milestone completion is inferred from this target.
+
 The stage is retained for the full Rust mount lifetime and both unmount phases
 refuse pending images or revocations, so no unclassified upstream mutation can
 be silently dropped. Setup failures before a prepared commit discard the
@@ -319,8 +539,9 @@ real fixture pins that rollback across an allocation-bearing, deliberately
 refused pre-commit classification. Once a storage operation has started,
 rollback would be unsafe because an unknown prefix may already be durable; the
 retained plan is retried instead. VFS writes pass their exact handle offset and
-bounded source bytes into the same classifier and advance the cursor only after
-the commit, checkpoint, journal-tail update, and storage lease close succeed.
+bounded source bytes into the same classifier and advance the cursor after
+commit, checkpoint and journal-tail update, before closing the storage lease.
+The controller-teardown failure contract below retains this committed result.
 The admitted
 `JournalRing` is also retained for the full Rust mount lifetime. C opens a
 writable NVMe lease before sync or unmount preparation; Rust
@@ -350,10 +571,190 @@ checksums, link counts, and their primary-superblock counters through platform
 storage using the public create/link/unlink table entries.
 The recovery-marker activation plan is equally retry-stable: its exact
 checksummed write and filesystem-state flush are re-emitted after an I/O refusal
-and acknowledged only after the flush completes. Started commit plans and
+and acknowledged only after the flush completes. Sync and unmount preparation
+also finish a refused activation before preparing the final marker clear, even
+when the upstream mutation never started. This prevents a marker-only failure
+from stranding a mount until the original request is retried. Started commit plans and
 pending journal-tail writes likewise re-emit byte-identical operations until
 their final flushes are acknowledged; slots remain reserved throughout. The
 lease is closed before the separate Rust release, and either failure leaves the
 mount live. The QEMU proof arms the marker, syncs it clean, and then unmounts
 without another write. Its public truncate and namespace round trip are removed
 before unmount, and the clean remount revalidates both bytes and resources.
+
+If NVMe lease teardown fails, the backend retains its ownership cookie and
+freezes new filesystem operations. The operation that encountered the failure
+can already be durable; it must not be blindly repeated. Close application
+handles and explicitly unmount to retry controller teardown and finish the
+journal before releasing the mount. Failed mount attempts likewise retain
+their owners until a mount retry or explicit unmount cleans them up. Host
+fault tests cover repeated DMA-release and lease-close failures; bare-metal
+teardown failure injection remains a separate required gate.
+
+SDK fsync passes a native file handle through FILE_SYNC and VFS to the ext4
+operation lease. The backend rechecks the handle after storage acquisition; a
+stale descriptor or mount generation cannot redirect sync to a later mount.
+Regular-file handles, including established read-only callers, identify one
+shared inode. The Rust coordinator resumes only a retained write, inode
+metadata, or inode-owned reclaim plan for that identity, then crosses the
+existing ordered-data, journal-payload, commit, checkpoint, journal-state and
+storage-flush boundaries. A clean inode is an idempotent no-op; unrelated
+retained work is left for its owner or volume sync. Same-inode handles refresh
+their cached EOF only after the durable plan succeeds. Errors remain retryable,
+do not advance the fsync completion count, and may follow a durable prefix
+without replaying the logical request. The focused host test covers each
+boundary, repeated calls, shared handles, read-only/directory/stale statuses,
+lease open/close refusal and size-refresh refusal.
+
+Close releases a descriptor and tries to reclaim unreferenced orphans. It is
+not a durability barrier: refused cleanup remains owned by the mount, with its
+exact pending transaction available to sync or unmount. Sync reports cleanup
+errors and receives the complete live inode list under the volume lease; it
+preserves orphan data held by other handles and keeps the recovery marker set
+while those orphans exist. Unmount requires all handles closed, completes any
+remaining cleanup, and only then clears the marker. The new orphan coordinator,
+repeated-recovery, and final-close fault fixtures passed Linux verification at
+07d45ea; they do not establish the full Milestone 2 crash/concurrency profile.
+
+Inode-based access checks the checksummed allocation bitmap before reading an
+inode body. A freed inode can retain valid mode and checksum fields after Linux
+deletion; those fields alone do not authorize access. The manual filesystem
+workflow also enables disposable Linux loop-mount tests for replace-rename
+recovery and bidirectional file modification. Those fixtures passed Linux
+verification at f61d344; they cover that operation profile, not the full
+Milestone 2 interoperability and crash matrix.
+
+The append backend selects the live inode's EOF under the exclusive writable
+volume lease, ignoring the handle's seek position. Retained journal retries
+reuse the original append offset and payload. Native `OPENRFS_OPEN_APPEND`,
+POSIX `O_APPEND`, and stdio append modes use this operation. Native append
+syscalls return at most one 4096-byte copied chunk; callers must handle short
+writes. Direct backend requests remain bounded to 256 KiB and can checkpoint
+multiple transactions, so crash atomicity for the entire request is not claimed.
+The C mutation cap is now 64 MiB, matching the bounded split-reclaim profile.
+`qemu-test-ext4-dense-file` separately exercises a fully allocated file at that
+bound: 256 KiB VFS requests, complete patterned readback, shared EOF, a cold read,
+truncate/unlink reclamation, then a third boot. Linux checks the allocated result
+and exact restored block/inode counters with read-only mount and fsck. Its
+reports distinguish this case from the existing sparse maximum check and record
+QEMU elapsed time including boot and guest verification; no power-cut guarantee
+is inferred from an uncut dense-file pass.
+The focused C boundary/ownership host test and the corresponding coordinator
+case are part of the scoped regression target. Linux fixture and e2fsck evidence
+is reported only when that target is run with its generated fixture; this does
+not certify the complete writable ext4plus milestone.
+
+Successful writes publish their cursor and shared EOF while still owning the
+volume lease. A later writer cannot be followed by an older EOF update from
+the previous writer. If controller teardown then fails, that committed cursor
+and EOF remain visible while the mount refuses further storage operations.
+The C backend returns the completed write count alongside that teardown error;
+sync retries controller release without reapplying the completed write or append.
+Read, pread, readlink and xattr errors instead report zero bytes. Read and
+SEEK_END publish cursor changes only after teardown succeeds under the same
+lease; a failed seek reports no new position and retains the prior cursor.
+
+Drive capacity reports use the last readable allocator count captured before
+operation teardown. They do not borrow the Rust coordinator during a mutation;
+a frozen storage owner is reported unhealthy until explicit teardown succeeds.
+
+Append-only ext4 inodes accept the append operation, including bounded split
+requests, but reject ordinary writes (even at EOF), truncate, unlink, rename,
+new hard links, and explicit mode/time/xattr changes. Append-only directories
+accept new entries and incoming non-replacing moves; removal and replacement
+are refused. These checks run in the journal mutation path; the current open
+interface carries access rights but no append flag, so refusal occurs at the
+mutation rather than at open. Pending requests retain append mode in their
+retry identity.
+
+Directory handles own a snapshot captured under one read lease, bounded by
+8192 visible entries. Create/delete/rename after open do not change the names
+or metadata in that snapshot; reopen observes the new namespace. Close frees
+the snapshot, and handle-allocation failure frees it before returning. Native
+DIRECTORY_READ_LONG and SDK readdir carry full 255-byte ext4 names while the
+existing pathname length limit still applies to operations on those names.
+
+The VFS preserves dot components for ext4 to resolve in traversal order,
+including symlink targets before `..` and lookup failures before later dots.
+It also passes non-ASCII filename bytes through unchanged for this backend.
+Root mode/time/xattr operations use the metadata path rather than namespace
+creation checks. Mount-relative syntax and existing path/depth bounds apply.
+
+VFS chmod replaces permission/special bits (0000–07777) through JBD2; immutable inodes
+are refused. The writable branch now updates an existing access ACL's owner,
+mask (or owning group), and other permissions in that same transaction. New
+files and directories inherit a parent's default ACL with requested permissions
+masked as in Linux; directories also retain the default for their children.
+Hard links, rename and symlinks do not acquire a destination parent's ACL.
+ACL parsing, inheritance, chmod, allocation rollback and crash fixtures await
+Linux verification; this does not claim complete multiuser ACL enforcement.
+Creation also inherits a setgid parent's group (including symlinks), and new
+subdirectories retain setgid. A non-setgid parent's group is not inherited;
+the current VFS supplies caller uid/gid 0. Linux comparison fixtures include
+group IDs above 65535 and nested default-ACL/setgid inheritance.
+POSIX mkdir now carries its mode through the native syscall and VFS into the
+creation transaction, including mode 0000 and sticky. Legacy native mkdir calls
+retain mode 0755. Requested setuid/setgid bits are stripped for mkdir as in
+Linux; a setgid parent can still supply the directory's setgid bit. Pending
+mkdir retries bind both path and requested mode. This extension awaits Linux
+verification alongside the inherited-ACL fixtures.
+POSIX open with O_CREAT now carries its variadic mode through an optional
+native request flag to VFS creation; legacy requests retain mode 0644.
+Permissions and special bits enter the new inode's journal transaction before
+default-ACL masking. Native open now uses a prepared backend operation under
+one volume lease: resolve/create, optional inode-bound truncate, then register
+the handle. VFS does not pre-stat this path, so a retained create can retry.
+Failed opens bind path/access/flags/mode and any selected truncate inode;
+sync or an external exact retry retires that identity before inode reuse.
+Known handle exhaustion refuses before mutation, and failed opens release
+their handles. Storage failures may still commit the requested mutation.
+Every-write/flush retry and old-or-new crash fixtures await Linux verification.
+Creation follows dangling final symlinks using the existing component resolver,
+permitting only a missing final name. Missing ancestors, trailing directory
+separators and link loops still refuse. O_CREAT|O_EXCL reaches the same leased
+operation and refuses any existing final name, including dangling symlinks,
+before allocation or truncation. Exact retries retain the resolved creation
+target as well as the original request. These additions await Linux verification.
+The additive PATH_METADATA syscall supplies SDK stat/lstat with inode identity,
+mode, uid/gid, link count and signed access/modify/change seconds plus nanoseconds.
+lstat keeps the final symlink's own metadata, including dangling links. The older
+PATH_STAT layout is unchanged. Pre-1970 dates are preserved; undeclared extended
+timestamp bytes are ignored, and declared invalid nanoseconds refuse admission
+before recovery writes. Backends without Unix metadata retain their old mode
+projection and omit the native Unix-fields validity flag. Linux verification of
+this metadata extension is pending.
+FILE_METADATA supplies SDK fstat through a checked native handle and VFS
+generation to the backend's inode lookup. It shares stat/lstat field conversion
+and preserves metadata for an unlinked inode while its file remains open.
+The C tests cover zero-link metadata, refusal outputs, closure during storage
+acquisition and stale mount rejection; the new SDK route awaits Linux testing.
+The kernel VFS publication operation takes a writable file handle and two paths.
+Under one ext4 lease it checks that the temporary name still names that regular
+inode, then performs the existing journaled replace. A replaced temporary name
+or symlink refuses before marker writes. Pending publication binds both names
+and the expected inode, preserving open destination orphans. Callers must finish
+writing and syncing the temporary file before publication. C forwarding/lease
+tests pass; exact retry, old-or-new crash, inode-identity and fsck fixtures await
+Linux verification before applications can claim this save protocol is proved.
+The admitted explicit xattr mutation namespace is
+`user.*`, with names up to 255 bytes. Set/replace/remove journal the inode and
+any allocated, rewritten or released external attribute block. The writer
+packs small values in the inode and remaining values in one external block,
+copying shared blocks before mutation. Entry hashes, block hashes, CRC32C,
+inode block counts and allocator changes belong to the same transaction.
+Sets that cannot be packed return FULL with the old attributes and allocation
+counters preserved; external value inodes remain refused. The new allocation,
+shared-copy, replay and e2fsprogs export fixtures await Linux verification.
+Reads support size queries and refuse
+undersized buffers. Native PATH_CHMOD/PATH_XATTR and SDK wrappers expose these
+operations with Data write capability checks; POSIX chmod uses PATH_CHMOD.
+Mutations sample validated RTC seconds before staging; inode changes record
+ctime, file write/truncate records mtime, and directory entry changes record
+mtime. Chmod preserves mtime; rename records the moved inode's ctime. New
+inodes receive atime/mtime/ctime/crtime. Reads use noatime behavior.
+Retries retain the staged timestamp bytes. Invalid RTC readings refuse a new
+mutation before storage writes. The admitted write-time range is Unix epoch
+through 2446-05-10 (0x37fffffff seconds). VFS/native/SDK set-times accepts explicit
+atime/mtime in this range with nanoseconds below one billion; ctime still
+comes from the transaction clock. The upstream Duration metadata API reports pre-epoch dates as zero
+while preserving their raw fields unless the timestamp is changed.
