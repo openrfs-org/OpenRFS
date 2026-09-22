@@ -108,7 +108,8 @@ or leave a size/chain mismatch. The next mount detects and rejects those
 states. Use `tools/fat32_image.py inspect` to diagnose and reconstruct an
 image.
 
-HTTP streaming in v2.1.0 uses the same bounded handle/cache/NVMe path. A
+HTTP and authenticated HTTPS staging use the same bounded handle/cache/NVMe
+path. A
 download is written to a temporary 8.3 entry, synchronized, verified, and then
 renamed over its destination. Protocol, capacity, disk-full, reset, or sync
 failure removes the temporary entry and preserves any prior destination.

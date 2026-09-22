@@ -13,6 +13,9 @@
 #define OPENRFS_TLS_MAX_TRUST_ANCHORS 16U
 #define OPENRFS_TLS_MAX_TRUST_BYTES 81920U
 #define OPENRFS_TLS_MAX_HANDSHAKE_STEPS 4096U
+#define OPENRFS_TLS_MAX_HANDSHAKE_BYTES 131072U
+#define OPENRFS_TLS_MAX_CHAIN_CERTIFICATES 4U
+#define OPENRFS_TLS_MAX_CHAIN_BYTES 65536U
 #define OPENRFS_TLS_UNIX_EPOCH_DAYS UINT64_C(719528)
 #define OPENRFS_TLS_ENTROPY_BYTES 32U
 #define OPENRFS_TLS_CLOCK_MIN UINT64_C(1577836800)
@@ -20,9 +23,18 @@
 #define OPENRFS_HTTPS_REQUEST_BYTES 1536U
 #define OPENRFS_HTTPS_BODY_CHUNK_BYTES 4096U
 
+struct bounded_x509 {
+    const br_x509_class *vtable;
+    br_x509_minimal_context *inner;
+    size_t certificates;
+    size_t bytes;
+    bool exceeded;
+};
+
 struct openrfs_tls_client {
     br_ssl_client_context ssl;
     br_x509_minimal_context x509;
+    struct bounded_x509 bounded_x509;
     br_sslio_context io;
     unsigned char buffer[BR_SSL_BUFSIZE_BIDI];
     br_x509_trust_anchor anchors[OPENRFS_TLS_MAX_TRUST_ANCHORS];
@@ -37,6 +49,78 @@ struct openrfs_tls_client {
     bool peer_closed;
     bool canceled;
     bool received_transport_bytes;
+    size_t handshake_bytes;
+};
+
+static void bounded_start_chain(const br_x509_class **context,
+    const char *server_name)
+{
+    struct bounded_x509 *bounded = (struct bounded_x509 *)context;
+
+    bounded->certificates = 0U;
+    bounded->bytes = 0U;
+    bounded->exceeded = false;
+    bounded->inner->vtable->start_chain(&bounded->inner->vtable,
+        server_name);
+}
+
+static void bounded_start_cert(const br_x509_class **context, uint32_t length)
+{
+    struct bounded_x509 *bounded = (struct bounded_x509 *)context;
+
+    if (bounded->exceeded) {
+        return;
+    }
+    if (++bounded->certificates > OPENRFS_TLS_MAX_CHAIN_CERTIFICATES ||
+        length > OPENRFS_TLS_MAX_CHAIN_BYTES - bounded->bytes) {
+        bounded->exceeded = true;
+        return;
+    }
+    bounded->bytes += length;
+    bounded->inner->vtable->start_cert(&bounded->inner->vtable, length);
+}
+
+static void bounded_append(const br_x509_class **context,
+    const unsigned char *buffer, size_t length)
+{
+    struct bounded_x509 *bounded = (struct bounded_x509 *)context;
+
+    if (!bounded->exceeded) {
+        bounded->inner->vtable->append(&bounded->inner->vtable,
+            buffer, length);
+    }
+}
+
+static void bounded_end_cert(const br_x509_class **context)
+{
+    struct bounded_x509 *bounded = (struct bounded_x509 *)context;
+
+    if (!bounded->exceeded) {
+        bounded->inner->vtable->end_cert(&bounded->inner->vtable);
+    }
+}
+
+static unsigned bounded_end_chain(const br_x509_class **context)
+{
+    struct bounded_x509 *bounded = (struct bounded_x509 *)context;
+
+    return bounded->exceeded ? BR_ERR_X509_LIMIT_EXCEEDED :
+        bounded->inner->vtable->end_chain(&bounded->inner->vtable);
+}
+
+static const br_x509_pkey *bounded_get_pkey(
+    const br_x509_class *const *context, unsigned *usages)
+{
+    const struct bounded_x509 *bounded = (const struct bounded_x509 *)context;
+
+    return bounded->exceeded ? NULL :
+        bounded->inner->vtable->get_pkey(
+            (const br_x509_class *const *)&bounded->inner->vtable, usages);
+}
+
+static const br_x509_class bounded_x509_vtable = {
+    sizeof(struct bounded_x509), bounded_start_chain, bounded_start_cert,
+    bounded_append, bounded_end_cert, bounded_end_chain, bounded_get_pkey
 };
 
 static const uint16_t suites[] = {
@@ -63,6 +147,16 @@ static bool size_add(size_t left, size_t right, size_t *result)
     return true;
 }
 
+static size_t bounded_text_length(const char *value, size_t maximum)
+{
+    size_t length = 0U;
+
+    while (length <= maximum && value[length] != '\0') {
+        ++length;
+    }
+    return length;
+}
+
 static bool hostname_valid(const char *hostname)
 {
     size_t length;
@@ -71,7 +165,7 @@ static bool hostname_valid(const char *hostname)
     if (hostname == NULL) {
         return false;
     }
-    length = strlen(hostname);
+    length = bounded_text_length(hostname, OPENRFS_TLS_MAX_HOSTNAME);
     if (length == 0U || length > OPENRFS_TLS_MAX_HOSTNAME) {
         return false;
     }
@@ -236,6 +330,18 @@ static int transport_read(void *context, unsigned char *buffer, size_t length)
     struct openrfs_tls_client *client = context;
     long count = deadline_error(client);
 
+    if (!client->tls_ready) {
+        if (client->handshake_bytes >= OPENRFS_TLS_MAX_HANDSHAKE_BYTES) {
+            client->transport_error = -(long)OPENRFS_ENOSPC;
+            return -1;
+        }
+        if (length > OPENRFS_TLS_MAX_HANDSHAKE_BYTES -
+                client->handshake_bytes) {
+            length = OPENRFS_TLS_MAX_HANDSHAKE_BYTES -
+                client->handshake_bytes;
+        }
+    }
+
     if (count == 0) {
         count = openrfs_stream_read(client->stream, buffer, length,
             client->deadline_ns);
@@ -251,6 +357,9 @@ static int transport_read(void *context, unsigned char *buffer, size_t length)
         return -1;
     }
     client->received_transport_bytes = true;
+    if (!client->tls_ready) {
+        client->handshake_bytes += (size_t)count;
+    }
     return (int)count;
 }
 
@@ -260,6 +369,18 @@ static int transport_write(void *context, const unsigned char *buffer,
     struct openrfs_tls_client *client = context;
     long count = deadline_error(client);
 
+    if (!client->tls_ready) {
+        if (client->handshake_bytes >= OPENRFS_TLS_MAX_HANDSHAKE_BYTES) {
+            client->transport_error = -(long)OPENRFS_ENOSPC;
+            return -1;
+        }
+        if (length > OPENRFS_TLS_MAX_HANDSHAKE_BYTES -
+                client->handshake_bytes) {
+            length = OPENRFS_TLS_MAX_HANDSHAKE_BYTES -
+                client->handshake_bytes;
+        }
+    }
+
     if (count == 0) {
         count = openrfs_stream_write(client->stream, buffer, length,
             client->deadline_ns);
@@ -267,6 +388,9 @@ static int transport_write(void *context, const unsigned char *buffer,
     if (count <= 0 || count > INT_MAX || (size_t)count > length) {
         client->transport_error = count == 0 ? -(long)OPENRFS_EPIPE : count;
         return -1;
+    }
+    if (!client->tls_ready) {
+        client->handshake_bytes += (size_t)count;
     }
     return (int)count;
 }
@@ -426,6 +550,10 @@ enum openrfs_tls_status openrfs_tls_client_open_diagnostic(
 
     br_ssl_client_init_full(&client->ssl, &client->x509,
         client->anchors, config->trust_anchor_count);
+    client->bounded_x509.vtable = &bounded_x509_vtable;
+    client->bounded_x509.inner = &client->x509;
+    br_ssl_engine_set_x509(&client->ssl.eng,
+        &client->bounded_x509.vtable);
     br_ssl_engine_set_versions(&client->ssl.eng, BR_TLS12, BR_TLS12);
     br_ssl_engine_set_suites(&client->ssl.eng, suites,
         sizeof(suites) / sizeof(suites[0]));
@@ -433,6 +561,9 @@ enum openrfs_tls_status openrfs_tls_client_open_diagnostic(
     br_ssl_engine_set_buffer(&client->ssl.eng, client->buffer,
         sizeof(client->buffer), 1);
     br_x509_minimal_set_minrsa(&client->x509, 256);
+    br_x509_minimal_set_hash(&client->x509, br_md5_ID, NULL);
+    br_x509_minimal_set_hash(&client->x509, br_sha1_ID, NULL);
+    br_x509_minimal_set_hash(&client->x509, br_sha224_ID, NULL);
     br_x509_minimal_set_time(&client->x509,
         (uint32_t)((uint64_t)realtime / UINT64_C(86400) +
             OPENRFS_TLS_UNIX_EPOCH_DAYS),
@@ -688,7 +819,7 @@ static bool path_valid(const char *path, size_t *length)
     if (path == NULL || length == NULL) {
         return false;
     }
-    used = strlen(path);
+    used = bounded_text_length(path, OPENRFS_HTTPS_MAX_PATH_BYTES);
     if (used == 0U || used > OPENRFS_HTTPS_MAX_PATH_BYTES || path[0] != '/') {
         return false;
     }

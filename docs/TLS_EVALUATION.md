@@ -46,7 +46,11 @@ The profile is a client-only static build with one connection, TLS 1.2
 ECDHE, AEAD-only cipher suites, SNI, external bounded trust anchors, strict
 hostname/chain/time validation, fixed record and header buffers, no client
 certificates, no renegotiation, no session persistence, and explicit refusal
-of unsupported or oversized HTTP records.
+of unsupported or oversized HTTP records. The SDK now caps each peer chain at
+four certificates and 64 KiB, caps aggregate handshake transport at 128 KiB,
+and disables MD5, SHA-1, and SHA-224 certificate signatures. The offline test
+CA is the only embedded proof root; production root provisioning and revocation
+remain separate release work.
 
 ## Release gate
 
@@ -57,4 +61,5 @@ expired, wrong-name, unknown-root, malformed-chain, weak-algorithm, bad-record,
 truncation, replay, entropy-failure, timeout and reset controls all fail closed;
 and an independent review has no unresolved high-severity finding.
 
-The current SDK/QEMU evidence covers the bounded profile above.
+The exact-commit packet, teardown, and independent-review gates still apply
+to any claim that this milestone is release complete.

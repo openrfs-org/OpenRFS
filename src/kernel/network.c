@@ -64,6 +64,7 @@
 #define DHCP_OPTION_CLIENT UINT8_C(61)
 #define DHCP_OPTION_END UINT8_C(255)
 #define DHCP_RETRIES 3U
+#define DHCP_ATTEMPT_NS UINT64_C(500000000)
 
 #define DNS_HEADER_BYTES 12U
 #define DNS_TYPE_A UINT16_C(1)
@@ -81,6 +82,8 @@
 #define TCP_DEFAULT_WINDOW UINT16_C(8192)
 #define TCP_MSS UINT16_C(1460)
 #define TCP_RETRANSMISSION_NS UINT64_C(400000000)
+#define TCP_PENDING_SYN_LIFETIME_NS UINT64_C(3000000000)
+#define TCP_PENDING_ACCEPT_LIFETIME_NS UINT64_C(3000000000)
 #define TCP_EPHEMERAL_FIRST UINT16_C(49152)
 #define TCP_EPHEMERAL_LAST UINT16_C(65535)
 
@@ -89,7 +92,6 @@
 #define HANDLE_INDEX_MASK UINT64_C(0xFF)
 #define HANDLE_GENERATION_MASK UINT64_C(0x0000FFFFFFFFFFFF)
 
-#define NETWORK_OWNER_SHELL UINT64_C(1)
 #define BROADCAST_IPV4 UINT32_C(0xFFFFFFFF)
 #define DHCP_BUFFER_BYTES 576U
 #define NETWORK_WAIT_SLICE_NS UINT64_C(10000000)
@@ -150,6 +152,8 @@ struct tcp_connection {
     uint64_t generation;
     uint64_t device_generation;
     uint64_t retransmit_deadline_ns;
+    uint64_t pending_expires_ns;
+    uint64_t listener_generation;
     uint32_t remote_address;
     uint32_t send_unacknowledged;
     uint32_t send_next;
@@ -194,13 +198,22 @@ struct dhcp_pending {
     uint32_t lease_seconds;
     uint32_t renewal_seconds;
     uint32_t rebinding_seconds;
+    uint64_t retry_deadline_ns;
+    uint8_t retries;
     uint8_t message;
     bool waiting;
     bool received;
+    bool requesting;
+    bool renewing;
 };
 
 struct dns_pending {
     char question[NETWORK_MAX_HOSTNAME + 1U];
+    uint64_t owner;
+    uint64_t generation;
+    uint64_t configuration_generation;
+    uint64_t device_generation;
+    uint64_t deadline_ns;
     uint16_t identifier;
     uint16_t local_port;
     uint32_t address;
@@ -208,6 +221,8 @@ struct dns_pending {
     enum network_status status;
     bool waiting;
     bool received;
+    bool terminal;
+    bool cancelled;
 };
 
 struct ping_pending {
@@ -231,10 +246,13 @@ struct network_runtime {
     struct dns_pending dns_query;
     struct ping_pending ping;
     uint64_t next_socket_generation;
+    uint64_t next_dns_generation;
     uint64_t dns_insertion;
     uint16_t ipv4_identifier;
     uint16_t next_ephemeral;
     size_t timers;
+    bool dhcp_rebinding_attempted;
+    bool teardown_pending;
     /*
      * The receive path shares one frame buffer with the transmit path, so a
      * send issued while a frame is being parsed must never re-enter the pump.
@@ -486,6 +504,23 @@ static void timer_release(void)
     runtime.public.timers = runtime.timers;
 }
 
+static void dns_complete(enum network_status status, bool cancelled)
+{
+    if (!runtime.dns_query.waiting || runtime.dns_query.terminal) {
+        return;
+    }
+    runtime.dns_query.status = status;
+    runtime.dns_query.cancelled = cancelled;
+    runtime.dns_query.received = true;
+    runtime.dns_query.terminal = true;
+}
+
+static void dns_release(void)
+{
+    zero_bytes(&runtime.dns_query, sizeof(runtime.dns_query));
+    runtime.public.dns_requests = 0U;
+}
+
 static bool mac_is_broadcast(const uint8_t mac[6])
 {
     static const uint8_t broadcast[6] = {
@@ -512,6 +547,14 @@ static bool ipv4_is_unicast(uint32_t address)
     return address != 0U && address != BROADCAST_IPV4 &&
         !ipv4_is_multicast(address) &&
         (address & UINT32_C(0xFF000000)) != UINT32_C(0x7F000000);
+}
+
+static bool ipv4_mask_valid(uint32_t mask)
+{
+    const uint32_t host_bits = ~mask;
+
+    return mask != 0U && mask != BROADCAST_IPV4 &&
+        (host_bits & (host_bits + 1U)) == 0U;
 }
 
 static uint64_t make_handle(uint8_t kind, size_t index, uint64_t generation)
@@ -648,9 +691,33 @@ static void arp_invalidate(void)
     runtime.public.arp_entries = 0U;
 }
 
-static struct arp_entry *arp_find(uint32_t address)
+static void arp_age(void)
 {
     const uint64_t now = clock_monotonic_ns();
+    size_t valid = 0U;
+
+    for (size_t index = 0U; index < NETWORK_ARP_CACHE_SIZE; ++index) {
+        struct arp_entry *entry = &runtime.arp[index];
+
+        if (entry->state == ARP_ENTRY_EMPTY) {
+            continue;
+        }
+        if (entry->configuration_generation !=
+                runtime.public.configuration.generation ||
+            entry->device_generation !=
+                runtime.public.device.device_generation ||
+            (entry->state == ARP_ENTRY_VALID && entry->expires_ns <= now)) {
+            zero_bytes(entry, sizeof(*entry));
+        } else if (entry->state == ARP_ENTRY_VALID) {
+            ++valid;
+        }
+    }
+    runtime.public.arp_entries = valid;
+}
+
+static struct arp_entry *arp_find(uint32_t address)
+{
+    arp_age();
 
     for (size_t index = 0U; index < NETWORK_ARP_CACHE_SIZE; ++index) {
         struct arp_entry *entry = &runtime.arp[index];
@@ -660,10 +727,6 @@ static struct arp_entry *arp_find(uint32_t address)
                 runtime.public.configuration.generation &&
             entry->device_generation ==
                 runtime.public.device.device_generation) {
-            if (entry->state == ARP_ENTRY_VALID && entry->expires_ns <= now) {
-                zero_bytes(entry, sizeof(*entry));
-                continue;
-            }
             return entry;
         }
     }
@@ -896,6 +959,28 @@ static bool udp_enqueue(
     return true;
 }
 
+static bool dhcp_lease_valid(const struct dhcp_pending *lease)
+{
+    const uint64_t lifetime = (uint64_t)lease->lease_seconds *
+        UINT64_C(1000000000);
+    const uint64_t renewal = lease->renewal_seconds != 0U ?
+        (uint64_t)lease->renewal_seconds * UINT64_C(1000000000) :
+        lifetime / 2U;
+    const uint64_t rebinding = lease->rebinding_seconds != 0U ?
+        (uint64_t)lease->rebinding_seconds * UINT64_C(1000000000) :
+        ((uint64_t)lease->lease_seconds * 7U / 8U) *
+            UINT64_C(1000000000);
+
+    return ipv4_is_unicast(lease->offered_address) &&
+        ipv4_mask_valid(lease->subnet_mask) &&
+        ipv4_is_unicast(lease->router) &&
+        (lease->router & lease->subnet_mask) ==
+            (lease->offered_address & lease->subnet_mask) &&
+        ipv4_is_unicast(lease->dns) &&
+        ipv4_is_unicast(lease->server) &&
+        renewal != 0U && renewal < rebinding && rebinding < lifetime;
+}
+
 static void dhcp_parse(
     uint32_t source,
     const uint8_t *bytes,
@@ -903,22 +988,32 @@ static void dhcp_parse(
 )
 {
     size_t offset = DHCP_FIXED_BYTES;
+    struct dhcp_pending parsed = {0};
     bool seen_message = false;
     bool seen_server = false;
+    bool seen_subnet = false;
+    bool seen_router = false;
+    bool seen_dns = false;
+    bool seen_lease = false;
+    bool seen_renewal = false;
+    bool seen_rebinding = false;
+    bool seen_end = false;
 
-    if (!runtime.dhcp.waiting || length < DHCP_FIXED_BYTES || bytes[0] != 2U ||
+    if (!runtime.dhcp.waiting || runtime.dhcp.received ||
+        length < DHCP_FIXED_BYTES || bytes[0] != 2U ||
         bytes[1] != 1U || bytes[2] != 6U ||
         read_be32(bytes + 4U) != runtime.dhcp.transaction ||
         read_be32(bytes + 236U) != DHCP_MAGIC_COOKIE ||
         !bytes_equal(bytes + 28U, runtime.public.device.mac, 6U)) {
         return;
     }
-    runtime.dhcp.offered_address = read_be32(bytes + 16U);
+    parsed.offered_address = read_be32(bytes + 16U);
     while (offset < length) {
         uint8_t code = bytes[offset++];
         uint8_t option_length;
 
         if (code == DHCP_OPTION_END) {
+            seen_end = true;
             break;
         }
         if (code == DHCP_OPTION_PAD) {
@@ -934,62 +1029,91 @@ static void dhcp_parse(
         switch (code) {
         case DHCP_OPTION_MESSAGE:
             if (option_length != 1U || seen_message) { return; }
-            runtime.dhcp.message = bytes[offset];
+            parsed.message = bytes[offset];
             seen_message = true;
             break;
         case DHCP_OPTION_SUBNET:
-            if (option_length != 4U || runtime.dhcp.subnet_mask != 0U) {
+            if (option_length != 4U || seen_subnet) {
                 return;
             }
-            runtime.dhcp.subnet_mask = read_be32(bytes + offset);
+            parsed.subnet_mask = read_be32(bytes + offset);
+            seen_subnet = true;
             break;
         case DHCP_OPTION_ROUTER:
-            if (option_length < 4U || runtime.dhcp.router != 0U) { return; }
-            runtime.dhcp.router = read_be32(bytes + offset);
+            if (option_length != 4U || seen_router) { return; }
+            parsed.router = read_be32(bytes + offset);
+            seen_router = true;
             break;
         case DHCP_OPTION_DNS:
-            if (option_length < 4U || runtime.dhcp.dns != 0U) { return; }
-            runtime.dhcp.dns = read_be32(bytes + offset);
+            if (option_length != 4U || seen_dns) { return; }
+            parsed.dns = read_be32(bytes + offset);
+            seen_dns = true;
             break;
         case DHCP_OPTION_SERVER:
             if (option_length != 4U || seen_server) { return; }
-            runtime.dhcp.server = read_be32(bytes + offset);
+            parsed.server = read_be32(bytes + offset);
             seen_server = true;
             break;
         case DHCP_OPTION_LEASE:
-            if (option_length != 4U || runtime.dhcp.lease_seconds != 0U) {
+            if (option_length != 4U || seen_lease) {
                 return;
             }
-            runtime.dhcp.lease_seconds = read_be32(bytes + offset);
+            parsed.lease_seconds = read_be32(bytes + offset);
+            seen_lease = true;
             break;
         case DHCP_OPTION_RENEWAL:
-            if (option_length != 4U || runtime.dhcp.renewal_seconds != 0U) {
+            if (option_length != 4U || seen_renewal) {
                 return;
             }
-            runtime.dhcp.renewal_seconds = read_be32(bytes + offset);
+            parsed.renewal_seconds = read_be32(bytes + offset);
+            seen_renewal = true;
             break;
         case DHCP_OPTION_REBINDING:
-            if (option_length != 4U || runtime.dhcp.rebinding_seconds != 0U) {
+            if (option_length != 4U || seen_rebinding) {
                 return;
             }
-            runtime.dhcp.rebinding_seconds = read_be32(bytes + offset);
+            parsed.rebinding_seconds = read_be32(bytes + offset);
+            seen_rebinding = true;
             break;
         default:
             break;
         }
         offset += option_length;
     }
-    if (!seen_message || !seen_server || source != runtime.dhcp.server ||
-        (runtime.dhcp.message != DHCP_OFFER &&
-            runtime.dhcp.message != DHCP_ACK &&
-            runtime.dhcp.message != DHCP_NAK)) {
+    if (!seen_end || !seen_message || !seen_server ||
+        !ipv4_is_unicast(parsed.server) || source != parsed.server ||
+        (runtime.dhcp.requesting ?
+            (parsed.message != DHCP_ACK && parsed.message != DHCP_NAK) :
+            parsed.message != DHCP_OFFER) ||
+        (runtime.dhcp.requesting &&
+            ((parsed.server != runtime.dhcp.server &&
+              !(runtime.dhcp.renewing &&
+                runtime.dhcp_rebinding_attempted)) ||
+             (parsed.message == DHCP_ACK &&
+              (parsed.offered_address != runtime.dhcp.offered_address ||
+               !dhcp_lease_valid(&parsed)))))) {
         return;
     }
+    for (; offset < length; ++offset) {
+        if (bytes[offset] != DHCP_OPTION_PAD) {
+            return;
+        }
+    }
+    runtime.dhcp.offered_address = parsed.offered_address;
+    runtime.dhcp.subnet_mask = parsed.subnet_mask;
+    runtime.dhcp.router = parsed.router;
+    runtime.dhcp.dns = parsed.dns;
+    runtime.dhcp.server = parsed.server;
+    runtime.dhcp.lease_seconds = parsed.lease_seconds;
+    runtime.dhcp.renewal_seconds = parsed.renewal_seconds;
+    runtime.dhcp.rebinding_seconds = parsed.rebinding_seconds;
+    runtime.dhcp.message = parsed.message;
     runtime.dhcp.received = true;
 }
 
 static enum network_status dns_parse_response(
     uint32_t source,
+    uint32_t destination,
     const uint8_t *bytes,
     size_t length
 );
@@ -1023,9 +1147,9 @@ static void udp_receive_packet(
     datagram_length = read_be16(bytes + 4U);
     checksum = read_be16(bytes + 6U);
     if (source_port == 0U || destination_port == 0U ||
-        datagram_length < UDP_HEADER_BYTES || datagram_length > length ||
-        checksum == 0U || transport_checksum(source, destination,
-            IPV4_PROTOCOL_UDP, bytes, datagram_length) != 0U) {
+        datagram_length < UDP_HEADER_BYTES || datagram_length != length ||
+        (checksum != 0U && transport_checksum(source, destination,
+            IPV4_PROTOCOL_UDP, bytes, datagram_length) != 0U)) {
         ++runtime.public.statistics.malformed_packets;
         return;
     }
@@ -1040,7 +1164,8 @@ static void udp_receive_packet(
     if (runtime.dns_query.waiting &&
         destination_port == runtime.dns_query.local_port &&
         source_port == DNS_SERVER_PORT) {
-        (void)dns_parse_response(source, payload, payload_length);
+        (void)dns_parse_response(source, destination, payload,
+            payload_length);
         return;
     }
     for (size_t index = 0U; index < NETWORK_MAX_UDP_SOCKETS; ++index) {
@@ -1155,7 +1280,11 @@ static void ipv4_receive_packet(const uint8_t *bytes, size_t length)
     }
 }
 
-static void arp_receive_packet(const uint8_t *bytes, size_t length)
+static void arp_receive_packet(
+    const uint8_t *ethernet_source,
+    const uint8_t *bytes,
+    size_t length
+)
 {
     uint16_t operation;
     uint32_t sender_address;
@@ -1177,7 +1306,22 @@ static void arp_receive_packet(const uint8_t *bytes, size_t length)
     if ((operation != ARP_OPERATION_REQUEST &&
             operation != ARP_OPERATION_REPLY) ||
         mac_is_zero(sender_mac) || mac_is_broadcast(sender_mac) ||
+        (sender_mac[0] & UINT8_C(1)) != 0U ||
+        !bytes_equal(sender_mac, ethernet_source, 6U) ||
         !ipv4_is_unicast(sender_address)) {
+        ++runtime.public.statistics.malformed_packets;
+        return;
+    }
+    if (runtime.public.configuration.configured &&
+        sender_address == runtime.public.configuration.address &&
+        !bytes_equal(sender_mac, runtime.public.device.mac, 6U)) {
+        ++runtime.public.statistics.arp_conflicts;
+        return;
+    }
+    if (operation == ARP_OPERATION_REPLY &&
+        (!runtime.public.configuration.configured ||
+         target_address != runtime.public.configuration.address ||
+         !bytes_equal(bytes + 18U, runtime.public.device.mac, 6U))) {
         ++runtime.public.statistics.malformed_packets;
         return;
     }
@@ -1192,9 +1336,7 @@ static void arp_receive_packet(const uint8_t *bytes, size_t length)
         copy_bytes(entry->mac, sender_mac, 6U);
         entry->expires_ns = clock_monotonic_ns() + ARP_LIFETIME_NS;
         entry->state = ARP_ENTRY_VALID;
-        runtime.public.arp_entries = runtime.public.arp_entries <
-            NETWORK_ARP_CACHE_SIZE ? runtime.public.arp_entries + 1U :
-            runtime.public.arp_entries;
+        arp_age();
     }
     if (operation == ARP_OPERATION_REQUEST &&
         runtime.public.configuration.configured &&
@@ -1232,20 +1374,53 @@ static void ethernet_receive(const uint8_t *frame, size_t length)
         }
         return;
     }
-    if (mac_is_zero(frame + 6U) || mac_is_broadcast(frame + 6U)) {
+    if (mac_is_zero(frame + 6U) || mac_is_broadcast(frame + 6U) ||
+        (frame[6] & UINT8_C(1)) != 0U) {
         ++runtime.public.statistics.malformed_packets;
         return;
     }
     type = read_be16(frame + 12U);
     ++runtime.public.statistics.ethernet_accepted;
     if (type == ETHERNET_TYPE_ARP) {
-        arp_receive_packet(frame + ETHERNET_HEADER_BYTES,
+        arp_receive_packet(frame + 6U, frame + ETHERNET_HEADER_BYTES,
             length - ETHERNET_HEADER_BYTES);
     } else if (type == ETHERNET_TYPE_IPV4) {
         ipv4_receive_packet(frame + ETHERNET_HEADER_BYTES,
             length - ETHERNET_HEADER_BYTES);
     } else {
         ++runtime.public.statistics.ethernet_unsupported;
+    }
+}
+
+static void dhcp_service_lease(void);
+static void dhcp_discard_lease(void);
+static void tcp_service_all_pending(void);
+static void tcp_release(struct tcp_connection *connection);
+
+static void network_fail_endpoints(enum network_status status)
+{
+    for (size_t index = 0U; index < NETWORK_MAX_UDP_SOCKETS; ++index) {
+        if (runtime.udp[index].active) {
+            runtime.udp[index].device_generation =
+                runtime.public.device.device_generation;
+            runtime.udp[index].error = status;
+        }
+    }
+    for (size_t index = 0U; index < NETWORK_MAX_TCP_CONNECTIONS; ++index) {
+        if (runtime.tcp[index].active) {
+            runtime.tcp[index].device_generation =
+                runtime.public.device.device_generation;
+            runtime.tcp[index].error = status;
+            runtime.tcp[index].state = TCP_CONNECTION_RESET;
+        }
+    }
+    /* Pending children have no published handle. Keeping them after their
+     * listener can no longer accept would make the slots unreachable.
+     */
+    for (size_t index = 0U; index < NETWORK_MAX_TCP_CONNECTIONS; ++index) {
+        if (runtime.tcp[index].active && runtime.tcp[index].pending) {
+            tcp_release(&runtime.tcp[index]);
+        }
     }
 }
 
@@ -1256,41 +1431,28 @@ static enum network_status network_service_pump(void)
     device_status = virtio_net_service();
     if (device_status == VIRTIO_NET_STATUS_RESET) {
         enum virtio_net_status reset_status = virtio_net_reset();
-
-        runtime.public.device = virtio_net_get_state();
-        runtime.public.configuration.configured = false;
-        runtime.public.configuration.source = NETWORK_CONFIGURATION_NONE;
-        ++runtime.public.configuration.generation;
-        arp_invalidate();
-        zero_bytes(runtime.dns, sizeof(runtime.dns));
-        runtime.public.dns_entries = 0U;
-        ++runtime.public.statistics.resets;
-        for (size_t index = 0U; index < NETWORK_MAX_UDP_SOCKETS; ++index) {
-            if (runtime.udp[index].active) {
-                runtime.udp[index].device_generation =
-                    runtime.public.device.device_generation;
-                runtime.udp[index].error = NETWORK_STATUS_RESET;
-            }
-        }
-        for (size_t index = 0U; index < NETWORK_MAX_TCP_CONNECTIONS;
-             ++index) {
-            if (runtime.tcp[index].active) {
-                runtime.tcp[index].device_generation =
-                    runtime.public.device.device_generation;
-                runtime.tcp[index].error = NETWORK_STATUS_RESET;
-                runtime.tcp[index].state = TCP_CONNECTION_RESET;
-            }
-        }
-        return reset_status == VIRTIO_NET_STATUS_OK ||
+        const enum network_status terminal =
+            reset_status == VIRTIO_NET_STATUS_OK ||
             reset_status == VIRTIO_NET_STATUS_LINK_DOWN ?
             NETWORK_STATUS_RESET : NETWORK_STATUS_UNAVAILABLE;
+
+        dns_complete(terminal, true);
+        runtime.public.device = virtio_net_get_state();
+        dhcp_discard_lease();
+        ++runtime.public.statistics.resets;
+        network_fail_endpoints(terminal);
+        return terminal;
     }
     if (device_status != VIRTIO_NET_STATUS_OK &&
         device_status != VIRTIO_NET_STATUS_RX_EMPTY) {
         if (device_status == VIRTIO_NET_STATUS_LINK_DOWN) {
             runtime.public.device.link_up = false;
+            dns_complete(NETWORK_STATUS_LINK_DOWN, true);
+            network_fail_endpoints(NETWORK_STATUS_LINK_DOWN);
             return NETWORK_STATUS_LINK_DOWN;
         }
+        dns_complete(NETWORK_STATUS_UNAVAILABLE, true);
+        network_fail_endpoints(NETWORK_STATUS_UNAVAILABLE);
         return NETWORK_STATUS_UNAVAILABLE;
     }
     runtime.public.device = virtio_net_get_state();
@@ -1308,16 +1470,8 @@ static enum network_status network_service_pump(void)
         }
         ethernet_receive(receive_frame, length);
     }
-    if (runtime.public.configuration.configured &&
-        runtime.public.configuration.source == NETWORK_CONFIGURATION_DHCP &&
-        runtime.public.configuration.lease_expires_ns != 0U &&
-        clock_monotonic_ns() >=
-            runtime.public.configuration.lease_expires_ns) {
-        runtime.public.configuration.configured = false;
-        runtime.public.configuration.source = NETWORK_CONFIGURATION_NONE;
-        ++runtime.public.configuration.generation;
-        arp_invalidate();
-    }
+    tcp_service_all_pending();
+    dhcp_service_lease();
     return NETWORK_STATUS_OK;
 }
 
@@ -1351,11 +1505,15 @@ enum network_status network_initialize(void)
     if (runtime.public.active) {
         return NETWORK_STATUS_ALREADY_INITIALIZED;
     }
-    if (!virtio_net_self_test(&driver_tests) || driver_tests != 14U) {
+    if (runtime.teardown_pending) {
+        return NETWORK_STATUS_UNAVAILABLE;
+    }
+    if (!virtio_net_self_test(&driver_tests) || driver_tests != 30U) {
         return NETWORK_STATUS_UNAVAILABLE;
     }
     zero_bytes(&runtime, sizeof(runtime));
     runtime.next_socket_generation = 1U;
+    runtime.next_dns_generation = 1U;
     runtime.next_ephemeral = (uint16_t)(TCP_EPHEMERAL_FIRST +
         random_u16() % (TCP_EPHEMERAL_LAST - TCP_EPHEMERAL_FIRST + 1U));
     runtime.public.configuration.generation = previous_generation + 1U;
@@ -1374,6 +1532,8 @@ enum network_status network_initialize(void)
     }
     if (status != VIRTIO_NET_STATUS_OK &&
         status != VIRTIO_NET_STATUS_LINK_DOWN) {
+        runtime.teardown_pending =
+            status == VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
         console_write("OpenRFS: virtio-net initialization failed: ");
         console_write(virtio_net_status_string(status));
         console_putc('\n');
@@ -1394,12 +1554,14 @@ enum network_status network_configure_static(
     if (!runtime.public.active) {
         return NETWORK_STATUS_NOT_INITIALIZED;
     }
-    if (!ipv4_is_unicast(address) || subnet_mask == 0U ||
-        subnet_mask == BROADCAST_IPV4 ||
+    if (!ipv4_is_unicast(address) || !ipv4_mask_valid(subnet_mask) ||
         (gateway != 0U && !ipv4_is_unicast(gateway)) ||
+        (gateway != 0U &&
+            (gateway & subnet_mask) != (address & subnet_mask)) ||
         (dns_server != 0U && !ipv4_is_unicast(dns_server))) {
         return NETWORK_STATUS_INVALID_ARGUMENT;
     }
+    dns_complete(NETWORK_STATUS_UNCONFIGURED, true);
     runtime.public.configuration.address = address;
     runtime.public.configuration.subnet_mask = subnet_mask;
     runtime.public.configuration.gateway = gateway;
@@ -1423,7 +1585,8 @@ static size_t build_dhcp(
     uint8_t message,
     uint32_t transaction,
     uint32_t requested,
-    uint32_t server
+    uint32_t server,
+    bool renewal
 )
 {
     size_t offset = DHCP_FIXED_BYTES;
@@ -1436,7 +1599,12 @@ static size_t build_dhcp(
     packet[1] = 1U;
     packet[2] = 6U;
     write_be32(packet + 4U, transaction);
-    write_be16(packet + 10U, UINT16_C(0x8000));
+    write_be16(packet + 10U,
+        !renewal || runtime.dhcp_rebinding_attempted ?
+            UINT16_C(0x8000) : 0U);
+    if (renewal) {
+        write_be32(packet + 12U, requested);
+    }
     copy_bytes(packet + 28U, runtime.public.device.mac, 6U);
     write_be32(packet + 236U, DHCP_MAGIC_COOKIE);
     packet[offset++] = DHCP_OPTION_MESSAGE;
@@ -1447,13 +1615,13 @@ static size_t build_dhcp(
     packet[offset++] = 1U;
     copy_bytes(packet + offset, runtime.public.device.mac, 6U);
     offset += 6U;
-    if (requested != 0U) {
+    if (requested != 0U && !renewal) {
         packet[offset++] = DHCP_OPTION_REQUESTED;
         packet[offset++] = 4U;
         write_be32(packet + offset, requested);
         offset += 4U;
     }
-    if (server != 0U) {
+    if (server != 0U && !renewal) {
         packet[offset++] = DHCP_OPTION_SERVER;
         packet[offset++] = 4U;
         write_be32(packet + offset, server);
@@ -1468,10 +1636,148 @@ static size_t build_dhcp(
     return offset;
 }
 
+static void dhcp_discard_lease(void)
+{
+    const uint64_t generation = runtime.public.configuration.generation + 1U;
+
+    dns_complete(NETWORK_STATUS_UNCONFIGURED, true);
+    zero_bytes(&runtime.public.configuration,
+        sizeof(runtime.public.configuration));
+    runtime.public.configuration.generation = generation;
+    zero_bytes(&runtime.dhcp, sizeof(runtime.dhcp));
+    runtime.dhcp_rebinding_attempted = false;
+    arp_invalidate();
+    zero_bytes(runtime.dns, sizeof(runtime.dns));
+    runtime.public.dns_entries = 0U;
+    for (size_t index = 0U; index < NETWORK_MAX_UDP_SOCKETS; ++index) {
+        if (runtime.udp[index].active) {
+            runtime.udp[index].error = NETWORK_STATUS_UNCONFIGURED;
+        }
+    }
+    for (size_t index = 0U; index < NETWORK_MAX_TCP_CONNECTIONS; ++index) {
+        if (runtime.tcp[index].active) {
+            runtime.tcp[index].error = NETWORK_STATUS_UNCONFIGURED;
+            runtime.tcp[index].state = TCP_CONNECTION_RESET;
+        }
+    }
+}
+
+static bool dhcp_apply_lease(const struct dhcp_pending *lease)
+{
+    const uint64_t now = clock_monotonic_ns();
+    const uint64_t lifetime = (uint64_t)lease->lease_seconds *
+        UINT64_C(1000000000);
+    const uint64_t renewal = lease->renewal_seconds != 0U ?
+        (uint64_t)lease->renewal_seconds * UINT64_C(1000000000) :
+        lifetime / 2U;
+    const uint64_t rebinding = lease->rebinding_seconds != 0U ?
+        (uint64_t)lease->rebinding_seconds * UINT64_C(1000000000) :
+        ((uint64_t)lease->lease_seconds * 7U / 8U) *
+            UINT64_C(1000000000);
+
+    if (!dhcp_lease_valid(lease) || now > UINT64_MAX - lifetime) {
+        return false;
+    }
+    dns_complete(NETWORK_STATUS_UNCONFIGURED, true);
+    runtime.public.configuration.address = lease->offered_address;
+    runtime.public.configuration.subnet_mask = lease->subnet_mask;
+    runtime.public.configuration.gateway = lease->router;
+    runtime.public.configuration.dns_server = lease->dns;
+    runtime.public.configuration.dhcp_server = lease->server;
+    runtime.public.configuration.lease_expires_ns = now + lifetime;
+    runtime.public.configuration.renewal_ns = now + renewal;
+    runtime.public.configuration.rebinding_ns = now + rebinding;
+    ++runtime.public.configuration.generation;
+    runtime.public.configuration.source = NETWORK_CONFIGURATION_DHCP;
+    runtime.public.configuration.configured = true;
+    runtime.dhcp_rebinding_attempted = false;
+    arp_invalidate();
+    zero_bytes(runtime.dns, sizeof(runtime.dns));
+    runtime.public.dns_entries = 0U;
+    return true;
+}
+
+static void dhcp_service_lease(void)
+{
+    const uint64_t now = clock_monotonic_ns();
+    struct network_ipv4_configuration *configuration =
+        &runtime.public.configuration;
+    uint8_t packet[DHCP_BUFFER_BYTES];
+    size_t length;
+
+    if (!configuration->configured ||
+        configuration->source != NETWORK_CONFIGURATION_DHCP ||
+        (runtime.dhcp.waiting && !runtime.dhcp.renewing)) {
+        return;
+    }
+    if (now >= configuration->lease_expires_ns) {
+        dhcp_discard_lease();
+        return;
+    }
+    if (runtime.dhcp.renewing && runtime.dhcp.received) {
+        if (runtime.dhcp.message == DHCP_NAK) {
+            dhcp_discard_lease();
+            return;
+        }
+        if (runtime.dhcp.message == DHCP_ACK &&
+            dhcp_apply_lease(&runtime.dhcp)) {
+            zero_bytes(&runtime.dhcp, sizeof(runtime.dhcp));
+            return;
+        }
+        runtime.dhcp.received = false;
+    }
+    if (!runtime.dhcp.renewing) {
+        if (now < configuration->renewal_ns) {
+            return;
+        }
+        zero_bytes(&runtime.dhcp, sizeof(runtime.dhcp));
+        runtime.dhcp.transaction = random_u32();
+        if (runtime.dhcp.transaction == 0U) {
+            runtime.dhcp.transaction = UINT32_C(0x5341504F);
+        }
+        runtime.dhcp.offered_address = configuration->address;
+        runtime.dhcp.server = configuration->dhcp_server;
+        runtime.dhcp.waiting = true;
+        runtime.dhcp.requesting = true;
+        runtime.dhcp.renewing = true;
+    }
+    if (now < runtime.dhcp.retry_deadline_ns) {
+        return;
+    }
+    if (runtime.dhcp.retries >= DHCP_RETRIES) {
+        zero_bytes(&runtime.dhcp, sizeof(runtime.dhcp));
+        configuration->renewal_ns = runtime.dhcp_rebinding_attempted ?
+            configuration->lease_expires_ns : configuration->rebinding_ns;
+        runtime.dhcp_rebinding_attempted = true;
+        return;
+    }
+    length = build_dhcp(packet, sizeof(packet), DHCP_REQUEST,
+        runtime.dhcp.transaction, runtime.dhcp.offered_address,
+        runtime.dhcp.server, true);
+    const enum network_status sent = udp_send_raw(
+        configuration->address, DHCP_CLIENT_PORT,
+        runtime.dhcp_rebinding_attempted ? BROADCAST_IPV4 :
+            runtime.dhcp.server, DHCP_SERVER_PORT, packet, length,
+        ARP_TIMEOUT_NS);
+
+    if (sent == NETWORK_STATUS_OK) {
+        ++runtime.dhcp.retries;
+        runtime.dhcp.retry_deadline_ns = now + DHCP_ATTEMPT_NS;
+    } else {
+        runtime.dhcp.retry_deadline_ns = now + UINT64_C(50000000);
+    }
+}
+
 static enum network_status wait_dhcp(uint64_t deadline, uint8_t expected)
 {
     while (clock_monotonic_ns() < deadline) {
-        (void)network_service();
+        const enum network_status serviced = network_service();
+
+        if (serviced == NETWORK_STATUS_RESET ||
+            serviced == NETWORK_STATUS_UNAVAILABLE ||
+            serviced == NETWORK_STATUS_LINK_DOWN) {
+            return serviced;
+        }
         if (!runtime.dhcp.received) {
             if (!network_wait_for_interrupt(deadline)) {
                 return NETWORK_STATUS_NO_RESOURCES;
@@ -1522,7 +1828,7 @@ enum network_status network_start_dhcp(uint64_t timeout_ns)
     for (size_t retry = 0U; retry < DHCP_RETRIES &&
          clock_monotonic_ns() < deadline; ++retry) {
         size_t length = build_dhcp(packet, sizeof(packet), DHCP_DISCOVER,
-            runtime.dhcp.transaction, 0U, 0U);
+            runtime.dhcp.transaction, 0U, 0U, false);
 
         runtime.dhcp.received = false;
         if (udp_send_raw(0U, DHCP_CLIENT_PORT, BROADCAST_IPV4,
@@ -1530,26 +1836,34 @@ enum network_status network_start_dhcp(uint64_t timeout_ns)
                 NETWORK_STATUS_OK) {
             continue;
         }
-        status = wait_dhcp(deadline, DHCP_OFFER);
+        const uint64_t attempt_end = clock_monotonic_ns() +
+            DHCP_ATTEMPT_NS;
+
+        status = wait_dhcp(attempt_end < deadline ? attempt_end : deadline,
+            DHCP_OFFER);
         if (status == NETWORK_STATUS_OK || status == NETWORK_STATUS_DHCP_NAK ||
-                status == NETWORK_STATUS_NO_RESOURCES) {
+            status == NETWORK_STATUS_NO_RESOURCES ||
+            status == NETWORK_STATUS_RESET ||
+            status == NETWORK_STATUS_UNAVAILABLE ||
+            status == NETWORK_STATUS_LINK_DOWN) {
             break;
         }
     }
     if (status != NETWORK_STATUS_OK) {
-        runtime.dhcp.waiting = false;
+        zero_bytes(&runtime.dhcp, sizeof(runtime.dhcp));
         timer_release();
         return status;
     }
     offered = runtime.dhcp.offered_address;
     server = runtime.dhcp.server;
     if (!ipv4_is_unicast(offered) || !ipv4_is_unicast(server)) {
-        runtime.dhcp.waiting = false;
+        zero_bytes(&runtime.dhcp, sizeof(runtime.dhcp));
         timer_release();
         return NETWORK_STATUS_MALFORMED;
     }
     runtime.dhcp.received = false;
     runtime.dhcp.message = 0U;
+    runtime.dhcp.requesting = true;
     /* OFFER options are provisional.  Parse the ACK independently so that a
      * server cannot smuggle omitted ACK fields in from the earlier offer and
      * so duplicate-option rejection remains scoped to one message.
@@ -1563,52 +1877,29 @@ enum network_status network_start_dhcp(uint64_t timeout_ns)
     for (size_t retry = 0U; retry < DHCP_RETRIES &&
          clock_monotonic_ns() < deadline; ++retry) {
         size_t length = build_dhcp(packet, sizeof(packet), DHCP_REQUEST,
-            runtime.dhcp.transaction, offered, server);
+            runtime.dhcp.transaction, offered, server, false);
 
         if (udp_send_raw(0U, DHCP_CLIENT_PORT, BROADCAST_IPV4,
                 DHCP_SERVER_PORT, packet, length, ARP_TIMEOUT_NS) !=
                 NETWORK_STATUS_OK) {
             continue;
         }
-        status = wait_dhcp(deadline, DHCP_ACK);
-        if (status == NETWORK_STATUS_OK || status == NETWORK_STATUS_DHCP_NAK) {
+        const uint64_t attempt_end = clock_monotonic_ns() +
+            DHCP_ATTEMPT_NS;
+
+        status = wait_dhcp(attempt_end < deadline ? attempt_end : deadline,
+            DHCP_ACK);
+        if (status == NETWORK_STATUS_OK || status == NETWORK_STATUS_DHCP_NAK ||
+            status == NETWORK_STATUS_RESET ||
+            status == NETWORK_STATUS_UNAVAILABLE ||
+            status == NETWORK_STATUS_LINK_DOWN) {
             break;
         }
     }
-    runtime.dhcp.waiting = false;
-    if (status == NETWORK_STATUS_OK &&
-        ipv4_is_unicast(runtime.dhcp.offered_address) &&
-        runtime.dhcp.subnet_mask != 0U &&
-        ipv4_is_unicast(runtime.dhcp.router) &&
-        ipv4_is_unicast(runtime.dhcp.dns) &&
-        runtime.dhcp.lease_seconds != 0U) {
-        const uint64_t now = clock_monotonic_ns();
-        const uint64_t lease = (uint64_t)runtime.dhcp.lease_seconds *
-            UINT64_C(1000000000);
-        const uint64_t renewal = runtime.dhcp.renewal_seconds != 0U ?
-            (uint64_t)runtime.dhcp.renewal_seconds * UINT64_C(1000000000) :
-            lease / 2U;
-        const uint64_t rebinding = runtime.dhcp.rebinding_seconds != 0U ?
-            (uint64_t)runtime.dhcp.rebinding_seconds * UINT64_C(1000000000) :
-            lease * 7U / 8U;
-
-        runtime.public.configuration.address = runtime.dhcp.offered_address;
-        runtime.public.configuration.subnet_mask = runtime.dhcp.subnet_mask;
-        runtime.public.configuration.gateway = runtime.dhcp.router;
-        runtime.public.configuration.dns_server = runtime.dhcp.dns;
-        runtime.public.configuration.dhcp_server = runtime.dhcp.server;
-        runtime.public.configuration.lease_expires_ns = now + lease;
-        runtime.public.configuration.renewal_ns = now + renewal;
-        runtime.public.configuration.rebinding_ns = now + rebinding;
-        ++runtime.public.configuration.generation;
-        runtime.public.configuration.source = NETWORK_CONFIGURATION_DHCP;
-        runtime.public.configuration.configured = true;
-        arp_invalidate();
-        zero_bytes(runtime.dns, sizeof(runtime.dns));
-        runtime.public.dns_entries = 0U;
-    } else if (status == NETWORK_STATUS_OK) {
+    if (status == NETWORK_STATUS_OK && !dhcp_apply_lease(&runtime.dhcp)) {
         status = NETWORK_STATUS_MALFORMED;
     }
+    zero_bytes(&runtime.dhcp, sizeof(runtime.dhcp));
     timer_release();
     return status;
 }
@@ -1681,7 +1972,8 @@ static bool dns_name(
             }
             pointer = (uint16_t)(((uint16_t)(label & UINT8_C(0x3F)) << 8U) |
                 message[cursor++]);
-            if (pointer >= length || visited_count >= DNS_MAX_POINTERS) {
+            if (pointer >= cursor - 2U || pointer >= length ||
+                visited_count >= DNS_MAX_POINTERS) {
                 return false;
             }
             for (size_t index = 0U; index < visited_count; ++index) {
@@ -1726,6 +2018,13 @@ static bool dns_name(
 
             if (character >= 'A' && character <= 'Z') {
                 character = (char)(character - 'A' + 'a');
+            }
+            if (!((character >= 'a' && character <= 'z') ||
+                    (character >= '0' && character <= '9') ||
+                    character == '-') ||
+                (index == 0U && character == '-') ||
+                (index + 1U == label && character == '-')) {
+                return false;
             }
             output[output_length++] = character;
         }
@@ -1837,6 +2136,7 @@ static void dns_cache_insert(
 
 static enum network_status dns_parse_response(
     uint32_t source,
+    uint32_t destination,
     const uint8_t *bytes,
     size_t length
 )
@@ -1850,11 +2150,29 @@ static enum network_status dns_parse_response(
     char question[NETWORK_MAX_HOSTNAME + 1U];
     char target[NETWORK_MAX_HOSTNAME + 1U];
     uint32_t answer_address = 0U;
-    uint32_t answer_ttl = 0U;
+    uint32_t answer_ttl = UINT32_MAX;
     size_t cname_follows = 0U;
+    bool answer_seen = false;
 
-    if (!runtime.dns_query.waiting ||
-        source != runtime.public.configuration.dns_server || length < 2U ||
+    if (!runtime.dns_query.waiting) {
+        return NETWORK_STATUS_DNS_FAILURE;
+    }
+    if (runtime.dns_query.device_generation !=
+            runtime.public.device.device_generation) {
+        dns_complete(NETWORK_STATUS_RESET, true);
+        return NETWORK_STATUS_RESET;
+    }
+    if (runtime.dns_query.configuration_generation !=
+            runtime.public.configuration.generation) {
+        dns_complete(NETWORK_STATUS_UNCONFIGURED, true);
+        return NETWORK_STATUS_UNCONFIGURED;
+    }
+    if (clock_monotonic_ns() >= runtime.dns_query.deadline_ns) {
+        dns_complete(NETWORK_STATUS_TIMEOUT, false);
+        return NETWORK_STATUS_TIMEOUT;
+    }
+    if (source != runtime.public.configuration.dns_server ||
+        destination != runtime.public.configuration.address || length < 2U ||
         read_be16(bytes + 0U) != runtime.dns_query.identifier) {
         return NETWORK_STATUS_DNS_FAILURE;
     }
@@ -1877,12 +2195,6 @@ static enum network_status dns_parse_response(
         runtime.dns_query.received = true;
         return NETWORK_STATUS_DNS_FAILURE;
     }
-    if ((flags & UINT16_C(0x000F)) != 0U) {
-        runtime.dns_query.status = NETWORK_STATUS_DNS_FAILURE;
-        runtime.dns_query.received = true;
-        dns_cache_insert(runtime.dns_query.question, 0U, 30U, true);
-        return NETWORK_STATUS_DNS_FAILURE;
-    }
     if (!dns_name(bytes, length, &offset, question, sizeof(question)) ||
         offset > length || length - offset < 4U ||
         read_be16(bytes + offset) != DNS_TYPE_A ||
@@ -1893,6 +2205,14 @@ static enum network_status dns_parse_response(
         return NETWORK_STATUS_DNS_FAILURE;
     }
     offset += 4U;
+    if ((flags & UINT16_C(0x000F)) != 0U) {
+        runtime.dns_query.status = NETWORK_STATUS_DNS_FAILURE;
+        runtime.dns_query.received = true;
+        if ((flags & UINT16_C(0x000F)) == 3U) {
+            dns_cache_insert(runtime.dns_query.question, 0U, 30U, true);
+        }
+        return NETWORK_STATUS_DNS_FAILURE;
+    }
     string_copy(target, question, string_length_bounded(question,
         NETWORK_MAX_HOSTNAME));
     for (size_t record = 0U; record < (size_t)answers + authority + additional;
@@ -1921,26 +2241,44 @@ static enum network_status dns_parse_response(
             return NETWORK_STATUS_DNS_FAILURE;
         }
         data_offset = offset;
-        if (class_value == DNS_CLASS_IN && type == DNS_TYPE_CNAME &&
+        if (record < answers && class_value == DNS_CLASS_IN &&
+            type == DNS_TYPE_CNAME &&
             string_equal(owner, target)) {
             char cname[NETWORK_MAX_HOSTNAME + 1U];
             size_t name_offset = data_offset;
 
-            if (++cname_follows > DNS_MAX_CNAME_FOLLOWS ||
+            if (answer_seen || ++cname_follows > DNS_MAX_CNAME_FOLLOWS ||
                 !dns_name(bytes, length, &name_offset, cname,
-                    sizeof(cname)) || name_offset > data_offset + data_length) {
+                    sizeof(cname)) || name_offset != data_offset + data_length) {
                 runtime.dns_query.status = NETWORK_STATUS_DNS_FAILURE;
                 runtime.dns_query.received = true;
                 return NETWORK_STATUS_DNS_FAILURE;
             }
+            if (ttl < answer_ttl) {
+                answer_ttl = ttl;
+            }
             string_copy(target, cname, string_length_bounded(cname,
                 NETWORK_MAX_HOSTNAME));
-        } else if (class_value == DNS_CLASS_IN && type == DNS_TYPE_A &&
+        } else if (record < answers && class_value == DNS_CLASS_IN &&
+            type == DNS_TYPE_A &&
             data_length == 4U && string_equal(owner, target)) {
+            if (answer_seen) {
+                runtime.dns_query.status = NETWORK_STATUS_DNS_FAILURE;
+                runtime.dns_query.received = true;
+                return NETWORK_STATUS_DNS_FAILURE;
+            }
+            answer_seen = true;
             answer_address = read_be32(bytes + data_offset);
-            answer_ttl = ttl;
+            if (ttl < answer_ttl) {
+                answer_ttl = ttl;
+            }
         }
         offset += data_length;
+    }
+    if (offset != length) {
+        runtime.dns_query.status = NETWORK_STATUS_DNS_FAILURE;
+        runtime.dns_query.received = true;
+        return NETWORK_STATUS_DNS_FAILURE;
     }
     if (!ipv4_is_unicast(answer_address)) {
         runtime.dns_query.status = NETWORK_STATUS_DNS_FAILURE;
@@ -1955,6 +2293,7 @@ static enum network_status dns_parse_response(
 }
 
 enum network_status network_resolve(
+    uint64_t owner,
     const char *hostname,
     uint32_t *address,
     uint64_t timeout_ns
@@ -1967,7 +2306,7 @@ enum network_status network_resolve(
     struct dns_cache_entry *cached;
     enum network_status status = NETWORK_STATUS_TIMEOUT;
 
-    if (address == NULL || hostname == NULL) {
+    if (address == NULL || hostname == NULL || owner == 0U) {
         return NETWORK_STATUS_NULL_ARGUMENT;
     }
     if (network_parse_ipv4(hostname, address)) {
@@ -1983,6 +2322,9 @@ enum network_status network_resolve(
     if (!hostname_valid(hostname) || !deadline_valid(timeout_ns)) {
         return NETWORK_STATUS_INVALID_ARGUMENT;
     }
+    if (runtime.dns_query.waiting) {
+        return NETWORK_STATUS_NO_RESOURCES;
+    }
     cached = dns_cache_find(hostname);
     if (cached != NULL) {
         if (cached->negative) {
@@ -1995,12 +2337,22 @@ enum network_status network_resolve(
         return NETWORK_STATUS_NO_RESOURCES;
     }
     zero_bytes(&runtime.dns_query, sizeof(runtime.dns_query));
+    runtime.dns_query.owner = owner;
+    runtime.dns_query.generation = runtime.next_dns_generation++;
+    if (runtime.next_dns_generation == 0U) {
+        runtime.next_dns_generation = 1U;
+    }
+    runtime.dns_query.configuration_generation =
+        runtime.public.configuration.generation;
+    runtime.dns_query.device_generation =
+        runtime.public.device.device_generation;
     runtime.dns_query.identifier = random_u16();
     runtime.dns_query.local_port = (uint16_t)(TCP_EPHEMERAL_FIRST +
         random_u16() % (TCP_EPHEMERAL_LAST - TCP_EPHEMERAL_FIRST + 1U));
     string_copy(runtime.dns_query.question, hostname,
         string_length_bounded(hostname, NETWORK_MAX_HOSTNAME));
     runtime.dns_query.waiting = true;
+    runtime.public.dns_requests = 1U;
     zero_bytes(query, sizeof(query));
     write_be16(query + 0U, runtime.dns_query.identifier);
     write_be16(query + 2U, UINT16_C(0x0100));
@@ -2008,7 +2360,7 @@ enum network_status network_resolve(
     encoded = dns_encode_name(query + DNS_HEADER_BYTES,
         sizeof(query) - DNS_HEADER_BYTES, hostname);
     if (encoded == 0U || DNS_HEADER_BYTES + encoded + 4U > sizeof(query)) {
-        runtime.dns_query.waiting = false;
+        dns_release();
         timer_release();
         return NETWORK_STATUS_INVALID_ARGUMENT;
     }
@@ -2017,6 +2369,7 @@ enum network_status network_resolve(
     write_be16(query + length + 2U, DNS_CLASS_IN);
     length += 4U;
     deadline = clock_monotonic_ns() + timeout_ns;
+    runtime.dns_query.deadline_ns = deadline;
     for (size_t retry = 0U; retry < 3U && clock_monotonic_ns() < deadline;
          ++retry) {
         runtime.dns_query.received = false;
@@ -2031,8 +2384,19 @@ enum network_status network_resolve(
             UINT64_C(700000000);
         while (clock_monotonic_ns() < deadline &&
             clock_monotonic_ns() < attempt_end) {
-            (void)network_service();
+            const enum network_status serviced = network_service();
+
+            if (serviced == NETWORK_STATUS_RESET ||
+                serviced == NETWORK_STATUS_UNAVAILABLE ||
+                serviced == NETWORK_STATUS_LINK_DOWN) {
+                dns_complete(serviced, true);
+                status = serviced;
+                dns_release();
+                timer_release();
+                return status;
+            }
             if (runtime.dns_query.received) {
+                runtime.dns_query.terminal = true;
                 status = runtime.dns_query.status;
                 break;
             }
@@ -2040,22 +2404,26 @@ enum network_status network_resolve(
                 clock_monotonic_ns() < attempt_end) {
                 if (!network_wait_for_interrupt(attempt_end < deadline ?
                         attempt_end : deadline)) {
-                    runtime.dns_query.waiting = false;
+                    dns_complete(NETWORK_STATUS_NO_RESOURCES, true);
+                    dns_release();
                     timer_release();
                     return NETWORK_STATUS_NO_RESOURCES;
                 }
             }
         }
         if (runtime.dns_query.received) {
+            runtime.dns_query.terminal = true;
             break;
         }
         status = NETWORK_STATUS_TIMEOUT;
     }
-    runtime.dns_query.waiting = false;
     if (status == NETWORK_STATUS_OK) {
         *address = runtime.dns_query.address;
-        dns_cache_insert(hostname, *address, runtime.dns_query.ttl, false);
+        if (runtime.dns_query.ttl != 0U) {
+            dns_cache_insert(hostname, *address, runtime.dns_query.ttl, false);
+        }
     }
+    dns_release();
     timer_release();
     return status;
 }
@@ -2228,12 +2596,16 @@ static size_t tcp_pending_count(const struct tcp_connection *listener)
         const struct tcp_connection *connection = &runtime.tcp[index];
 
         if (connection->active && connection->pending &&
-            connection->listener == parent) {
+            connection->listener == parent &&
+            connection->listener_generation == listener->generation &&
+            connection->owner == listener->owner) {
             ++count;
         }
     }
     return count;
 }
+
+static void tcp_service_pending(const struct tcp_connection *listener);
 
 /*
  * A segment nobody is listening for is answered, not swallowed. RFC 793
@@ -2304,6 +2676,7 @@ static struct tcp_connection *tcp_open_child(
     uint16_t peer_window
 )
 {
+    tcp_service_pending(listener);
     if (tcp_pending_count(listener) >= listener->backlog) {
         return NULL;
     }
@@ -2328,6 +2701,7 @@ static struct tcp_connection *tcp_open_child(
         connection->send_next = connection->send_unacknowledged + 1U;
         connection->state = TCP_CONNECTION_SYN_RECEIVED;
         connection->listener = (uint8_t)tcp_index_of(listener);
+        connection->listener_generation = listener->generation;
         connection->pending = true;
         connection->active = true;
         connection->retransmit_flags = TCP_FLAG_SYN | TCP_FLAG_ACK;
@@ -2335,6 +2709,8 @@ static struct tcp_connection *tcp_open_child(
         connection->retransmit_count = 0U;
         connection->retransmit_deadline_ns = clock_monotonic_ns() +
             TCP_RETRANSMISSION_NS;
+        connection->pending_expires_ns = clock_monotonic_ns() +
+            TCP_PENDING_SYN_LIFETIME_NS;
         ++runtime.public.tcp_connections;
         (void)tcp_emit(connection, TCP_FLAG_SYN | TCP_FLAG_ACK, NULL, 0U,
             connection->send_unacknowledged, false, false);
@@ -2359,7 +2735,9 @@ static void tcp_release_children(const struct tcp_connection *listener)
     for (size_t slot = 0U; slot < NETWORK_MAX_TCP_CONNECTIONS; ++slot) {
         struct tcp_connection *child = &runtime.tcp[slot];
 
-        if (!child->active || !child->pending || child->listener != parent) {
+        if (!child->active || !child->pending || child->listener != parent ||
+            child->listener_generation != listener->generation ||
+            child->owner != listener->owner) {
             continue;
         }
         tcp_refuse(child->remote_address, child->remote_port,
@@ -2425,8 +2803,13 @@ static void tcp_receive_segment(
         return;
     }
     ++runtime.public.statistics.tcp_accepted;
-    connection->peer_window = read_be16(bytes + 14U);
     if ((flags & TCP_FLAG_RST) != 0U) {
+        if (connection->state == TCP_CONNECTION_SYN_SENT ?
+                ((flags & TCP_FLAG_ACK) == 0U ||
+                 acknowledgment != connection->send_next) :
+                sequence != connection->receive_next) {
+            return;
+        }
         connection->state = TCP_CONNECTION_RESET;
         connection->error = NETWORK_STATUS_CONNECTION_RESET;
         return;
@@ -2450,6 +2833,11 @@ static void tcp_receive_segment(
         connection->retransmit_flags = 0U;
         connection->retransmit_bytes = 0U;
         connection->state = TCP_CONNECTION_ESTABLISHED;
+        if (connection->pending) {
+            connection->pending_expires_ns = clock_monotonic_ns() +
+                TCP_PENDING_ACCEPT_LIFETIME_NS;
+        }
+        connection->peer_window = read_be16(bytes + 14U);
         ++runtime.public.statistics.tcp_passive_opens;
     }
     if (connection->state == TCP_CONNECTION_SYN_SENT) {
@@ -2462,17 +2850,21 @@ static void tcp_receive_segment(
         connection->receive_next = sequence + 1U;
         connection->retransmit_flags = 0U;
         connection->state = TCP_CONNECTION_ESTABLISHED;
+        connection->peer_window = read_be16(bytes + 14U);
         (void)tcp_ack(connection);
         return;
     }
-    if ((flags & TCP_FLAG_ACK) != 0U &&
-        !sequence_before(acknowledgment, connection->send_unacknowledged) &&
-        !sequence_before(connection->send_next, acknowledgment)) {
-        connection->send_unacknowledged = acknowledgment;
-        if (acknowledgment == connection->send_next) {
-            connection->retransmit_flags = 0U;
-            connection->retransmit_bytes = 0U;
-        }
+    if ((flags & TCP_FLAG_SYN) != 0U ||
+        (flags & TCP_FLAG_ACK) == 0U ||
+        sequence_before(acknowledgment, connection->send_unacknowledged) ||
+        sequence_before(connection->send_next, acknowledgment)) {
+        return;
+    }
+    connection->peer_window = read_be16(bytes + 14U);
+    connection->send_unacknowledged = acknowledgment;
+    if (acknowledgment == connection->send_next) {
+        connection->retransmit_flags = 0U;
+        connection->retransmit_bytes = 0U;
     }
     if (payload_length != 0U || (flags & TCP_FLAG_FIN) != 0U) {
         if (sequence != connection->receive_next) {
@@ -2493,7 +2885,7 @@ static void tcp_receive_segment(
             ++connection->receive_next;
             connection->peer_closed = true;
             connection->state = connection->fin_sent ?
-                TCP_CONNECTION_CLOSED : TCP_CONNECTION_CLOSE_WAIT;
+                TCP_CONNECTION_FIN_WAIT : TCP_CONNECTION_CLOSE_WAIT;
         }
         (void)tcp_ack(connection);
     }
@@ -2608,6 +3000,9 @@ enum network_status network_udp_send(
     if (socket->cancelled) {
         return NETWORK_STATUS_CANCELLED;
     }
+    if (socket->error != NETWORK_STATUS_OK) {
+        return socket->error;
+    }
     return udp_send_raw(runtime.public.configuration.address, socket->port,
         destination, port, bytes, length, timeout_ns);
 }
@@ -2707,6 +3102,27 @@ enum network_status network_tcp_open(uint64_t owner, network_handle *handle)
     return NETWORK_STATUS_NO_RESOURCES;
 }
 
+static void tcp_abandon_connect(struct tcp_connection *connection)
+{
+    zero_bytes(connection->receive, sizeof(connection->receive));
+    zero_bytes(connection->retransmit, sizeof(connection->retransmit));
+    connection->local_port = 0U;
+    connection->remote_port = 0U;
+    connection->remote_address = 0U;
+    connection->send_unacknowledged = 0U;
+    connection->send_next = 0U;
+    connection->receive_next = 0U;
+    connection->retransmit_bytes = 0U;
+    connection->retransmit_flags = 0U;
+    connection->retransmit_count = 0U;
+    connection->retransmit_deadline_ns = 0U;
+    connection->peer_window = 0U;
+    connection->receive_bytes = 0U;
+    if (connection->state != TCP_CONNECTION_RESET) {
+        connection->state = TCP_CONNECTION_OPEN;
+    }
+}
+
 enum network_status network_tcp_connect(
     uint64_t owner,
     network_handle handle,
@@ -2742,13 +3158,14 @@ enum network_status network_tcp_connect(
     connection->send_next = connection->send_unacknowledged;
     connection->state = TCP_CONNECTION_SYN_SENT;
     if (!timer_acquire()) {
-        connection->state = TCP_CONNECTION_OPEN;
+        tcp_abandon_connect(connection);
         return NETWORK_STATUS_NO_RESOURCES;
     }
     status = tcp_emit(connection, TCP_FLAG_SYN, NULL, 0U,
         connection->send_next, true, true);
     if (status != NETWORK_STATUS_OK) {
         timer_release();
+        tcp_abandon_connect(connection);
         return status;
     }
     deadline = clock_monotonic_ns() + timeout_ns;
@@ -2782,18 +3199,15 @@ enum network_status network_tcp_connect(
         status = NETWORK_STATUS_TIMEOUT;
     }
     timer_release();
+    if (status != NETWORK_STATUS_OK) {
+        tcp_abandon_connect(connection);
+    }
     return status;
 }
 
 /*
- * A passive open is the one place where the stack, rather than a caller,
- * decides that a connection exists. Everything about it is therefore bounded
- * in advance: one port, a declared backlog no larger than
- * NETWORK_TCP_MAX_BACKLOG, and children drawn from the same fixed connection
- * table an active open draws from. A handshake completes on any pump, but the
- * retransmission and reaping of half-open children happen only inside
- * network_tcp_accept -- that is deliberate, and it is what keeps half-open
- * state from outliving the caller that asked for it.
+ * Passive children are owned by their listener until accepted. The normal
+ * network pump reaps them even if the owner never calls accept again.
  */
 enum network_status network_tcp_listen(
     uint64_t owner,
@@ -2835,7 +3249,10 @@ static struct tcp_connection *tcp_acceptable(
 
         if (connection->active && connection->pending &&
             connection->listener == parent &&
-            connection->state == TCP_CONNECTION_ESTABLISHED) {
+            connection->listener_generation == listener->generation &&
+            connection->owner == listener->owner &&
+            (connection->state == TCP_CONNECTION_ESTABLISHED ||
+                connection->state == TCP_CONNECTION_CLOSE_WAIT)) {
             return connection;
         }
     }
@@ -2843,10 +3260,9 @@ static struct tcp_connection *tcp_acceptable(
 }
 
 /*
- * Accepting is also when a listener's half-open children are driven. Their
- * acknowledgement is retransmitted here when its deadline passes, and a child
- * that exhausts the retransmission limit is reclaimed rather than left to hold
- * a slot: a peer that opens and vanishes must cost this side nothing durable.
+ * Every pump drives bounded passive-open retransmission and reaps expired or
+ * reset children. This also runs before admitting a new SYN so an abandoned
+ * child cannot indefinitely deny a fresh peer a backlog slot.
  */
 static void tcp_service_pending(const struct tcp_connection *listener)
 {
@@ -2857,11 +3273,14 @@ static void tcp_service_pending(const struct tcp_connection *listener)
         struct tcp_connection *connection = &runtime.tcp[index];
 
         if (!connection->active || !connection->pending ||
-            connection->listener != parent) {
+            connection->listener != parent ||
+            connection->listener_generation != listener->generation ||
+            connection->owner != listener->owner) {
             continue;
         }
         if (connection->state == TCP_CONNECTION_RESET ||
-            connection->error != NETWORK_STATUS_OK) {
+            connection->error != NETWORK_STATUS_OK ||
+            now >= connection->pending_expires_ns) {
             tcp_release(connection);
             continue;
         }
@@ -2872,6 +3291,32 @@ static void tcp_service_pending(const struct tcp_connection *listener)
         if (tcp_retransmit(connection) != NETWORK_STATUS_OK &&
             connection->error != NETWORK_STATUS_OK) {
             tcp_release(connection);
+        }
+    }
+}
+
+static void tcp_service_all_pending(void)
+{
+    for (size_t index = 0U; index < NETWORK_MAX_TCP_CONNECTIONS; ++index) {
+        struct tcp_connection *child = &runtime.tcp[index];
+        struct tcp_connection *listener;
+
+        if (!child->active || !child->pending ||
+            child->listener >= NETWORK_MAX_TCP_CONNECTIONS) {
+            continue;
+        }
+        listener = &runtime.tcp[child->listener];
+        if (!listener->active || listener->state != TCP_CONNECTION_LISTEN ||
+            listener->generation != child->listener_generation ||
+            listener->owner != child->owner) {
+            tcp_release(child);
+        }
+    }
+    for (size_t index = 0U; index < NETWORK_MAX_TCP_CONNECTIONS; ++index) {
+        const struct tcp_connection *listener = &runtime.tcp[index];
+
+        if (listener->active && listener->state == TCP_CONNECTION_LISTEN) {
+            tcp_service_pending(listener);
         }
     }
 }
@@ -2920,7 +3365,6 @@ enum network_status network_tcp_accept(
             timer_release();
             return status;
         }
-        tcp_service_pending(listener);
         child = tcp_acceptable(listener);
         if (child != NULL) {
             child->pending = false;
@@ -2964,7 +3408,11 @@ enum network_status network_tcp_write(
         return NETWORK_STATUS_NULL_ARGUMENT;
     }
     *written = 0U;
-    if (connection->state != TCP_CONNECTION_ESTABLISHED) {
+    if (connection->error != NETWORK_STATUS_OK) {
+        return connection->error;
+    }
+    if (connection->state != TCP_CONNECTION_ESTABLISHED &&
+        connection->state != TCP_CONNECTION_CLOSE_WAIT) {
         return NETWORK_STATUS_WRONG_MODE;
     }
     if (!timer_acquire()) {
@@ -3091,6 +3539,9 @@ enum network_status network_tcp_shutdown(
     }
     if (!deadline_valid(timeout_ns)) {
         return NETWORK_STATUS_INVALID_ARGUMENT;
+    }
+    if (connection->error != NETWORK_STATUS_OK) {
+        return connection->error;
     }
     if (connection->state == TCP_CONNECTION_CLOSED ||
         connection->state == TCP_CONNECTION_RESET) {
@@ -3362,6 +3813,10 @@ enum network_status network_poll(
                     if (socket->cancelled) {
                         result->ready |= NETWORK_READY_CANCELLED;
                     }
+                    if (socket->error != NETWORK_STATUS_OK) {
+                        result->ready |= NETWORK_READY_ERROR;
+                        result->error = socket->error;
+                    }
                 }
             } else if ((uint8_t)(requests[index].handle >> 56U) ==
                     HANDLE_KIND_TCP) {
@@ -3432,6 +3887,9 @@ void network_process_terminated(uint64_t owner)
 {
     if (owner == 0U) {
         return;
+    }
+    if (runtime.dns_query.waiting && runtime.dns_query.owner == owner) {
+        dns_complete(NETWORK_STATUS_CANCELLED, true);
     }
     for (size_t index = 0U; index < NETWORK_MAX_UDP_SOCKETS; ++index) {
         if (runtime.udp[index].active && runtime.udp[index].owner == owner) {
@@ -4080,7 +4538,8 @@ static enum network_status http_open_request(
     if (!url->numeric) {
         uint64_t now = clock_monotonic_ns();
         if (now >= deadline) { return NETWORK_STATUS_TIMEOUT; }
-        status = network_resolve(url->host, &address, deadline - now);
+        status = network_resolve(owner, url->host, &address,
+            deadline - now);
         if (status != NETWORK_STATUS_OK) { return status; }
     }
     status = network_tcp_open(owner, &handle);
@@ -4454,9 +4913,11 @@ enum network_status network_shutdown(void)
 {
     enum virtio_net_status status;
 
-    if (!runtime.public.active) {
+    if (!runtime.public.active && !runtime.teardown_pending) {
         return NETWORK_STATUS_NOT_INITIALIZED;
     }
+    dns_complete(NETWORK_STATUS_CANCELLED, true);
+    dns_release();
     for (size_t index = 0U; index < NETWORK_MAX_UDP_SOCKETS; ++index) {
         if (runtime.udp[index].active) {
             zero_bytes(&runtime.udp[index], sizeof(runtime.udp[index]));
@@ -4474,18 +4935,18 @@ enum network_status network_shutdown(void)
     runtime.public.timers = 0U;
     ++runtime.public.statistics.resets;
     status = virtio_net_shutdown();
+    runtime.public.device = virtio_net_get_state();
     runtime.public.active = false;
-    runtime.public.configuration.configured = false;
-    ++runtime.public.configuration.generation;
-    arp_invalidate();
-    zero_bytes(runtime.dns, sizeof(runtime.dns));
-    runtime.public.dns_entries = 0U;
-    return status == VIRTIO_NET_STATUS_OK ? NETWORK_STATUS_OK :
+    dhcp_discard_lease();
+    runtime.teardown_pending = status != VIRTIO_NET_STATUS_OK &&
+        status != VIRTIO_NET_STATUS_NOT_INITIALIZED;
+    return !runtime.teardown_pending ? NETWORK_STATUS_OK :
         NETWORK_STATUS_UNAVAILABLE;
 }
 
 struct network_state network_get_state(void)
 {
+    arp_age();
     return runtime.public;
 }
 
@@ -4547,6 +5008,11 @@ bool network_parse_ipv4(const char *text, uint32_t *address)
 bool network_self_test(size_t *completed_tests)
 {
     uint8_t sample[20];
+    uint8_t arp_packet[ARP_PACKET_BYTES];
+    static const uint8_t guest_mac[6] = {
+        0x52U, 0x54U, 0x00U, 0x12U, 0x34U, 0x56U
+    };
+    uint8_t peer_mac[6] = {0x52U, 0x54U, 0x00U, 0x65U, 0x43U, 0x21U};
     char formatted[16];
     uint32_t address;
     uint64_t value;
@@ -4615,12 +5081,62 @@ bool network_self_test(size_t *completed_tests)
         return false;
     }
     ++completed;
-    if (runtime.servicing) {
+    if (runtime.servicing || runtime.public.active) {
         return false;
     }
     ++completed;
+    /* A reply is admitted only for our pending query. Duplicate replies do
+     * not add entries, conflicting duplicates cannot replace the MAC, and
+     * expiry removes the entry from both the table and its public census. */
+    zero_bytes(&runtime, sizeof(runtime));
+    copy_bytes(runtime.public.device.mac, guest_mac, sizeof(guest_mac));
+    runtime.public.device.device_generation = 1U;
+    runtime.public.configuration.address = UINT32_C(0x0A00020F);
+    runtime.public.configuration.generation = 1U;
+    runtime.public.configuration.configured = true;
+    runtime.arp[0].address = UINT32_C(0x0A000202);
+    runtime.arp[0].configuration_generation = 1U;
+    runtime.arp[0].device_generation = 1U;
+    runtime.arp[0].state = ARP_ENTRY_PENDING;
+    zero_bytes(arp_packet, sizeof(arp_packet));
+    write_be16(arp_packet + 0U, ARP_HARDWARE_ETHERNET);
+    write_be16(arp_packet + 2U, ARP_PROTOCOL_IPV4);
+    arp_packet[4] = 6U;
+    arp_packet[5] = 4U;
+    write_be16(arp_packet + 6U, ARP_OPERATION_REPLY);
+    copy_bytes(arp_packet + 8U, peer_mac, sizeof(peer_mac));
+    write_be32(arp_packet + 14U, UINT32_C(0x0A000202));
+    copy_bytes(arp_packet + 18U, guest_mac, sizeof(guest_mac));
+    write_be32(arp_packet + 24U, UINT32_C(0x0A00020F));
+    arp_receive_packet(peer_mac, arp_packet, sizeof(arp_packet));
+    if (runtime.public.arp_entries != 1U ||
+        runtime.arp[0].state != ARP_ENTRY_VALID) {
+        return false;
+    }
+    ++completed;
+    arp_receive_packet(peer_mac, arp_packet, sizeof(arp_packet));
+    if (runtime.public.arp_entries != 1U) {
+        return false;
+    }
+    ++completed;
+    ++peer_mac[5];
+    copy_bytes(arp_packet + 8U, peer_mac, sizeof(peer_mac));
+    arp_receive_packet(peer_mac, arp_packet, sizeof(arp_packet));
+    if (runtime.public.statistics.arp_conflicts != 1U ||
+        runtime.arp[0].mac[5] == peer_mac[5]) {
+        return false;
+    }
+    ++completed;
+    runtime.arp[0].expires_ns = 0U;
+    arp_age();
+    if (runtime.public.arp_entries != 0U ||
+        runtime.arp[0].state != ARP_ENTRY_EMPTY) {
+        return false;
+    }
+    ++completed;
+    zero_bytes(&runtime, sizeof(runtime));
     *completed_tests = completed;
-    return completed == 25U;
+    return completed == 29U;
 }
 
 const char *network_status_string(enum network_status status)

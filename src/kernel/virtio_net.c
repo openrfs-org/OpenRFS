@@ -76,6 +76,16 @@
 #define VIRTIO_NET_ARENA_PAGES \
     ((VIRTIO_NET_ARENA_BYTES + OPENRFS_PAGE_SIZE - 1U) / OPENRFS_PAGE_SIZE)
 
+#define PCIE_SLOT_CAPABILITIES_OFFSET UINT16_C(0x14)
+#define PCIE_SLOT_CONTROL_OFFSET UINT16_C(0x18)
+#define PCIE_SLOT_CAP_POWER_CONTROLLER UINT32_C(0x00000002)
+#define PCIE_SLOT_CAP_HOTPLUG_CAPABLE UINT32_C(0x00000040)
+#define PCIE_SLOT_CONTROL_POWER_OFF UINT16_C(0x0400)
+#define PCIE_SLOT_STATUS_ATTENTION_BUTTON UINT16_C(0x0001)
+#define PCIE_SLOT_STATUS_PRESENT UINT16_C(0x0040)
+#define VIRTIO_NET_REMOVAL_TIMEOUT_NS UINT64_C(500000000)
+#define VIRTIO_NET_PRESENCE_INTERVAL_NS UINT64_C(10000000)
+
 struct virtio_capability_region {
     uint8_t type;
     uint8_t bar;
@@ -123,6 +133,12 @@ struct virtio_net_runtime {
     size_t ready_count;
     volatile bool deferred_work;
     bool bus_master_enabled;
+    bool reset_required;
+    bool removal_pending;
+    uint64_t last_presence_check_ns;
+    struct pci_address removal_bridge;
+    struct pci_address removal_device;
+    uint8_t removal_express_offset;
 };
 
 static struct virtio_net_runtime runtime;
@@ -249,6 +265,98 @@ static uint32_t config_u32(
         return 0U;
     }
     return config_dword(function, offset, ok);
+}
+
+static bool function_identity_live(const struct pci_function *function)
+{
+    bool ok = true;
+    const uint32_t identity = config_dword(function,
+        PCI_REGISTER_VENDOR_ID, &ok);
+
+    return ok && (uint16_t)identity == function->vendor_id &&
+        (uint16_t)(identity >> 16U) == function->device_id;
+}
+
+static bool removal_requested(void)
+{
+    for (size_t index = 0U; index < pci_function_count(); ++index) {
+        const struct pci_function *bridge = pci_function_at(index);
+        uint32_t capability = 0U;
+        uint32_t slot = 0U;
+
+        if (bridge == NULL || bridge->header_type != PCI_HEADER_TYPE_BRIDGE ||
+            bridge->address.segment != runtime.claim.device.segment ||
+            bridge->secondary_bus != runtime.claim.device.bus ||
+            bridge->express_offset == 0U ||
+            pci_config_read_port(bridge->address,
+                (uint16_t)(bridge->express_offset +
+                    PCIE_SLOT_CAPABILITIES_OFFSET), &capability) !=
+                PCI_STATUS_OK ||
+            (capability & (PCIE_SLOT_CAP_POWER_CONTROLLER |
+                PCIE_SLOT_CAP_HOTPLUG_CAPABLE)) !=
+                (PCIE_SLOT_CAP_POWER_CONTROLLER |
+                    PCIE_SLOT_CAP_HOTPLUG_CAPABLE) ||
+            pci_config_read_port(bridge->address,
+                (uint16_t)(bridge->express_offset +
+                    PCIE_SLOT_CONTROL_OFFSET), &slot) != PCI_STATUS_OK ||
+            ((uint16_t)(slot >> 16U) &
+                (PCIE_SLOT_STATUS_ATTENTION_BUTTON |
+                    PCIE_SLOT_STATUS_PRESENT)) !=
+                (PCIE_SLOT_STATUS_ATTENTION_BUTTON |
+                    PCIE_SLOT_STATUS_PRESENT)) {
+            continue;
+        }
+        runtime.removal_bridge = bridge->address;
+        runtime.removal_device = runtime.claim.device;
+        runtime.removal_express_offset = bridge->express_offset;
+        runtime.removal_pending = true;
+        return true;
+    }
+    return false;
+}
+
+static bool complete_removal(void)
+{
+    uint32_t slot = 0U;
+    uint32_t identity = 0U;
+    const bool restore_interrupts = cpu_interrupts_enabled();
+    const uint16_t control_offset = (uint16_t)(
+        runtime.removal_express_offset + PCIE_SLOT_CONTROL_OFFSET);
+
+    if (!runtime.removal_pending ||
+        pci_config_read_port(runtime.removal_bridge, control_offset, &slot) !=
+            PCI_STATUS_OK) {
+        return false;
+    }
+    if (restore_interrupts) {
+        cpu_interrupt_disable();
+    }
+    const enum pci_status acknowledged = pci_config_write_port(
+        runtime.removal_bridge, (uint16_t)(control_offset + 2U),
+        sizeof(uint16_t), PCIE_SLOT_STATUS_ATTENTION_BUTTON);
+    const enum pci_status powered_off = pci_config_write_port(
+        runtime.removal_bridge, control_offset, sizeof(uint16_t),
+        (uint16_t)slot | PCIE_SLOT_CONTROL_POWER_OFF);
+    if (restore_interrupts) {
+        cpu_interrupt_enable();
+    }
+    if (acknowledged != PCI_STATUS_OK || powered_off != PCI_STATUS_OK) {
+        return false;
+    }
+
+    const uint64_t deadline = clock_monotonic_ns() +
+        VIRTIO_NET_REMOVAL_TIMEOUT_NS;
+
+    do {
+        if (pci_config_read_port(runtime.removal_device,
+                PCI_REGISTER_VENDOR_ID, &identity) != PCI_STATUS_OK ||
+            (uint16_t)identity == PCI_VENDOR_ABSENT) {
+            runtime.removal_pending = false;
+            return true;
+        }
+        __asm__ volatile ("pause" : : : "memory");
+    } while (clock_monotonic_ns() < deadline);
+    return false;
 }
 
 static enum virtio_net_status collect_capabilities(
@@ -439,7 +547,27 @@ static void queue_publish(struct virtio_queue *queue, uint16_t descriptor)
         queue->available_offset + 2U) = queue->available_index;
 }
 
-static bool queue_used(
+enum queue_used_result {
+    QUEUE_USED_EMPTY = 0,
+    QUEUE_USED_READY,
+    QUEUE_USED_INVALID
+};
+
+static enum queue_used_result queue_progress(
+    uint16_t device_index,
+    uint16_t consumed_index,
+    uint16_t queue_size
+)
+{
+    const uint16_t pending = (uint16_t)(device_index - consumed_index);
+
+    if (pending > queue_size) {
+        return QUEUE_USED_INVALID;
+    }
+    return pending == 0U ? QUEUE_USED_EMPTY : QUEUE_USED_READY;
+}
+
+static enum queue_used_result queue_used(
     struct virtio_queue *queue,
     uint32_t *identifier,
     uint32_t *length
@@ -450,8 +578,11 @@ static bool queue_used(
     uint16_t slot;
     uint8_t *element;
 
-    if (device_index == queue->used_index) {
-        return false;
+    const enum queue_used_result progress = queue_progress(device_index,
+        queue->used_index, queue->size);
+
+    if (progress != QUEUE_USED_READY) {
+        return progress;
     }
     slot = (uint16_t)(queue->used_index & (uint16_t)(queue->size - 1U));
     element = queue->memory + queue->used_offset + 4U + (uint64_t)slot * 8U;
@@ -459,7 +590,46 @@ static bool queue_used(
     *identifier = *(volatile uint32_t *)(void *)(element + 0U);
     *length = *(volatile uint32_t *)(void *)(element + 4U);
     ++queue->used_index;
+    return QUEUE_USED_READY;
+}
+
+static bool completion_descriptor(
+    const struct virtio_queue *queue,
+    uint32_t identifier,
+    uint16_t first_packet,
+    uint16_t packet_limit,
+    uint16_t *packet
+)
+{
+    uint16_t mapped_packet;
+
+    if (queue == NULL || packet == NULL || identifier >= queue->size ||
+        identifier >= VIRTIO_NET_QUEUE_LENGTH ||
+        !queue->descriptor_inflight[identifier]) {
+        return false;
+    }
+    mapped_packet = queue->packet_for_descriptor[identifier];
+    if (mapped_packet < first_packet || mapped_packet >= packet_limit) {
+        return false;
+    }
+    *packet = mapped_packet;
     return true;
+}
+
+static bool completion_owner(
+    const struct packet_record *record,
+    enum virtio_net_packet_owner owner,
+    uint32_t identifier
+)
+{
+    return record != NULL && record->owner == owner &&
+        record->descriptor == identifier;
+}
+
+static bool completion_length(uint32_t length, uint32_t minimum,
+    uint32_t maximum)
+{
+    return minimum <= maximum && length >= minimum && length <= maximum;
 }
 
 static void notify_queue(const struct virtio_queue *queue, uint16_t index)
@@ -547,46 +717,59 @@ static enum virtio_net_status service_rx(void)
     uint32_t used_length;
     size_t completed = 0U;
 
-    while (completed < runtime.rx.size &&
-        queue_used(&runtime.rx, &identifier, &used_length)) {
+    while (completed < runtime.rx.size) {
+        const enum queue_used_result used = queue_used(&runtime.rx,
+            &identifier, &used_length);
         uint16_t packet;
         struct packet_record *record;
 
-        ++completed;
-        if (identifier >= runtime.rx.size ||
-            !runtime.rx.descriptor_inflight[identifier]) {
+        if (used == QUEUE_USED_EMPTY) {
+            break;
+        }
+        if (used == QUEUE_USED_INVALID) {
             ++runtime.public.statistics.malformed_frames;
             return VIRTIO_NET_STATUS_BAD_COMPLETION;
         }
-        runtime.rx.descriptor_inflight[identifier] = false;
-        packet = runtime.rx.packet_for_descriptor[identifier];
-        if (packet >= VIRTIO_NET_RX_RESERVE) {
+        ++completed;
+        if (!completion_descriptor(&runtime.rx, identifier, 0U,
+                VIRTIO_NET_RX_RESERVE, &packet)) {
             ++runtime.public.statistics.malformed_frames;
             return VIRTIO_NET_STATUS_BAD_COMPLETION;
         }
         record = &runtime.packets[packet];
-        if (record->owner != VIRTIO_NET_PACKET_DEVICE_RX ||
-            record->descriptor != identifier) {
+        if (!completion_owner(record, VIRTIO_NET_PACKET_DEVICE_RX,
+                identifier)) {
             ++runtime.public.statistics.malformed_frames;
             return VIRTIO_NET_STATUS_OWNERSHIP_FAILURE;
         }
-        if (used_length < VIRTIO_NET_HEADER_BYTES ||
-            used_length > VIRTIO_NET_HEADER_BYTES +
-                VIRTIO_NET_MAX_FRAME_SIZE) {
-            record->owner = VIRTIO_NET_PACKET_RELEASED;
+        if (!completion_length(used_length, VIRTIO_NET_HEADER_BYTES,
+                VIRTIO_NET_PACKET_BYTES)) {
+            ++runtime.public.statistics.malformed_frames;
+            return VIRTIO_NET_STATUS_BAD_COMPLETION;
+        }
+        runtime.rx.descriptor_inflight[identifier] = false;
+        if (!completion_length(used_length,
+                VIRTIO_NET_HEADER_BYTES + 14U,
+                VIRTIO_NET_HEADER_BYTES + VIRTIO_NET_MAX_FRAME_SIZE)) {
             ++runtime.public.statistics.malformed_frames;
             ++runtime.public.statistics.dropped_frames;
-        } else {
-            record->length = (uint16_t)(used_length -
-                VIRTIO_NET_HEADER_BYTES);
-            record->owner = VIRTIO_NET_PACKET_KERNEL_RX;
-            if (!ready_push(packet)) {
-                record->owner = VIRTIO_NET_PACKET_RELEASED;
+            record->owner = VIRTIO_NET_PACKET_RELEASED;
+            record->length = 0U;
+            record->owner = VIRTIO_NET_PACKET_FREE;
+            if (!post_rx_descriptor((uint16_t)identifier)) {
                 ++runtime.public.statistics.exhausted_frames;
-                ++runtime.public.statistics.dropped_frames;
-            } else {
-                ++runtime.public.statistics.rx_frames;
             }
+            continue;
+        }
+        record->length = (uint16_t)(used_length -
+            VIRTIO_NET_HEADER_BYTES);
+        record->owner = VIRTIO_NET_PACKET_KERNEL_RX;
+        if (!ready_push(packet)) {
+            record->owner = VIRTIO_NET_PACKET_RELEASED;
+            ++runtime.public.statistics.exhausted_frames;
+            ++runtime.public.statistics.dropped_frames;
+        } else {
+            ++runtime.public.statistics.rx_frames;
         }
         if (!post_rx_descriptor((uint16_t)identifier)) {
             ++runtime.public.statistics.exhausted_frames;
@@ -601,28 +784,33 @@ static enum virtio_net_status service_tx(void)
     uint32_t used_length;
     size_t completed = 0U;
 
-    while (completed < runtime.tx.size &&
-        queue_used(&runtime.tx, &identifier, &used_length)) {
+    while (completed < runtime.tx.size) {
+        const enum queue_used_result used = queue_used(&runtime.tx,
+            &identifier, &used_length);
         uint16_t packet;
         struct packet_record *record;
 
-        (void)used_length;
-        ++completed;
-        if (identifier >= runtime.tx.size ||
-            !runtime.tx.descriptor_inflight[identifier]) {
+        if (used == QUEUE_USED_EMPTY) {
+            break;
+        }
+        if (used == QUEUE_USED_INVALID) {
             return VIRTIO_NET_STATUS_BAD_COMPLETION;
         }
-        runtime.tx.descriptor_inflight[identifier] = false;
-        packet = runtime.tx.packet_for_descriptor[identifier];
-        if (packet < VIRTIO_NET_RX_RESERVE ||
-            packet >= VIRTIO_NET_PACKET_COUNT) {
+        ++completed;
+        if (!completion_descriptor(&runtime.tx, identifier,
+                VIRTIO_NET_RX_RESERVE, VIRTIO_NET_PACKET_COUNT, &packet)) {
             return VIRTIO_NET_STATUS_BAD_COMPLETION;
         }
         record = &runtime.packets[packet];
-        if (record->owner != VIRTIO_NET_PACKET_DEVICE_TX ||
-            record->descriptor != identifier) {
+        if (!completion_owner(record, VIRTIO_NET_PACKET_DEVICE_TX,
+                identifier)) {
             return VIRTIO_NET_STATUS_OWNERSHIP_FAILURE;
         }
+        if (!completion_length(used_length, 0U,
+                VIRTIO_NET_HEADER_BYTES + record->length)) {
+            return VIRTIO_NET_STATUS_BAD_COMPLETION;
+        }
+        runtime.tx.descriptor_inflight[identifier] = false;
         record->owner = VIRTIO_NET_PACKET_TX_COMPLETE;
         record->length = 0U;
         record->owner = VIRTIO_NET_PACKET_RELEASED;
@@ -637,7 +825,7 @@ static void network_interrupt(struct interrupt_frame *frame, void *context)
     struct virtio_net_runtime *owner = context;
     uint64_t started;
 
-    if (frame == NULL || owner != &runtime ||
+    if (frame == NULL || owner != &runtime || runtime.reset_required ||
         frame->vector != runtime.msix.vector.vector) {
         return;
     }
@@ -821,21 +1009,45 @@ static enum virtio_net_status cleanup(bool reset)
 {
     enum virtio_net_status result = VIRTIO_NET_STATUS_OK;
     const bool restore_interrupts = cpu_interrupts_enabled();
+    bool changed = false;
 
     if (restore_interrupts) {
         cpu_interrupt_disable();
     }
-    if (reset && runtime.common.base != NULL && !reset_device()) {
-        result = VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
-    }
-    if (runtime.bus_master_enabled &&
-        pci_claim_disable_bus_master(&runtime.claim) !=
+    if (runtime.claim.active &&
+        pci_claim_device_changed(&runtime.claim, &changed) !=
             PCI_RESOURCE_STATUS_OK) {
         result = VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
+        goto done;
     }
-    runtime.bus_master_enabled = false;
+    if (reset && runtime.common.base != NULL && !changed && !reset_device()) {
+        result = VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
+    }
+    if (changed) {
+        if (runtime.msix.active &&
+            msix_abandon_changed_device(&runtime.msix) != MSIX_STATUS_OK) {
+            result = VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
+            goto done;
+        }
+        if (runtime.claim.active &&
+            pci_release_changed_device(&runtime.claim) !=
+                PCI_RESOURCE_STATUS_OK) {
+            result = VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
+            goto done;
+        }
+        runtime.bus_master_enabled = false;
+    }
+    if (runtime.bus_master_enabled || runtime.claim.bus_master_enabled) {
+        if (pci_claim_disable_bus_master(&runtime.claim) !=
+                PCI_RESOURCE_STATUS_OK) {
+            result = VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
+            goto done;
+        }
+        runtime.bus_master_enabled = false;
+    }
     if (runtime.msix.active && msix_unbind(&runtime.msix) != MSIX_STATUS_OK) {
         result = VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
+        goto done;
     }
     struct dma_allocation *const allocations[3] = {
         &runtime.arena, &runtime.tx.dma, &runtime.rx.dma
@@ -856,14 +1068,27 @@ static enum virtio_net_status cleanup(bool reset)
             result = VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
         }
     }
+    if (runtime.arena.active || runtime.tx.dma.active ||
+        runtime.rx.dma.active) {
+        result = VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
+        goto done;
+    }
     if (runtime.claim.active && pci_release_device(&runtime.claim) !=
             PCI_RESOURCE_STATUS_OK) {
         result = VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
     }
+done:
     if (restore_interrupts) {
         cpu_interrupt_enable();
     }
     return result;
+}
+
+static enum virtio_net_status initialization_refusal(
+    enum virtio_net_status reason, bool reset)
+{
+    return cleanup(reset) == VIRTIO_NET_STATUS_OK ? reason :
+        VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
 }
 
 enum virtio_net_status virtio_net_initialize(void)
@@ -875,10 +1100,16 @@ enum virtio_net_status virtio_net_initialize(void)
     if (runtime.public.active) {
         return VIRTIO_NET_STATUS_ALREADY_INITIALIZED;
     }
+    if (runtime.claim.active || runtime.msix.active ||
+        runtime.bus_master_enabled || runtime.claim.bus_master_enabled ||
+        runtime.arena.active || runtime.tx.dma.active ||
+        runtime.rx.dma.active) {
+        return VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
+    }
     zero_bytes(&runtime, sizeof(runtime));
     function = pci_find_device(VIRTIO_VENDOR_ID,
         VIRTIO_NET_MODERN_DEVICE_ID);
-    if (function == NULL) {
+    if (function == NULL || !function_identity_live(function)) {
         return VIRTIO_NET_STATUS_ABSENT;
     }
     runtime.public.present = true;
@@ -901,66 +1132,56 @@ enum virtio_net_status virtio_net_initialize(void)
         map_capability(&runtime.device) != VIRTIO_NET_STATUS_OK) {
         status = status == VIRTIO_NET_STATUS_OK ?
             VIRTIO_NET_STATUS_MAPPING_FAILURE : status;
-        (void)cleanup(false);
-        return status;
+        return initialization_refusal(status, false);
     }
     if (!reset_device()) {
-        (void)cleanup(false);
-        return VIRTIO_NET_STATUS_RESET_FAILURE;
+        return initialization_refusal(VIRTIO_NET_STATUS_RESET_FAILURE, false);
     }
     status = negotiate_features();
     if (status != VIRTIO_NET_STATUS_OK) {
         mmio_write8(runtime.common.base, VIRTIO_COMMON_DEVICE_STATUS,
             VIRTIO_STATUS_FAILED);
-        (void)cleanup(true);
-        return status;
+        return initialization_refusal(status, true);
     }
     status = read_device_configuration();
     if (status != VIRTIO_NET_STATUS_OK &&
         status != VIRTIO_NET_STATUS_LINK_DOWN) {
-        (void)cleanup(true);
-        return status;
+        return initialization_refusal(status, true);
     }
     if (mmio_read16(runtime.common.base, VIRTIO_COMMON_NUM_QUEUES) < 2U) {
-        (void)cleanup(true);
-        return VIRTIO_NET_STATUS_QUEUE_FAILURE;
+        return initialization_refusal(VIRTIO_NET_STATUS_QUEUE_FAILURE, true);
     }
     status = allocate_dma();
     if (status != VIRTIO_NET_STATUS_OK) {
-        (void)cleanup(true);
-        return status;
+        return initialization_refusal(status, true);
     }
     if (msix_bind(&runtime.claim, VIRTIO_MSIX_ENTRY, network_interrupt,
             &runtime, &runtime.msix) != MSIX_STATUS_OK) {
-        (void)cleanup(true);
-        return VIRTIO_NET_STATUS_MSIX_FAILURE;
+        return initialization_refusal(VIRTIO_NET_STATUS_MSIX_FAILURE, true);
     }
     mmio_write16(runtime.common.base, VIRTIO_COMMON_CONFIG_MSIX_VECTOR,
         VIRTIO_MSIX_ENTRY);
     if (mmio_read16(runtime.common.base,
             VIRTIO_COMMON_CONFIG_MSIX_VECTOR) == VIRTIO_QUEUE_NO_VECTOR) {
-        (void)cleanup(true);
-        return VIRTIO_NET_STATUS_MSIX_FAILURE;
+        return initialization_refusal(VIRTIO_NET_STATUS_MSIX_FAILURE, true);
     }
     status = configure_queue(&runtime.rx, VIRTIO_NET_RX_QUEUE);
     if (status == VIRTIO_NET_STATUS_OK) {
         status = configure_queue(&runtime.tx, VIRTIO_NET_TX_QUEUE);
     }
     if (status != VIRTIO_NET_STATUS_OK) {
-        (void)cleanup(true);
-        return status;
+        return initialization_refusal(status, true);
     }
     for (uint16_t descriptor = 0U; descriptor < runtime.rx.size;
          ++descriptor) {
         if (!post_rx_descriptor(descriptor)) {
-            (void)cleanup(true);
-            return VIRTIO_NET_STATUS_QUEUE_FAILURE;
+            return initialization_refusal(VIRTIO_NET_STATUS_QUEUE_FAILURE,
+                true);
         }
     }
     status = prepare_bus_master();
     if (status != VIRTIO_NET_STATUS_OK) {
-        (void)cleanup(true);
-        return status;
+        return initialization_refusal(status, true);
     }
     runtime.public.rx_queue_size = runtime.rx.size;
     runtime.public.tx_queue_size = runtime.tx.size;
@@ -987,12 +1208,28 @@ enum virtio_net_status virtio_net_service(void)
     if (!runtime.public.active) {
         return VIRTIO_NET_STATUS_NOT_INITIALIZED;
     }
+    if (runtime.reset_required) {
+        return VIRTIO_NET_STATUS_RESET;
+    }
     started = clock_monotonic_ns();
+    if (runtime.last_presence_check_ns == 0U ||
+        started - runtime.last_presence_check_ns >=
+            VIRTIO_NET_PRESENCE_INTERVAL_NS) {
+        bool changed = false;
+
+        runtime.last_presence_check_ns = started;
+        if (pci_claim_device_changed(&runtime.claim, &changed) !=
+                PCI_RESOURCE_STATUS_OK || changed || removal_requested()) {
+            runtime.reset_required = true;
+            return VIRTIO_NET_STATUS_RESET;
+        }
+    }
     device_status = mmio_read8(runtime.common.base,
         VIRTIO_COMMON_DEVICE_STATUS);
     if (device_status == 0U ||
         (device_status & (VIRTIO_STATUS_NEEDS_RESET |
             VIRTIO_STATUS_FAILED)) != 0U) {
+        runtime.reset_required = true;
         return VIRTIO_NET_STATUS_RESET;
     }
     status = read_device_configuration();
@@ -1009,9 +1246,16 @@ enum virtio_net_status virtio_net_service(void)
     if (status == VIRTIO_NET_STATUS_OK) {
         status = service_rx();
     }
-    replenish_rx();
+    if (status == VIRTIO_NET_STATUS_OK) {
+        replenish_rx();
+    }
     runtime.public.statistics.polling_processing_ns +=
         clock_monotonic_ns() - started;
+    if (status == VIRTIO_NET_STATUS_BAD_COMPLETION ||
+        status == VIRTIO_NET_STATUS_OWNERSHIP_FAILURE) {
+        runtime.reset_required = true;
+        return VIRTIO_NET_STATUS_RESET;
+    }
     return status;
 }
 
@@ -1036,7 +1280,11 @@ enum virtio_net_status virtio_net_transmit(
     if (length < 14U || length > VIRTIO_NET_MAX_FRAME_SIZE) {
         return VIRTIO_NET_STATUS_FRAME_TOO_LARGE;
     }
-    (void)virtio_net_service();
+    const enum virtio_net_status serviced = virtio_net_service();
+
+    if (serviced != VIRTIO_NET_STATUS_OK) {
+        return serviced;
+    }
     for (uint16_t index = 0U; index < runtime.tx.size; ++index) {
         const uint16_t candidate = (uint16_t)(VIRTIO_NET_RX_RESERVE + index);
 
@@ -1083,7 +1331,11 @@ enum virtio_net_status virtio_net_receive(
     if (!runtime.public.active) {
         return VIRTIO_NET_STATUS_NOT_INITIALIZED;
     }
-    (void)virtio_net_service();
+    const enum virtio_net_status serviced = virtio_net_service();
+
+    if (serviced != VIRTIO_NET_STATUS_OK) {
+        return serviced;
+    }
     if (!ready_pop(&packet)) {
         return VIRTIO_NET_STATUS_RX_EMPTY;
     }
@@ -1113,7 +1365,10 @@ enum virtio_net_status virtio_net_shutdown(void)
 {
     enum virtio_net_status status;
 
-    if (!runtime.public.present && !runtime.claim.active) {
+    if (!runtime.claim.active && !runtime.msix.active &&
+        !runtime.bus_master_enabled && !runtime.claim.bus_master_enabled &&
+        !runtime.arena.active && !runtime.tx.dma.active &&
+        !runtime.rx.dma.active) {
         return VIRTIO_NET_STATUS_NOT_INITIALIZED;
     }
     for (size_t index = 0U; index < VIRTIO_NET_PACKET_COUNT; ++index) {
@@ -1130,11 +1385,21 @@ enum virtio_net_status virtio_net_shutdown(void)
 
 enum virtio_net_status virtio_net_reset(void)
 {
+    bool removing;
+
     if (!runtime.public.active) {
         return VIRTIO_NET_STATUS_NOT_INITIALIZED;
     }
+    removing = runtime.removal_pending;
     if (virtio_net_shutdown() != VIRTIO_NET_STATUS_OK) {
         return VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
+    }
+    if (removing) {
+        if (!complete_removal()) {
+            return VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
+        }
+        runtime.public.present = false;
+        return VIRTIO_NET_STATUS_ABSENT;
     }
     return virtio_net_initialize();
 }
@@ -1146,9 +1411,15 @@ struct virtio_net_state virtio_net_get_state(void)
 
 bool virtio_net_self_test(size_t *completed_tests)
 {
+    struct virtio_queue test_queue = { .size = 4U };
+    struct packet_record test_record = {
+        .owner = VIRTIO_NET_PACKET_DEVICE_RX,
+        .descriptor = 2U
+    };
     uint64_t available;
     uint64_t used;
     uint64_t result;
+    uint16_t packet = UINT16_MAX;
     size_t completed = 0U;
 
     if (completed_tests == NULL) {
@@ -1187,8 +1458,43 @@ bool virtio_net_self_test(size_t *completed_tests)
         return false;
     }
     completed += 4U;
+    if (queue_progress(1U, 1U, VIRTIO_NET_QUEUE_LENGTH) !=
+            QUEUE_USED_EMPTY ||
+        queue_progress(17U, 1U, VIRTIO_NET_QUEUE_LENGTH) !=
+            QUEUE_USED_READY ||
+        queue_progress(18U, 1U, VIRTIO_NET_QUEUE_LENGTH) !=
+            QUEUE_USED_INVALID ||
+        queue_progress(1U, UINT16_C(65534), VIRTIO_NET_QUEUE_LENGTH) !=
+            QUEUE_USED_READY) {
+        return false;
+    }
+    completed += 4U;
+    test_queue.descriptor_inflight[2U] = true;
+    test_queue.packet_for_descriptor[2U] = 5U;
+    if (!completion_descriptor(&test_queue, 2U, 4U, 8U, &packet) ||
+        packet != 5U ||
+        completion_descriptor(&test_queue, 4U, 4U, 8U, &packet) ||
+        completion_descriptor(&test_queue, 1U, 4U, 8U, &packet) ||
+        completion_descriptor(&test_queue, 2U, 6U, 8U, &packet)) {
+        return false;
+    }
+    completed += 4U;
+    if (!completion_owner(&test_record, VIRTIO_NET_PACKET_DEVICE_RX, 2U) ||
+        completion_owner(&test_record, VIRTIO_NET_PACKET_DEVICE_TX, 2U) ||
+        completion_owner(&test_record, VIRTIO_NET_PACKET_DEVICE_RX, 3U)) {
+        return false;
+    }
+    completed += 3U;
+    if (!completion_length(26U, 26U, 1526U) ||
+        !completion_length(1526U, 26U, 1526U) ||
+        completion_length(25U, 26U, 1526U) ||
+        completion_length(1527U, 26U, 1526U) ||
+        completion_length(10U, 20U, 10U)) {
+        return false;
+    }
+    completed += 5U;
     *completed_tests = completed;
-    return completed == 14U;
+    return completed == 30U;
 }
 
 const char *virtio_net_status_string(enum virtio_net_status status)
