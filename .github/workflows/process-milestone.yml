@@ -62,6 +62,8 @@ jobs:
                           "evidence/process/process-sweep-${sweep}.log"
                       rm "$raw"
                   done
+                  # Recreate the ordinary boot-ledger receipt immediately before capture.
+                  make qemu-test-boot-ledger QEMU_ACCEL=tcg
                   proof=evidence/process/process-sweep-10.log
                   grep -Fx \
                       'ST PROCESS ELF64 OPENRFS.BIN bytes 128 segments 1 ring 3 address-space private result valid teardown clean robustness 50' \

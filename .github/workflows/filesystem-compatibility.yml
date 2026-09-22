@@ -273,6 +273,8 @@ jobs:
                           "evidence/filesystem/tcg-sweep-${sweep}.txt" \
                           "evidence/filesystem/tcg-sweep-${sweep}-logs"
                   done
+                  # Recreate the ordinary boot-ledger receipt immediately before capture.
+                  make qemu-test-boot-ledger QEMU_ACCEL=tcg
                   proof=evidence/filesystem/tcg-sweep-10-logs/filesystem.log
                   grep -Fx \
                       'ST FAT16 file OPENRFS.BIN bytes 128 reads 4 msix 4 ownership CPU-CONTROLLER-CPU teardown clean robustness 28' \
