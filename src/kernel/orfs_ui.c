@@ -910,3 +910,140 @@ void orfs_ui_draw(const struct orfs_ui *ui, struct orfs_term *t)
     }
     t->cursor = false;
 }
+
+void orfs_ui_prompt(struct orfs_ui *ui, const char *text)
+{
+    if (ui == NULL) {
+        return;
+    }
+    (void)orfs_strcopy(ui->prompt, sizeof(ui->prompt),
+                       text != NULL ? text : "");
+}
+
+/*
+ * WHAT RETURN WOULD TAKE.
+ *
+ * One function, used both to print the bracket and - by the installer -
+ * to write the answer into the transcript once it has been taken. Two
+ * functions would be two chances for the screen to say [yes] and the
+ * machine to hear no.
+ */
+void orfs_ui_default(const struct orfs_ui *ui, char *out,
+                     uint32_t capacity)
+{
+    if (out == NULL || capacity == 0U) {
+        return;
+    }
+    out[0] = '\0';
+    if (ui == NULL) {
+        return;
+    }
+    switch (ui->kind) {
+    case ORFS_UI_FORM:
+        if (ui->fields != 0U) {
+            const struct orfs_ui_field *f = &ui->field[ui->focus];
+
+            if (f->secret) {
+                /* A password is not echoed and not defaulted; OpenBSD
+                 * asks for it twice instead. */
+                return;
+            }
+            (void)orfs_strcopy(out, capacity, f->value);
+        }
+        return;
+    case ORFS_UI_CHECK:
+        for (uint32_t i = 0U; i < ui->items; ++i) {
+            if (!ui->item[i].on) {
+                continue;
+            }
+            if (out[0] != '\0') {
+                (void)orfs_strcat(out, capacity, " ");
+            }
+            (void)orfs_strcat(out, capacity, ui->item[i].tag);
+        }
+        return;
+    case ORFS_UI_MSG:
+        if (ui->buttons != 0U) {
+            (void)orfs_strcopy(out, capacity, ui->button[ui->chosen]);
+        }
+        return;
+    case ORFS_UI_GAUGE:
+        return;
+    default:
+        if (ui->items != 0U) {
+            (void)orfs_strcopy(out, capacity, ui->item[ui->cursor].tag);
+        }
+        return;
+    }
+}
+
+void orfs_ui_ask(const struct orfs_ui *ui, struct orfs_term *t)
+{
+    char line[ORFS_COLS + 1];
+    char def[ORFS_UI_VALUE];
+    uint32_t lines;
+
+    if (ui == NULL || t == NULL) {
+        return;
+    }
+    orfs_term_pen(t, ORFS_NORMAL);
+
+    lines = wrap(ui->text, ORFS_COLS - 1U, (uint32_t)-1, NULL, 0U);
+    for (uint32_t i = 0U; i < lines; ++i) {
+        (void)wrap(ui->text, ORFS_COLS - 1U, i, line, sizeof(line));
+        orfs_term_puts(t, line);
+        orfs_term_newline(t);
+    }
+
+    if (ui->kind == ORFS_UI_GAUGE) {
+        /*
+         * OpenBSD has no gauge.  What it prints while a set installs is
+         * the set's name and a percentage on one line that it rewrites,
+         * which is what this is: no bar, no box, no colour.
+         */
+        char pc[8];
+
+        orfs_term_puts(t, ui->note);
+        orfs_term_puts(t, " ");
+        (void)orfs_u32(pc, sizeof(pc), ui->percent);
+        orfs_term_puts(t, pc);
+        orfs_term_puts(t, "%");
+        t->cursor = false;
+        return;
+    }
+
+    /*
+     * A FORM WITH MORE THAN ONE FIELD is more than one question.
+     * install.sub never asks for two things on a line - it asks for the
+     * address, then the netmask, then the route - so the fields that
+     * are not being typed into print as answered questions above the
+     * one that is.
+     */
+    if (ui->kind == ORFS_UI_FORM && ui->fields > 1U) {
+        for (uint32_t i = 0U; i < ui->fields; ++i) {
+            if (i == ui->focus) {
+                continue;
+            }
+            orfs_term_puts(t, ui->field[i].label);
+            orfs_term_puts(t, "? ");
+            orfs_term_puts(t, ui->field[i].secret ? "" :
+                              ui->field[i].value);
+            orfs_term_newline(t);
+        }
+    }
+
+    if (ui->prompt[0] == '\0') {
+        t->cursor = true;
+        return;
+    }
+    orfs_term_puts(t, ui->prompt);
+    orfs_ui_default(ui, def, sizeof(def));
+    if (def[0] != '\0') {
+        orfs_term_puts(t, " [");
+        orfs_term_puts(t, def);
+        orfs_term_puts(t, "] ");
+    } else {
+        orfs_term_puts(t, " ");
+    }
+    t->cursor = true;
+}

@@ -60,6 +60,16 @@ enum orfs_step {
 };
 
 #define ORFS_INSTALL_STEPS 28U
+/*
+ * THE TRANSCRIPT.  OpenBSD's installer does not repaint a screen; it
+ * prints a question, reads a line, and prints the next one under it, so
+ * what you are looking at when you answer the tenth question is the nine
+ * answers above it.  This is that scrollback, and 48 lines of it is
+ * twice the screen - the terminal drops what runs off the top, which is
+ * also what a console does.
+ */
+#define ORFS_LOG_LINES 48U
+#define ORFS_LOG_COLS 80U
 #define ORFS_COMPONENTS 6U
 #define ORFS_STARTUP 5U
 #define ORFS_HARDENING 5U
@@ -96,6 +106,9 @@ struct orfs_install {
 
     uint32_t swap_mib;       /* how much of the disk is swap */
     bool by_hand;            /* the layout was chosen rather than given */
+    char log[ORFS_LOG_LINES][ORFS_LOG_COLS];
+    uint32_t logged;
+
     enum orfs_step help_from;  /* where F1 was pressed, to go back to */
     bool written;            /* the disk step ran to the end */
     bool verified;           /* the signature step ran to the end */
