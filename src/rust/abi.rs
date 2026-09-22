@@ -31,9 +31,11 @@ use alloc::boxed::Box;
 use core::alloc::{GlobalAlloc, Layout};
 use core::ffi::c_void;
 use core::ptr::null_mut;
+use core::sync::atomic::{AtomicI32, Ordering};
 
 const HEAP_ALIGNMENT: usize = 16;
 const HEAP_STATUS_OK: i32 = 0;
+static LAST_HEAP_ALLOCATION_FAILURE: AtomicI32 = AtomicI32::new(HEAP_STATUS_OK);
 
 struct KernelAllocator;
 
@@ -58,6 +60,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
         if status == HEAP_STATUS_OK {
             pointer.cast()
         } else {
+            LAST_HEAP_ALLOCATION_FAILURE.store(status, Ordering::Relaxed);
             null_mut()
         }
     }
@@ -69,8 +72,9 @@ unsafe impl GlobalAlloc for KernelAllocator {
 
         // SAFETY: `GlobalAlloc` requires the caller to pass a live pointer
         // returned by this allocator. Treat allocator corruption as fatal.
-        if unsafe { heap_free(pointer.cast()) } != HEAP_STATUS_OK {
-            panic();
+        let status = unsafe { heap_free(pointer.cast()) };
+        if status != HEAP_STATUS_OK {
+            panic(format_args!("Rust heap_free failed with status {status}"));
         }
     }
 }
@@ -123,6 +127,13 @@ pub(crate) fn ext4_block_write(context: usize, start_byte: u64, source: &[u8]) -
     }
 }
 
+/// Sample UTC once before staging a new transaction; invalid clocks return MAX.
+pub(crate) fn ext4_current_time(context: usize) -> u64 {
+    unsafe extern "C" { fn openrfs_ext4_current_time(context: usize) -> u64; }
+    // SAFETY: C owns and validates the mount/session; no pointer is retained.
+    unsafe { openrfs_ext4_current_time(context) }
+}
+
 /// Flush every preceding write through the active C-owned ext4 session.
 pub(crate) fn ext4_block_flush(context: usize, boundary: u32) -> bool {
     unsafe extern "C" {
@@ -139,11 +150,12 @@ const _: () = {
     assert!(core::mem::size_of::<ext4::Identity>() == 48);
     assert!(core::mem::offset_of!(ext4::Identity, recovered_transactions) == 32);
     assert!(core::mem::offset_of!(ext4::Identity, recovery_performed) == 44);
-    assert!(core::mem::size_of::<ext4::Metadata>() == 40);
+    assert!(core::mem::size_of::<ext4::Metadata>() == 80);
     assert!(core::mem::align_of::<ext4::Metadata>() == 8);
     assert!(core::mem::offset_of!(ext4::Metadata, file_type) == 28);
-    assert!(core::mem::size_of::<ext4::DirectoryEntry>() == 304);
-    assert!(core::mem::offset_of!(ext4::DirectoryEntry, name) == 42);
+    assert!(core::mem::offset_of!(ext4::Metadata, atime_seconds) == 40);
+    assert!(core::mem::size_of::<ext4::DirectoryEntry>() == 344);
+    assert!(core::mem::offset_of!(ext4::DirectoryEntry, name) == 82);
 
     assert!(fat32::Status::Count as i32 == 37);
     assert!(core::mem::size_of::<fat32::Geometry>() == 96);
@@ -241,12 +253,57 @@ const _: () = {
     assert!(core::mem::offset_of!(elf64_dynamic::Image, bind_now) == 2216);
 };
 
-/// Stop in C's console panic path if a compiler-inserted check ever fires.
-pub(crate) fn panic() -> ! {
-    unsafe extern "C" {
-        fn console_panic(message: *const u8) -> !;
+/// Print bounded, allocation-free diagnostics before stopping in C's panic path.
+pub(crate) fn panic(details: core::fmt::Arguments<'_>) -> ! {
+    struct PanicWriter {
+        remaining: usize,
     }
 
+    impl core::fmt::Write for PanicWriter {
+        fn write_str(&mut self, message: &str) -> core::fmt::Result {
+            unsafe extern "C" {
+                fn console_write_n(message: *const u8, length: usize);
+            }
+            let length = message.len().min(self.remaining);
+            // SAFETY: the console consumes exactly this many bytes during the
+            // call. No allocation or temporary NUL-terminated string is needed.
+            unsafe { console_write_n(message.as_ptr(), length) };
+            self.remaining -= length;
+            if length < message.len() { Err(core::fmt::Error) } else { Ok(()) }
+        }
+    }
+
+    let mut writer = PanicWriter { remaining: 1024 };
+    let _ = core::fmt::write(&mut writer, details);
+    // Mirror the pointer-free C heap snapshot only at the fatal boundary. This
+    // distinguishes byte exhaustion, descriptor exhaustion and mapping failure
+    // without allocating or changing a fallible allocation into a panic.
+    #[repr(C)]
+    struct HeapState {
+        base_address: u64,
+        size: u64,
+        committed_bytes: u64,
+        allocated_bytes: u64,
+        block_count: usize,
+        live_allocations: usize,
+        mapped_pages: usize,
+        active: bool,
+    }
+    const _: () = assert!(core::mem::size_of::<HeapState>() == 64);
+    unsafe extern "C" {
+        fn heap_get_state() -> HeapState;
+        fn console_write_n(message: *const u8, length: usize);
+        fn console_panic(message: *const u8) -> !;
+    }
+    // SAFETY: the C function returns this exact by-value, pointer-free layout.
+    let heap = unsafe { heap_get_state() };
+    let _ = core::fmt::write(&mut writer, format_args!(
+        "\nRust heap: last allocation status {} allocated {} committed {} limit {} blocks {} live {}",
+        LAST_HEAP_ALLOCATION_FAILURE.load(Ordering::Relaxed), heap.allocated_bytes,
+        heap.committed_bytes, heap.size, heap.block_count, heap.live_allocations));
+
+    // SAFETY: this static byte remains live for the complete console call.
+    unsafe { console_write_n(b"\n".as_ptr(), 1) };
     // SAFETY: this is a static NUL-terminated string and the C function never
     // returns. Keeping this declaration here preserves the one unsafe module.
     unsafe { console_panic(c"Rust panicked".as_ptr() as *const u8) }
@@ -311,13 +368,36 @@ pub(crate) unsafe extern "C" fn openrfs_ext4_prepare_unmount(mounted: usize) -> 
 /// mount call, and C must keep its storage context valid with a write lease for
 /// this call. The mount remains live regardless of the result.
 #[unsafe(no_mangle)]
-pub(crate) unsafe extern "C" fn openrfs_ext4_sync(mounted: usize) -> i32 {
-    if mounted == 0 {
+pub(crate) unsafe extern "C" fn openrfs_ext4_sync(mounted: usize, open_inodes: *const u64, open_count: usize) -> i32 {
+    if mounted == 0 || open_inodes.is_null() {
+        return ext4::Status::NullArgument as i32;
+    }
+    if open_count > 128 { return ext4::Status::Range as i32; }
+    // SAFETY: unique access and provenance are the function contract.
+    let mounted = unsafe { &mut *(mounted as *mut ext4::Mounted) };
+    // SAFETY: C supplies the complete live inode array under the write lease.
+    let open_inodes = unsafe { core::slice::from_raw_parts(open_inodes, open_count) };
+    let result = if open_inodes.is_empty() { ext4::sync(mounted) }
+        else { ext4::sync_with_open_inodes(mounted, open_inodes) };
+    match result {
+        Ok(()) => ext4::Status::Ok as i32,
+        Err(status) => status as i32,
+    }
+}
+
+/// Retry only the retained durability plan for one inode, or validate the
+/// checkpointed inode and return an idempotent success when it is clean.
+///
+/// # Safety
+/// `mounted` must be a live uniquely borrowed mount under a writable C lease.
+#[unsafe(no_mangle)]
+pub(crate) unsafe extern "C" fn openrfs_ext4_fsync(mounted: usize, inode: u64) -> i32 {
+    if mounted == 0 || inode == 0 {
         return ext4::Status::NullArgument as i32;
     }
     // SAFETY: unique access and provenance are the function contract.
     let mounted = unsafe { &mut *(mounted as *mut ext4::Mounted) };
-    match ext4::sync(mounted) {
+    match ext4::fsync_inode(mounted, inode) {
         Ok(()) => ext4::Status::Ok as i32,
         Err(status) => status as i32,
     }
@@ -369,6 +449,84 @@ pub(crate) unsafe extern "C" fn openrfs_ext4_unmount(mounted: usize) -> i32 {
     }
 }
 
+/// Publish a named temporary file only while it still names the held inode.
+///
+/// # Safety
+/// Mount, readable paths and live-inode array must be valid and non-overlapping.
+/// C must hold the volume's writable storage lease throughout this call.
+#[unsafe(no_mangle)]
+pub(crate) unsafe extern "C" fn openrfs_ext4_publish_file(
+    mounted: usize, source: *const u8, source_length: usize,
+    destination: *const u8, destination_length: usize, inode: u64,
+    open_inodes: *const u64, open_count: usize,
+) -> i32 {
+    if mounted == 0 || source.is_null() || destination.is_null() || open_inodes.is_null() {
+        return ext4::Status::NullArgument as i32;
+    }
+    if open_count > 128 { return ext4::Status::Range as i32; }
+    // SAFETY: the complete readable ranges and mutable mount are the caller's contract.
+    let (mounted, source, destination, open_inodes) = unsafe {
+        (&mut *(mounted as *mut ext4::Mounted), core::slice::from_raw_parts(source, source_length),
+            core::slice::from_raw_parts(destination, destination_length), core::slice::from_raw_parts(open_inodes, open_count))
+    };
+    match ext4::publish_file(mounted, source, destination, inode, open_inodes) {
+        Ok(()) => ext4::Status::Ok as i32,
+        Err(status) => status as i32,
+    }
+}
+
+/// Unlink a temporary name only while it names the caller's held regular inode.
+///
+/// # Safety
+/// Mount, readable path and live-inode array must be valid and non-overlapping.
+/// C must hold the volume's writable storage lease throughout this call.
+#[unsafe(no_mangle)]
+pub(crate) unsafe extern "C" fn openrfs_ext4_unlink_held_file(
+    mounted: usize, path: *const u8, path_length: usize, inode: u64,
+    open_inodes: *const u64, open_count: usize,
+) -> i32 {
+    if mounted == 0 || path.is_null() || open_inodes.is_null() {
+        return ext4::Status::NullArgument as i32;
+    }
+    if open_count > 128 { return ext4::Status::Range as i32; }
+    // SAFETY: the complete readable ranges and mutable mount are the caller's contract.
+    let (mounted, path, open_inodes) = unsafe {
+        (&mut *(mounted as *mut ext4::Mounted), core::slice::from_raw_parts(path, path_length),
+            core::slice::from_raw_parts(open_inodes, open_count))
+    };
+    match ext4::unlink_held_file(mounted, path, inode, open_inodes) {
+        Ok(()) => ext4::Status::Ok as i32,
+        Err(status) => status as i32,
+    }
+}
+
+/// Prepare a file open while C holds the mount's exclusive storage lease.
+///
+/// # Safety
+/// The mount and readable path must be live; metadata must be writable and
+/// non-overlapping. Create/truncate requires a writable storage lease.
+#[unsafe(no_mangle)]
+pub(crate) unsafe extern "C" fn openrfs_ext4_prepare_open(
+    mounted: usize, path: *const u8, path_length: usize,
+    access: u8, flags: u8, mode: u16, metadata: *mut ext4::Metadata,
+) -> i32 {
+    if mounted == 0 || path.is_null() || metadata.is_null() {
+        return ext4::Status::NullArgument as i32;
+    }
+    // SAFETY: the complete, non-overlapping ranges are the caller's contract.
+    let (mounted, path) = unsafe {
+        (&mut *(mounted as *mut ext4::Mounted), core::slice::from_raw_parts(path, path_length))
+    };
+    match ext4::prepare_open(mounted, path, access, flags, mode) {
+        Ok(value) => {
+            // SAFETY: the caller supplied one writable result.
+            unsafe { *metadata = value };
+            ext4::Status::Ok as i32
+        }
+        Err(status) => status as i32,
+    }
+}
+
 /// Resolve one mount-relative ext4 path.
 ///
 /// # Safety
@@ -394,6 +552,32 @@ pub(crate) unsafe extern "C" fn openrfs_ext4_stat(
     match ext4::stat(filesystem, bytes) {
         Ok(value) => {
             // SAFETY: the caller supplied one writable result.
+            unsafe { *metadata = value };
+            ext4::Status::Ok as i32
+        }
+        Err(status) => status as i32,
+    }
+}
+
+/// Inspect an entry without following its final symlink.
+///
+/// # Safety
+/// Mount/path are readable and live; metadata is writable; ranges are disjoint.
+#[unsafe(no_mangle)]
+pub(crate) unsafe extern "C" fn openrfs_ext4_lstat(
+    mounted: usize, path: *const u8, path_length: usize,
+    metadata: *mut ext4::Metadata,
+) -> i32 {
+    if mounted == 0 || path.is_null() || metadata.is_null() {
+        return ext4::Status::NullArgument as i32;
+    }
+    // SAFETY: complete non-overlapping ranges are the caller's contract.
+    let (mounted, path) = unsafe {
+        (&*(mounted as *const ext4::Mounted), core::slice::from_raw_parts(path, path_length))
+    };
+    match ext4::lstat(mounted, path) {
+        Ok(value) => {
+            // SAFETY: metadata is writable by contract.
             unsafe { *metadata = value };
             ext4::Status::Ok as i32
         }
@@ -546,10 +730,14 @@ pub(crate) unsafe extern "C" fn openrfs_ext4_unlink_file_probe(
     mounted: usize,
     path: *const u8,
     path_length: usize,
+    open_inodes: *const u64,
+    open_count: usize,
+    remove_directory: bool,
 ) -> i32 {
-    if mounted == 0 || path.is_null() {
+    if mounted == 0 || path.is_null() || open_inodes.is_null() {
         return ext4::Status::NullArgument as i32;
     }
+    if open_count > 128 { return ext4::Status::Range as i32; }
     // SAFETY: the complete, non-overlapping inputs are the caller's contract.
     let (mounted, path) = unsafe {
         (
@@ -557,7 +745,16 @@ pub(crate) unsafe extern "C" fn openrfs_ext4_unlink_file_probe(
             core::slice::from_raw_parts(path, path_length),
         )
     };
-    match ext4::unlink_file_probe(mounted, path) {
+    // SAFETY: C supplies a live, aligned inode array under the volume lease.
+    let open_inodes = unsafe { core::slice::from_raw_parts(open_inodes, open_count) };
+    let result = if remove_directory {
+        ext4::remove_entry_guarded(mounted, path, open_inodes)
+    } else if open_inodes.is_empty() {
+        ext4::unlink_file_probe(mounted, path)
+    } else {
+        ext4::unlink_file_guarded(mounted, path, open_inodes)
+    };
+    match result {
         Ok(()) => ext4::Status::Ok as i32,
         Err(status) => status as i32,
     }
@@ -593,6 +790,311 @@ pub(crate) unsafe extern "C" fn openrfs_ext4_link_file_probe(
     }
 }
 
+/// Refresh metadata through a C-owned inode identity.
+///
+/// # Safety
+/// The mount is live and leased, and metadata names a complete disjoint output.
+#[unsafe(no_mangle)]
+pub(crate) unsafe extern "C" fn openrfs_ext4_stat_inode(mounted: usize, inode: u64,
+    metadata: *mut ext4::Metadata) -> i32 {
+    if mounted == 0 || metadata.is_null() { return ext4::Status::NullArgument as i32; }
+    // SAFETY: caller owns the mount lease and output storage.
+    match ext4::stat_inode(unsafe { &*(mounted as *const ext4::Mounted) }, inode) {
+        Ok(value) => { unsafe { *metadata = value; } ext4::Status::Ok as i32 }
+        Err(status) => status as i32,
+    }
+}
+
+/// Truncate through a C-owned inode identity.
+///
+/// # Safety
+/// C owns a live mount and exclusive writable lease.
+#[unsafe(no_mangle)]
+pub(crate) unsafe extern "C" fn openrfs_ext4_truncate_inode(mounted: usize, inode: u64, size: u64) -> i32 {
+    if mounted == 0 { return ext4::Status::NullArgument as i32; }
+    // SAFETY: the caller retains exclusive access for this operation.
+    match ext4::truncate_inode(unsafe { &mut *(mounted as *mut ext4::Mounted) }, inode, size) {
+        Ok(()) => ext4::Status::Ok as i32, Err(status) => status as i32,
+    }
+}
+
+/// Read through a C-owned inode identity.
+///
+/// # Safety
+/// Mount and output ranges are live/disjoint and C holds the read lease.
+#[unsafe(no_mangle)]
+pub(crate) unsafe extern "C" fn openrfs_ext4_pread_inode(mounted: usize, inode: u64,
+    offset: u64, output: *mut u8, capacity: usize, count: *mut usize) -> i32 {
+    if mounted == 0 || output.is_null() || count.is_null() { return ext4::Status::NullArgument as i32; }
+    // SAFETY: the complete disjoint ranges and lease are the caller's contract.
+    let (mounted, output, count) = unsafe { (&*(mounted as *const ext4::Mounted),
+        core::slice::from_raw_parts_mut(output, capacity), &mut *count) };
+    *count = 0;
+    match ext4::pread_inode(mounted, inode, offset, output) {
+        Ok(length) => { *count = length; ext4::Status::Ok as i32 }
+        Err(status) => status as i32,
+    }
+}
+
+/// Write through a C-owned inode identity with the same transaction coordinator.
+///
+/// # Safety
+/// C holds an exclusive writable lease and supplies disjoint live ranges.
+#[unsafe(no_mangle)]
+pub(crate) unsafe extern "C" fn openrfs_ext4_write_inode(mounted: usize, inode: u64,
+    offset: u64, source: *const u8, length: usize, count: *mut usize) -> i32 {
+    if mounted == 0 || source.is_null() || count.is_null() { return ext4::Status::NullArgument as i32; }
+    // SAFETY: caller owns the writable lease and complete input/output ranges.
+    let (mounted, source, count) = unsafe { (&mut *(mounted as *mut ext4::Mounted),
+        core::slice::from_raw_parts(source, length), &mut *count) };
+    *count = 0;
+    match ext4::write_inode(mounted, inode, offset, source) {
+        Ok(length) => { *count = length; ext4::Status::Ok as i32 }
+        Err(status) => status as i32,
+    }
+}
+
+/// Append through an inode identity, retaining its original EOF on retry.
+///
+/// # Safety
+/// C owns the writable lease and all ranges are complete, live and disjoint.
+#[unsafe(no_mangle)]
+pub(crate) unsafe extern "C" fn openrfs_ext4_append_inode(mounted: usize, inode: u64,
+    source: *const u8, length: usize, maximum_size: u64, start: *mut u64, count: *mut usize) -> i32 {
+    if mounted == 0 || source.is_null() || start.is_null() || count.is_null() { return ext4::Status::NullArgument as i32; }
+    // SAFETY: caller owns the writable lease and complete input/output ranges.
+    let (mounted, source, start, count) = unsafe { (&mut *(mounted as *mut ext4::Mounted),
+        core::slice::from_raw_parts(source, length), &mut *start, &mut *count) };
+    *start = 0;
+    *count = 0;
+    match ext4::append_inode(mounted, inode, source, maximum_size) {
+        Ok((offset, length)) => { *start = offset; *count = length; ext4::Status::Ok as i32 }
+        Err(status) => status as i32,
+    }
+}
+
+/// Append under an exclusive volume lease and return its chosen offset.
+///
+/// # Safety
+/// Mount and readable path/source ranges are live and disjoint; start and
+/// written are writable disjoint outputs. C owns a writable storage lease.
+#[unsafe(no_mangle)]
+pub(crate) unsafe extern "C" fn openrfs_ext4_append(
+    mounted: usize, path: *const u8, path_length: usize,
+    source: *const u8, source_length: usize, maximum_size: u64,
+    start: *mut u64, written: *mut usize,
+) -> i32 {
+    if mounted == 0 || path.is_null() || source.is_null() || start.is_null() || written.is_null() {
+        return ext4::Status::NullArgument as i32;
+    }
+    // SAFETY: complete disjoint input/output ranges are the caller's contract.
+    let (mounted, path, source) = unsafe {
+        *start = 0;
+        *written = 0;
+        (&mut *(mounted as *mut ext4::Mounted),
+         core::slice::from_raw_parts(path, path_length),
+         core::slice::from_raw_parts(source, source_length))
+    };
+    match ext4::append_probe(mounted, path, source, maximum_size) {
+        Ok((offset, count)) => {
+            // SAFETY: the caller supplied disjoint writable outputs.
+            unsafe { *start = offset; *written = count; }
+            ext4::Status::Ok as i32
+        }
+        Err(status) => status as i32,
+    }
+}
+
+/// Create a symlink through the journal coordinator.
+///
+/// # Safety
+/// Input ranges must be readable, live and disjoint from the mount; C holds a
+/// writable storage lease and exclusive access to the mounted object.
+#[unsafe(no_mangle)]
+pub(crate) unsafe extern "C" fn openrfs_ext4_symlink(
+    mounted: usize, path: *const u8, path_length: usize,
+    target: *const u8, target_length: usize,
+) -> i32 {
+    if mounted == 0 || path.is_null() || target.is_null() {
+        return ext4::Status::NullArgument as i32;
+    }
+    // SAFETY: complete non-overlapping ranges are the caller's contract.
+    let (mounted, path, target) = unsafe {
+        (&mut *(mounted as *mut ext4::Mounted),
+         core::slice::from_raw_parts(path, path_length),
+         core::slice::from_raw_parts(target, target_length))
+    };
+    match ext4::symlink_probe(mounted, path, target) {
+        Ok(()) => ext4::Status::Ok as i32,
+        Err(status) => status as i32,
+    }
+}
+
+/// Capture a stable directory snapshot and its directory inode metadata.
+///
+/// # Safety
+/// C holds a read lease and supplies disjoint live input/output ranges. The
+/// returned snapshot must be released exactly once with snapshot_free.
+#[unsafe(no_mangle)]
+pub(crate) unsafe extern "C" fn openrfs_ext4_directory_snapshot(
+    mounted: usize, path: *const u8, path_length: usize,
+    metadata: *mut ext4::Metadata, snapshot: *mut usize,
+) -> i32 {
+    if mounted == 0 || path.is_null() || metadata.is_null() || snapshot.is_null() {
+        return ext4::Status::NullArgument as i32;
+    }
+    // SAFETY: the caller guarantees complete disjoint ranges and read exclusion.
+    let (mounted, path, metadata, snapshot) = unsafe {
+        (&*(mounted as *const ext4::Mounted), core::slice::from_raw_parts(path, path_length),
+            &mut *metadata, &mut *snapshot)
+    };
+    *snapshot = 0;
+    match ext4::directory_snapshot(mounted, path) {
+        Ok(value) => {
+            *metadata = value.metadata;
+            *snapshot = Box::into_raw(value) as usize;
+            ext4::Status::Ok as i32
+        }
+        Err(status) => status as i32,
+    }
+}
+
+/// Read a snapshot without acquiring storage or borrowing its mount.
+///
+/// # Safety
+/// The live snapshot and writable output ranges are disjoint.
+#[unsafe(no_mangle)]
+pub(crate) unsafe extern "C" fn openrfs_ext4_snapshot_entry(
+    snapshot: usize, index: u64, output: *mut ext4::DirectoryEntry, present: *mut bool,
+) -> i32 {
+    if snapshot == 0 || output.is_null() || present.is_null() { return ext4::Status::NullArgument as i32; }
+    // SAFETY: the caller retains this snapshot until after the call.
+    unsafe {
+        let entry = (&*(snapshot as *const ext4::DirectorySnapshot)).entry(index);
+        *present = entry.is_some();
+        *output = entry.unwrap_or_default();
+    }
+    ext4::Status::Ok as i32
+}
+
+/// Release an owned directory snapshot.
+///
+/// # Safety
+/// The pointer is live, uniquely owned and was returned by directory_snapshot.
+#[unsafe(no_mangle)]
+pub(crate) unsafe extern "C" fn openrfs_ext4_snapshot_free(snapshot: usize) {
+    if snapshot != 0 {
+        // SAFETY: C relinquishes its sole ownership exactly once.
+        unsafe { drop(Box::from_raw(snapshot as *mut ext4::DirectorySnapshot)); }
+    }
+}
+
+/// Change ordinary permission bits through the journal coordinator.
+///
+/// # Safety
+/// C holds the writable lease; the live mount and readable path are disjoint.
+#[unsafe(no_mangle)]
+pub(crate) unsafe extern "C" fn openrfs_ext4_chmod(
+    mounted: usize, path: *const u8, path_length: usize, mode: u16,
+) -> i32 {
+    if mounted == 0 || path.is_null() { return ext4::Status::NullArgument as i32; }
+    // SAFETY: pointers and exclusion are guaranteed by the caller.
+    let (mounted, path) = unsafe { (&mut *(mounted as *mut ext4::Mounted),
+        core::slice::from_raw_parts(path, path_length)) };
+    match ext4::chmod(mounted, path, mode) {
+        Ok(()) => ext4::Status::Ok as i32, Err(status) => status as i32,
+    }
+}
+
+/// Set explicit atime/mtime while ctime comes from the transaction clock.
+///
+/// # Safety
+/// The mount/path are live and disjoint; C holds an exclusive writable lease.
+#[unsafe(no_mangle)]
+pub(crate) unsafe extern "C" fn openrfs_ext4_set_times(mounted: usize, path: *const u8, path_length: usize,
+    atime_seconds: u64, atime_nanos: u32, mtime_seconds: u64, mtime_nanos: u32) -> i32 {
+    if mounted == 0 || path.is_null() { return ext4::Status::NullArgument as i32; }
+    // SAFETY: C guarantees exclusion and a complete readable path.
+    let (mounted, path) = unsafe { (&mut *(mounted as *mut ext4::Mounted), core::slice::from_raw_parts(path, path_length)) };
+    match ext4::set_times(mounted, path, atime_seconds, atime_nanos, mtime_seconds, mtime_nanos) {
+        Ok(()) => ext4::Status::Ok as i32, Err(status) => status as i32,
+    }
+}
+
+/// Mutate an admitted user xattr; remove=1 deletes, remove=0 sets even an empty value.
+///
+/// # Safety
+/// C holds an exclusive writable lease and supplies disjoint live input ranges.
+#[unsafe(no_mangle)]
+pub(crate) unsafe extern "C" fn openrfs_ext4_set_xattr(
+    mounted: usize, path: *const u8, path_length: usize,
+    name: *const u8, name_length: usize, value: *const u8, value_length: usize, remove: u8,
+) -> i32 {
+    if mounted == 0 || path.is_null() || name.is_null() || value.is_null() {
+        return ext4::Status::NullArgument as i32;
+    }
+    if remove > 1 { return ext4::Status::Invalid as i32; }
+    // SAFETY: pointers and exclusion are guaranteed by the caller.
+    let (mounted, path, name, value) = unsafe { (&mut *(mounted as *mut ext4::Mounted),
+        core::slice::from_raw_parts(path, path_length), core::slice::from_raw_parts(name, name_length),
+        core::slice::from_raw_parts(value, value_length)) };
+    match ext4::set_xattr(mounted, path, name, if remove == 1 { None } else { Some(value) }) {
+        Ok(()) => ext4::Status::Ok as i32, Err(status) => status as i32,
+    }
+}
+
+/// Query an admitted user xattr; capacity zero queries its required size.
+///
+/// # Safety
+/// C holds a lease; mount/inputs and writable output/count ranges are live and disjoint.
+#[unsafe(no_mangle)]
+pub(crate) unsafe extern "C" fn openrfs_ext4_get_xattr(
+    mounted: usize, path: *const u8, path_length: usize,
+    name: *const u8, name_length: usize, output: *mut u8, capacity: usize, count: *mut usize,
+) -> i32 {
+    if mounted == 0 || path.is_null() || name.is_null() || output.is_null() || count.is_null() {
+        return ext4::Status::NullArgument as i32;
+    }
+    // SAFETY: pointers and exclusion are guaranteed by the caller.
+    let (mounted, path, name, output, count) = unsafe { (&*(mounted as *const ext4::Mounted),
+        core::slice::from_raw_parts(path, path_length), core::slice::from_raw_parts(name, name_length),
+        core::slice::from_raw_parts_mut(output, capacity), &mut *count) };
+    *count = 0;
+    match ext4::get_xattr(mounted, path, name, output) {
+        Ok(length) => { *count = length; ext4::Status::Ok as i32 }, Err(status) => status as i32,
+    }
+}
+
+/// Read a symlink's literal target without a trailing NUL.
+///
+/// # Safety
+/// Mount/path are live and readable; output and count are writable and all
+/// ranges are disjoint. C holds a storage lease.
+#[unsafe(no_mangle)]
+pub(crate) unsafe extern "C" fn openrfs_ext4_readlink(
+    mounted: usize, path: *const u8, path_length: usize,
+    output: *mut u8, capacity: usize, count: *mut usize,
+) -> i32 {
+    if mounted == 0 || path.is_null() || output.is_null() || count.is_null() {
+        return ext4::Status::NullArgument as i32;
+    }
+    // SAFETY: complete non-overlapping ranges are the caller's contract.
+    let (mounted, path, output) = unsafe {
+        *count = 0;
+        (&*(mounted as *const ext4::Mounted),
+         core::slice::from_raw_parts(path, path_length),
+         core::slice::from_raw_parts_mut(output, capacity))
+    };
+    match ext4::readlink(mounted, path, output) {
+        Ok(value) => {
+            // SAFETY: caller supplied a writable count.
+            unsafe { *count = value };
+            ext4::Status::Ok as i32
+        }
+        Err(status) => status as i32,
+    }
+}
+
 /// Execute or retry one journaled empty-directory creation.
 ///
 /// # Safety
@@ -607,7 +1109,7 @@ pub(crate) unsafe extern "C" fn openrfs_ext4_create_directory_probe(
     if mounted == 0 || path.is_null() {
         return ext4::Status::NullArgument as i32;
     }
-    // SAFETY: the complete, non-overlapping inputs are the caller's contract.
+    // SAFETY: the mount and readable path range are the caller's contract.
     let (mounted, path) = unsafe {
         (
             &mut *(mounted as *mut ext4::Mounted),
@@ -615,6 +1117,31 @@ pub(crate) unsafe extern "C" fn openrfs_ext4_create_directory_probe(
         )
     };
     match ext4::create_directory_probe(mounted, path) {
+        Ok(()) => ext4::Status::Ok as i32,
+        Err(status) => status as i32,
+    }
+}
+
+/// Create a directory with requested permissions in the namespace transaction.
+///
+/// # Safety
+/// The mount and path range must be live, readable and non-overlapping, and C
+/// must hold a writable storage lease.
+#[unsafe(no_mangle)]
+pub(crate) unsafe extern "C" fn openrfs_ext4_create_directory_mode(
+    mounted: usize, path: *const u8, path_length: usize, mode: u16,
+) -> i32 {
+    if mounted == 0 || path.is_null() {
+        return ext4::Status::NullArgument as i32;
+    }
+    // SAFETY: the complete, non-overlapping inputs are the caller's contract.
+    let (mounted, path) = unsafe {
+        (
+            &mut *(mounted as *mut ext4::Mounted),
+            core::slice::from_raw_parts(path, path_length),
+        )
+    };
+    match ext4::create_directory_mode(mounted, path, mode) {
         Ok(()) => ext4::Status::Ok as i32,
         Err(status) => status as i32,
     }
@@ -630,10 +1157,13 @@ pub(crate) unsafe extern "C" fn openrfs_ext4_remove_directory_probe(
     mounted: usize,
     path: *const u8,
     path_length: usize,
+    open_inodes: *const u64,
+    open_count: usize,
 ) -> i32 {
-    if mounted == 0 || path.is_null() {
+    if mounted == 0 || path.is_null() || open_inodes.is_null() {
         return ext4::Status::NullArgument as i32;
     }
+    if open_count > 128 { return ext4::Status::Range as i32; }
     // SAFETY: the complete, non-overlapping inputs are the caller's contract.
     let (mounted, path) = unsafe {
         (
@@ -641,7 +1171,11 @@ pub(crate) unsafe extern "C" fn openrfs_ext4_remove_directory_probe(
             core::slice::from_raw_parts(path, path_length),
         )
     };
-    match ext4::remove_directory_probe(mounted, path) {
+    // SAFETY: C supplies the live inode array under the volume lease.
+    let open_inodes = unsafe { core::slice::from_raw_parts(open_inodes, open_count) };
+    let result = if open_inodes.is_empty() { ext4::remove_directory_probe(mounted, path) }
+        else { ext4::remove_directory_guarded(mounted, path, open_inodes) };
+    match result {
         Ok(()) => ext4::Status::Ok as i32,
         Err(status) => status as i32,
     }
@@ -672,6 +1206,37 @@ pub(crate) unsafe extern "C" fn openrfs_ext4_rename_probe(
         )
     };
     match ext4::rename_probe(mounted, source, destination) {
+        Ok(()) => ext4::Status::Ok as i32,
+        Err(status) => status as i32,
+    }
+}
+
+/// Rename with replacement through the same journal coordinator.
+///
+/// # Safety
+/// Mount and readable input ranges are live and disjoint. C holds exclusive
+/// mount access and a writable lease.
+#[unsafe(no_mangle)]
+pub(crate) unsafe extern "C" fn openrfs_ext4_rename_replace(
+    mounted: usize, source: *const u8, source_length: usize,
+    destination: *const u8, destination_length: usize,
+    open_inodes: *const u64, open_count: usize,
+) -> i32 {
+    if mounted == 0 || source.is_null() || destination.is_null() || open_inodes.is_null() {
+        return ext4::Status::NullArgument as i32;
+    }
+    if open_count > 128 { return ext4::Status::Range as i32; }
+    // SAFETY: complete non-overlapping input ranges are the caller's contract.
+    let (mounted, source, destination) = unsafe {
+        (&mut *(mounted as *mut ext4::Mounted),
+         core::slice::from_raw_parts(source, source_length),
+         core::slice::from_raw_parts(destination, destination_length))
+    };
+    // SAFETY: C supplies all live file and directory inodes under the lease.
+    let open_inodes = unsafe { core::slice::from_raw_parts(open_inodes, open_count) };
+    let result = if open_inodes.is_empty() { ext4::rename_replace_probe(mounted, source, destination) }
+        else { ext4::rename_replace_guarded(mounted, source, destination, open_inodes) };
+    match result {
         Ok(()) => ext4::Status::Ok as i32,
         Err(status) => status as i32,
     }

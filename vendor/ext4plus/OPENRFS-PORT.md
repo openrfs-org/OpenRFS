@@ -126,12 +126,19 @@ change. The Linux fixture additionally runs a real upstream file write through
 the stage and observes the overlay while the source image remains unchanged.
 OpenRFS's directory delta initializes new directory inodes with checksummed
 `.`/`..` entries and supplies a bounded empty-directory removal primitive.
-Removal validates the complete single-block directory before changing the
-stage, updates the parent link count, frees the inode and data block, and
-returns that physical block so the platform adapter can require its exact JBD2
-revocation. A same-parent rename primitive adds the destination and removes the
-source without changing inode or parent link counts; it refuses replacement
-and leaves cross-parent moves to a future, separately proven adapter.
+Removal validates the complete empty directory before changing the stage,
+updates the parent link count, frees the inode and all its blocks, and returns
+its first physical block so the platform adapter can require that exact JBD2
+revocation alongside every other staged revoke. Shrinking the parent directory
+may add another revoke. The transaction's existing 64-revoke bound still
+applies. A same-parent rename primitive adds the destination and removes the
+source without changing inode or parent link counts; it refuses replacement.
+The Rust coordinator also stages cross-parent regular-file moves by linking
+the destination before unlinking the source in the same transaction. Parent
+inode identity selects the same-parent primitive even when path strings differ
+through symlinks. Non-indexed directory moves are described below. Real-fixture
+tests exercise identity, hard-link counts, destination refusal rollback, and
+every storage-operation retry before admitting this extension as proven.
 The stage can also clone an input transaction into one atomic classified
 snapshot: each explicitly named ordered-data block must be staged exactly once,
 derived revocations are added, every remaining image becomes journaled
@@ -196,6 +203,42 @@ that the ordinary loader still refuses a recovery-marked writer before using
 the explicit coordinator loader. Writable admission is therefore limited to
 the exact supported profile and never weakens those refusal cases.
 
+Partial-block file truncation zeros the discarded tail of an initialized
+retained block before shrinking the inode, without allocating holes or
+initializing unwritten extents. The coordinator journals that tail image with
+the inode and allocation metadata, so replay restores both the size and the
+discarded bytes together. The public truncate wrapper also refuses immutable
+inodes. The production-coordinator host tests cover shrink/grow at block edges,
+sparse tails, and recovery from every acknowledged truncate flush. Linux
+fixture/e2fsck execution is required evidence for these additions. This follows
+Linux v6.12 `fs/ext4/inode.c:ext4_block_truncate_page()`; it does not establish
+atomicity for general ordered-data overwrites.
+
+`Dir::move_directory` stages cross-parent non-indexed directory moves with
+validated dot/dotdot records, recomputed directory checksum, and both parent
+link counts. The moved inode's identity and link count remain unchanged.
+Descendant cycles are checked by inode ancestry, including aliased destination
+paths. Indexed moved directories remain refused. The coordinator's real-fixture
+suite exercises every storage refusal and acknowledged durability prefix;
+Linux e2fsck is required to validate this path. The metadata set follows Linux
+v6.12 `fs/ext4/namei.c` directory rename; no JBD2 ordering changes are made.
+
+Symlink creation uses the same inline boundary as reading (targets shorter
+than 60 bytes), sets link permissions to 0777, and deletion avoids interpreting
+inline target bytes as block addresses. The coordinator journals long targets
+as metadata with their namespace publication. Mount admission validates each
+symlink inode's own xattrs without following its target, admitting dangling and
+looping links. Real-fixture tests cover 59/60/61-byte and 4,095-byte targets,
+remount, unlink, cross-parent rename, and byte-identical storage retries.
+
+Sparse writes limit newly allocated extents to the next existing logical
+extent. Extent-node serialization pads unused slots and writes the checksum
+after `eh_max` entries, matching Linux v6.12 `ext4_extent_block_csum` and
+e2fsprogs v1.47.2 `ext2fs_extent_block_csum`. Previously shrinking a node left
+stale entries beyond a checksum written after `eh_entries`, causing immediate
+checksum refusal. Host fixtures exercise 60 separate extents, hole-filling
+overwrites, shrink/grow and read-only fsck before and after truncation.
+
 OpenRFS-specific changes stay in reviewable commits and are summarized here as
 they land. The intended port configuration is `--no-default-features
 --features sync`; the asynchronous and hosted `std` surfaces are out of scope.
@@ -208,3 +251,129 @@ fixtures are deliberately outside the runtime vendor boundary.
 Vendored scope is intentionally limited to `Cargo.toml`, `Cargo.lock`, the two
 license files, `README.md`, and `src/`. Upstream test disk images, `xtask`, and
 host integration tests are not runtime build inputs and are not vendored.
+
+External xattr reads validate the one-block header, reference count, and
+metadata checksum. Detaching an external block decrements shared references
+with a new checksum, or revokes/frees the final reference; inode deletion uses
+the same path. The checksum covers the filesystem seed, little-endian 64-bit
+block number, and complete block with h_checksum zeroed, following Linux
+v6.12 fs/ext4/xattr.c and e2fsprogs v1.47.2 lib/ext2fs/csum.c. The Linux fixture
+test checks shared release, final free, clean fsck, and corrupt-block refusal.
+
+The writable branch now stages external xattr allocation and replacement.
+Small attributes are packed into declared inode-body space; remaining entries
+use one block sorted by namespace, name length and name bytes. External entry
+and block hashes follow Linux v6.12 ext4_xattr_hash_entry/ext4_xattr_rehash.
+An exclusive block is journaled in place; a shared block receives a private
+copy before its old reference is dropped. Packing precedes allocation, and
+coordinator rollback discards reservations on failure. New Linux hash/export,
+shared-copy crash and allocation/rewrite/release fault tests remain pending.
+Inodes with extra_isize=0 retain their opaque tail and can use external xattrs.
+
+The writable branch parses ext4 version-1 POSIX ACL entries (short owner/group,
+mask/other records and full named-ID records), rejecting malformed permissions,
+ordering, duplicate IDs and default ACLs on non-directories during admission.
+New-file/directory creation calls `inherit_default_acl` before publishing the
+name; `chmod_with_acl` changes mode and access-mask permissions together. Both
+use the existing staged inode/external-xattr writer. Linux v6.12
+`fs/posix_acl.c` (`posix_acl_create_masq`, `__posix_acl_chmod_masq`) and
+`fs/ext4/acl.c` define these semantics. New real fixtures cover basic, named,
+external and inherited defaults, chmod, unchanged link/rename/symlink ACLs,
+allocation refusal, storage retries, recovery and malformed admission. Runtime
+verification of this addition is pending; general ACL access enforcement is
+outside the claimed profile.
+
+`Inode::unix_times` exposes signed access/modify/change seconds and nanoseconds
+without the legacy Duration getters' pre-epoch clamp. Only declared extra fields
+contribute epoch bits and nanoseconds; invalid declared nanoseconds are rejected
+during mount admission before any recovery write. The C/Rust metadata boundary
+and additive SDK stat/lstat ABI carry these values unchanged. Linux runtime
+verification of this extension is pending.
+
+`create_child_inode` applies Linux v6.12 `inode_init_owner` setgid inheritance
+before allocating the inode, then applies the default ACL. The coordinator's
+file/directory creation and ext4plus symlink creation use this path; raw
+`create_inode` remains available for internal allocation. Caller uid is retained,
+the parent's gid is inherited only with setgid, and only subdirectories inherit
+the setgid bit. Real fixtures compare uid/gid/mode with Linux for a parent owned
+by uid54321/gid70000, including fast/slow symlinks and nested creation. Pending
+storage retries and crash recovery check the inherited group and mode together.
+
+The journal coordinator sets an exclusive transaction time on its staged view.
+Inode writes update ctime (and directory mtime); file write/truncate updates
+mtime; creation sets all initial times after reserving the extra inode fields.
+The epoch codec follows Linux v6.12 ext4_encode_extra_time, including the signed
+32-bit base around 2038. Generic ext4plus callers without a transaction time
+retain their explicit timestamp behavior. The Duration API has no negative
+dates; pre-epoch read values are reported as zero, without rewriting raw fields.
+
+JBD2 revoke r_count is the used-byte end offset including the 16-byte header,
+as required by Linux v6.12 revoke.c/recovery.c. The inherited parser and initial
+serializer both incorrectly treated it as payload length; both are corrected.
+Independent e2fsprogs journal-only replay on disposable durability-cut images,
+followed by read-only full fsck, now supplements the OpenRFS replay tests.
+
+The current revoke bound is 8192 block numbers, serialized in up to 17 checksum-v3
+records with 509 64-bit entries per full block. Slot reservation, execution,
+transaction replay and ring scanning account for every record. The metadata
+image bound remains 64. Multi-record tests cover exact counts, corrupt records,
+and large truncate/unlink with OpenRFS and independent e2fsprogs replay.
+
+`inode_is_allocated` validates the inode bitmap without lazy initialization.
+OpenRFS uses it before inode-based I/O, and orphan validation shares this check.
+Linux v6.12 fs/ext4/ialloc.c releases allocation separately from the inode body;
+a valid body checksum alone cannot identify a live inode. A real e2fsprogs
+fixture reconstructs a freed checksummed body and checks storage-free refusal.
+
+Directory parent link updates preserve the dir_nlink sentinel (one) for indexed
+directories and use it when an admitted indexed parent's count exceeds 65000.
+Mkdir, cross-parent move and rmdir share the counter handling, following Linux
+v6.12 ext4_inc_count/ext4_dec_count. An indexed directory can be empty while its
+count remains one; removal still validates every entry and both dot records.
+
+`remove_open_directory` retains a validated empty directory on the legacy
+orphan chain instead of freeing its inode while snapshots exist. The parent
+link decrement and orphan head commit together. Cleanup validates both dot
+records and rejects other entries before freeing any directory; the admitted
+retained size is nonzero, block aligned, and at most 8192 blocks. OpenRFS keeps
+the original size for validating its retained directories. Linux-kernel recovery
+fixtures for OpenRFS rmdir/open-directory replacement cuts passed `f9ae36e`.
+Zero-size Linux directories additionally admit bounded inline-root extents with
+a contiguous initialized logical prefix and validated empty directory blocks,
+or an empty root with zero allocation accounting and no external xattr. Recovery
+and repeated-failure fixtures for both states passed `7b39693`; multi-level
+zero-size trees and linked truncation orphans remain refused.
+
+Inode allocation rejects reserved/out-of-range inode numbers before setting a
+bitmap bit. Free validates global/group counters and directory counts before
+changing the inode bitmap; coordinator rollback also discards earlier staged
+data/extent frees. OpenRFS admission requires inode count = group count times
+inodes per group, matching Linux v6.12 ext4_check_geometry, and first_ino=11.
+Checksummed hostile-geometry and counter-overflow fixtures passed `f9ae36e`.
+
+All extent child traversals require depth to decrease by exactly one, including
+read iterators, lookup, neighbor search and mutation collection. A checksummed
+self-cycle fixture passed `7b39693` without writes or unbounded traversal.
+Mutation stages support smaller caller budgets within the fixed 64-image bound;
+the coordinator preserves that budget on reload and adaptively splits writes
+only after an explicit capacity failure has been fully rolled back. Real
+12-image and one-image budget fixtures passed `7b39693`.
+
+The coordinator refuses fixed allocator metadata as ordered file data or as a
+freed/revoked block. `is_fixed_metadata_block` covers bitmap blocks, inode tables,
+and primary/backup superblock and descriptor tables in the non-flex/non-resize
+profile. `BlockAllocationSnapshot` also claims data and mapping nodes exclusively,
+counts shared external-xattr references, and compares the complete ownership map
+against allocation bitmaps. The namespace pass checks allocated inode reachability,
+link counts, directory parents, entry types and duplicate names. The corresponding
+hostile-fixture suite passed Linux verification at `a674c98`; corrupt inputs require
+byte-identical refusal, not a clean fsck result.
+
+Validated inode IDs, extent ownership ranges and external-xattr reference records
+use sorted, fallibly grown vectors. These preserve the original uniqueness,
+overlap and reference-count checks while avoiding one kernel allocation descriptor
+per B-tree node. Reservations happen before adding the corresponding claims or
+counters. The 65,536-range budget remains unchanged; bitmap group caches and
+directory counts remain separate. Full-scale allocation behavior is not implied
+by these representation changes. Linux validation of the latest packed range and
+xattr changes remains pending in the implementation ledger.

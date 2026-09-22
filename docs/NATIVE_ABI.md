@@ -87,9 +87,22 @@ is immutable; writable Data paths are rooted below the application namespace.
 | `0x0208 PATH_RENAME(*request)` | `0` | K | Moves the source only when the destination is absent. The mutation is serialized and either publishes the valid rename or fails. |
 | `0x0209 PATH_REPLACE(*request)` | `0` | K | Publishes the source at the destination using the recovery-safe replacement path. No user handle is consumed. |
 | `0x020a PATH_UNLINK(*path, reserved_zero)` | `0` | K | Removes the named Data file or empty directory. Existing open handles retain their bounded kernel object until closed. |
-| `0x020b PATH_TRUNCATE(*path, length)` | `0` | K | Resizes one Data file subject to FAT32 and manifest limits; no handle or buffer ownership changes. |
-| `0x020c VOLUME_SYNC(volume)` | `0` | K | Completes pending FAT32 and device synchronization for the authorized volume; owns no object after return. |
+| `0x020b PATH_TRUNCATE(*path, length)` | `0` | K | Resizes one Data file subject to the backend's admitted size and manifest limits; no handle or buffer ownership changes. |
+| `0x020c VOLUME_SYNC(volume)` | `0` | K | Completes pending filesystem and device synchronization for the authorized volume; owns no object after return. |
 | `0x020d VOLUME_SPACE(volume, *space)` | `0` | K | Writes one all-or-nothing free-space record and retains no pointer or resource. |
+| `0x020e PATH_SYMLINK(*path, target, length)` | `0` | K | Creates an ext4 Data link with a nonempty literal target shorter than 128 bytes; requires Data write capability. Target bytes are copied before mutation and no pointer is retained. |
+| `0x020f PATH_READLINK(*path, output, capacity)` | Bytes copied | K | Copies literal target bytes without a NUL, including dangling/looping final links. A nonzero output buffer may truncate the target; at most 4096 bytes are copied. No handle is allocated. |
+| `0x0210 PATH_CHMOD(*path, mode)` | `0` | K | Replaces permission/special mode bits (0000–07777) on ext4 Data with write capability. Immutable inodes and access ACLs are refused. |
+| `0x0211 PATH_XATTR(*request)` | Value length for get, otherwise `0` | K | Versioned 56-byte request selects get/set/remove of admitted user attributes. Name length is 1–255, value/capacity at most 4096; get with zero capacity queries size. Inputs are copied before mutation. Set/remove require Data write capability. Ext4 packs attributes in the inode and at most one external block; external value inodes are refused. |
+| `0x0212 DIRECTORY_READ_LONG(handle, output)` | `1` entry, `0` end | K | Writes a 280-byte entry with a 255-byte name field. SDK readdir uses this call; the original 40-byte directory-entry ABI remains available. |
+| `0x0213 FILE_TRUNCATE(handle, size)` | `0` | K | Requires a writable file handle. Ext4 truncates by inode identity through JBD2, preserving the cursor and surviving file/parent rename. Ext4's mutable-file cap is 64 MiB; FAT32 retains its separate 16 MiB limit. |
+| `0x0214 PATH_SET_TIMES(*request)` | `0` | K | A 48-byte versioned request sets explicit non-negative atime/mtime seconds and nanoseconds on ext4 Data with write capability. Seconds must fit the admitted ext4 epoch range, nanoseconds below one billion. Ctime comes from the transaction clock. |
+| `0x0215 PATH_LINK(*request)` | `0` | K | Creates a hard link to an existing regular Data inode at an absent destination. Requires Data write capability; copies both paths and allocates no handle. |
+| `0x0216 PATH_METADATA(*path, *metadata, flags)` | `0` | K | Copies versioned metadata for a path. `OPENRFS_METADATA_NOFOLLOW` selects the final link itself; otherwise lookup follows it. Retains no pointer or handle. |
+| `0x0217 FILE_SYNC(handle)` | `0` | K | Uses a valid file handle to complete that inode's retained ext4 durability plan; unrelated retained work can return busy. The handle remains owned by the caller. |
+| `0x0218 FILE_METADATA(handle, *metadata)` | `0` | K | Copies versioned metadata for the inode held by a file handle, including after rename or unlink. The handle remains caller-owned. |
+| `0x0219 FILE_PUBLISH(handle, *request)` | `0` | K | With Data write capability, atomically replaces the named ext4 destination only if the source still names the inode held by the writable handle. Copies both paths; the handle remains owned. |
+| `0x021a FILE_UNLINK(handle, *path)` | `0` | K | With Data write capability, unlinks the named Data file only if it is the inode held by the writable handle. Copies the path; the handle remains owned. |
 
 ### Time, waiting, and entropy
 
@@ -158,9 +171,9 @@ for applications that must keep another userspace thread runnable.
 | `0x0805 PACKAGE_CONTROL_ATTACH(*request)` | `0` | K | Requires a sealed upload whose length and digest match the named plan item, copies it into the controller, and re-authenticates the signed package against the repository entry. The upload handle remains caller-owned. |
 | `0x0806 PACKAGE_CONTROL_COMMIT(*request)` | `0` | K | Rebuilds and encodes canonical state, then bootstraps generation one or prepares and commits an update or removal. A durability refusal after prepare leaves the control handle retryable; `PREPARED` and `COMMITTED` report the exact state. |
 
-The installed VFS currently bounds one staged file at 16 MiB, so the upload
-ABI publishes that real limit even though package format v3 can represent a
-larger host-side container. A final close durably unlinks the upload; duplicate
+The package-upload API caps one private staged file at 16 MiB, even though
+ext4 admits 64 MiB mutable files and package format v3 can represent a larger
+host-side container. A final close durably unlinks the upload; duplicate
 handles share it and only the last close performs cleanup.
 
 One package-control session may be live system-wide. Its native handle may be

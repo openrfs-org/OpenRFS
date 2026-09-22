@@ -65,6 +65,16 @@ impl File {
         &self.inode
     }
 
+    /// Return the stable on-disk inode number represented by this file.
+    ///
+    /// The number is useful to an outer coordinator that owns the durability
+    /// policy. It deliberately exposes identity only; file contents and
+    /// mutation ownership remain in the coordinator and inode objects.
+    #[must_use]
+    pub fn inode_number(&self) -> u64 {
+        u64::from(self.inode.index.get())
+    }
+
     /// Mutable access to the internal [`Inode`] for this file. This allows for modifying metadata etc.
     /// Note that changes to the inode will not be persisted until [`Inode::write`] is called.
     pub fn inode_mut(&mut self) -> &mut Inode {
@@ -116,10 +126,7 @@ impl File {
         &mut self,
         buf: &[u8],
     ) -> Result<usize, Ext4Error> {
-        let written = self
-            .file_blocks
-            .write_at(&mut self.inode, buf, self.position)
-            .await?;
+        let written = self.write_bytes_at(buf, self.position).await?;
         self.position = add_to_file_offset(self.position, written)?;
         Ok(written)
     }
@@ -133,6 +140,7 @@ impl File {
         buf: &[u8],
         pos: u64,
     ) -> Result<usize, Ext4Error> {
+        if let Some(time) = self.fs.mutation_time() { self.inode.set_mutation_mtime(time)?; }
         self.file_blocks.write_at(&mut self.inode, buf, pos).await
     }
 
@@ -157,7 +165,8 @@ impl File {
     /// Truncate the file to `new_size` bytes.
     #[maybe_async::maybe_async]
     pub async fn truncate(&mut self, new_size: u64) -> Result<(), Ext4Error> {
-        self.file_blocks.truncate(&mut self.inode, new_size).await
+        if let Some(time) = self.fs.mutation_time() { self.inode.set_mutation_mtime(time)?; }
+        self.file_blocks.truncate(&self.fs, &mut self.inode, new_size).await
     }
 
     /// Claim `num_blocks` filesystem blocks for this file as uninitialized extents.
@@ -384,5 +393,5 @@ pub async fn truncate(
     new_size: u64,
 ) -> Result<(), Ext4Error> {
     let mut file_blocks = FileBlocks::from_inode(inode, ext4.clone())?;
-    file_blocks.truncate(inode, new_size).await
+    file_blocks.truncate(ext4, inode, new_size).await
 }

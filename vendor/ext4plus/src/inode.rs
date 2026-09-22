@@ -26,6 +26,8 @@ use alloc::vec::Vec;
 use bitflags::bitflags;
 use core::num::{NonZeroU16, NonZeroU32};
 use core::time::Duration;
+#[cfg(not(feature = "sync"))]
+use crate::iters::AsyncIterator;
 
 /// Inode index.
 ///
@@ -54,6 +56,9 @@ bitflags! {
     pub struct InodeFlags: u32 {
         /// File is immutable.
         const IMMUTABLE = 0x10;
+
+        /// File permits only appends; directory permits only new entries.
+        const APPEND_ONLY = 0x20;
 
         /// Directory is encrypted.
         const DIRECTORY_ENCRYPTED = 0x800;
@@ -135,26 +140,23 @@ bitflags! {
 }
 
 fn timestamp_to_duration(timestamp: u32, high: Option<u32>) -> Duration {
-    if let Some(high) = high {
-        // Low 2 bits of `high` are the high 2 bits of the timestamp, and the rest of `high` is for nanosecond precision
-        let timestamp_high = high & 0b11;
-        let timestamp =
-            ((u64::from(timestamp_high)) << 32) | u64::from(timestamp);
-        Duration::new(timestamp, high >> 2)
-    } else {
-        Duration::from_secs(u64::from(timestamp))
-    }
+    let extra = high.unwrap_or(0);
+    let base = i64::from(i32::from_le_bytes(timestamp.to_le_bytes()));
+    let seconds = base + (i64::from(extra & 3) << 32);
+    // The upstream Duration API cannot represent pre-epoch dates. Preserve
+    // their raw inode fields unless explicitly changed; report zero here.
+    Duration::new(u64::try_from(seconds).unwrap_or(0), (extra >> 2).min(999_999_999))
 }
 
 fn duration_to_timestamp(duration: Duration) -> (u32, Option<u32>) {
-    let timestamp = duration.as_secs();
+    let timestamp = duration.as_secs().min(0x3_7fff_ffff);
     // ext4 encodes nanoseconds in the upper 30 bits of the "extra" field.
     // Duration guarantees subsec_nanos < 1e9, but clamp defensively anyway.
     let nanos = duration.subsec_nanos().min(999_999_999);
 
-    if timestamp > u64::from(u32::MAX) || nanos != 0 {
+    if timestamp > 0x7fff_ffff || nanos != 0 {
         #[expect(clippy::as_conversions)]
-        let timestamp_high = (timestamp >> 32) as u32;
+        let timestamp_high = ((timestamp + 0x8000_0000) >> 32) as u32;
         #[expect(clippy::as_conversions)]
         let timestamp_low = timestamp as u32;
         let high = (timestamp_high & 0b11) | (nanos << 2);
@@ -182,9 +184,87 @@ pub struct Inode {
 }
 
 impl Inode {
+    /// The admitted writable profile uses only root and journal among reserved
+    /// inodes. Other reserved slots must not hide storage outside the ownership
+    /// census (bad-block lists, boot loaders, resize/quota inodes, etc.).
+    #[maybe_async::maybe_async]
+    pub(crate) async fn validate_empty_reserved(ext4: &Ext4, index: InodeIndex) -> Result<(), Ext4Error> {
+        let (block, offset) = get_inode_location(ext4, index)?;
+        let mut data = vec![0; usize::from(ext4.superblock().inode_size())];
+        ext4.read_from_block(block, offset, &mut data).await?;
+        Self::validate_extra_size(&data, index)?;
+        for range in [0..2, 4..8, 0x14..0x24, 0x28..0x64, 0x68..0x70, 0x74..0x78] {
+            if data.get(range).is_none_or(|bytes| bytes.iter().any(|byte| *byte != 0)) {
+                return Err(Ext4Error::Readonly);
+            }
+        }
+        // mke2fs leaves unused reserved slots entirely zero. A populated
+        // inactive inode body must carry its normal metadata checksum.
+        if ext4.has_metadata_checksums() && data.iter().any(|byte| *byte != 0) {
+            let expected = Self::stored_checksum(&data);
+            let mut checksum = Checksum::with_seed(ext4.superblock().checksum_seed());
+            checksum.update_u32_le(index.get());
+            checksum.update_u32_le(read_u32le(&data, 0x64));
+            if Self::checksum_bytes(&checksum, &data) != expected {
+                return Err(CorruptKind::InodeChecksum(index).into());
+            }
+        }
+        Ok(())
+    }
+
+    /// Validate every extent, including holes and allocation beyond EOF.
+    /// This checks tree structure and physical bounds, not block ownership.
+    /// Non-extent inodes retain their existing block-map validation path.
+    #[maybe_async::maybe_async]
+    pub async fn validate_extent_tree(&self, ext4: &Ext4) -> Result<(), Ext4Error> {
+        if self.flags().contains(InodeFlags::EXTENTS) {
+            let mut extents = crate::iters::extents::Extents::new(ext4.clone(), self)?;
+            while let Some(extent) = extents.next().await { extent?; }
+        }
+        Ok(())
+    }
+
     const INLINE_DATA_LEN: usize = 60;
     const L_I_CHECKSUM_LO_OFFSET: usize = 0x74 + 0x8;
     const I_CHECKSUM_HI_OFFSET: usize = 0x82;
+
+    fn validate_extra_size(data: &[u8], index: InodeIndex) -> Result<(), Ext4Error> {
+        if data.len() > 128 {
+            let extra = data.get(128..130).map(|bytes| usize::from(read_u16le(bytes, 0)))
+                .ok_or(CorruptKind::InodeTruncated { inode: index, size: data.len() })?;
+            if extra % 4 != 0 || extra > data.len() - 128 {
+                return Err(CorruptKind::InodeTruncated { inode: index, size: 128 + extra }.into());
+            }
+        }
+        Ok(())
+    }
+
+    fn has_checksum_hi(data: &[u8]) -> bool {
+        data.len() >= Self::I_CHECKSUM_HI_OFFSET + 2 && read_u16le(data, 0x80) >= 4
+    }
+
+    fn stored_checksum(data: &[u8]) -> u32 {
+        u32_from_hilo(if Self::has_checksum_hi(data) {
+            read_u16le(data, Self::I_CHECKSUM_HI_OFFSET)
+        } else { 0 }, read_u16le(data, Self::L_I_CHECKSUM_LO_OFFSET))
+    }
+
+    fn checksum_bytes(base: &Checksum, data: &[u8]) -> u32 {
+        let mut checksum = base.clone();
+        checksum.update(&data[..Self::L_I_CHECKSUM_LO_OFFSET]);
+        checksum.update_u16_le(0);
+        if Self::has_checksum_hi(data) {
+            checksum.update(&data[Self::L_I_CHECKSUM_LO_OFFSET + 2..Self::I_CHECKSUM_HI_OFFSET]);
+            checksum.update_u16_le(0);
+            checksum.update(&data[Self::I_CHECKSUM_HI_OFFSET + 2..]);
+            checksum.finalize()
+        } else {
+            // With i_extra_isize < 4, offset0x82 is ordinary checksummed data,
+            // not a high checksum field. Linux compares only the low16 bits.
+            checksum.update(&data[Self::L_I_CHECKSUM_LO_OFFSET + 2..]);
+            checksum.finalize() & 0xffff
+        }
+    }
 
     /// Load an inode from `bytes`.
     ///
@@ -204,33 +284,10 @@ impl Inode {
             .into());
         }
 
-        // If metadata checksums are enabled, the inode must be big
-        // enough to include the checksum fields.
-        if ext4.has_metadata_checksums()
-            && data.len() < (Self::I_CHECKSUM_HI_OFFSET + 2)
-        {
-            return Err(CorruptKind::InodeTruncated {
-                inode: index,
-                size: data.len(),
-            }
-            .into());
-        }
-
         let i_mode = read_u16le(data, 0x0);
+        Self::validate_extra_size(data, index)?;
         let i_generation = read_u32le(data, 0x64);
-        let (l_i_checksum_lo, i_checksum_hi) = if ext4.has_metadata_checksums()
-        {
-            (
-                read_u16le(data, Self::L_I_CHECKSUM_LO_OFFSET),
-                read_u16le(data, Self::I_CHECKSUM_HI_OFFSET),
-            )
-        } else {
-            // If metadata checksums aren't enabled then these values
-            // aren't used; arbitrarily set to zero.
-            (0, 0)
-        };
-
-        let checksum = u32_from_hilo(i_checksum_hi, l_i_checksum_lo);
+        let checksum = if ext4.has_metadata_checksums() { Self::stored_checksum(data) } else { 0 };
         let mode = InodeMode::from_bits_retain(i_mode);
 
         let mut checksum_base =
@@ -276,15 +333,20 @@ impl Inode {
         inode.set_uid(inode_creation_data.uid);
         inode.set_gid(inode_creation_data.gid);
         inode.set_size_in_bytes(0);
-        inode.set_atime(inode_creation_data.time);
+        // Set field availability before writing timestamps, including crtime
+        // and the epoch/nanosecond extension fields.
+        inode.set_extra_size(
+            (0x9C + 4 - 128).min(ext4.0.superblock.min_extra_isize()),
+        );
+        inode.set_times(inode_creation_data.time, inode_creation_data.time)?;
+        inode.validate_timestamp(inode_creation_data.time, 0x88)?;
+        if inode.entry_size().get() >= 0x94 {
+            inode.validate_timestamp(inode_creation_data.time, 0x98)?;
+        }
         inode.set_ctime(inode_creation_data.time);
-        inode.set_mtime(inode_creation_data.time);
         inode.set_dtime(Duration::from_secs(0));
         inode.set_crtime(inode_creation_data.time);
         inode.set_links_count(0);
-        inode.set_extra_size(
-            (0x9C + 4 - 128).min(ext4.0.superblock.min_extra_isize()),
-        ); // All fields up to and including i_projid
         let mut flags = inode_creation_data.flags;
         if ext4
             .0
@@ -321,30 +383,7 @@ impl Inode {
 
         // Verify the inode checksum.
         if ext4.has_metadata_checksums() {
-            let mut checksum = inode.checksum_base.clone();
-
-            // Hash all the inode data, but treat the two checksum
-            // fields as zeroes.
-
-            // Up to the l_i_checksum_lo field.
-            checksum.update(&data[..Self::L_I_CHECKSUM_LO_OFFSET]);
-
-            // Zero'd field.
-            checksum.update_u16_le(0);
-
-            // Up to the i_checksum_hi field.
-            checksum.update(
-                &data[Self::L_I_CHECKSUM_LO_OFFSET + 2
-                    ..Self::I_CHECKSUM_HI_OFFSET],
-            );
-
-            // Zero'd field.
-            checksum.update_u16_le(0);
-
-            // Rest of the inode.
-            checksum.update(&data[Self::I_CHECKSUM_HI_OFFSET + 2..]);
-
-            let actual_checksum = checksum.finalize();
+            let actual_checksum = Self::checksum_bytes(&inode.checksum_base, &data);
             if actual_checksum != expected_checksum {
                 return Err(CorruptKind::InodeChecksum(inode.index).into());
             }
@@ -355,34 +394,31 @@ impl Inode {
 
     pub(crate) fn update_inode_data(&mut self, ext4: &Ext4) {
         if ext4.has_metadata_checksums() {
-            let mut checksum = self.checksum_base.clone();
-            // Up to the l_i_checksum_lo field.
-            checksum.update(&self.inode_data[..Self::L_I_CHECKSUM_LO_OFFSET]);
-            // Zero'd field.
-            checksum.update_u16_le(0);
-            // Up to the i_checksum_hi field.
-            checksum.update(
-                &self.inode_data[Self::L_I_CHECKSUM_LO_OFFSET + 2
-                    ..Self::I_CHECKSUM_HI_OFFSET],
-            );
-            // Zero'd field.
-            checksum.update_u16_le(0);
-            // Rest of the inode.
-            checksum.update(&self.inode_data[Self::I_CHECKSUM_HI_OFFSET + 2..]);
-            let final_checksum = checksum.finalize();
+            let final_checksum = Self::checksum_bytes(&self.checksum_base, &self.inode_data);
             let (checksum_hi, checksum_lo) = u32_to_hilo(final_checksum);
             self.inode_data[Self::L_I_CHECKSUM_LO_OFFSET
                 ..Self::L_I_CHECKSUM_LO_OFFSET + 2]
                 .copy_from_slice(&checksum_lo.to_le_bytes());
-            self.inode_data
-                [Self::I_CHECKSUM_HI_OFFSET..Self::I_CHECKSUM_HI_OFFSET + 2]
-                .copy_from_slice(&checksum_hi.to_le_bytes());
+            if Self::has_checksum_hi(&self.inode_data) {
+                self.inode_data
+                    [Self::I_CHECKSUM_HI_OFFSET..Self::I_CHECKSUM_HI_OFFSET + 2]
+                    .copy_from_slice(&checksum_hi.to_le_bytes());
+            }
         }
     }
 
     /// Write the inode back to disk.
     #[maybe_async::maybe_async]
     pub async fn write(&mut self, ext4: &Ext4) -> Result<(), Ext4Error> {
+        if let Some(time) = ext4.mutation_time() {
+            self.validate_timestamp(time, 0x88)?;
+            self.set_ctime(time);
+        }
+        self.write_preserving_times(ext4).await
+    }
+
+    #[maybe_async::maybe_async]
+    pub(crate) async fn write_preserving_times(&mut self, ext4: &Ext4) -> Result<(), Ext4Error> {
         let (block_index, offset_within_block) =
             get_inode_location(ext4, self.index)?;
         let block_size = ext4.0.superblock.block_size().to_u64();
@@ -586,15 +622,20 @@ impl Inode {
     #[must_use]
     pub fn blocks(&self) -> u64 {
         let i_blocks_lo = read_u32le(&self.inode_data, 0x1c);
-        let i_blocks_high = read_u32le(&self.inode_data, 0x74);
-        u64_from_hilo(i_blocks_high, i_blocks_lo)
+        let i_blocks_high = read_u16le(&self.inode_data, 0x74);
+        u64_from_hilo(u32::from(i_blocks_high), i_blocks_lo)
     }
 
     /// Set the number of blocks allocated to the inode.
-    pub(crate) fn set_blocks(&mut self, blocks: u64) {
+    pub(crate) fn set_blocks(&mut self, blocks: u64) -> Result<(), Ext4Error> {
         let (i_blocks_high, i_blocks_lo) = u64_to_hilo(blocks);
+        // Linux osd2 stores a 48-bit count. The next u16 is i_file_acl_hi;
+        // reject overflow before changing either half of the count.
+        let i_blocks_high = u16::try_from(i_blocks_high)
+            .map_err(|_| CorruptKind::TooManyBlocksInFile)?;
         write_u32le(&mut self.inode_data, 0x1c, i_blocks_lo);
-        write_u32le(&mut self.inode_data, 0x74, i_blocks_high);
+        write_u16le(&mut self.inode_data, 0x74, i_blocks_high);
+        Ok(())
     }
 
     /// Get the number of filesystem blocks allocated to the inode.
@@ -605,9 +646,11 @@ impl Inode {
         if self.flags().contains(InodeFlags::HUGE_FILE) {
             Ok(real_blocks)
         } else {
-            Ok(real_blocks
-                .checked_div(ext4.0.superblock.block_size().to_u64() / 512)
-                .ok_or(CorruptKind::TooManyBlocksInFile)?)
+            let sectors_per_block = ext4.0.superblock.block_size().to_u64() / 512;
+            if real_blocks.checked_rem(sectors_per_block) != Some(0) {
+                return Err(CorruptKind::TooManyBlocksInFile.into());
+            }
+            Ok(real_blocks / sectors_per_block)
         }
     }
 
@@ -626,8 +669,50 @@ impl Inode {
                 .checked_mul(ext4.0.superblock.block_size().to_u64() / 512)
                 .ok_or(CorruptKind::TooManyBlocksInFile)?
         };
-        self.set_blocks(real_blocks);
+        self.set_blocks(real_blocks)?;
         Ok(real_blocks)
+    }
+
+    /// Set access and modification times without discarding unrepresentable
+    /// epoch bits or nanoseconds on an inode with short extra fields.
+    pub fn set_times(&mut self, atime: Duration, mtime: Duration) -> Result<(), Ext4Error> {
+        for (time, extra_end) in [(atime, 0x90), (mtime, 0x8c)] {
+            self.validate_timestamp(time, extra_end)?;
+        }
+        self.set_atime(atime);
+        self.set_mtime(mtime);
+        Ok(())
+    }
+
+    fn validate_timestamp(&self, time: Duration, extra_end: u16) -> Result<(), Ext4Error> {
+        if time.as_secs() > 0x3_7fff_ffff
+            || (self.entry_size().get() < extra_end
+                && (time.as_secs() > i32::MAX as u64 || time.subsec_nanos() != 0)) {
+            return Err(Ext4Error::InvalidTimestamp);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn set_mutation_mtime(&mut self, time: Duration) -> Result<(), Ext4Error> {
+        self.validate_timestamp(time, 0x8c)?;
+        self.set_mtime(time);
+        Ok(())
+    }
+
+    /// Return signed Unix access, modification and status-change timestamps.
+    /// Unlike the legacy Duration getters, this preserves dates before 1970.
+    pub fn unix_times(&self) -> Result<[(i64, u32); 3], Ext4Error> {
+        let mut result = [(0, 0); 3];
+        for (index, (base_offset, extra_offset)) in [(0x8, 0x8c), (0x10, 0x88), (0xc, 0x84)].into_iter().enumerate() {
+            let base = read_u32le(&self.inode_data, base_offset);
+            let extra = if usize::from(self.entry_size().get()) >= extra_offset + 4 {
+                read_u32le(&self.inode_data, extra_offset)
+            } else { 0 };
+            let nanos = extra >> 2;
+            if nanos >= 1_000_000_000 { return Err(Ext4Error::InvalidTimestamp); }
+            result[index] = (i64::from(i32::from_le_bytes(base.to_le_bytes())) + (i64::from(extra & 3) << 32), nanos);
+        }
+        Ok(result)
     }
 
     /// Get the inode's access time.

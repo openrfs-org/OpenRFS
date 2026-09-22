@@ -2864,6 +2864,8 @@ const char *openrfsfs_status_string(enum openrfsfs_status status)
     case OPENRFSFS_STATUS_PATH: return "path is malformed or escapes the mount";
     case OPENRFSFS_STATUS_WRITEBACK: return "dirty data could not be written";
     case OPENRFSFS_STATUS_RESET: return "device generation changed";
+    case OPENRFSFS_STATUS_NAME_TOO_LONG: return "filesystem path or name is too long";
+    case OPENRFSFS_STATUS_SYMLINK_LOOP: return "too many symbolic links";
     default: return "unknown filesystem status";
     }
 }

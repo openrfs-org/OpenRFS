@@ -45,49 +45,104 @@ RUSTC := rustc
 CARGO := cargo
 PYTHON := python3
 SDK_CC ?= clang
-SDK_LD ?= ld.lld
 SDK_AR ?= ar
 READELF ?= readelf
 FFMPEG ?= ffmpeg
+ifeq ($(OS),Windows_NT)
+# The MSVC Rust host toolchain collides with MSYS2's `/usr/bin/link.exe`.
+# Prefer an installed GNU host toolchain so cargo build scripts and host tests
+# use the same MinGW linker as the rest of the Windows development environment.
+WINDOWS_RUST_TOOLCHAIN := $(shell rustup toolchain list 2>/dev/null | \
+	awk '$$1 == "stable-x86_64-pc-windows-gnu" { print $$1; exit }')
+ifneq ($(WINDOWS_RUST_TOOLCHAIN),)
+RUSTUP_TOOLCHAIN ?= $(WINDOWS_RUST_TOOLCHAIN)
+export RUSTUP_TOOLCHAIN
+endif
+endif
+# The kernel objects and linker must produce ELF. MinGW's default gcc/as pair
+# targets PE/COFF on Windows, so use clang's ELF target and lld there while
+# leaving the host-test compiler (`CC`) unchanged.
+KERNEL_CC = $(CC)
+KERNEL_LD = $(LD)
+ifeq ($(OS),Windows_NT)
+RUST_SYSROOT := $(shell $(RUSTC) --print sysroot | cygpath -u -f -)
+RUST_HOST := $(shell $(RUSTC) -vV | sed -n 's/^host: //p')
+KERNEL_CC = clang --target=x86_64-unknown-none
+KERNEL_LD = $(RUST_SYSROOT)/lib/rustlib/$(RUST_HOST)/bin/rust-lld -flavor gnu
+# Use Rust's ELF frontend as a single executable for SDK shell wrappers too.
+# The MSYS2 ld.lld installation can select a non-ELF driver on Windows.
+SDK_LD ?= $(RUST_SYSROOT)/lib/rustlib/$(RUST_HOST)/bin/gcc-ld/ld.lld
+endif
+SDK_LD ?= ld.lld
 HOST_EXEEXT := $(if $(filter Windows_NT,$(OS)),.exe,)
 HOST_SOCKET_LIBS := $(if $(filter Windows_NT,$(OS)),-lws2_32,)
 HOST_THREAD_FLAGS := $(if $(filter Windows_NT,$(OS)),,-pthread)
+# MSYS2 cannot pass GNU make's descriptor jobserver to native Cargo. Clear
+# MAKEFLAGS for Cargo tests on Windows while retaining it on Linux CI.
+CARGO_TEST_ENV := $(if $(filter Windows_NT,$(OS)),MAKEFLAGS=,)
 QEMU_ACCEL ?= tcg
 GRUB_MKRESCUE ?= grub-mkrescue
 GRUB_MODULE_DIR ?=
 GRUB_MKRESCUE_FLAGS := $(if $(GRUB_MODULE_DIR),-d $(GRUB_MODULE_DIR),)
+ifeq ($(OS),Windows_NT)
+# The bundled MinGW Python has no AF_UNIX socket family. Use separate loopback
+# HMP ports for the interactive QEMU scenarios on Windows.
+QEMU_LUA_MONITOR_SOCKET := tcp:127.0.0.1:46201
+QEMU_LUA_MONITOR_ARGUMENT := -monitor tcp:127.0.0.1:46201,server=on,wait=off
+QEMU_CANVAS_MONITOR_SOCKET := tcp:127.0.0.1:46202
+QEMU_CANVAS_MONITOR_ARGUMENT := -monitor tcp:127.0.0.1:46202,server=on,wait=off
+QEMU_SDL_MONITOR_SOCKET := tcp:127.0.0.1:46203
+QEMU_SDL_MONITOR_ARGUMENT := -monitor tcp:127.0.0.1:46203,server=on,wait=off
+else
+QEMU_LUA_MONITOR_SOCKET := $(TEST_BUILD_DIR)/native-lua/monitor.sock
+QEMU_LUA_MONITOR_ARGUMENT := -monitor unix:$(QEMU_LUA_MONITOR_SOCKET),server=on,wait=off
+QEMU_CANVAS_MONITOR_SOCKET := $(TEST_BUILD_DIR)/native-canvas/monitor.sock
+QEMU_CANVAS_MONITOR_ARGUMENT := -monitor unix:$(QEMU_CANVAS_MONITOR_SOCKET),server=on,wait=off
+QEMU_SDL_MONITOR_SOCKET := $(TEST_BUILD_DIR)/native-sdl/monitor.sock
+QEMU_SDL_MONITOR_ARGUMENT := -monitor unix:$(QEMU_SDL_MONITOR_SOCKET),server=on,wait=off
+endif
+# CI keeps the clean-build contract.  Local loops can skip the clean step after
+# one complete run, while independent host-test groups fan out by default.
+VERIFY_CLEAN ?= 1
+VERIFY_JOBS ?= 2
+# Real image tests retain large independent device snapshots.
+RUST_TEST_THREADS ?= 2
+export RUST_TEST_THREADS
 
 # The one target Rust is built for. It matches the C flags exactly - no MMX, no
 # SSE, soft float, no red zone - which is why the two halves can share a stack.
 RUST_TARGET := x86_64-unknown-none
 RUST_LIB := $(BUILD_DIR)/libopenrfs.a
-RUST_FAT16_TEST := $(BUILD_DIR)/fat16-tests
-RUST_FAT32_TEST := $(BUILD_DIR)/fat32-tests
-RUST_LINUX_FAT16_TEST := $(BUILD_DIR)/linux-fat16-tests
-RUST_LINUX_ELF64_TEST := $(BUILD_DIR)/linux-elf64-tests
-RUST_LINUX_UNAME_FAT16_TEST := $(BUILD_DIR)/linux-uname-fat16-tests
-RUST_LINUX_UNAME_ELF64_TEST := $(BUILD_DIR)/linux-uname-elf64-tests
-RUST_LINUX_CAT_FAT16_TEST := $(BUILD_DIR)/linux-cat-fat16-tests
-RUST_LINUX_CAT_ELF64_TEST := $(BUILD_DIR)/linux-cat-elf64-tests
-RUST_ELF64_TEST := $(BUILD_DIR)/elf64-tests
-RUST_DYNAMIC_ELF64_TEST := $(BUILD_DIR)/elf64-dynamic-tests
-RUST_NVBIOS_TEST := $(BUILD_DIR)/nvbios-tests
-RUST_NATIVE_IMAGE_TEST := $(BUILD_DIR)/native-image-tests
-WALL_CLOCK_HOST_TEST := $(TEST_BUILD_DIR)/wall-clock-host-test
-SDK_TIME_HOST_TEST := $(TEST_BUILD_DIR)/sdk-time-host-test
-PACKAGE_STATE_HOST_TEST := $(TEST_BUILD_DIR)/package-state-host-test
-PACKAGE_SERVICE_HOST_TEST := $(TEST_BUILD_DIR)/package-service-host-test
-PACKAGE_MANAGER_HOST_TEST := $(TEST_BUILD_DIR)/package-manager-host-test
-PACKAGE_CONTROL_HOST_TEST := $(TEST_BUILD_DIR)/package-control-host-test
-PACKAGE_TRUST_HOST_TEST := $(TEST_BUILD_DIR)/package-trust-host-test
-PACKAGE_FETCH_HOST_TEST := $(TEST_BUILD_DIR)/package-fetch-host-test
-PACKAGE_UPLOAD_HOST_TEST := $(TEST_BUILD_DIR)/package-upload-host-test
+RUST_FAT16_TEST := $(BUILD_DIR)/fat16-tests$(HOST_EXEEXT)
+RUST_FAT32_TEST := $(BUILD_DIR)/fat32-tests$(HOST_EXEEXT)
+RUST_LINUX_FAT16_TEST := $(BUILD_DIR)/linux-fat16-tests$(HOST_EXEEXT)
+RUST_LINUX_ELF64_TEST := $(BUILD_DIR)/linux-elf64-tests$(HOST_EXEEXT)
+RUST_LINUX_UNAME_FAT16_TEST := $(BUILD_DIR)/linux-uname-fat16-tests$(HOST_EXEEXT)
+RUST_LINUX_UNAME_ELF64_TEST := $(BUILD_DIR)/linux-uname-elf64-tests$(HOST_EXEEXT)
+RUST_LINUX_CAT_FAT16_TEST := $(BUILD_DIR)/linux-cat-fat16-tests$(HOST_EXEEXT)
+RUST_LINUX_CAT_ELF64_TEST := $(BUILD_DIR)/linux-cat-elf64-tests$(HOST_EXEEXT)
+RUST_ELF64_TEST := $(BUILD_DIR)/elf64-tests$(HOST_EXEEXT)
+RUST_DYNAMIC_ELF64_TEST := $(BUILD_DIR)/elf64-dynamic-tests$(HOST_EXEEXT)
+RUST_NVBIOS_TEST := $(BUILD_DIR)/nvbios-tests$(HOST_EXEEXT)
+RUST_NATIVE_IMAGE_TEST := $(BUILD_DIR)/native-image-tests$(HOST_EXEEXT)
+WALL_CLOCK_HOST_TEST := $(TEST_BUILD_DIR)/wall-clock-host-test$(HOST_EXEEXT)
+SDK_TIME_HOST_TEST := $(TEST_BUILD_DIR)/sdk-time-host-test$(HOST_EXEEXT)
+PACKAGE_STATE_HOST_TEST := $(TEST_BUILD_DIR)/package-state-host-test$(HOST_EXEEXT)
+PACKAGE_SERVICE_HOST_TEST := $(TEST_BUILD_DIR)/package-service-host-test$(HOST_EXEEXT)
+PACKAGE_MANAGER_HOST_TEST := $(TEST_BUILD_DIR)/package-manager-host-test$(HOST_EXEEXT)
+PACKAGE_CONTROL_HOST_TEST := $(TEST_BUILD_DIR)/package-control-host-test$(HOST_EXEEXT)
+PACKAGE_TRUST_HOST_TEST := $(TEST_BUILD_DIR)/package-trust-host-test$(HOST_EXEEXT)
+PACKAGE_FETCH_HOST_TEST := $(TEST_BUILD_DIR)/package-fetch-host-test$(HOST_EXEEXT)
+PACKAGE_UPLOAD_HOST_TEST := $(TEST_BUILD_DIR)/package-upload-host-test$(HOST_EXEEXT)
+NATIVE_TEARDOWN_REPORT_HOST_TEST := $(TEST_BUILD_DIR)/native-teardown-report-host-test$(HOST_EXEEXT)
+NATIVE_TEARDOWN_HISTORY_HOST_TEST := $(TEST_BUILD_DIR)/native-teardown-history-host-test$(HOST_EXEEXT)
+NATIVE_TEARDOWN_DIAGNOSTICS_HOST_TEST := $(TEST_BUILD_DIR)/native-teardown-diagnostics-host-test$(HOST_EXEEXT)
 TLS_HOST_TEST := $(TEST_BUILD_DIR)/tls-client-host-test$(HOST_EXEEXT)
 TLS_HOST_OBJECT := $(TEST_BUILD_DIR)/tls-client.o
 TLS_HOST_WRAPPER_OBJECT := $(TEST_BUILD_DIR)/tls-wrapper.o
 HTTPS_HOST_TEST := $(TEST_BUILD_DIR)/https-client-host-test$(HOST_EXEEXT)
 HTTPS_HOST_OBJECT := $(TEST_BUILD_DIR)/https-client-host.o
-ZLIB_HOST_TEST := $(TEST_BUILD_DIR)/zlib-host-test
+ZLIB_HOST_TEST := $(TEST_BUILD_DIR)/zlib-host-test$(HOST_EXEEXT)
 EXT4_FIXTURE := $(TEST_BUILD_DIR)/ext4/openrfs-ext4.raw
 EXT4_RECOVERY_FIXTURE := $(TEST_BUILD_DIR)/ext4-recovery/data.raw
 RUST_SOURCES := $(wildcard src/rust/*.rs)
@@ -342,7 +397,7 @@ DEPENDENCIES := $(C_OBJECTS:.o=.d) $(MONOCYPHER_OBJECTS:.o=.d) \
 # implicit and pattern rule search for a phony target, so declaring them phony
 # makes every scenario resolve to "nothing to be done" and pass without booting.
 # They never create a file of their own name, so they rerun regardless.
-.PHONY: all installer-port-test audio-wav-tests capture-boot-video capture-openrfs capture-openrfs-proof capture-networking clean contract-counts contract-scenarios dynamic-elf-tests ext4-images ext4-tests fat32-images force-package-trust hooks https-tests \
+.PHONY: all installer-port-test audio-wav-tests capture-boot-video capture-openrfs capture-openrfs-proof capture-networking clean contract-counts contract-scenarios dynamic-elf-tests ext4-images ext4-tests ext4-fsync-test ext4-sparse-truncate-test fat32-images force-package-trust hooks https-tests \
 	iso kernel lint native-apps native-audio-proof native-dynamic-proof native-https-proof native-openrfs-proof native-sdl-proof sdl-preference-tests port-tests qemu-port-tests reproducible-sdk run \
 	package-control-tests package-fetch-tests package-manager-tests package-repository-tests package-service-tests package-state-tests package-transaction-tests package-trust-asset-tests package-trust-tests package-upload-tests qemu-test-ext4-powercuts screenshot-proof sdk sdk-once smoke tls-tests toolchain verify wall-clock-tests zlib-tests
 
@@ -858,10 +913,10 @@ $(BUILD_DIR):
 	mkdir -p $@
 
 $(BUILD_DIR)/arch_%.o: src/arch/x86_64/%.S | $(BUILD_DIR)
-	$(CC) $(ASFLAGS) -c $< -o $@
+	$(KERNEL_CC) $(ASFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/%.o: src/kernel/%.c | $(BUILD_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c $< -o $@
+	$(KERNEL_CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c $< -o $@
 
 $(BUILD_DIR)/package_trust.o: CPPFLAGS += -Ivendor/monocypher/src \
 	-Ivendor/monocypher/src/optional
@@ -878,7 +933,7 @@ $(PACKAGE_TRUST_ASSET_C): $(PACKAGE_TRUST_BLOB) tools/make-package-trust.py
 	$(PYTHON) tools/make-package-trust.py emit-c $< $@
 
 $(PACKAGE_TRUST_ASSET_OBJECT): $(PACKAGE_TRUST_ASSET_C) | $(BUILD_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c $< -o $@
+	$(KERNEL_CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c $< -o $@
 
 package-trust-asset-tests: $(PACKAGE_TRUST_BLOB) $(PACKAGE_TRUST_ASSET_C)
 	$(PYTHON) tools/make-package-trust.py self-test
@@ -886,12 +941,12 @@ package-trust-asset-tests: $(PACKAGE_TRUST_BLOB) $(PACKAGE_TRUST_ASSET_C)
 
 $(BUILD_DIR)/monocypher/monocypher.o: vendor/monocypher/src/monocypher.c
 	mkdir -p $(dir $@)
-	$(CC) $(MONOCYPHER_CFLAGS) -MMD -MP -c $< -o $@
+	$(KERNEL_CC) $(MONOCYPHER_CFLAGS) -MMD -MP -c $< -o $@
 
 $(BUILD_DIR)/monocypher/monocypher-ed25519.o: \
 		vendor/monocypher/src/optional/monocypher-ed25519.c
 	mkdir -p $(dir $@)
-	$(CC) $(MONOCYPHER_CFLAGS) -MMD -MP -c $< -o $@
+	$(KERNEL_CC) $(MONOCYPHER_CFLAGS) -MMD -MP -c $< -o $@
 
 # Regenerated only when the logo itself changes. The result is a build
 # artifact and is deliberately not committed; src/rust/abi.rs includes it.
@@ -1006,12 +1061,12 @@ $(FAT32_CORRUPT_IMAGE): $(FAT32_DATA_IMAGE) tools/fat32_image.py
 fat32-images: $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 
 $(KERNEL): $(OBJECTS) $(RUST_LIB) linker.ld
-	$(LD) $(LDFLAGS) -o $@ $(OBJECTS) $(RUST_LIB) || { \
+	$(KERNEL_LD) $(LDFLAGS) -o $@ $(OBJECTS) $(RUST_LIB) || { \
 		rm -f $@; \
 		sed -n '/__got_start/,/__got_end/p' $(BUILD_DIR)/openrfs.map; \
 		sed 's/ASSERT(__got_end - __got_start <= 0x400,/ASSERT(1,/' \
 			linker.ld >$(BUILD_DIR)/linker-got-diagnostic.ld; \
-		$(LD) -nostdlib -z max-page-size=0x1000 -z noexecstack \
+		$(KERNEL_LD) -nostdlib -z max-page-size=0x1000 -z noexecstack \
 			--orphan-handling=error --build-id=none --emit-relocs \
 			-T $(BUILD_DIR)/linker-got-diagnostic.ld \
 			-o $(BUILD_DIR)/openrfs-got-diagnostic.elf \
@@ -1024,9 +1079,13 @@ $(KERNEL): $(OBJECTS) $(RUST_LIB) linker.ld
 	}
 
 toolchain:
-	@for tool in bash bzip2 gcc gzip ld grub-file readelf nm objdump rustc python3 sha256sum strings tar; do \
-		command -v $$tool >/dev/null 2>&1 || { echo "missing tool: $$tool"; exit 1; }; \
-	done
+	@missing_tools=; \
+	for tool in bash bzip2 gcc gzip ld grub-file readelf nm objdump rustc python3 sha256sum strings tar; do \
+		if ! command -v $$tool >/dev/null 2>&1; then \
+			missing_tools="$$missing_tools $$tool"; \
+		fi; \
+	done; \
+	test -z "$$missing_tools" || { echo "missing tools:$$missing_tools"; exit 1; }
 	@version=$$($(RUSTC) --version | awk '{ print $$2 }'); \
 		echo "$$version" | awk -F'[.-]' \
 			'{ exit !($$1 > 1 || ($$1 == 1 && $$2 >= 86)) }' || \
@@ -1063,14 +1122,203 @@ wall-clock-tests: $(WALL_CLOCK_HOST_TEST) $(SDK_TIME_HOST_TEST)
 	$(WALL_CLOCK_HOST_TEST)
 	$(SDK_TIME_HOST_TEST)
 
-ext4-tests: tools/ext4_image.py tools/ext4_host_test.py
+$(BUILD_DIR)/sdk-filesystem-host-test: tools/sdk-filesystem-host-test.c sdk/src/posix.c sdk/src/runtime.c \
+		sdk/src/internal.h sdk/include/openrfs/runtime.h include/openrfs/abi/storage.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections -fvisibility=hidden \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion \
+		-DOPENRFS_HOSTED \
+		-Isdk/include -Iinclude tools/sdk-filesystem-host-test.c sdk/src/posix.c sdk/src/runtime.c \
+		-Wl,--gc-sections -o $@
+
+$(BUILD_DIR)/ext4-vfs-host-test: tools/ext4-vfs-host-test.c \
+		src/kernel/ext4_fs.c include/openrfs/ext4_fs.h include/openrfs/nvme.h \
+		include/openrfs/fat32_fs.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
+		tools/ext4-vfs-host-test.c -Wl,--gc-sections -o $@
+
+$(BUILD_DIR)/ext4-fsync-host-test: tools/ext4-fsync-host-test.c \
+		src/kernel/ext4_fs.c include/openrfs/ext4_fs.h include/openrfs/nvme.h \
+		include/openrfs/fat32_fs.h include/openrfs/slot_claim.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
+		tools/ext4-fsync-host-test.c -Wl,--gc-sections -o $@
+
+ext4-fsync-test: $(BUILD_DIR)/ext4-fsync-host-test
+	$(BUILD_DIR)/ext4-fsync-host-test
+
+$(BUILD_DIR)/ext4-sparse-truncate-host-test: tools/ext4-sparse-truncate-host-test.c \
+		src/kernel/ext4_fs.c include/openrfs/ext4_fs.h include/openrfs/nvme.h \
+		include/openrfs/fat32_fs.h include/openrfs/slot_claim.h include/openrfs/cpu.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
+		tools/ext4-sparse-truncate-host-test.c -Wl,--gc-sections -o $@
+
+ext4-sparse-truncate-test: $(BUILD_DIR)/ext4-sparse-truncate-host-test tools/ext4_image.py tools/ext4_host_test.py
+	$(BUILD_DIR)/ext4-sparse-truncate-host-test
 	OPENRFS_EXT4_RUST_FIXTURE='$(CURDIR)/$(BUILD_DIR)/ext4-rust-fixture.img' \
 		$(PYTHON) -u tools/ext4_host_test.py
+	if test -f '$(BUILD_DIR)/ext4-rust-fixture.img'; then \
+		OPENRFS_EXT4_RUST_FIXTURE='$(CURDIR)/$(BUILD_DIR)/ext4-rust-fixture.img' $(CARGO_TEST_ENV) \
+		CARGO_TARGET_DIR='$(CURDIR)/$(BUILD_DIR)/ext4-transaction-target' \
+		$(CARGO) test --manifest-path tools/ext4-transaction-tests/Cargo.toml \
+		--locked --offline --test coordinator \
+		bounded_sparse_growth_partial_write_and_truncate_retry_contract -- --nocapture; \
+	else \
+		echo "ERROR: required coordinator fixture unavailable"; exit 1; \
+	fi
+
+$(BUILD_DIR)/ext4-handle-claims-host-test: tools/ext4-handle-claims-host-test.c \
+		src/kernel/ext4_fs.c include/openrfs/ext4_fs.h include/openrfs/fat32_fs.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
+		tools/ext4-handle-claims-host-test.c $(HOST_THREAD_FLAGS) -Wl,--gc-sections -o $@
+
+$(BUILD_DIR)/vfs-file-claims-host-test $(BUILD_DIR)/vfs-directory-claims-host-test: \
+		tools/ext4-handle-claims-host-test.c src/kernel/vfs.c \
+		include/openrfs/vfs_backend.h include/openrfs/fat32_fs.h include/openrfs/slot_claim.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
+		-DOPENRFS_TEST_VFS_$(if $(findstring directory,$@),DIRECTORIES,FILES) \
+		tools/ext4-handle-claims-host-test.c $(HOST_THREAD_FLAGS) -Wl,--gc-sections -o $@
+
+$(BUILD_DIR)/ext4-vfs-host-test $(BUILD_DIR)/ext4-handle-claims-host-test \
+		$(BUILD_DIR)/vfs-mutation-host-test $(BUILD_DIR)/ext4-nvme-close-host-test \
+		$(BUILD_DIR)/ext4-msix-close-host-test: include/openrfs/slot_claim.h include/openrfs/cpu.h
+
+$(BUILD_DIR)/vfs-mutation-host-test: tools/vfs-mutation-host-test.c \
+		src/kernel/vfs.c include/openrfs/vfs_backend.h include/openrfs/fat32_fs.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
+		tools/vfs-mutation-host-test.c -Wl,--gc-sections -o $@
+
+$(BUILD_DIR)/vfs-vnode-host-test: tools/vfs-vnode-host-test.c src/kernel/vfs.c \
+		include/openrfs/vfs_backend.h include/openrfs/fat32_fs.h include/openrfs/slot_claim.h include/openrfs/cpu.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
+		tools/vfs-vnode-host-test.c $(HOST_THREAD_FLAGS) -Wl,--gc-sections -o $@
+
+$(BUILD_DIR)/vfs-mount-host-test: tools/vfs-mount-host-test.c src/kernel/vfs.c \
+		include/openrfs/vfs_backend.h include/openrfs/fat32_fs.h include/openrfs/slot_claim.h include/openrfs/cpu.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
+		tools/vfs-mount-host-test.c $(HOST_THREAD_FLAGS) -Wl,--gc-sections -o $@
+
+$(BUILD_DIR)/vfs-directory-host-test: tools/vfs-directory-host-test.c src/kernel/vfs.c \
+		include/openrfs/vfs_backend.h include/openrfs/fat32_fs.h include/openrfs/slot_claim.h include/openrfs/cpu.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
+		tools/vfs-directory-host-test.c $(HOST_THREAD_FLAGS) -Wl,--gc-sections -o $@
+
+$(BUILD_DIR)/ext4-append-contention-host-test: tools/ext4-append-contention-host-test.c src/kernel/ext4_fs.c \
+		include/openrfs/ext4_fs.h include/openrfs/nvme.h include/openrfs/slot_claim.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
+		tools/ext4-append-contention-host-test.c $(HOST_THREAD_FLAGS) -Wl,--gc-sections -o $@
+
+$(BUILD_DIR)/ext4-registry-host-test: tools/ext4-registry-host-test.c tools/ext4-vfs-host-test.c src/kernel/ext4_fs.c \
+		include/openrfs/ext4_fs.h include/openrfs/nvme.h include/openrfs/slot_claim.h include/openrfs/cpu.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
+		tools/ext4-registry-host-test.c $(HOST_THREAD_FLAGS) -Wl,--gc-sections -o $@
+
+$(BUILD_DIR)/ext4-storage-cut-host-test: tools/ext4-storage-cut-host-test.c src/kernel/ext4_fs.c include/openrfs/ext4_fs.h include/openrfs/nvme.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
+		tools/ext4-storage-cut-host-test.c -Wl,--gc-sections -o $@
+
+ext4-tests: $(BUILD_DIR)/vfs-vnode-host-test $(BUILD_DIR)/vfs-mount-host-test $(BUILD_DIR)/vfs-directory-host-test $(BUILD_DIR)/ext4-append-contention-host-test $(BUILD_DIR)/ext4-registry-host-test $(BUILD_DIR)/ext4-storage-cut-host-test
+
+# These exercise the same close dispositions used by failed filesystem lease
+# teardown and native process cleanup, including wrapper reuse after refusal.
+$(BUILD_DIR)/native-%-close-host-test: tools/native-%-close-host-test.c \
+        src/kernel/native_handle.c src/kernel/native_process.c \
+        src/kernel/audio.c src/kernel/vfs.c include/openrfs/native_handle.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Iinclude \
+		$< src/kernel/native_handle.c -Wl,--gc-sections -o $@
+
+.PHONY: native-close-tests
+native-close-tests: $(BUILD_DIR)/native-file-close-host-test $(BUILD_DIR)/native-audio-close-host-test $(BUILD_DIR)/native-window-close-host-test
+	$(BUILD_DIR)/native-file-close-host-test
+	$(BUILD_DIR)/native-audio-close-host-test
+	$(BUILD_DIR)/native-window-close-host-test
+
+ext4-tests: native-close-tests native-teardown-report-test native-teardown-history-test native-teardown-diagnostics-test
+
+$(BUILD_DIR)/ext4-nvme-close-host-test: tools/ext4-nvme-close-host-test.c \
+		src/kernel/nvme.c include/openrfs/nvme.h include/openrfs/dma.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
+		tools/ext4-nvme-close-host-test.c -Wl,--gc-sections -o $@
+
+$(BUILD_DIR)/ext4-msix-close-host-test: tools/ext4-msix-close-host-test.c \
+		src/kernel/msix.c include/openrfs/msix.h include/openrfs/interrupt_vector.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
+		tools/ext4-msix-close-host-test.c -Wl,--gc-sections -o $@
+
+
+$(BUILD_DIR)/shell-ext4-host-test: tools/shell-ext4-host-test.c src/kernel/shell.c \
+		include/openrfs/fat32_fs.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Iinclude \
+		tools/shell-ext4-host-test.c -Wl,--gc-sections -o $@
+
+
+$(BUILD_DIR)/keyboard-channel-host-test: tools/keyboard-channel-host-test.c src/kernel/keyboard.c include/openrfs/keyboard.h
+	mkdir -p $(BUILD_DIR)
+	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Iinclude \
+		tools/keyboard-channel-host-test.c -Wl,--gc-sections -o $@
+
+ext4-tests: tools/ext4_image.py tools/ext4_host_test.py $(BUILD_DIR)/sdk-filesystem-host-test $(BUILD_DIR)/ext4-vfs-host-test $(BUILD_DIR)/ext4-handle-claims-host-test $(BUILD_DIR)/vfs-file-claims-host-test $(BUILD_DIR)/vfs-directory-claims-host-test $(BUILD_DIR)/vfs-mutation-host-test $(BUILD_DIR)/ext4-nvme-close-host-test $(BUILD_DIR)/ext4-msix-close-host-test $(BUILD_DIR)/shell-ext4-host-test $(BUILD_DIR)/keyboard-channel-host-test
+	$(PYTHON) tools/ext4_overwrite_device_test.py
+	$(PYTHON) tools/filesystem_evidence_test.py
+	$(BUILD_DIR)/vfs-mount-host-test
+	$(BUILD_DIR)/vfs-vnode-host-test
+	$(BUILD_DIR)/vfs-directory-host-test
+	$(BUILD_DIR)/ext4-append-contention-host-test
+	$(BUILD_DIR)/ext4-registry-host-test
+	$(BUILD_DIR)/ext4-storage-cut-host-test
+	$(BUILD_DIR)/vfs-file-claims-host-test
+	$(BUILD_DIR)/vfs-directory-claims-host-test
+	$(BUILD_DIR)/ext4-handle-claims-host-test
+	$(BUILD_DIR)/keyboard-channel-host-test
+	$(BUILD_DIR)/sdk-filesystem-host-test
+	$(BUILD_DIR)/ext4-vfs-host-test
+	$(BUILD_DIR)/vfs-mutation-host-test
+	$(BUILD_DIR)/ext4-nvme-close-host-test
+	$(BUILD_DIR)/ext4-msix-close-host-test
+	$(BUILD_DIR)/shell-ext4-host-test
 	OPENRFS_EXT4_RUST_FIXTURE='$(CURDIR)/$(BUILD_DIR)/ext4-rust-fixture.img' \
+		$(PYTHON) -u tools/ext4_host_test.py
+	if test -f '$(BUILD_DIR)/ext4-rust-fixture.img'; then \
+		OPENRFS_EXT4_RUST_FIXTURE='$(CURDIR)/$(BUILD_DIR)/ext4-rust-fixture.img' $(CARGO_TEST_ENV) \
 		CARGO_TARGET_DIR='$(CURDIR)/$(BUILD_DIR)/ext4-transaction-target' \
 		$(CARGO) test \
 		--manifest-path tools/ext4-transaction-tests/Cargo.toml \
-		--locked --offline
+		--locked --offline -- --include-ignored --nocapture; \
+	else \
+		echo "ERROR: required ext4 fixture unavailable"; exit 1; \
+	fi
 
 package-repository-tests: tools/openrfs-repository.py \
 		tools/openrfs_repository_host_test.py tools/openrfs-package.py
@@ -1109,16 +1357,80 @@ package-service-tests: $(PACKAGE_SERVICE_HOST_TEST)
 
 $(PACKAGE_UPLOAD_HOST_TEST): tools/package-upload-host-test.c \
 		src/kernel/package_upload.c src/kernel/package_state.c \
+		src/kernel/native_handle.c \
 		include/openrfs/package_upload.h include/openrfs/package_state.h \
-		include/openrfs/fat32_fs.h
+		include/openrfs/fat32_fs.h include/openrfs/native_handle.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
 		-Wundef -Wstrict-prototypes -Wmissing-prototypes -Iinclude \
 		tools/package-upload-host-test.c src/kernel/package_upload.c \
-		src/kernel/package_state.c -o $@
+		src/kernel/package_state.c src/kernel/native_handle.c -o $@
 
-package-upload-tests: $(PACKAGE_UPLOAD_HOST_TEST)
+$(TEST_BUILD_DIR)/package-upload-claims-host-test$(HOST_EXEEXT): tools/package-upload-claims-host-test.c \
+		tools/package-upload-host-test.c src/kernel/package_upload.c src/kernel/package_state.c \
+		src/kernel/native_handle.c include/openrfs/package_upload.h \
+		include/openrfs/package_state.h include/openrfs/fat32_fs.h \
+		include/openrfs/native_handle.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
+		-Wundef -Wstrict-prototypes -Wmissing-prototypes $(HOST_THREAD_FLAGS) -Iinclude \
+		tools/package-upload-claims-host-test.c src/kernel/package_upload.c \
+		src/kernel/package_state.c src/kernel/native_handle.c -o $@
+
+package-upload-tests: $(PACKAGE_UPLOAD_HOST_TEST) $(TEST_BUILD_DIR)/package-upload-claims-host-test$(HOST_EXEEXT)
 	$(PACKAGE_UPLOAD_HOST_TEST)
+	$(TEST_BUILD_DIR)/package-upload-claims-host-test$(HOST_EXEEXT)
+
+$(NATIVE_TEARDOWN_REPORT_HOST_TEST): tools/native-teardown-report-host-test.c \
+		src/kernel/native_process.c src/kernel/native_handle.c \
+		include/openrfs/native_process.h include/openrfs/native_handle.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
+		-Wundef -Wstrict-prototypes -Wmissing-prototypes -Iinclude \
+		-fsyntax-only src/kernel/native_process.c
+	$(CC) -std=c11 -O2 -ffunction-sections -fdata-sections \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wundef \
+		-Wstrict-prototypes -Wmissing-prototypes -Iinclude \
+		tools/native-teardown-report-host-test.c src/kernel/native_handle.c \
+		-Wl,--gc-sections -o $@
+
+.PHONY: native-teardown-report-test
+native-teardown-report-test: $(NATIVE_TEARDOWN_REPORT_HOST_TEST)
+	$(NATIVE_TEARDOWN_REPORT_HOST_TEST)
+
+$(NATIVE_TEARDOWN_HISTORY_HOST_TEST): tools/native-teardown-history-host-test.c \
+		src/kernel/native_process_teardown.c src/kernel/native_handle.c \
+		include/openrfs/native_process.h include/openrfs/native_handle.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -ffunction-sections -fdata-sections \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wundef \
+		-Wstrict-prototypes -Wmissing-prototypes -Iinclude \
+		tools/native-teardown-history-host-test.c \
+		src/kernel/native_process_teardown.c src/kernel/native_handle.c \
+		-Wl,--gc-sections -o $@
+
+.PHONY: native-teardown-history-test
+native-teardown-history-test: $(NATIVE_TEARDOWN_HISTORY_HOST_TEST)
+	$(NATIVE_TEARDOWN_HISTORY_HOST_TEST)
+
+$(NATIVE_TEARDOWN_DIAGNOSTICS_HOST_TEST): \
+		tools/native-teardown-diagnostics-host-test.c \
+		src/kernel/native_teardown_diagnostics.c \
+		src/kernel/native_process_teardown.c src/kernel/native_handle.c \
+		include/openrfs/native_teardown_diagnostics.h \
+		include/openrfs/native_process.h include/openrfs/native_handle.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -ffunction-sections -fdata-sections \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wundef \
+		-Wstrict-prototypes -Wmissing-prototypes -Iinclude \
+		tools/native-teardown-diagnostics-host-test.c \
+		src/kernel/native_teardown_diagnostics.c \
+		src/kernel/native_process_teardown.c src/kernel/native_handle.c \
+		-Wl,--gc-sections -o $@
+
+.PHONY: native-teardown-diagnostics-test
+native-teardown-diagnostics-test: $(NATIVE_TEARDOWN_DIAGNOSTICS_HOST_TEST)
+	$(NATIVE_TEARDOWN_DIAGNOSTICS_HOST_TEST)
 
 $(TEST_BUILD_DIR)/monocypher/monocypher.o: \
 		vendor/monocypher/src/monocypher.c vendor/monocypher/src/monocypher.h
@@ -1301,9 +1613,12 @@ installer-port-test: $(INSTALLER_PORT_TEST)
 	$(INSTALLER_PORT_TEST)
 
 verify: toolchain lint installer-port-test
+ifneq ($(VERIFY_CLEAN),0)
 	$(MAKE) clean
+endif
 	$(MAKE) kernel
-	$(MAKE) wall-clock-tests ext4-tests package-repository-tests \
+	$(MAKE) --jobs=$(VERIFY_JOBS) \
+		wall-clock-tests ext4-tests package-repository-tests \
 		package-transaction-tests package-state-tests package-service-tests \
 		package-trust-asset-tests package-trust-tests package-control-tests \
 		package-fetch-tests package-upload-tests \
@@ -2181,6 +2496,190 @@ qemu-test-native-openrfs: $(TEST_BUILD_DIR)/native-openrfs/openrfs.iso
 		--qemu qemu-system-x86_64 --python '$(PYTHON)' \
 		--accel '$(QEMU_ACCEL)' --timeout 900
 
+qemu-test-ext4-space: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_space_test.py tools/ext4_powercut_test.py
+	$(PYTHON) tools/ext4_space_test.py \
+		--kernel '$(KERNEL)' --fixture '$(EXT4_FIXTURE)' \
+		--output '$(TEST_BUILD_DIR)/ext4-space/$(shell git rev-parse --short HEAD)' \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' \
+		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
+		--accel '$(QEMU_ACCEL)'
+
+qemu-test-ext4-inodes: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_space_test.py tools/ext4_powercut_test.py
+	$(PYTHON) tools/ext4_space_test.py --inodes \
+		--kernel '$(KERNEL)' --fixture '$(EXT4_FIXTURE)' \
+		--output '$(TEST_BUILD_DIR)/ext4-inodes/$(shell git rev-parse --short HEAD)' \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' \
+		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
+		--accel '$(QEMU_ACCEL)'
+
+qemu-test-ext4-unlink-powercuts: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_unlink_powercut_test.py tools/ext4_powercut_test.py
+	$(PYTHON) tools/ext4_unlink_powercut_test.py \
+		--kernel '$(KERNEL)' --fixture '$(EXT4_FIXTURE)' \
+		--output '$(TEST_BUILD_DIR)/ext4-unlink-powercuts/$(shell git rev-parse --short HEAD)' \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' \
+		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
+		--accel '$(QEMU_ACCEL)'
+
+qemu-test-ext4-replace-powercuts: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_unlink_powercut_test.py tools/ext4_powercut_test.py
+	$(PYTHON) tools/ext4_unlink_powercut_test.py --operation replace \
+		--kernel '$(KERNEL)' --fixture '$(EXT4_FIXTURE)' \
+		--output '$(TEST_BUILD_DIR)/ext4-unlink-powercuts/$(shell git rev-parse --short HEAD)/replace' \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' \
+		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
+		--accel '$(QEMU_ACCEL)'
+
+qemu-test-ext4-truncate-powercuts: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_unlink_powercut_test.py tools/ext4_powercut_test.py
+	$(PYTHON) tools/ext4_unlink_powercut_test.py --operation truncate \
+		--kernel '$(KERNEL)' --fixture '$(EXT4_FIXTURE)' \
+		--output '$(TEST_BUILD_DIR)/ext4-unlink-powercuts/$(shell git rev-parse --short HEAD)/truncate' \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' \
+		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
+		--accel '$(QEMU_ACCEL)'
+
+qemu-test-ext4-grow-powercuts: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_unlink_powercut_test.py tools/ext4_powercut_test.py
+	$(PYTHON) tools/ext4_unlink_powercut_test.py --operation grow \
+		--kernel '$(KERNEL)' --fixture '$(EXT4_FIXTURE)' \
+		--output '$(TEST_BUILD_DIR)/ext4-unlink-powercuts/$(shell git rev-parse --short HEAD)/grow' \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' \
+		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
+		--accel '$(QEMU_ACCEL)'
+
+qemu-test-ext4-create-powercuts: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_unlink_powercut_test.py tools/ext4_powercut_test.py
+	$(PYTHON) tools/ext4_unlink_powercut_test.py --operation create \
+		--kernel '$(KERNEL)' --fixture '$(EXT4_FIXTURE)' \
+		--output '$(TEST_BUILD_DIR)/ext4-unlink-powercuts/$(shell git rev-parse --short HEAD)/create' \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' \
+		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
+		--accel '$(QEMU_ACCEL)'
+
+qemu-test-ext4-mkdir-powercuts: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_unlink_powercut_test.py tools/ext4_powercut_test.py
+	$(PYTHON) tools/ext4_unlink_powercut_test.py --operation mkdir \
+		--kernel '$(KERNEL)' --fixture '$(EXT4_FIXTURE)' \
+		--output '$(TEST_BUILD_DIR)/ext4-unlink-powercuts/$(shell git rev-parse --short HEAD)/mkdir' \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' \
+		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
+		--accel '$(QEMU_ACCEL)'
+
+qemu-test-ext4-rmdir-powercuts: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_unlink_powercut_test.py tools/ext4_powercut_test.py
+	$(PYTHON) tools/ext4_unlink_powercut_test.py --operation rmdir \
+		--kernel '$(KERNEL)' --fixture '$(EXT4_FIXTURE)' \
+		--output '$(TEST_BUILD_DIR)/ext4-unlink-powercuts/$(shell git rev-parse --short HEAD)/rmdir' \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' \
+		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
+		--accel '$(QEMU_ACCEL)'
+
+qemu-test-ext4-xattr-powercuts: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_unlink_powercut_test.py tools/ext4_powercut_test.py tools/ext4_kernel_read.py
+	$(PYTHON) tools/ext4_unlink_powercut_test.py --operation xattr \
+		--kernel '$(KERNEL)' --fixture '$(EXT4_FIXTURE)' \
+		--output '$(TEST_BUILD_DIR)/ext4-unlink-powercuts/$(shell git rev-parse --short HEAD)/xattr' \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' \
+		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
+		--accel '$(QEMU_ACCEL)'
+
+qemu-test-ext4-xattr-remove-powercuts: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_unlink_powercut_test.py tools/ext4_powercut_test.py tools/ext4_kernel_read.py
+	$(PYTHON) tools/ext4_unlink_powercut_test.py --operation xattr-remove \
+		--kernel '$(KERNEL)' --fixture '$(EXT4_FIXTURE)' \
+		--output '$(TEST_BUILD_DIR)/ext4-unlink-powercuts/$(shell git rev-parse --short HEAD)/xattr-remove' \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' \
+		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
+		--accel '$(QEMU_ACCEL)'
+
+qemu-test-ext4-link-powercuts: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_unlink_powercut_test.py tools/ext4_powercut_test.py tools/ext4_kernel_read.py
+	$(PYTHON) tools/ext4_unlink_powercut_test.py --operation link \
+		--kernel '$(KERNEL)' --fixture '$(EXT4_FIXTURE)' \
+		--output '$(TEST_BUILD_DIR)/ext4-unlink-powercuts/$(shell git rev-parse --short HEAD)/link' \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' \
+		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
+		--accel '$(QEMU_ACCEL)'
+
+qemu-test-ext4-symlink-powercuts qemu-test-ext4-symlink-long-powercuts qemu-test-ext4-chmod-powercuts qemu-test-ext4-times-powercuts qemu-test-ext4-rename-powercuts qemu-test-ext4-rename-cross-powercuts qemu-test-ext4-overwrite-powercuts: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_unlink_powercut_test.py tools/ext4_powercut_test.py tools/ext4_kernel_read.py
+	$(PYTHON) tools/ext4_unlink_powercut_test.py --operation '$(patsubst qemu-test-ext4-%-powercuts,%,$@)' \
+		--kernel '$(KERNEL)' --fixture '$(EXT4_FIXTURE)' \
+		--output '$(TEST_BUILD_DIR)/ext4-unlink-powercuts/$(shell git rev-parse --short HEAD)/$(patsubst qemu-test-ext4-%-powercuts,%,$@)' \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' \
+		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
+		--accel '$(QEMU_ACCEL)'
+
+qemu-test-ext4-append-powercuts: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_unlink_powercut_test.py tools/ext4_powercut_test.py tools/ext4_kernel_read.py
+	$(PYTHON) tools/ext4_unlink_powercut_test.py --operation append \
+		--kernel '$(KERNEL)' --fixture '$(EXT4_FIXTURE)' \
+		--output '$(TEST_BUILD_DIR)/ext4-unlink-powercuts/$(shell git rev-parse --short HEAD)/append' \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' \
+		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
+		--accel '$(QEMU_ACCEL)'
+
+qemu-test-ext4-overwrite-errors-powercuts qemu-test-ext4-append-errors-powercuts qemu-test-ext4-truncate-errors-powercuts qemu-test-ext4-grow-errors-powercuts qemu-test-ext4-rename-errors-powercuts qemu-test-ext4-rename-cross-errors-powercuts qemu-test-ext4-create-errors-powercuts qemu-test-ext4-mkdir-errors-powercuts qemu-test-ext4-rmdir-errors-powercuts qemu-test-ext4-chmod-errors-powercuts qemu-test-ext4-times-errors-powercuts qemu-test-ext4-xattr-errors-powercuts qemu-test-ext4-xattr-remove-errors-powercuts qemu-test-ext4-link-errors-powercuts qemu-test-ext4-symlink-errors-powercuts qemu-test-ext4-symlink-long-errors-powercuts: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_unlink_powercut_test.py tools/ext4_powercut_test.py tools/ext4_kernel_read.py
+	$(PYTHON) tools/ext4_unlink_powercut_test.py --operation '$(patsubst qemu-test-ext4-%-errors-powercuts,%,$@)' --storage-failures \
+		--kernel '$(KERNEL)' --fixture '$(EXT4_FIXTURE)' \
+		--output '$(TEST_BUILD_DIR)/ext4-unlink-powercuts/$(shell git rev-parse --short HEAD)/$(patsubst qemu-test-ext4-%-powercuts,%,$@)' \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' \
+		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
+		--accel '$(QEMU_ACCEL)'
+
+qemu-test-ext4-journal-wrap: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_journal_wrap_test.py tools/ext4_unlink_powercut_test.py tools/ext4_powercut_test.py tools/ext4_kernel_read.py
+	$(PYTHON) tools/ext4_journal_wrap_test.py --kernel '$(KERNEL)' --fixture '$(EXT4_FIXTURE)' \
+		--output '$(TEST_BUILD_DIR)/ext4-unlink-powercuts/$(shell git rev-parse --short HEAD)/journal-wrap' \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' \
+		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
+		--accel '$(QEMU_ACCEL)'
+
+qemu-test-ext4-storage-refusals: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_unlink_powercut_test.py
+	@operations="$$($(PYTHON) -c 'import sys; sys.path.insert(0, "tools"); from ext4_unlink_powercut_test import STORAGE_CONTROLS; print(" ".join(STORAGE_CONTROLS))')" || exit 1; \
+	result=0; \
+	for operation in $$operations; do \
+		$(MAKE) "qemu-test-ext4-$$operation-errors-powercuts" || result=1; \
+	done; \
+	exit $$result
+
+qemu-test-ext4-admission-refusals: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_admission_test.py tools/ext4_journal_corruption_test.py tools/ext4_image.py tools/ext4_unlink_powercut_test.py tools/ext4_powercut_test.py tools/ext4_kernel_read.py
+	$(PYTHON) tools/ext4_admission_test.py --kernel '$(KERNEL)' --fixture '$(EXT4_FIXTURE)' \
+		--output '$(TEST_BUILD_DIR)/ext4-unlink-powercuts/$(shell git rev-parse --short HEAD)/admission-refusals' \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' \
+		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
+		--accel '$(QEMU_ACCEL)'
+	$(PYTHON) tools/ext4_journal_corruption_test.py --kernel '$(KERNEL)' --fixture '$(EXT4_FIXTURE)' \
+		--output '$(TEST_BUILD_DIR)/ext4-unlink-powercuts/$(shell git rev-parse --short HEAD)/journal-corruption' \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' \
+		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
+		--accel '$(QEMU_ACCEL)'
+
+qemu-test-ext4-geometry: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_geometry_test.py tools/ext4_unlink_powercut_test.py tools/ext4_powercut_test.py tools/ext4_kernel_read.py
+	$(PYTHON) tools/ext4_geometry_test.py --kernel '$(KERNEL)' --fixture '$(EXT4_FIXTURE)' \
+		--output '$(TEST_BUILD_DIR)/ext4-unlink-powercuts/$(shell git rev-parse --short HEAD)/geometry' \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' \
+		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
+		--accel '$(QEMU_ACCEL)'
+
+qemu-test-ext4-dense-file: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_dense_file_test.py tools/ext4_unlink_powercut_test.py tools/ext4_powercut_test.py tools/ext4_kernel_read.py
+	$(PYTHON) tools/ext4_dense_file_test.py --kernel '$(KERNEL)' --fixture '$(EXT4_FIXTURE)' \
+		--output '$(TEST_BUILD_DIR)/ext4-unlink-powercuts/$(shell git rev-parse --short HEAD)/dense-file' \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' \
+		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
+		--accel '$(QEMU_ACCEL)'
+
+qemu-test-ext4-rename-device-powercuts qemu-test-ext4-rename-cross-device-powercuts qemu-test-ext4-rename-wrap-device-powercuts qemu-test-ext4-append-device-powercuts qemu-test-ext4-truncate-device-powercuts qemu-test-ext4-grow-device-powercuts qemu-test-ext4-create-device-powercuts qemu-test-ext4-chmod-device-powercuts qemu-test-ext4-times-device-powercuts qemu-test-ext4-xattr-device-powercuts qemu-test-ext4-xattr-remove-device-powercuts qemu-test-ext4-unlink-device-powercuts qemu-test-ext4-replace-device-powercuts qemu-test-ext4-mkdir-device-powercuts qemu-test-ext4-rmdir-device-powercuts qemu-test-ext4-link-device-powercuts qemu-test-ext4-symlink-device-powercuts qemu-test-ext4-symlink-long-device-powercuts qemu-test-ext4-overwrite-device-powercuts: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_unlink_powercut_test.py tools/ext4_powercut_test.py tools/ext4_kernel_read.py
+	$(PYTHON) tools/ext4_unlink_powercut_test.py --operation '$(patsubst qemu-test-ext4-%-device-powercuts,%,$@)' --physical-cuts \
+		$(if $(filter qemu-test-ext4-rename-wrap-device-powercuts,$@),--timeout 600) \
+		--kernel '$(KERNEL)' --fixture '$(EXT4_FIXTURE)' \
+		--output '$(TEST_BUILD_DIR)/ext4-unlink-powercuts/$(shell git rev-parse --short HEAD)/$(patsubst qemu-test-ext4-%-powercuts,%,$@)' \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' \
+		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
+		--accel '$(QEMU_ACCEL)'
+
+qemu-test-ext4-namespace-device-cuts: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_unlink_powercut_test.py
+	@result=0; \
+	for operation in unlink replace mkdir rmdir link symlink symlink-long; do \
+		$(MAKE) "qemu-test-ext4-$$operation-device-powercuts" || result=1; \
+	done; \
+	exit $$result
+
+qemu-test-ext4-metadata-device-cuts: $(KERNEL) $(EXT4_FIXTURE) tools/ext4_unlink_powercut_test.py
+	@result=0; \
+	for operation in chmod times xattr xattr-remove; do \
+		$(MAKE) "qemu-test-ext4-$$operation-device-powercuts" || result=1; \
+	done; \
+	exit $$result
+
 qemu-test-ext4-powercuts: $(KERNEL) $(EXT4_FIXTURE) \
 		tools/ext4_image.py tools/ext4_powercut_test.py
 	@for tool in qemu-system-x86_64 $(GRUB_MKRESCUE) $(PYTHON); do \
@@ -2192,7 +2691,7 @@ qemu-test-ext4-powercuts: $(KERNEL) $(EXT4_FIXTURE) \
 		--output '$(TEST_BUILD_DIR)/ext4-powercuts' \
 		--qemu qemu-system-x86_64 --grub-mkrescue '$(GRUB_MKRESCUE)' \
 		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
-		--accel '$(QEMU_ACCEL)' --timeout 90
+		--accel '$(QEMU_ACCEL)' --timeout 600 --keep-images
 
 qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 	@for tool in qemu-system-x86_64 timeout grep; do \
@@ -2302,7 +2801,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 				$(MAKE) '$(AUDIO_SYSTEM_IMAGE)' '$(AUDIO_DATA_IMAGE)' || exit 1; \
 				cp '$(AUDIO_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
 				audio_wav='$(abspath $(TEST_BUILD_DIR)/$*/native-audio.wav)'; rm -f "$$audio_wav"; audio_capture=false; \
-				if qemu-system-x86_64 -audiodev help 2>&1 | grep -Eq '(^|[[:space:]])wav([[:space:]]|$$)'; then \
+				if test '$(OS)' != Windows_NT && qemu-system-x86_64 -audiodev help 2>&1 | grep -Eq '(^|[[:space:]])wav([[:space:]]|$$)'; then \
 					audio_capture=true; \
 					audio_backend="-audiodev wav,id=wav0,path=$$audio_wav,out.frequency=48000,out.channels=2,out.format=s16"; \
 				else audio_backend='-audiodev none,id=wav0'; fi; \
@@ -2311,7 +2810,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 				$(MAKE) '$(SDL_PROOF_SYSTEM_IMAGE)' '$(SDL_PROOF_DATA_IMAGE)' || exit 1; \
 				cp '$(SDL_PROOF_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
 				audio_wav='$(abspath $(TEST_BUILD_DIR)/$*/native-sdl.wav)'; rm -f "$$audio_wav"; audio_capture=false; \
-				if qemu-system-x86_64 -audiodev help 2>&1 | grep -Eq '(^|[[:space:]])wav([[:space:]]|$$)'; then \
+				if test '$(OS)' != Windows_NT && qemu-system-x86_64 -audiodev help 2>&1 | grep -Eq '(^|[[:space:]])wav([[:space:]]|$$)'; then \
 					audio_capture=true; \
 					audio_backend="-audiodev wav,id=wav0,path=$$audio_wav,out.frequency=48000,out.channels=2,out.format=s16"; \
 				else audio_backend='-audiodev none,id=wav0'; fi; \
@@ -2420,7 +2919,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 	case '$*' in \
 		openrfs-proof) timeout_seconds=60 ;; \
 		fat32-*) timeout_seconds=45 ;; \
-		ext4-recovery) timeout_seconds=90 ;; \
+		ext4-recovery) timeout_seconds=600 ;; \
 		native) timeout_seconds=180 ;; \
 		native-lua) timeout_seconds=150 ;; \
 		native-sqlite) timeout_seconds=240 ;; \
@@ -2432,16 +2931,16 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 	if test '$*' = fat32-persistence -o '$*' = native-sqlite; then reboot_control=''; fi; \
 	monitor_argument='-monitor none'; injector=''; injection_result=0; \
 	if test '$*' = native-lua; then \
-		monitor_socket='$(TEST_BUILD_DIR)/$*/monitor.sock'; \
+		monitor_socket='$(QEMU_LUA_MONITOR_SOCKET)'; \
 		rm -f "$$monitor_socket"; \
-		monitor_argument="-monitor unix:$$monitor_socket,server=on,wait=off"; \
+		monitor_argument='$(QEMU_LUA_MONITOR_ARGUMENT)'; \
 		$(PYTHON) tools/qemu-send-keys.py --monitor "$$monitor_socket" \
 			--serial "$$log" --marker 'OPENRFS LUA INPUT READY' \
 			--text openrfs --enter --timeout 120 & injector=$$!; \
 	elif test '$*' = native-sdl; then \
-		monitor_socket='$(TEST_BUILD_DIR)/$*/monitor.sock'; \
+		monitor_socket='$(QEMU_SDL_MONITOR_SOCKET)'; \
 		rm -f "$$monitor_socket"; \
-		monitor_argument="-monitor unix:$$monitor_socket,server=on,wait=off"; \
+		monitor_argument='$(QEMU_SDL_MONITOR_ARGUMENT)'; \
 		$(PYTHON) tools/qemu-send-keys.py --monitor "$$monitor_socket" \
 			--serial "$$log" --marker 'OPENRFS SDL READY run=1' \
 			--text s --hmp 'mouse_move -100 0' \
@@ -2793,7 +3292,9 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 		ext4-recovery) \
 			grep -Fxq 'ST EXT4 RECOVERY marker cleared transaction committed appended exact truncate revoke rearm create mode hardlink unlink journal clean transactions 0 replay 0 slots 0 VFS writable remount clean resources exact' "$$log" && \
 			$(PYTHON) tools/ext4_image.py inspect '$(EXT4_RECOVERY_FIXTURE)' \
-				--report '$(EXT4_RECOVERY_FIXTURE).after.json' || diagnostics_ok=false ;; \
+				--report '$(EXT4_RECOVERY_FIXTURE).after.json' && \
+			$(PYTHON) tools/ext4_kernel_read.py '$(EXT4_RECOVERY_FIXTURE)' \
+				'$(TEST_BUILD_DIR)/ext4-recovery/linux-kernel' || diagnostics_ok=false ;; \
 		thread-guard) \
 			grep -Fq 'ST THREAD guard 0x0000000800005000' "$$log" && \
 			grep -Fq '  vector=14 name=page fault' "$$log" && \

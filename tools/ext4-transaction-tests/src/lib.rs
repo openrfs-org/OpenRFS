@@ -9,6 +9,7 @@ use ext4plus::{
     JournalRecordKind, JournalRing, JournalStorage, JournalSuperblockImage, JournalTransaction,
     JournalTransactionError, execute_commit_operations, load_journal_inode_map,
     recover_committed_ring, replay_committed_transaction,
+    JOURNAL_TRANSACTION_MAX_REVOKED_BLOCKS,
 };
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -160,6 +161,148 @@ fn public_executor_maps_every_block_write_and_preserves_flushes() {
     assert!(storage.events.is_empty());
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ExactStorageEvent {
+    Write(u64, Vec<u8>),
+    Flush(JournalFlush),
+}
+
+/// A refusal can happen after the device has accepted bytes. The coordinator
+/// must retain its reservation in both cases and reissue the original plan.
+#[derive(Default)]
+struct RefusingStorage {
+    events: Vec<ExactStorageEvent>,
+    accepted: BTreeMap<u64, Vec<u8>>,
+    fail_at: Option<usize>,
+    accept_failed_write: bool,
+}
+
+impl JournalStorage for RefusingStorage {
+    type Error = ();
+
+    fn write(&mut self, start: u64, bytes: &[u8]) -> Result<(), Self::Error> {
+        let failed = self.fail_at == Some(self.events.len());
+        self.events
+            .push(ExactStorageEvent::Write(start, bytes.to_vec()));
+        if !failed || self.accept_failed_write {
+            self.accepted.insert(start, bytes.to_vec());
+        }
+        if failed {
+            Err(())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn flush(&mut self, boundary: JournalFlush) -> Result<(), Self::Error> {
+        let failed = self.fail_at == Some(self.events.len());
+        self.events.push(ExactStorageEvent::Flush(boundary));
+        if failed {
+            Err(())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[test]
+fn every_storage_refusal_retains_exact_plan_and_reserved_slots() {
+    let slots = [3000, 3001, 3002, 3003, 3004, 3005, 3006, 3007];
+    let mut reference_ring = mapped_ring(17, &slots);
+    let prepared = reference_ring.prepare(&transaction()).unwrap();
+    let plan = reference_ring.prepare_commit_plan(&prepared).unwrap();
+    let mut reference = RefusingStorage::default();
+    execute_commit_operations(&mut reference, &plan).unwrap();
+
+    for accept_failed_write in [false, true] {
+        for failed_index in 0..plan.len() {
+            let mut ring = mapped_ring(17, &slots);
+            let prepared = ring.prepare(&transaction()).unwrap();
+            let original = ring.prepare_commit_plan(&prepared).unwrap();
+            let used = ring.used_slots();
+            let sequence = ring.next_sequence();
+            let mut storage = RefusingStorage {
+                fail_at: Some(failed_index),
+                accept_failed_write,
+                ..Default::default()
+            };
+            assert_eq!(
+                execute_commit_operations(&mut storage, &original),
+                Err(JournalExecutionError::Storage(()))
+            );
+            assert_eq!(storage.events, reference.events[..=failed_index]);
+            assert_eq!(ring.used_slots(), used);
+            assert_eq!(ring.next_sequence(), sequence);
+            assert!(ring.abort_precommit(prepared.ticket()).is_err());
+            assert!(ring.checkpoint_durable(prepared.ticket()).is_err());
+            let retry = ring.prepare_commit_plan(&prepared).unwrap();
+            assert_eq!(retry, original);
+            storage.fail_at = None;
+            storage.events.clear();
+            execute_commit_operations(&mut storage, &retry).unwrap();
+            assert_eq!(storage.events, reference.events);
+            assert_eq!(storage.accepted, reference.accepted);
+            ring.mark_commit_durable(prepared.ticket()).unwrap();
+
+            // The tail write and its flush are separately retryable; commit
+            // completion alone must not release any reserved journal slot.
+            let tail = ring.prepare_checkpoint_plan(prepared.ticket()).unwrap();
+            for tail_failure in 0..tail.len() {
+                let mut tail_storage = RefusingStorage {
+                    fail_at: Some(tail_failure),
+                    accept_failed_write,
+                    ..Default::default()
+                };
+                assert_eq!(
+                    execute_commit_operations(&mut tail_storage, &tail),
+                    Err(JournalExecutionError::Storage(()))
+                );
+                assert_eq!(ring.used_slots(), used);
+                assert_eq!(ring.next_sequence(), sequence);
+                assert_eq!(
+                    ring.prepare_checkpoint_plan(prepared.ticket()).unwrap(),
+                    tail
+                );
+            }
+            execute_commit_operations(&mut storage, &tail).unwrap();
+            ring.checkpoint_durable(prepared.ticket()).unwrap();
+            assert_eq!(ring.used_slots(), 0);
+        }
+    }
+}
+
+#[test]
+fn sealed_stage_refuses_mutations_through_every_shared_writer() {
+    let backing = Rc::new(vec![0u8; JOURNAL_BLOCK_BYTES * 8]);
+    let stage = Rc::new(
+        JournalMutationStage::new(Box::new(backing.clone()), backing.len() as u64).unwrap(),
+    );
+    let writer = stage.clone();
+    Ext4Write::write(&*writer, JOURNAL_BLOCK_BYTES as u64, &[0x51]).unwrap();
+    let base = JournalTransaction::new(17, UUID, MAXIMUM_BLOCK).unwrap();
+    assert!(stage.build_transaction(&base, &[7]).is_err());
+    assert!(!stage.is_sealed());
+    let snapshot = stage.build_transaction(&base, &[]).unwrap();
+    let images = stage.staged_images();
+    assert!(Ext4Write::write(&*writer, JOURNAL_BLOCK_BYTES as u64, &[0x99]).is_err());
+    assert!(Ext4Write::revoke_blocks(&*writer, 1, 1).is_err());
+    assert_eq!(stage.staged_images(), images);
+    assert_eq!(stage.revoked_block_count(), 0);
+    assert!(backing.iter().all(|byte| *byte == 0));
+    let plan = snapshot.commit_plan(&[3000, 3001, 3002]).unwrap();
+    let commit_flush = plan
+        .iter()
+        .position(|operation| {
+            matches!(operation, JournalCommitOperation::Flush(JournalFlush::Commit))
+        })
+        .unwrap();
+    for (index, operation) in plan.iter().enumerate() {
+        if matches!(operation, JournalCommitOperation::WriteHomeMetadata(_)) {
+            assert!(index > commit_flush);
+        }
+    }
+}
+
 #[test]
 fn mutation_stage_coalesces_partial_blocks_without_writing_through() {
     let backing = Rc::new(
@@ -217,10 +360,11 @@ fn mutation_stage_coalesces_partial_blocks_without_writing_through() {
 
 #[test]
 fn mutation_stage_derives_bounded_revocations_from_freed_blocks() {
-    let backing = Rc::new(vec![0u8; JOURNAL_BLOCK_BYTES * 70]);
+    let limit = JOURNAL_TRANSACTION_MAX_REVOKED_BLOCKS;
+    let backing = Rc::new(vec![0u8; JOURNAL_BLOCK_BYTES * (limit + 2)]);
     let stage = JournalMutationStage::new(
         Box::new(backing),
-        u64::try_from(JOURNAL_BLOCK_BYTES * 70).unwrap(),
+        u64::try_from(JOURNAL_BLOCK_BYTES * (limit + 2)).unwrap(),
     )
     .unwrap();
     Ext4Write::write(&stage, JOURNAL_BLOCK_BYTES as u64, &[0x11]).unwrap();
@@ -246,15 +390,15 @@ fn mutation_stage_derives_bounded_revocations_from_freed_blocks() {
     )));
 
     stage.rollback();
-    Ext4Write::revoke_blocks(&stage, 1, 64).unwrap();
-    assert_eq!(stage.revoked_block_count(), 64);
+    Ext4Write::revoke_blocks(&stage, 1, limit as u32).unwrap();
+    assert_eq!(stage.revoked_block_count(), limit);
     assert_eq!(
-        Ext4Write::revoke_blocks(&stage, 65, 1)
+        Ext4Write::revoke_blocks(&stage, limit as u64 + 1, 1)
             .unwrap_err()
             .to_string(),
         JournalMutationStageError::TooManyRevocations.to_string()
     );
-    assert_eq!(stage.revoked_block_count(), 64);
+    assert_eq!(stage.revoked_block_count(), limit);
     assert_eq!(
         Ext4Write::revoke_blocks(&stage, 0, 1)
             .unwrap_err()
@@ -569,6 +713,8 @@ fn revocation_records_are_checksummed_and_suppress_stale_images() {
         )
     }));
     let journal = journal_images(&operations);
+    // Linux JBD2 r_count is an end offset, including its 16-byte header.
+    assert_eq!(u32::from_be_bytes(journal[3][12..16].try_into().unwrap()), 24);
     let references: Vec<&[u8]> = journal.iter().map(Vec::as_slice).collect();
     let replay = replay_committed_transaction(UUID, 17, MAXIMUM_BLOCK, &references).unwrap();
     assert_eq!(replay.len(), 1);
@@ -581,6 +727,26 @@ fn revocation_records_are_checksummed_and_suppress_stale_images() {
         replay_committed_transaction(UUID, 17, MAXIMUM_BLOCK, &references),
         Err(JournalTransactionError::CorruptRevocation)
     );
+}
+
+#[test]
+fn multiple_revoke_records_have_exact_slot_counts_and_replay() {
+    let mut transaction = transaction();
+    for block in 1000..2200 { transaction.stage_revocation(block).unwrap(); }
+    assert_eq!(transaction.required_journal_slots().unwrap(), 7);
+    let operations = transaction.commit_plan(&[3000, 3001, 3002, 3003, 3004, 3005, 3006]).unwrap();
+    let journal = journal_images(&operations);
+    assert_eq!(journal.len(), 7);
+    assert_eq!(u32::from_be_bytes(journal[3][12..16].try_into().unwrap()), 4088);
+    assert_eq!(u32::from_be_bytes(journal[4][12..16].try_into().unwrap()), 4088);
+    assert_eq!(u32::from_be_bytes(journal[5][12..16].try_into().unwrap()), 1472);
+    let references: Vec<&[u8]> = journal.iter().map(Vec::as_slice).collect();
+    assert_eq!(replay_committed_transaction(UUID, 17, MAXIMUM_BLOCK, &references).unwrap().len(), 2);
+    let mut corrupt = journal;
+    corrupt[4][0] ^= 1;
+    let references: Vec<&[u8]> = corrupt.iter().map(Vec::as_slice).collect();
+    assert_eq!(replay_committed_transaction(UUID, 17, MAXIMUM_BLOCK, &references),
+        Err(JournalTransactionError::CorruptRevocation));
 }
 
 #[test]
@@ -759,10 +925,54 @@ fn deterministic_ext4_fixture_discovers_its_real_journal_inode_map() {
         eprintln!("OPENRFS_EXT4_RUST_FIXTURE is unset; journal-inode integration is CI-only");
         return;
     };
-    let Ok(bytes) = std::fs::read(&path) else {
-        eprintln!("journal-inode fixture was not produced because e2fsprogs is unavailable");
-        return;
-    };
+    let bytes = std::fs::read(&path)
+        .expect("configured OPENRFS_EXT4_RUST_FIXTURE must exist and be readable");
+
+    // Exercise the shipped loader against the real fixture. The vendored
+    // superblock unit test references upstream test_data that is not shipped.
+    // Neither coordinator-only recovery admission nor a valid checksum may
+    // turn a permanently readonly or unknown ro-compat image writable.
+    for extra_readonly in [0x1000u32, 0x8000_0000] {
+        for recovery in [false, true] {
+            let mut readonly_bytes = bytes.clone();
+            let superblock = &mut readonly_bytes[1024..2048];
+            let features = u32::from_le_bytes(superblock[0x64..0x68].try_into().unwrap());
+            superblock[0x64..0x68].copy_from_slice(&(features | extra_readonly).to_le_bytes());
+            if recovery {
+                let incompat = u32::from_le_bytes(superblock[0x60..0x64].try_into().unwrap());
+                superblock[0x60..0x64].copy_from_slice(&(incompat | 4).to_le_bytes());
+            }
+            let checksum = ext4_crc32c(&superblock[..0x3fc]);
+            superblock[0x3fc..].copy_from_slice(&checksum.to_le_bytes());
+            for coordinator_loader in [false, true] {
+                let backing = Rc::new(readonly_bytes.clone());
+                let stage = Rc::new(
+                    JournalMutationStage::new(Box::new(backing.clone()), backing.len() as u64)
+                        .unwrap(),
+                );
+                let readonly = if coordinator_loader {
+                    Ext4::load_with_recovery_writer(
+                        Box::new(stage.clone()),
+                        Some(Box::new(stage.clone())),
+                    )
+                } else {
+                    Ext4::load_with_writer(
+                        Box::new(stage.clone()),
+                        Some(Box::new(stage.clone())),
+                    )
+                }
+                .unwrap();
+                let mut file = readonly.open(b"/system/README.TXT").unwrap();
+                assert!(matches!(
+                    file.write_bytes_at(b"x", 0),
+                    Err(Ext4Error::Readonly)
+                ));
+                assert!(stage.is_empty());
+                assert!(!stage.is_sealed());
+                assert_eq!(&*backing, &readonly_bytes);
+            }
+        }
+    }
     let filesystem = Ext4::load(Box::new(bytes.clone())).unwrap();
     let journal = load_journal_inode_map(&filesystem).unwrap();
     assert_eq!(journal.superblock().start_block(), 0);
@@ -1486,6 +1696,117 @@ fn deterministic_ext4_fixture_discovers_its_real_journal_inode_map() {
         String::from_utf8_lossy(&truncated_fsck.stdout),
         String::from_utf8_lossy(&truncated_fsck.stderr)
     );
+}
+
+/// Replay exactly the committed journal prefix on a simulated reboot.
+fn orphan_replay_plan(storage: &VectorStorage) -> Vec<JournalCommitOperation> {
+    let filesystem = Ext4::load(Box::new(storage.bytes.clone())).unwrap();
+    let journal = load_journal_inode_map(&filesystem).unwrap();
+    if !journal.filesystem_needs_recovery() { return Vec::new(); }
+    let blocks: Vec<&[u8]> = journal.physical_blocks()[1..].iter().map(|block| {
+        let start = *block as usize * JOURNAL_BLOCK_BYTES;
+        &storage.bytes[start..start + JOURNAL_BLOCK_BYTES]
+    }).collect();
+    let recovery = recover_committed_ring(journal.superblock(), true,
+        journal.maximum_block(), &blocks).unwrap();
+    recovery.checkpoint_plan(journal.physical_blocks()[0], journal.filesystem_superblock()).unwrap()
+}
+
+fn orphan_commit_plan(ring: &mut JournalRing, stage: &JournalMutationStage)
+    -> Vec<JournalCommitOperation> {
+    let transaction = stage.build_transaction(&ring.begin_transaction().unwrap(), &[]).unwrap();
+    let prepared = ring.prepare(&transaction).unwrap();
+    let superblock = stage.staged_images().into_iter().find(|image| image.block_index() == 0).unwrap();
+    let successor = ring.admit_checkpointed_filesystem_superblock(&prepared, &superblock).unwrap();
+    let mut plan = ring.prepare_commit_plan(&prepared).unwrap();
+    assert_eq!(plan, ring.prepare_commit_plan(&prepared).unwrap());
+    // This test builds the complete sequence up front; only its executor
+    // applies bytes. Production acknowledges each boundary after its flush.
+    ring.mark_commit_durable(prepared.ticket()).unwrap();
+    plan.extend(ring.prepare_checkpoint_plan(prepared.ticket()).unwrap());
+    ring.checkpoint_durable_with_filesystem_superblock(&successor).unwrap();
+    plan
+}
+
+fn orphan_cleanup_plan(storage: &VectorStorage) -> Vec<JournalCommitOperation> {
+    let stage = Rc::new(JournalMutationStage::new(Box::new(storage.bytes.clone()),
+        storage.bytes.len() as u64).unwrap());
+    let filesystem = Ext4::load_with_recovery_writer(Box::new(stage.clone()),
+        Some(Box::new(stage.clone()))).unwrap();
+    let journal = load_journal_inode_map(&filesystem).unwrap();
+    let orphans = filesystem.orphan_inodes().unwrap();
+    if orphans.is_empty() { return Vec::new(); }
+    assert!(journal.clone().into_clean_ring().is_err());
+    let mut ring = journal.into_orphan_cleanup_ring().unwrap();
+    assert_eq!(ring.prepare_filesystem_clean_plan(), Err(JournalTransactionError::JournalNotClean));
+    assert_eq!(orphans.len(), 1);
+    filesystem.release_orphan(orphans[0]).unwrap();
+    assert!(stage.revoked_block_count() > 0);
+    let mut plan = orphan_commit_plan(&mut ring, &stage);
+    plan.extend(ring.prepare_filesystem_clean_plan().unwrap());
+    plan
+}
+
+#[test]
+fn real_orphan_unlink_and_cleanup_survive_every_plan_cut_and_repeated_recovery() {
+    let Ok(path) = std::env::var("OPENRFS_EXT4_RUST_FIXTURE") else { return };
+    let baseline = std::fs::read(&path).unwrap();
+    let original = Ext4::load(Box::new(baseline.clone())).unwrap();
+    let original_inode = original.open(b"/system/README.TXT").unwrap().inode().index;
+    let mut ring = load_journal_inode_map(&original).unwrap().into_clean_ring().unwrap();
+    let mut armed = VectorStorage { bytes: baseline, flushes: Vec::new() };
+    execute_commit_operations(&mut armed, &ring.prepare_recovery_marker_plan().unwrap()).unwrap();
+    ring.mark_recovery_marker_durable().unwrap();
+    let stage = Rc::new(JournalMutationStage::new(Box::new(armed.bytes.clone()),
+        armed.bytes.len() as u64).unwrap());
+    let filesystem = Ext4::load_with_recovery_writer(Box::new(stage.clone()),
+        Some(Box::new(stage.clone()))).unwrap();
+    let parent = filesystem.path_to_inode(ext4plus::path::Path::try_from("/system").unwrap(),
+        ext4plus::FollowSymlinks::All).unwrap();
+    let mut directory = ext4plus::dir::Dir::open_inode(&filesystem, parent).unwrap();
+    let name = ext4plus::DirEntryName::try_from("README.TXT").unwrap();
+    let inode = directory.get_entry(name).unwrap();
+    directory.unlink_open(name, inode).unwrap();
+    let unlink_plan = orphan_commit_plan(&mut ring, &stage);
+    assert_eq!(ring.prepare_filesystem_clean_plan(), Err(JournalTransactionError::JournalNotClean));
+    let mut orphaned = VectorStorage { bytes: armed.bytes.clone(), flushes: Vec::new() };
+    execute_commit_operations(&mut orphaned, &unlink_plan).unwrap();
+    assert_eq!(u32::from_le_bytes(orphaned.bytes[1024 + 0xe8..1024 + 0xec].try_into().unwrap()),
+        original_inode.get());
+    let release_plan = orphan_cleanup_plan(&orphaned);
+    let report_path = std::path::Path::new(&path).with_extension("orphan-cuts.img");
+    for (operation, before, plan) in [("unlink-open", &armed.bytes, &unlink_plan),
+        ("final-close", &orphaned.bytes, &release_plan)] {
+        for cut in 0..=plan.len() {
+            let mut crashed = VectorStorage { bytes: before.clone(), flushes: Vec::new() };
+            execute_commit_operations(&mut crashed, &plan[..cut]).unwrap();
+            let replay = orphan_replay_plan(&crashed);
+            // Cut recovery again at every write/flush boundary. Its replay
+            // must remain restartable even after journal cleanup persisted.
+            for recovery_cut in 0..=replay.len() {
+                let mut recovered = VectorStorage { bytes: crashed.bytes.clone(), flushes: Vec::new() };
+                execute_commit_operations(&mut recovered, &replay[..recovery_cut]).unwrap();
+                let retry = orphan_replay_plan(&recovered);
+                execute_commit_operations(&mut recovered, &retry).unwrap();
+                let cleanup = orphan_cleanup_plan(&recovered);
+                execute_commit_operations(&mut recovered, &cleanup).unwrap();
+                let loaded = Ext4::load(Box::new(recovered.bytes.clone())).unwrap();
+                assert!(loaded.orphan_inodes().unwrap().is_empty());
+                assert!(load_journal_inode_map(&loaded).unwrap().into_clean_ring().is_ok());
+                // Before unlink commits the old name remains; afterward it
+                // is absent and its data/inode allocation must be reclaimed.
+                match loaded.open(b"/system/README.TXT") {
+                    Ok(file) => { assert_eq!(operation, "unlink-open"); assert_eq!(file.inode().index, original_inode); }
+                    Err(error) => assert!(matches!(error, Ext4Error::NotFound)),
+                }
+                std::fs::write(&report_path, &recovered.bytes).unwrap();
+                let fsck = std::process::Command::new("e2fsck").arg("-fn").arg(&report_path).output().unwrap();
+                assert!(fsck.status.success(), "{operation} cut {cut} recovery {recovery_cut}:\n{}\n{}",
+                    String::from_utf8_lossy(&fsck.stdout), String::from_utf8_lossy(&fsck.stderr));
+            }
+        }
+    }
+    let _ = std::fs::remove_file(report_path);
 }
 
 #[test]

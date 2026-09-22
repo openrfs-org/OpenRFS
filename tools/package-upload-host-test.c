@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include <openrfs/fat32_fs.h>
+#include <openrfs/native_handle.h>
 #include <openrfs/package_state.h>
 #include <openrfs/package_upload.h>
 
@@ -22,14 +23,31 @@ struct mock_file {
 };
 
 static struct mock_file files[PACKAGE_UPLOAD_SLOT_LIMIT];
+static struct mock_file replacement_file;
+static bool inode_bound_cleanup;
 static bool directory_present;
 static bool fail_next_sync;
 static bool fail_next_open;
+static bool replace_on_refused_open;
+static bool refuse_next_close;
 static bool fail_next_unlink;
+static bool lose_unlink_receipt;
 static size_t write_failure_at = NO_WRITE_FAILURE;
 static uint32_t sync_count;
 static uint32_t unlink_count;
 static uint32_t truncate_count;
+static uint32_t create_count;
+static uint32_t prepared_open_count;
+
+bool openrfsfs_has_atomic_replace(enum openrfsfs_volume volume)
+{
+    return volume == OPENRFSFS_VOLUME_DATA && inode_bound_cleanup;
+}
+
+static struct mock_file *named_file(int index)
+{
+    return index == 0 && replacement_file.present ? &replacement_file : &files[index];
+}
 
 static int path_index(const char *path)
 {
@@ -76,19 +94,20 @@ enum openrfsfs_status openrfsfs_unlink(enum openrfsfs_volume volume, const char 
     if (volume != OPENRFSFS_VOLUME_DATA || index < 0) {
         return OPENRFSFS_STATUS_INVALID_ARGUMENT;
     }
-    if (!files[index].present) {
+    struct mock_file *file = named_file(index);
+    if (!file->present) {
         return OPENRFSFS_STATUS_NOT_FOUND;
     }
     if (fail_next_unlink) {
         fail_next_unlink = false;
         return OPENRFSFS_STATUS_IO;
     }
-    if (files[index].open) {
+    if (file->open) {
         return OPENRFSFS_STATUS_BUSY;
     }
-    files[index].present = false;
-    files[index].size = 0U;
-    files[index].offset = 0U;
+    file->present = false;
+    file->size = 0U;
+    file->offset = 0U;
     ++unlink_count;
     return OPENRFSFS_STATUS_OK;
 }
@@ -101,11 +120,12 @@ enum openrfsfs_status openrfsfs_stat_path(enum openrfsfs_volume volume,
     if (volume != OPENRFSFS_VOLUME_DATA || index < 0 || stat == NULL) {
         return OPENRFSFS_STATUS_INVALID_ARGUMENT;
     }
-    if (!files[index].present) {
+    struct mock_file *file = named_file(index);
+    if (!file->present) {
         return OPENRFSFS_STATUS_NOT_FOUND;
     }
     *stat = (struct openrfsfs_stat){
-        .size = files[index].size,
+        .size = file->size,
         .directory = false
     };
     return OPENRFSFS_STATUS_OK;
@@ -120,17 +140,39 @@ enum openrfsfs_status openrfsfs_truncate(enum openrfsfs_volume volume,
             size > MOCK_FILE_BYTES) {
         return OPENRFSFS_STATUS_INVALID_ARGUMENT;
     }
-    if (!files[index].present) {
+    struct mock_file *file = named_file(index);
+    if (!file->present) {
         return OPENRFSFS_STATUS_NOT_FOUND;
     }
-    if (files[index].open) {
+    if (file->open) {
         return OPENRFSFS_STATUS_BUSY;
     }
-    files[index].size = (size_t)size;
-    if (files[index].offset > files[index].size) {
-        files[index].offset = files[index].size;
+    file->size = (size_t)size;
+    if (file->offset > file->size) {
+        file->offset = file->size;
     }
     ++truncate_count;
+    return OPENRFSFS_STATUS_OK;
+}
+
+enum openrfsfs_status openrfsfs_unlink_held_file(openrfsfs_handle handle, const char *path)
+{
+    const int index = path_index(path);
+    if (handle == 0U || handle > PACKAGE_UPLOAD_SLOT_LIMIT ||
+        !files[handle - 1U].open) return OPENRFSFS_STATUS_STALE_HANDLE;
+    if (index < 0) return OPENRFSFS_STATUS_PATH;
+    if (named_file(index) != &files[handle - 1U]) return OPENRFSFS_STATUS_STALE_HANDLE;
+    if (!files[index].present) return OPENRFSFS_STATUS_NOT_FOUND;
+    if (fail_next_unlink) {
+        fail_next_unlink = false;
+        return OPENRFSFS_STATUS_IO;
+    }
+    files[index].present = false;
+    ++unlink_count;
+    if (lose_unlink_receipt) {
+        lose_unlink_receipt = false;
+        return OPENRFSFS_STATUS_IO;
+    }
     return OPENRFSFS_STATUS_OK;
 }
 
@@ -151,6 +193,7 @@ enum openrfsfs_status openrfsfs_create(enum openrfsfs_volume volume, const char 
 {
     int index = path_index(path);
 
+    ++create_count;
     if (volume != OPENRFSFS_VOLUME_DATA || index < 0 || !directory_present) {
         return OPENRFSFS_STATUS_INVALID_ARGUMENT;
     }
@@ -159,6 +202,36 @@ enum openrfsfs_status openrfsfs_create(enum openrfsfs_volume volume, const char 
     }
     files[index] = (struct mock_file){0};
     files[index].present = true;
+    return OPENRFSFS_STATUS_OK;
+}
+
+enum openrfsfs_status openrfsfs_open_options(enum openrfsfs_volume volume,
+    const char *path, enum openrfsfs_access access, uint8_t flags, uint16_t mode,
+    openrfsfs_handle *handle)
+{
+    int index = path_index(path);
+
+    if (volume != OPENRFSFS_VOLUME_DATA || index < 0 || handle == NULL ||
+        !directory_present || access != OPENRFSFS_ACCESS_READ_WRITE || mode != 0600U ||
+        flags != (OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE)) {
+        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    }
+    ++prepared_open_count;
+    *handle = 0U;
+    if (fail_next_open) {
+        fail_next_open = false;
+        if (replace_on_refused_open) {
+            replace_on_refused_open = false;
+            files[index] = (struct mock_file){.present = true, .size = 1U};
+            files[index].bytes[0] = 'R';
+        }
+        return OPENRFSFS_STATUS_IO;
+    }
+    if (files[index].present) {
+        return OPENRFSFS_STATUS_EXISTS;
+    }
+    files[index] = (struct mock_file){.present = true, .open = true};
+    *handle = (openrfsfs_handle)(index + 1);
     return OPENRFSFS_STATUS_OK;
 }
 
@@ -192,14 +265,41 @@ enum openrfsfs_status openrfsfs_open(
     return OPENRFSFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_close(openrfsfs_handle handle)
+enum openrfsfs_status openrfsfs_close_report(openrfsfs_handle handle, bool *consumed)
 {
+    if (consumed == NULL) {
+        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    }
+    *consumed = false;
     if (handle == 0U || handle > PACKAGE_UPLOAD_SLOT_LIMIT ||
         !files[handle - 1U].open) {
         return OPENRFSFS_STATUS_STALE_HANDLE;
     }
+    if (refuse_next_close) {
+        refuse_next_close = false;
+        return OPENRFSFS_STATUS_BUSY;
+    }
     files[handle - 1U].open = false;
+    if (!files[handle - 1U].present) {
+        files[handle - 1U].size = 0U;
+        files[handle - 1U].offset = 0U;
+    }
+    *consumed = true;
     return OPENRFSFS_STATUS_OK;
+}
+
+enum openrfsfs_status openrfsfs_close(openrfsfs_handle handle)
+{
+    bool consumed;
+
+    return openrfsfs_close_report(handle, &consumed);
+}
+
+enum openrfsfs_status openrfsfs_fsync(openrfsfs_handle handle)
+{
+    if (handle == 0U || handle > PACKAGE_UPLOAD_SLOT_LIMIT ||
+        !files[handle - 1U].open) return OPENRFSFS_STATUS_STALE_HANDLE;
+    return openrfsfs_sync(OPENRFSFS_VOLUME_DATA);
 }
 
 enum openrfsfs_status openrfsfs_write(
@@ -209,6 +309,9 @@ enum openrfsfs_status openrfsfs_write(
     size_t *written_bytes
 )
 {
+#ifdef PACKAGE_UPLOAD_CLAIM_TEST
+    upload_claim_callback();
+#endif
     if (written_bytes == NULL || handle == 0U ||
         handle > PACKAGE_UPLOAD_SLOT_LIMIT || !files[handle - 1U].open ||
         (source == NULL && source_bytes != 0U)) {
@@ -475,6 +578,186 @@ static int failure_recovery_test(void)
     return 0;
 }
 
+static enum native_resource_close_result close_upload_resource(
+    uint8_t type, const struct native_resource *resource, void *context)
+{
+    struct package_upload_report report;
+    enum package_upload_status status;
+
+    CHECK(type == OPENRFS_HANDLE_PACKAGE_UPLOAD && resource != NULL &&
+        context == NULL, NATIVE_RESOURCE_RETAINED);
+    status = package_upload_close(95U,
+        (package_upload_token)resource->words[0], &report);
+    return status == PACKAGE_UPLOAD_STATUS_OK ? NATIVE_RESOURCE_CLOSED :
+        NATIVE_RESOURCE_RETAINED;
+}
+
+static int native_upload_close_refusal_test(void)
+{
+    struct package_upload_report report;
+    struct native_handle_table table;
+    struct native_resource resource = {{0U, 0U, 0U, 0U}};
+    openrfs_handle_t first;
+    openrfs_handle_t duplicate;
+
+    CHECK(package_upload_open(95U, &report) == PACKAGE_UPLOAD_STATUS_OK, 110);
+    resource.words[0] = report.token;
+    CHECK(native_handle_table_initialize(&table, 2U) == NATIVE_HANDLE_OK, 111);
+    CHECK(native_handle_install(&table, OPENRFS_HANDLE_PACKAGE_UPLOAD,
+        &resource, &first) == NATIVE_HANDLE_OK, 112);
+    CHECK(native_handle_duplicate(&table, first, &duplicate) ==
+        NATIVE_HANDLE_OK, 113);
+    refuse_next_close = true;
+    CHECK(native_handle_close_all(&table, close_upload_resource, NULL) ==
+        NATIVE_HANDLE_CLOSE_FAILED && table.active_handles == 1U &&
+        table.active_objects == 1U && files[0].open &&
+        !package_upload_resources_released(), 114);
+    CHECK(native_handle_close_all(&table, close_upload_resource, NULL) ==
+        NATIVE_HANDLE_OK && table.active_handles == 0U &&
+        table.active_objects == 0U && !files[0].open && !files[0].present &&
+        package_upload_resources_released(), 115);
+    return 0;
+}
+
+static int refused_open_preserves_namespace_test(void)
+{
+    struct package_upload_report report;
+    const uint32_t previous_unlinks = unlink_count;
+    const uint32_t previous_syncs = sync_count;
+    const uint32_t previous_opens = prepared_open_count;
+
+    /* A failed prepared open supplies no inode ownership receipt. A name
+     * appearing before its return must neither be opened nor cleaned up. */
+    fail_next_open = true;
+    replace_on_refused_open = true;
+    CHECK(package_upload_open(90U, &report) == PACKAGE_UPLOAD_STATUS_FILESYSTEM &&
+        report.filesystem_status == OPENRFSFS_STATUS_IO && report.token == 0U &&
+        package_upload_resources_released(), 70);
+    CHECK(files[0].present && !files[0].open && files[0].size == 1U &&
+        files[0].bytes[0] == 'R' && unlink_count == previous_unlinks &&
+        sync_count == previous_syncs, 71);
+    CHECK(package_upload_open(90U, &report) == PACKAGE_UPLOAD_STATUS_FILESYSTEM &&
+        report.filesystem_status == OPENRFSFS_STATUS_EXISTS && report.token == 0U &&
+        package_upload_resources_released(), 72);
+    CHECK(files[0].present && !files[0].open && files[0].size == 1U &&
+        files[0].bytes[0] == 'R' && unlink_count == previous_unlinks &&
+        sync_count == previous_syncs && create_count == 0U &&
+        prepared_open_count == previous_opens + 2U, 73);
+    /* The external owner removes its collision before a fresh request. */
+    files[0] = (struct mock_file){0};
+    CHECK(package_upload_open(90U, &report) == PACKAGE_UPLOAD_STATUS_OK, 74);
+    CHECK(package_upload_close(90U, report.token, &report) ==
+        PACKAGE_UPLOAD_STATUS_OK && package_upload_resources_released(), 75);
+    return 0;
+}
+
+static int failed_close_retires_sealed_view_test(void)
+{
+    static const uint8_t payload[] = "sealed upload";
+    uint8_t digest[PACKAGE_STATE_SHA256_BYTES], copy[sizeof(payload)];
+    struct package_upload_report report;
+    size_t completed;
+
+    CHECK(package_state_sha256(payload, sizeof(payload), digest) ==
+        PACKAGE_STATE_STATUS_OK, 80);
+    CHECK(package_upload_open(91U, &report) == PACKAGE_UPLOAD_STATUS_OK, 81);
+    const package_upload_token token = report.token;
+    CHECK(package_upload_write(91U, token, payload, sizeof(payload),
+        &completed, &report) == PACKAGE_UPLOAD_STATUS_OK &&
+        completed == sizeof(payload), 82);
+    CHECK(package_upload_seal(91U, token, sizeof(payload), digest, &report) ==
+        PACKAGE_UPLOAD_STATUS_OK, 83);
+    fail_next_unlink = true;
+    CHECK(package_upload_close(91U, token, &report) ==
+        PACKAGE_UPLOAD_STATUS_FILESYSTEM && !report.sealed && !report.durable &&
+        !package_upload_resources_released(), 84);
+    CHECK(files[0].present && files[0].size == 0U && !files[0].open, 85);
+    CHECK(package_upload_inspect(91U, token, &report) ==
+        PACKAGE_UPLOAD_STATUS_STATE && !report.sealed && !report.durable, 86);
+    CHECK(package_upload_read(91U, token, 0U, copy, sizeof(copy), &completed,
+        &report) == PACKAGE_UPLOAD_STATUS_STATE && completed == 0U, 87);
+    CHECK(package_upload_write(91U, token, payload, sizeof(payload),
+        &completed, &report) == PACKAGE_UPLOAD_STATUS_STATE && completed == 0U,
+        88);
+    CHECK(package_upload_seal(91U, token, sizeof(payload), digest, &report) ==
+        PACKAGE_UPLOAD_STATUS_STATE, 89);
+    CHECK(package_upload_close(91U, token, &report) == PACKAGE_UPLOAD_STATUS_OK &&
+        package_upload_resources_released() && !files[0].present, 90);
+    return 0;
+}
+
+static int sealed_read_retains_inode_test(void)
+{
+    static const uint8_t payload[] = "held payload";
+    uint8_t digest[PACKAGE_STATE_SHA256_BYTES], copy[sizeof(payload) + 4U];
+    struct package_upload_report report;
+    size_t count;
+    CHECK(package_state_sha256(payload, sizeof(payload), digest) == PACKAGE_STATE_STATUS_OK, 91);
+    CHECK(package_upload_open(92U, &report) == PACKAGE_UPLOAD_STATUS_OK, 92);
+    const package_upload_token token = report.token;
+    CHECK(package_upload_write(92U, token, payload, sizeof(payload), &count,
+        &report) == PACKAGE_UPLOAD_STATUS_OK && count == sizeof(payload), 93);
+    CHECK(package_upload_seal(92U, token, sizeof(payload), digest, &report) ==
+        PACKAGE_UPLOAD_STATUS_OK && files[0].open, 94);
+    /* Removing the name cannot redirect a sealed token's reads. Any new open
+     * would refuse, and a held read must not consume that refusal injection. */
+    files[0].present = false;
+    fail_next_open = true;
+    CHECK(package_upload_read(92U, token, 0U, copy, sizeof(copy), &count,
+        &report) == PACKAGE_UPLOAD_STATUS_OK && count == sizeof(payload) &&
+        memcmp(copy, payload, sizeof(payload)) == 0 && fail_next_open, 95);
+    CHECK(package_upload_read(92U, token, sizeof(payload), copy, sizeof(copy),
+        &count, &report) == PACKAGE_UPLOAD_STATUS_OK && count == 0U, 96);
+    CHECK(package_upload_close(92U, token, &report) == PACKAGE_UPLOAD_STATUS_OK &&
+        !files[0].open && files[0].size == 0U && package_upload_resources_released(), 97);
+    fail_next_open = false;
+    return 0;
+}
+
+static int held_cleanup_preserves_replacement_test(void)
+{
+    static const uint8_t payload[] = "owned upload";
+    uint8_t digest[PACKAGE_STATE_SHA256_BYTES], copy[sizeof(payload)];
+    struct package_upload_report report;
+    size_t count;
+    const uint32_t previous_truncates = truncate_count;
+    inode_bound_cleanup = true;
+    CHECK(package_state_sha256(payload, sizeof(payload), digest) == PACKAGE_STATE_STATUS_OK, 101);
+    for (unsigned attempt = 0U; attempt < 3U; ++attempt) {
+        CHECK(package_upload_open(93U, &report) == PACKAGE_UPLOAD_STATUS_OK, 102);
+        const package_upload_token token = report.token;
+        CHECK(package_upload_write(93U, token, payload, sizeof(payload), &count,
+            &report) == PACKAGE_UPLOAD_STATUS_OK && count == sizeof(payload), 103);
+        CHECK(package_upload_seal(93U, token, sizeof(payload), digest, &report) ==
+            PACKAGE_UPLOAD_STATUS_OK, 104);
+        if (attempt < 2U) {
+            fail_next_unlink = attempt == 0U;
+            lose_unlink_receipt = attempt == 1U;
+            CHECK(package_upload_close(93U, token, &report) == PACKAGE_UPLOAD_STATUS_FILESYSTEM &&
+                !report.sealed && !report.durable && files[0].open &&
+                files[0].present == (attempt == 0U) &&
+                files[0].size == sizeof(payload), 105);
+            CHECK(package_upload_read(93U, token, 0U, copy, sizeof(copy), &count,
+                &report) == PACKAGE_UPLOAD_STATUS_STATE && count == 0U, 106);
+        } else {
+            files[0].present = false;
+            replacement_file = (struct mock_file){.present = true, .size = 3U};
+            memcpy(replacement_file.bytes, "new", 3U);
+            CHECK(package_upload_read(93U, token, 0U, copy, sizeof(copy), &count,
+                &report) == PACKAGE_UPLOAD_STATUS_OK && count == sizeof(payload) &&
+                memcmp(copy, payload, sizeof(payload)) == 0, 107);
+        }
+        CHECK(package_upload_close(93U, token, &report) == PACKAGE_UPLOAD_STATUS_OK &&
+            package_upload_resources_released() && !files[0].open && !files[0].present &&
+            files[0].size == 0U && truncate_count == previous_truncates, 108);
+    }
+    CHECK(replacement_file.present && replacement_file.size == 3U &&
+        memcmp(replacement_file.bytes, "new", 3U) == 0, 109);
+    replacement_file = (struct mock_file){0};
+    inode_bound_cleanup = false;
+    return 0;
+}
+
 int main(void)
 {
     int result = initialize_test();
@@ -492,13 +775,28 @@ int main(void)
         result = failure_recovery_test();
     }
     if (result == 0) {
+        result = native_upload_close_refusal_test();
+    }
+    if (result == 0) {
         result = bounded_large_cleanup_test();
+    }
+    if (result == 0) {
+        result = refused_open_preserves_namespace_test();
+    }
+    if (result == 0) {
+        result = failed_close_retires_sealed_view_test();
+    }
+    if (result == 0) {
+        result = sealed_read_retains_inode_test();
+    }
+    if (result == 0) {
+        result = held_cleanup_preserves_replacement_test();
     }
     if (result != 0) {
         (void)fprintf(stderr, "package upload host test failed: %d\n", result);
         return result;
     }
-    (void)printf("package upload host tests passed: lifecycle/failure matrix, "
+    (void)printf("package upload host tests passed: lifecycle/failure/owned-open matrix, "
         "slots=%u max_bytes=%u syncs=%u unlinks=%u truncates=%u\n",
         PACKAGE_UPLOAD_SLOT_LIMIT, PACKAGE_UPLOAD_MAX_BYTES, sync_count,
         unlink_count, truncate_count);

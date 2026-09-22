@@ -53,6 +53,18 @@ static uint64_t next_object_id;
 static bool fail_next_sync;
 static uint32_t fail_sync_ordinal;
 static uint32_t sync_attempts;
+static void (*drive_observer)(void);
+static bool drive_unavailable;
+static bool claim_probe_failed;
+static unsigned claim_probe_calls;
+static unsigned prepared_opens;
+static unsigned legacy_creates;
+static unsigned unlink_calls;
+static bool prepared_collision;
+static unsigned verification_fault;
+static unsigned verification_faults_seen;
+static bool restore_application_mode;
+static const char verified_application[] = "pkgstate/gen/00000000/00000002/root/bin/app";
 
 static void event(enum mock_event value)
 {
@@ -133,6 +145,12 @@ static void reset_filesystem(void)
     fail_next_sync = false;
     fail_sync_ordinal = 0U;
     sync_attempts = 0U;
+    prepared_opens = 0U;
+    legacy_creates = 0U;
+    unlink_calls = 0U;
+    prepared_collision = false;
+    verification_fault = verification_faults_seen = 0U;
+    restore_application_mode = false;
     add_directory("pkgstate");
     add_directory("pkgstate/gen");
     add_directory("pkgstate/gen/00000000");
@@ -179,9 +197,10 @@ static void add_bootstrap_generation(
 struct openrfsfs_drive_info openrfsfs_drive(enum openrfsfs_volume volume)
 {
     struct openrfsfs_drive_info info;
+    if (drive_observer != NULL) drive_observer();
     memset(&info, 0, sizeof(info));
     info.volume = volume;
-    info.present = true;
+    info.present = !drive_unavailable;
     info.mounted = true;
     info.healthy = true;
     info.total_bytes = UINT64_C(64) * 1024U * 1024U;
@@ -238,6 +257,11 @@ enum openrfsfs_status openrfsfs_open(
     if (nodes[node].directory) {
         return OPENRFSFS_STATUS_IS_DIRECTORY;
     }
+    if (verification_fault == 1U && strcmp(path, verified_application) == 0) {
+        node = add_node("different-inode", false, (const uint8_t *)"app", 3U, UINT16_C(0555));
+        verification_fault = 0U;
+        ++verification_faults_seen;
+    }
     for (size_t index = 0U; index < MOCK_MAX_HANDLES; ++index) {
         if (!handles[index].active) {
             handles[index].active = true;
@@ -250,6 +274,30 @@ enum openrfsfs_status openrfsfs_open(
     return OPENRFSFS_STATUS_NO_HANDLES;
 }
 
+enum openrfsfs_status openrfsfs_open_options(enum openrfsfs_volume volume, const char *path,
+    enum openrfsfs_access access, uint8_t flags, uint16_t mode, openrfsfs_handle *handle)
+{
+    (void)volume;
+    (void)access;
+    *handle = 0U;
+    if (flags != (OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE))
+        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    ++prepared_opens;
+    if (prepared_collision) {
+        prepared_collision = false;
+        add_file(path, (const uint8_t *)"foreign", 7U, UINT16_C(0600));
+    }
+    if (find_node(path) != MOCK_MAX_NODES) return OPENRFSFS_STATUS_EXISTS;
+    size_t slot = 0U;
+    while (slot < MOCK_MAX_HANDLES && handles[slot].active) ++slot;
+    if (slot == MOCK_MAX_HANDLES) return OPENRFSFS_STATUS_NO_HANDLES;
+    const size_t node = add_node(path, false, NULL, 0U, mode);
+    if (node == MOCK_MAX_NODES) return OPENRFSFS_STATUS_FULL;
+    handles[slot] = (struct mock_handle){ .active = true, .node = node, .offset = 0U };
+    *handle = slot + 1U;
+    return OPENRFSFS_STATUS_OK;
+}
+
 static struct mock_handle *mock_handle(openrfsfs_handle handle)
 {
     if (handle == 0U || handle > MOCK_MAX_HANDLES ||
@@ -259,11 +307,32 @@ static struct mock_handle *mock_handle(openrfsfs_handle handle)
     return &handles[handle - 1U];
 }
 
+enum openrfsfs_status openrfsfs_fstat(openrfsfs_handle handle, struct openrfsfs_stat *stat)
+{
+    memset(stat, 0, sizeof(*stat));
+    struct mock_handle *state = mock_handle(handle);
+    if (state == NULL) return OPENRFSFS_STATUS_STALE_HANDLE;
+    const struct mock_node *node = &nodes[state->node];
+    if (verification_fault == 2U && strcmp(node->path, verified_application) == 0) {
+        verification_fault = 0U;
+        ++verification_faults_seen;
+        return OPENRFSFS_STATUS_IO;
+    }
+    *stat = (struct openrfsfs_stat){ .size = node->byte_count, .object_id = node->object_id,
+        .mode = node->mode, .links = 1U, .directory = node->directory,
+        .read_only = (node->mode & UINT16_C(0222)) == 0U };
+    return OPENRFSFS_STATUS_OK;
+}
+
 enum openrfsfs_status openrfsfs_close(openrfsfs_handle handle)
 {
     struct mock_handle *state = mock_handle(handle);
     if (state == NULL) {
         return OPENRFSFS_STATUS_STALE_HANDLE;
+    }
+    if (restore_application_mode && strcmp(nodes[state->node].path, verified_application) == 0) {
+        nodes[state->node].mode = UINT16_C(0555);
+        restore_application_mode = false;
     }
     state->active = false;
     return OPENRFSFS_STATUS_OK;
@@ -288,6 +357,12 @@ enum openrfsfs_status openrfsfs_read(
     }
     state->offset += count;
     *read_bytes = count;
+    if (verification_fault == 3U && count != 0U && strcmp(node->path, verified_application) == 0) {
+        node->mode = UINT16_C(0600);
+        restore_application_mode = true;
+        verification_fault = 0U;
+        ++verification_faults_seen;
+    }
     return OPENRFSFS_STATUS_OK;
 }
 
@@ -379,6 +454,7 @@ enum openrfsfs_status openrfsfs_list(
 enum openrfsfs_status openrfsfs_create(enum openrfsfs_volume volume, const char *path)
 {
     (void)volume;
+    ++legacy_creates;
     if (find_node(path) != MOCK_MAX_NODES) {
         return OPENRFSFS_STATUS_EXISTS;
     }
@@ -461,6 +537,7 @@ enum openrfsfs_status openrfsfs_rename(
 enum openrfsfs_status openrfsfs_unlink(enum openrfsfs_volume volume, const char *path)
 {
     (void)volume;
+    ++unlink_calls;
     size_t node = find_node(path);
     if (node == MOCK_MAX_NODES) {
         return OPENRFSFS_STATUS_NOT_FOUND;
@@ -1751,6 +1828,134 @@ static int test_repository_floor_is_durable_and_monotonic(void)
     return 0;
 }
 
+static enum package_service_status probe_service_entry(unsigned entry,
+    struct package_service_report *report)
+{
+    uint8_t bytes[1];
+    size_t count = 99U;
+    uint64_t floor = 99U;
+    const struct package_service_prepare_request request = {0};
+    enum package_service_status status;
+    switch (entry) {
+    case 0U: return package_service_recover(report);
+    case 1U:
+        status = package_service_snapshot(bytes, sizeof(bytes), &count, report);
+        if (count != 0U) claim_probe_failed = true;
+        return status;
+    case 2U:
+        status = package_service_repair_snapshot(bytes, sizeof(bytes), &count, report);
+        if (count != 0U) claim_probe_failed = true;
+        return status;
+    case 3U:
+        status = package_service_repository_floor_read(&floor, report);
+        if (floor != 0U) claim_probe_failed = true;
+        return status;
+    case 4U: return package_service_repository_floor_advance(1U, report);
+    case 5U: return package_service_prepare(&request, report);
+    case 6U: return package_service_bootstrap(&request, report);
+    default: return package_service_commit(report);
+    }
+}
+
+static void probe_service_reentry(void)
+{
+    struct package_service_report report;
+    /* Avoid recursion if the implementation has the old check/set gap. */
+    drive_observer = NULL;
+    ++claim_probe_calls;
+    for (unsigned entry = 0U; entry < 8U; ++entry) {
+        if (probe_service_entry(entry, &report) != PACKAGE_SERVICE_STATUS_BUSY ||
+            report.status != PACKAGE_SERVICE_STATUS_BUSY ||
+            report.live_file_handles != 0U || report.live_allocations != 0U ||
+            report.peak_file_handles != 0U || report.peak_allocations != 0U ||
+            report.bytes_read != 0U || report.bytes_written != 0U)
+            claim_probe_failed = true;
+    }
+    drive_observer = probe_service_reentry;
+}
+
+static int test_service_request_claim(void)
+{
+    struct package_service_report report;
+    reset_filesystem();
+    drive_unavailable = true;
+    drive_observer = probe_service_reentry;
+    for (unsigned entry = 0U; entry < 8U; ++entry) {
+        CHECK(probe_service_entry(entry, &report) == PACKAGE_SERVICE_STATUS_UNAVAILABLE &&
+            report.live_file_handles == 0U && report.live_allocations == 0U &&
+            report.peak_file_handles == 0U && report.peak_allocations == 0U &&
+            report.bytes_read == 0U && report.bytes_written == 0U, 190);
+    }
+    drive_observer = NULL;
+    drive_unavailable = false;
+    CHECK(!claim_probe_failed && claim_probe_calls == 8U && event_count == 0U, 191);
+    return 0;
+}
+
+static int test_prepared_file_ownership(void)
+{
+    struct package_service_report report;
+    openrfsfs_handle borrowed[MOCK_MAX_HANDLES];
+    struct mock_handle before[MOCK_MAX_HANDLES];
+
+    reset_filesystem();
+    add_file("borrowed", (const uint8_t *)"old", 3U, UINT16_C(0600));
+    for (size_t index = 0U; index < MOCK_MAX_HANDLES; ++index)
+        CHECK(openrfsfs_open(OPENRFSFS_VOLUME_DATA, "borrowed", OPENRFSFS_ACCESS_READ,
+            &borrowed[index]) == OPENRFSFS_STATUS_OK, 300);
+    memcpy(before, handles, sizeof(before));
+    CHECK(package_service_repository_floor_advance(1U, &report) == PACKAGE_SERVICE_STATUS_FILESYSTEM &&
+        report.filesystem_status == OPENRFSFS_STATUS_NO_HANDLES && prepared_opens == 1U &&
+        legacy_creates == 0U && unlink_calls == 0U && report.live_file_handles == 0U &&
+        report.live_allocations == 0U && memcmp(before, handles, sizeof(before)) == 0 &&
+        find_node(PACKAGE_SERVICE_REPOSITORY_FLOOR_NEW_PATH) == MOCK_MAX_NODES &&
+        find_node(PACKAGE_SERVICE_REPOSITORY_FLOOR_PATH) == MOCK_MAX_NODES, 301);
+    for (size_t index = 0U; index < MOCK_MAX_HANDLES; ++index)
+        CHECK(openrfsfs_close(borrowed[index]) == OPENRFSFS_STATUS_OK, 302);
+    CHECK(package_service_repository_floor_advance(1U, &report) == PACKAGE_SERVICE_STATUS_OK &&
+        prepared_opens == 2U && legacy_creates == 0U && report.repository_floor == 1U &&
+        report.live_file_handles == 0U && report.live_allocations == 0U, 303);
+    size_t current = find_node(PACKAGE_SERVICE_REPOSITORY_FLOOR_PATH);
+    CHECK(current != MOCK_MAX_NODES && nodes[current].mode == UINT16_C(0644), 304);
+
+    reset_filesystem();
+    prepared_collision = true;
+    CHECK(package_service_repository_floor_advance(1U, &report) == PACKAGE_SERVICE_STATUS_FILESYSTEM &&
+        report.filesystem_status == OPENRFSFS_STATUS_EXISTS && !prepared_collision && prepared_opens == 1U &&
+        legacy_creates == 0U && unlink_calls == 0U && report.live_file_handles == 0U &&
+        report.live_allocations == 0U, 305);
+    current = find_node(PACKAGE_SERVICE_REPOSITORY_FLOOR_NEW_PATH);
+    CHECK(current != MOCK_MAX_NODES && nodes[current].byte_count == 7U &&
+        nodes[current].mode == UINT16_C(0600) && memcmp(nodes[current].bytes, "foreign", 7U) == 0, 306);
+    for (size_t index = 0U; index < MOCK_MAX_HANDLES; ++index)
+        CHECK(!handles[index].active, 307);
+    return 0;
+}
+
+static int test_verification_holds_the_expected_inode(
+    const uint8_t database[NEW_DATABASE_BYTES],
+    const uint8_t authority[PACKAGE_STATE_AUTHORITY_BYTES],
+    const uint8_t journal[PACKAGE_STATE_JOURNAL_BYTES])
+{
+    for (unsigned fault = 1U; fault <= 3U; ++fault) {
+        struct package_service_report report;
+        reset_filesystem();
+        add_new_generation(database);
+        add_file(PACKAGE_SERVICE_AUTHORITY_PATH, authority, PACKAGE_STATE_AUTHORITY_BYTES, UINT16_C(0444));
+        add_file(PACKAGE_SERVICE_JOURNAL_PATH, journal, PACKAGE_STATE_JOURNAL_BYTES, UINT16_C(0444));
+        verification_fault = fault;
+        CHECK(package_service_recover(&report) == (fault == 2U ? PACKAGE_SERVICE_STATUS_FILESYSTEM :
+            PACKAGE_SERVICE_STATUS_INCOMPLETE), 310);
+        CHECK(verification_faults_seen == 1U && verification_fault == 0U && !restore_application_mode &&
+            !report.authority_replaced && !report.cleanup_complete && report_clean(&report), 311);
+        CHECK(find_node(PACKAGE_SERVICE_JOURNAL_PATH) != MOCK_MAX_NODES &&
+            selected_authority_generation(2U) && nodes[find_node(verified_application)].mode == UINT16_C(0555), 312);
+        CHECK(package_service_recover(&report) == PACKAGE_SERVICE_STATUS_OK && report.generation == 2U &&
+            report.cleanup_complete && report_clean(&report), 313);
+    }
+    return 0;
+}
+
 int main(void)
 {
     static uint8_t old_database[OLD_DATABASE_BYTES];
@@ -1773,7 +1978,16 @@ int main(void)
     build_authority(bootstrap_authority, bootstrap_database,
         NEW_DATABASE_BYTES);
     build_journal(journal, old_database, new_database);
-    result = test_absent_state_is_distinct();
+    result = test_service_request_claim();
+    if (result == 0) {
+        result = test_verification_holds_the_expected_inode(new_database, new_authority, journal);
+    }
+    if (result == 0) {
+        result = test_prepared_file_ownership();
+    }
+    if (result == 0) {
+        result = test_absent_state_is_distinct();
+    }
     if (result == 0) {
         result = test_selected_generation_without_journal(old_database,
             old_authority);

@@ -1205,3 +1205,9 @@ const char *ui_element_name(enum ui_element_id element)
         "unknown control";
     }
 }
+
+/* The minimal console renders pending damage without an event queue. */
+bool ui_events_pending(void)
+{
+    return state.active && redraw_pending;
+}

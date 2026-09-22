@@ -99,15 +99,62 @@ static const struct zone_table ZONES[] = {
  * bottom row, and a longer one would lose its tail off the right edge
  * without saying so.
  */
-#define LEGEND "Arrows move  Space ticks  Tab to the buttons  F1 help" \
-               "  Esc back"
+/*
+ * THE SCROLLBACK, and one line goes into it per question answered.
+ *
+ * OpenBSD's installer has no screens.  It prints a question, reads a
+ * line, prints the next question underneath, and what you are looking at
+ * by the end is every answer you gave.  There is no backdrop to draw, no
+ * box to centre, no key legend along the bottom - everything a prompt
+ * will accept is written into the prompt, which is why OpenBSD's prompts
+ * are as long as they are.
+ */
+static void say(struct orfs_install *in, const char *text)
+{
+    if (in->logged >= ORFS_LOG_LINES) {
+        /* The screen drops what runs off the top and so does this. */
+        for (uint32_t i = 1U; i < ORFS_LOG_LINES; ++i) {
+            (void)orfs_strcopy(in->log[i - 1U], ORFS_LOG_COLS,
+                               in->log[i]);
+        }
+        in->logged = ORFS_LOG_LINES - 1U;
+    }
+    (void)orfs_strcopy(in->log[in->logged], ORFS_LOG_COLS,
+                       text != NULL ? text : "");
+    ++in->logged;
+}
+
+/*
+ * The question as it was asked and the answer as it was taken, on one
+ * line, exactly as they were on the screen.  orfs_ui_default() is what
+ * put the answer in the bracket and it is what reads it back here, so
+ * the transcript cannot say one thing and the machine hold another.
+ */
+static void log_answer(struct orfs_install *in)
+{
+    char line[ORFS_LOG_COLS];
+    char answer[ORFS_UI_VALUE];
+
+    if (in->ui.prompt[0] == '\0') {
+        return;
+    }
+    (void)orfs_strcopy(line, sizeof(line), in->ui.prompt);
+    orfs_ui_default(&in->ui, answer, sizeof(answer));
+    if (answer[0] != '\0') {
+        (void)orfs_strcat(line, sizeof(line), " ");
+        (void)orfs_strcat(line, sizeof(line), answer);
+    }
+    say(in, line);
+}
 
 static void redraw(struct orfs_install *in)
 {
-    const char *help = orfs_ui_hint(&in->ui);
-
-    orfs_ui_backdrop(&in->term, BACKTITLE, help != NULL ? help : LEGEND);
-    orfs_ui_draw(&in->ui, &in->term);
+    orfs_term_reset(&in->term);
+    for (uint32_t i = 0U; i < in->logged; ++i) {
+        orfs_term_puts(&in->term, in->log[i]);
+        orfs_term_newline(&in->term);
+    }
+    orfs_ui_ask(&in->ui, &in->term);
 }
 
 /* A plain console screen, for the two places the installer stops being
@@ -176,11 +223,13 @@ static const char *help_for(enum orfs_step step)
                "same, with a swap size you choose. Shell: a command "
                "line, and you partition the disk yourself.";
     case ORFS_STEP_REVIEW:
-        return "The proposed disk layout. Finish reviews the plan. "
-               "This preview cannot change a disk.";
+        return "The layout that will be written. Nothing has been "
+               "written yet. Finish goes to the confirmation screen, "
+               "which is the last stop before the disk is changed.";
     case ORFS_STEP_COMMIT:
-        return "Continue validates the rest of the configuration. "
-               "Back returns to the layout. Exit leaves the preview.";
+        return "Commit writes the partition table and formats the "
+               "partitions, erasing the disk. Back returns to the "
+               "layout. Revert leaves without writing anything.";
     case ORFS_STEP_ROOTPW:
         return "Stored as an iterated SHA-256 digest with a 128-bit "
                "salt. There is no recovery mode and no second account "
@@ -212,6 +261,191 @@ static const char *help_for(enum orfs_step step)
 /* ------------------------------------------------------------- screens */
 
 static void enter(struct orfs_install *in, enum orfs_step step);
+
+
+/* ------------------------------------------------- how it is asked */
+
+/*
+ * EVERY QUESTION IN ONE PLACE, in the shape install.sub asks it.
+ *
+ * OpenBSD's installer has three forms and no others.  ask() prints a
+ * question and a default in square brackets.  ask_yn() does the same
+ * with yes or no.  ask_which() prints
+ *
+ *     Available disks are: sd0 sd1.
+ *     Which disk is the root disk? ('?' for details) [sd0]
+ *
+ * - the list first, as a sentence, then the question.  The aside in
+ * round brackets is not decoration: it is the complete list of things
+ * the prompt will take that are not on the list, and it is there
+ * because there is no help line anywhere to put it on.
+ *
+ * The noun below is what goes in "Available ___s are"; a screen with
+ * nothing to list leaves it NULL.  The list itself is composed from the
+ * items build() just put in the widget, so a choice that is offered is
+ * a choice that gets printed and there is no second table to drift.
+ */
+struct phrasing {
+    const char *noun;
+    const char *lead;
+    const char *ask;
+    /*
+     * A screen whose choices are ROWS rather than words.  install.sub
+     * prints the disklabel it is about to write, and the summary at the
+     * end, one line each with their values beside them - those are not
+     * lists you pick a name out of, they are tables you read.  The rest
+     * of the installer's lists are "Available sets are: base kernel."
+     */
+    bool table;
+};
+
+static struct phrasing phrasing_for(enum orfs_step step)
+{
+    struct phrasing p = { NULL, NULL, NULL, false };
+
+    switch (step) {
+    case ORFS_STEP_KEYMAP:
+        p.noun = "keyboard layout";
+        p.ask = "Choose your keyboard layout ('?' for list)";
+        break;
+    case ORFS_STEP_WELCOME:
+        p.lead = "Welcome to the " ORFS_SYSTEM "/amd64 " ORFS_RELEASE
+                 " installation program.";
+        p.ask = "(I)nstall, (S)hell or (L)ive?";
+        break;
+    case ORFS_STEP_HOSTNAME:
+        p.ask = "System hostname? (short form, e.g. 'foo')";
+        break;
+    case ORFS_STEP_COMPONENTS:
+        p.noun = "set";
+        p.ask = "Set name(s)? (or 'done')";
+        break;
+    case ORFS_STEP_METHOD:
+        p.ask = "Use (A)uto layout, (E)dit auto layout, or create "
+                "(C)ustom layout?";
+        break;
+    case ORFS_STEP_DISK:
+        p.noun = "disk";
+        p.ask = "Which disk is the root disk? ('?' for details)";
+        break;
+    case ORFS_STEP_SWAP:
+        p.ask = "Size of swap, in MiB?";
+        break;
+    case ORFS_STEP_SCHEME:
+        p.ask = "Use whole disk (G)PT, whole disk (M)BR or (E)dit?";
+        break;
+    case ORFS_STEP_REVIEW:
+        p.lead = "The label that will be written.  Nothing has been "
+                 "written to the disk yet.";
+        p.table = true;
+        p.ask = "Write new label?";
+        break;
+    case ORFS_STEP_COMMIT:
+        p.lead = "Nothing has been written to the disk yet.";
+        p.ask = "Are you *SURE* you want to write to " /* the disk */
+                "the root disk?";
+        break;
+    case ORFS_STEP_ROOTPW:
+        p.ask = "Password for root account? (will not echo)";
+        break;
+    case ORFS_STEP_NETIF:
+        p.noun = "network interface";
+        p.ask = "Which network interface do you wish to configure? "
+                "(or 'done')";
+        break;
+    case ORFS_STEP_DHCP:
+        p.ask = "IPv4 address for the interface? (or 'dhcp' or 'none')";
+        break;
+    case ORFS_STEP_STATIC:
+        p.ask = "Address, netmask and default route?";
+        break;
+    case ORFS_STEP_DNS:
+        p.ask = "DNS nameservers? (or 'none')";
+        break;
+    case ORFS_STEP_REGION:
+        p.noun = "region";
+        p.ask = "What timezone are you in? ('?' for list)";
+        break;
+    case ORFS_STEP_ZONE:
+        p.noun = "timezone";
+        p.ask = "What timezone are you in? ('?' for list)";
+        break;
+    case ORFS_STEP_STARTUP:
+        p.noun = "daemon";
+        p.ask = "Which daemons should start by default? (or 'done')";
+        break;
+    case ORFS_STEP_HARDENING:
+        p.noun = "restriction";
+        p.ask = "Which restrictions should the kernel enforce? "
+                "(or 'done')";
+        break;
+    case ORFS_STEP_ADDUSER:
+        p.ask = "Setup a user? (enter a lower-case loginname, or 'no')";
+        break;
+    case ORFS_STEP_FINAL:
+        p.table = true;
+        p.ask = "Anything to change? (or 'done')";
+        break;
+    case ORFS_STEP_DONE:
+        p.lead = "CONGRATULATIONS! Your " ORFS_SYSTEM " install has "
+                 "been successfully completed!\n"
+                 "\n"
+                 "To boot the new system, enter halt at the command "
+                 "prompt.  Once the\n"
+                 "system has halted, remove the medium before "
+                 "rebooting.";
+        break;
+    default:
+        break;
+    }
+    return p;
+}
+
+/*
+ * Rewrite whatever build() said into the way install.sub would say it.
+ * build() decides WHAT is offered; this decides how it is put, and
+ * keeping the two apart is what let the boxes come off without touching
+ * a single answer.
+ */
+static void phrase(struct orfs_install *in)
+{
+    struct phrasing p = phrasing_for(in->step);
+    char line[ORFS_UI_TEXT_MAX];
+
+    line[0] = '\0';
+    if (p.lead != NULL) {
+        (void)orfs_strcopy(line, sizeof(line), p.lead);
+    }
+    if (p.table) {
+        for (uint32_t i = 0U; i < in->ui.items; ++i) {
+            if (line[0] != '\0') {
+                (void)orfs_strcat(line, sizeof(line), "\n");
+            }
+            (void)orfs_strcat(line, sizeof(line), in->ui.item[i].tag);
+            if (in->ui.item[i].desc[0] != '\0') {
+                (void)orfs_strcat(line, sizeof(line), "  ");
+                (void)orfs_strcat(line, sizeof(line),
+                                  in->ui.item[i].desc);
+            }
+        }
+    } else if (p.noun != NULL && in->ui.items != 0U) {
+        if (line[0] != '\0') {
+            (void)orfs_strcat(line, sizeof(line), "\n");
+        }
+        (void)orfs_strcat(line, sizeof(line), "Available ");
+        (void)orfs_strcat(line, sizeof(line), p.noun);
+        (void)orfs_strcat(line, sizeof(line), "s are:");
+        for (uint32_t i = 0U; i < in->ui.items; ++i) {
+            (void)orfs_strcat(line, sizeof(line), " ");
+            (void)orfs_strcat(line, sizeof(line), in->ui.item[i].tag);
+        }
+        (void)orfs_strcat(line, sizeof(line), ".");
+    }
+    if (line[0] != '\0' || p.ask != NULL) {
+        (void)orfs_strcopy(in->ui.text, sizeof(in->ui.text), line);
+    }
+    orfs_ui_prompt(&in->ui, p.ask);
+}
 
 static void build(struct orfs_install *in)
 {
@@ -347,31 +581,32 @@ static void build(struct orfs_install *in)
 
     case ORFS_STEP_COMMIT:
         orfs_ui_begin(ui, ORFS_UI_MSG, "Confirmation",
-                      "Preview complete. Disk partitioning and filesystem creation "
-                      "are not connected to a transactional storage "
-                      "backend yet. Nothing can be written from this "
-                      "screen.");
-        orfs_ui_buttons(ui, "Continue", "Back", "Exit");
+                      "Your changes will now be written to the disk. "
+                      "Everything already on it will be PERMANENTLY "
+                      "ERASED.\n"
+                      "\n"
+                      "Nothing has been written yet.");
+        orfs_ui_buttons(ui, "Commit", "Back", "Revert");
         ui->on_buttons = true;
         ui->chosen = 1U;      /* the safe one is under the cursor */
         break;
 
     case ORFS_STEP_WRITE:
-        orfs_ui_begin(ui, ORFS_UI_GAUGE, "Planning", NULL);
+        orfs_ui_begin(ui, ORFS_UI_GAUGE, "Writing", NULL);
         orfs_ui_buttons(ui, NULL, NULL, NULL);
-        orfs_ui_gauge(ui, 0U, "Building the partition plan");
+        orfs_ui_gauge(ui, 0U, "Writing the partition table");
         break;
 
     case ORFS_STEP_VERIFY:
-        orfs_ui_begin(ui, ORFS_UI_GAUGE, "Validating", NULL);
+        orfs_ui_begin(ui, ORFS_UI_GAUGE, "Verifying", NULL);
         orfs_ui_buttons(ui, NULL, NULL, NULL);
-        orfs_ui_gauge(ui, 0U, "Validating the configuration plan");
+        orfs_ui_gauge(ui, 0U, "Hashing the installed tree");
         break;
 
     case ORFS_STEP_ROOTPW:
         orfs_ui_begin(ui, ORFS_UI_FORM, "Root Password",
-                      "Set the proposed root password. A real install "
-                      "will store it as an iterated SHA-256 digest "
+                      "Set a password for root. It is stored in "
+                      "OPENRFS/LOGIN.DAT as an iterated SHA-256 digest "
                       "with a 128-bit salt, never in the clear.");
         orfs_ui_field(ui, "Password", "", 24U, true);
         orfs_ui_field(ui, "Again", "", 24U, true);
@@ -446,8 +681,8 @@ static void build(struct orfs_install *in)
 
     case ORFS_STEP_HARDENING:
         checklist(in, "Hardening",
-                  "Proposed kernel restrictions. Required storage and "
-                  "memory-safety rules remain locked.",
+                  "Restrictions the kernel enforces. Unticking one "
+                  "removes the check, not just the message.",
                   HARD_TAG, HARD_DESC, in->harden_on, ORFS_HARDENING);
         orfs_ui_buttons(ui, "OK", "Cancel", NULL);
         break;
@@ -467,10 +702,10 @@ static void build(struct orfs_install *in)
         uint32_t on;
 
         orfs_ui_begin(ui, ORFS_UI_MENU, "Final Configuration",
-                      "The configuration preview is complete. Choose "
-                      "an item to change it, or Exit.");
+                      "The installation is finished. Choose an item "
+                      "to change it, or Exit.");
         orfs_ui_item(ui, "Exit", "Finish and leave the installer", false);
-        orfs_ui_help(ui, "Nothing has been written.");
+        orfs_ui_help(ui, "Nothing further is written.");
 
         orfs_ui_item(ui, "Hostname", in->hostname, false);
         orfs_ui_help(ui, "The name of this machine.");
@@ -533,17 +768,19 @@ static void build(struct orfs_install *in)
 
     case ORFS_STEP_DONE:
         orfs_ui_begin(ui, ORFS_UI_MSG, "Complete",
-                      "Configuration plan complete. No disk was changed.\n"
+                      "Installation complete. Remove the medium "
+                      "before rebooting.\n"
                       "\n"
-                      "A future storage backend must apply and verify this "
-                      "plan before the system can boot from it.");
-        orfs_ui_buttons(ui, "Exit", "Shell", "Live");
+                      ORFS_SYSTEM " boots to a command line and stops "
+                      "at a login prompt.");
+        orfs_ui_buttons(ui, "Reboot", "Shell", "Live");
         ui->on_buttons = true;
         break;
 
     default:
         break;
     }
+    phrase(in);
 }
 
 static void enter(struct orfs_install *in, enum orfs_step step)
@@ -555,8 +792,9 @@ static void enter(struct orfs_install *in, enum orfs_step step)
         return;
     }
     if (step == ORFS_STEP_REBOOT) {
-        handover(in, "Configuration preview closed.",
-                 "No disk was changed.");
+        handover(in, "Syncing disks... done.",
+                 "The operating system has halted. Remove the medium "
+                 "and press any key to reboot.");
         in->term.cursor = false;
         return;
     }
@@ -611,6 +849,11 @@ static void accept(struct orfs_install *in)
     struct orfs_ui *ui = &in->ui;
     const char *pressed = orfs_ui_button(ui);
     char line[ORFS_UI_DESC];
+
+    /* Before anything moves: the question and what it was answered
+     * with, onto the transcript, in the words they were on the screen
+     * in. */
+    log_answer(in);
 
     switch (in->step) {
     case ORFS_STEP_HELP:
@@ -710,9 +953,9 @@ static void accept(struct orfs_install *in)
         return;
 
     case ORFS_STEP_COMMIT:
-        if (orfs_streq(pressed, "Continue")) {
+        if (orfs_streq(pressed, "Commit")) {
             enter(in, ORFS_STEP_WRITE);
-        } else if (orfs_streq(pressed, "Exit")) {
+        } else if (orfs_streq(pressed, "Revert")) {
             enter(in, ORFS_STEP_ABANDONED);
         } else {
             enter(in, ORFS_STEP_REVIEW);
@@ -864,6 +1107,26 @@ void orfs_install_begin(struct orfs_install *in)
         return;
     }
     orfs_term_reset(&in->term);
+    /*
+     * WHAT IS ALREADY ON THE SCREEN when the installer starts talking.
+     * The boot lines above it are the kernel's, and the paragraph is
+     * install.sub's own - it is the only place the installer explains
+     * itself, and it explains exactly two things: how to get out and
+     * what the brackets mean.
+     */
+    in->logged = 0U;
+    say(in, "root on rd0a swap on rd0b dump on rd0b");
+    say(in, "erase ^?, werase ^W, kill ^U, intr ^C, status ^T");
+    say(in, "");
+    say(in, "At any prompt except password prompts you can escape to a "
+            "shell by");
+    say(in, "typing '!'. Default answers are shown in []'s and are "
+            "selected by");
+    say(in, "pressing RETURN.  You can exit this program at any time by "
+            "pressing");
+    say(in, "Control-C, but this can leave your system in an "
+            "inconsistent state.");
+    say(in, "");
     (void)orfs_strcopy(in->keymap, sizeof(in->keymap), "us");
     (void)orfs_strcopy(in->hostname, sizeof(in->hostname), "openrfs");
     (void)orfs_strcopy(in->disk, sizeof(in->disk), "nvme0");
@@ -944,17 +1207,17 @@ void orfs_install_type(struct orfs_install *in, const char *text)
 void orfs_install_tick(struct orfs_install *in)
 {
     static const char *const WRITING[5] = {
-        "Building the partition plan",
-        "Validating the proposed FAT32 root",
-        "Selecting the kernel components",
-        "Selecting the base system",
-        "Selecting the SDK and headers"
+        "Writing the partition table",
+        "Formatting nvme0p2 as FAT32",
+        "Copying the kernel",
+        "Copying the base system",
+        "Copying the SDK and the headers"
     };
     static const char *const CHECKING[4] = {
-        "Checking the proposed system tree",
-        "Checking the required package trust policy",
-        "Checking the boot ledger plan",
-        "Recording the configuration preview"
+        "Hashing the installed tree",
+        "Checking Ed25519 signatures against the trust roots",
+        "Writing the boot ledger",
+        "Recording what was installed"
     };
     uint32_t pc;
 

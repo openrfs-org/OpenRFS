@@ -125,10 +125,25 @@ struct orfs_ui_field {
     bool secret;          /* typed but never shown */
 };
 
+#define ORFS_UI_PROMPT_MAX 96U
+
 struct orfs_ui {
     enum orfs_ui_kind kind;
     char title[ORFS_UI_TITLE_MAX];
     char text[ORFS_UI_TEXT_MAX];
+    /*
+     * THE ONE LINE THE QUESTION IS ASKED ON, when the screen is drawn
+     * as a transcript rather than as a box.  OpenBSD's installer asks
+     * everything in the shape
+     *
+     *     System hostname? (short form, e.g. 'foo') [openrfs]
+     *
+     * - a question, an aside in brackets saying what else is allowed,
+     * and the default in square brackets, which RETURN takes.  The
+     * title and the paragraph above stay for the dialog renderer and
+     * for the tests that name a screen.
+     */
+    char prompt[ORFS_UI_PROMPT_MAX];
 
     struct orfs_ui_item item[ORFS_UI_ITEMS];
     uint32_t items;
@@ -166,6 +181,9 @@ void orfs_ui_select(struct orfs_ui *ui, uint32_t index);
 void orfs_ui_lock(struct orfs_ui *ui, uint32_t index);
 /* The bottom line for the item last added. */
 void orfs_ui_help(struct orfs_ui *ui, const char *text);
+/* The question, for the transcript renderer.  A screen without one is
+ * not asking anything and prints its paragraph alone. */
+void orfs_ui_prompt(struct orfs_ui *ui, const char *text);
 /* What the bottom line should say right now: the highlighted item's
  * own line if it has one, otherwise NULL and the caller's legend. */
 const char *orfs_ui_hint(const struct orfs_ui *ui);
@@ -186,6 +204,27 @@ uint32_t orfs_ui_checked_count(const struct orfs_ui *ui);
 void orfs_ui_backdrop(struct orfs_term *t, const char *backtitle,
                       const char *hint);
 void orfs_ui_draw(const struct orfs_ui *ui, struct orfs_term *t);
+
+/*
+ * THE OTHER RENDERER, and the one the installer uses.
+ *
+ * OpenBSD's install(8) is not a dialog program.  It has no boxes, no
+ * backdrop, no function-key legend and no colour: it prints a question
+ * at the bottom of a transcript and reads a line.  This draws the same
+ * struct that way - the paragraph, then whatever list of choices there
+ * is, then the question with the default in brackets - appending at the
+ * terminal's cursor rather than clearing the screen, because a console
+ * scrolls and does not repaint.
+ *
+ * It writes no help line.  Everything an OpenBSD prompt will accept is
+ * in the prompt, which is why its prompts are as long as they are.
+ */
+void orfs_ui_ask(const struct orfs_ui *ui, struct orfs_term *t);
+/* What RETURN would take: the highlighted item, the ticked ones, the
+ * field, or the chosen button.  One definition, so the bracket and the
+ * behaviour cannot drift. */
+void orfs_ui_default(const struct orfs_ui *ui, char *out,
+                     uint32_t capacity);
 
 /* The pieces, which the installer's own screens also draw with. */
 void orfs_ui_frame(struct orfs_term *t, uint32_t row, uint32_t col,
