@@ -25,6 +25,8 @@
 
 struct claim_record {
     struct pci_address device;
+    uint16_t vendor_id;
+    uint16_t device_id;
     uint64_t identifier;
     size_t bar_count;
     struct pci_bar_description bars[PCI_BAR_COUNT];
@@ -585,6 +587,8 @@ enum pci_resource_status pci_claim_device(
         ((uint8_t *)claim)[byte] = 0U;
     }
     claim->device = function->address;
+    claim->vendor_id = function->vendor_id;
+    claim->device_id = function->device_id;
     status = probe_bars(function, claim, false);
     if (status == PCI_RESOURCE_STATUS_OK) {
         status = validate_claim_bars(claim);
@@ -597,6 +601,8 @@ enum pci_resource_status pci_claim_device(
     }
 
     record->device = function->address;
+    record->vendor_id = function->vendor_id;
+    record->device_id = function->device_id;
     record->identifier = next_claim_identifier++;
     record->bar_count = claim->bar_count;
     for (size_t index = 0U; index < claim->bar_count; ++index) {
@@ -942,24 +948,35 @@ enum pci_resource_status pci_claim_disable_bus_master(
     return PCI_RESOURCE_STATUS_OK;
 }
 
-enum pci_resource_status pci_release_device(struct pci_device_claim *claim)
+enum pci_resource_status pci_claim_device_changed(
+    const struct pci_device_claim *claim,
+    bool *changed
+)
 {
-    struct claim_record *record;
-    enum pci_resource_status status = validate_active_claim(claim);
+    uint32_t identity = 0U;
+    enum pci_resource_status status;
 
+    if (changed == NULL) {
+        return PCI_RESOURCE_STATUS_NULL_ARGUMENT;
+    }
+    *changed = false;
+    status = validate_active_claim(claim);
     if (status != PCI_RESOURCE_STATUS_OK) {
         return status;
     }
-    if (cpu_interrupts_enabled()) {
-        return PCI_RESOURCE_STATUS_INTERRUPTS_ENABLED;
+    status = config_read(claim->device, PCI_REGISTER_VENDOR_ID, &identity);
+    if (status != PCI_RESOURCE_STATUS_OK) {
+        return status;
     }
-    record = find_claim_record(claim);
+    *changed = (uint16_t)identity != claim->vendor_id ||
+        (uint16_t)(identity >> 16U) != claim->device_id;
+    return PCI_RESOURCE_STATUS_OK;
+}
 
-    if (claim->bus_master_enabled &&
-        pci_claim_disable_bus_master(claim) != PCI_RESOURCE_STATUS_OK) {
-        return PCI_RESOURCE_STATUS_CONFIG_ACCESS;
-    }
-
+static enum pci_resource_status release_mappings(
+    struct pci_device_claim *claim
+)
+{
     while (claim->mapping_count != 0U) {
         struct pci_mmio_region *mapping =
             &claim->mappings[claim->mapping_count - 1U];
@@ -980,6 +997,77 @@ enum pci_resource_status pci_release_device(struct pci_device_claim *claim)
         --claim->mapping_count;
         --state.active_mappings;
         state.mapped_pages -= page_count;
+    }
+    return PCI_RESOURCE_STATUS_OK;
+}
+
+enum pci_resource_status pci_release_changed_device(
+    struct pci_device_claim *claim
+)
+{
+    struct claim_record *record;
+    bool changed = false;
+    enum pci_resource_status status = validate_active_claim(claim);
+
+    if (status != PCI_RESOURCE_STATUS_OK) {
+        return status;
+    }
+    if (cpu_interrupts_enabled()) {
+        return PCI_RESOURCE_STATUS_INTERRUPTS_ENABLED;
+    }
+    status = pci_claim_device_changed(claim, &changed);
+    if (status != PCI_RESOURCE_STATUS_OK) {
+        return status;
+    }
+    if (!changed) {
+        return PCI_RESOURCE_STATUS_DEVICE_PRESENT;
+    }
+    record = find_claim_record(claim);
+    if (record == NULL || record->vendor_id != claim->vendor_id ||
+        record->device_id != claim->device_id) {
+        return PCI_RESOURCE_STATUS_CLAIM_INCONSISTENT;
+    }
+
+    /* A different identity at the BDF proves the claimed function can no
+     * longer reach its DMA or interrupt state. Do not access the replacement.
+     */
+    if (claim->bus_master_enabled) {
+        claim->bus_master_enabled = false;
+        claim->current_command &= (uint16_t)~PCI_COMMAND_BUS_MASTER;
+        --state.bus_masters;
+    }
+    status = release_mappings(claim);
+    if (status != PCI_RESOURCE_STATUS_OK) {
+        return status;
+    }
+    claim->memory_decode_enabled = false;
+    claim->active = false;
+    record->active = false;
+    --state.active_claims;
+    return PCI_RESOURCE_STATUS_OK;
+}
+
+enum pci_resource_status pci_release_device(struct pci_device_claim *claim)
+{
+    struct claim_record *record;
+    enum pci_resource_status status = validate_active_claim(claim);
+
+    if (status != PCI_RESOURCE_STATUS_OK) {
+        return status;
+    }
+    if (cpu_interrupts_enabled()) {
+        return PCI_RESOURCE_STATUS_INTERRUPTS_ENABLED;
+    }
+    record = find_claim_record(claim);
+
+    if (claim->bus_master_enabled &&
+        pci_claim_disable_bus_master(claim) != PCI_RESOURCE_STATUS_OK) {
+        return PCI_RESOURCE_STATUS_CONFIG_ACCESS;
+    }
+
+    status = release_mappings(claim);
+    if (status != PCI_RESOURCE_STATUS_OK) {
+        return status;
     }
 
     if (write_command(claim->device, claim->original_command) !=
@@ -1135,6 +1223,7 @@ const char *pci_resource_status_string(enum pci_resource_status status)
         "bus mastering requires mapped initialized device-owned DMA",
         "PCI bus mastering is already enabled",
         "PCI bus mastering is already disabled",
+        "PCI function identity has not changed",
         "PCI claim or mapping accounting is inconsistent"
     };
 

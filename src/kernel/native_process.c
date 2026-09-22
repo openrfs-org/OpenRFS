@@ -1022,7 +1022,7 @@ static bool close_resource(
         return true;
     case OPENRFS_HANDLE_STREAM:
     case OPENRFS_HANDLE_DATAGRAM:
-        return network_close(process->generation,
+        return network_close(NETWORK_OWNER_NATIVE(process->generation),
             (network_handle)resource->words[0]) == NETWORK_STATUS_OK;
     case OPENRFS_HANDLE_TIMER:
         return true;
@@ -2639,7 +2639,7 @@ static bool process_cleanup(struct native_process *process)
             NATIVE_HANDLE_OK) {
         success = false;
     }
-    network_process_terminated(process->generation);
+    network_process_terminated(NETWORK_OWNER_NATIVE(process->generation));
     cpu_interrupt_disable();
     audio_native_process_terminated(process->generation);
     for (size_t remaining = process->page_count; remaining > 0U; --remaining) {
@@ -2892,7 +2892,8 @@ static enum native_process_status native_process_spawn_from_volume(
     }
     zero_bytes(process, sizeof(*process));
     process->generation = next_process_generation++;
-    if (next_process_generation == 0U) {
+    if (next_process_generation == 0U ||
+        next_process_generation > NETWORK_OWNER_GENERATION_MAX) {
         next_process_generation = 1U;
     }
     status = load_process(process, manifest_path, image_volume);
@@ -4033,9 +4034,9 @@ static int64_t poll_wait_items(
         size_t result_count = 0U;
 
         cpu_interrupt_enable();
-        const enum network_status status = network_poll(process->generation,
-            network_requests, network_count, network_results, network_count,
-            &result_count, 1U);
+        const enum network_status status = network_poll(
+            NETWORK_OWNER_NATIVE(process->generation), network_requests,
+            network_count, network_results, network_count, &result_count, 1U);
         cpu_interrupt_disable();
         if (status != NETWORK_STATUS_OK && status != NETWORK_STATUS_TIMEOUT) {
             return network_error(status);
@@ -4530,7 +4531,8 @@ static int64_t syscall_dns_resolve(
     cpu_interrupt_enable();
     status = prepare_native_network(deadline, &timeout);
     if (status == NETWORK_STATUS_OK) {
-        status = network_resolve(hostname, &address, timeout);
+        status = network_resolve(NETWORK_OWNER_NATIVE(process->generation),
+            hostname, &address, timeout);
     }
     cpu_interrupt_disable();
     return status == NETWORK_STATUS_OK ? (int64_t)address :
@@ -4552,8 +4554,9 @@ static int64_t syscall_network_open(
         return -OPENRFS_EACCES;
     }
     cpu_interrupt_enable();
-    status = datagram ? network_udp_open(process->generation, &network) :
-        network_tcp_open(process->generation, &network);
+    status = datagram ? network_udp_open(
+        NETWORK_OWNER_NATIVE(process->generation), &network) :
+        network_tcp_open(NETWORK_OWNER_NATIVE(process->generation), &network);
     cpu_interrupt_disable();
     if (status != NETWORK_STATUS_OK) {
         return network_error(status);
@@ -4564,7 +4567,8 @@ static int64_t syscall_network_open(
         &resource, &handle);
     if (handle_status != NATIVE_HANDLE_OK) {
         cpu_interrupt_enable();
-        (void)network_close(process->generation, network);
+        (void)network_close(NETWORK_OWNER_NATIVE(process->generation),
+            network);
         cpu_interrupt_disable();
         return handle_error(handle_status);
     }
@@ -4603,8 +4607,8 @@ static int64_t syscall_stream_connect(
     cpu_interrupt_enable();
     status = prepare_native_network(deadline, &timeout);
     if (status == NETWORK_STATUS_OK) {
-        status = network_tcp_connect(process->generation, resource->words[0],
-            endpoint.address, endpoint.port, timeout);
+        status = network_tcp_connect(NETWORK_OWNER_NATIVE(process->generation),
+            resource->words[0], endpoint.address, endpoint.port, timeout);
     }
     cpu_interrupt_disable();
     return network_error(status);
@@ -4652,23 +4656,30 @@ static int64_t syscall_network_io(
     cpu_interrupt_enable();
     status = prepare_native_network(request.deadline_ns, &timeout);
     if (status == NETWORK_STATUS_OK && datagram && write) {
-        status = network_udp_send(process->generation, resource->words[0],
-            request.endpoint.address, request.endpoint.port, process->transfer,
-            request.length, timeout);
+        status = network_udp_send(NETWORK_OWNER_NATIVE(process->generation),
+            resource->words[0], request.endpoint.address,
+            request.endpoint.port, process->transfer, request.length, timeout);
         transferred = status == NETWORK_STATUS_OK ? request.length : 0U;
     } else if (status == NETWORK_STATUS_OK && datagram) {
-        status = network_udp_receive(process->generation, resource->words[0],
+        status = network_udp_receive(
+            NETWORK_OWNER_NATIVE(process->generation), resource->words[0],
             &source, &port, process->transfer, request.length, &transferred,
             timeout);
     } else if (status == NETWORK_STATUS_OK && write) {
-        status = network_tcp_write(process->generation, resource->words[0],
-            process->transfer, request.length, &transferred, timeout);
+        status = network_tcp_write(NETWORK_OWNER_NATIVE(process->generation),
+            resource->words[0], process->transfer, request.length,
+            &transferred, timeout);
     } else if (status == NETWORK_STATUS_OK) {
-        status = network_tcp_read(process->generation, resource->words[0],
-            process->transfer, request.length, &transferred, timeout);
+        status = network_tcp_read(NETWORK_OWNER_NATIVE(process->generation),
+            resource->words[0], process->transfer, request.length,
+            &transferred, timeout);
     }
     cpu_interrupt_disable();
-    if (status != NETWORK_STATUS_OK) {
+    /* Once a bounded stream chunk completed, publish that count and report a
+     * later error on the next call. Datagram operations remain atomic and do
+     * not set a partial count.
+     */
+    if (status != NETWORK_STATUS_OK && transferred == 0U) {
         return network_error(status);
     }
     if (!write && transferred != 0U &&
@@ -4702,8 +4713,8 @@ static int64_t syscall_datagram_bind(
         return handle_error(handle_status);
     }
     cpu_interrupt_enable();
-    const enum network_status status = network_udp_bind(process->generation,
-        resource->words[0], port);
+    const enum network_status status = network_udp_bind(
+        NETWORK_OWNER_NATIVE(process->generation), resource->words[0], port);
     cpu_interrupt_disable();
     return network_error(status);
 }
@@ -4731,7 +4742,8 @@ static int64_t syscall_stream_shutdown(
     }
     cpu_interrupt_enable();
     const enum network_status status = network_tcp_shutdown(
-        process->generation, resource->words[0], timeout);
+        NETWORK_OWNER_NATIVE(process->generation), resource->words[0],
+        timeout);
     cpu_interrupt_disable();
     return network_error(status);
 }
@@ -4764,8 +4776,8 @@ static int64_t syscall_network_address(
         return -OPENRFS_EBADF;
     }
     cpu_interrupt_enable();
-    status = network_address(process->generation, resource->words[0], peer,
-        &address, &port);
+    status = network_address(NETWORK_OWNER_NATIVE(process->generation),
+        resource->words[0], peer, &address, &port);
     cpu_interrupt_disable();
     if (status != NETWORK_STATUS_OK) {
         return network_error(status);
@@ -5317,8 +5329,8 @@ static int64_t syscall_cancel(
         return -OPENRFS_ENOTSUP;
     }
     cpu_interrupt_enable();
-    const enum network_status status = network_cancel(process->generation,
-        resource->words[0]);
+    const enum network_status status = network_cancel(
+        NETWORK_OWNER_NATIVE(process->generation), resource->words[0]);
     cpu_interrupt_disable();
     return network_error(status);
 }

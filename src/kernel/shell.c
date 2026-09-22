@@ -1258,7 +1258,7 @@ static void command_resolve(const char *arguments)
         console_write("resolve: use 'resolve HOSTNAME'\n");
         return;
     }
-    status = network_resolve(hostname, &address,
+    status = network_resolve(NETWORK_OWNER_SHELL, hostname, &address,
         NETWORK_DEFAULT_OPERATION_TIMEOUT_NS);
     if (status != NETWORK_STATUS_OK) {
         network_error("resolve", status);

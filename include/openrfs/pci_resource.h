@@ -65,6 +65,7 @@ enum pci_resource_status {
     PCI_RESOURCE_STATUS_DMA_NOT_PREPARED,
     PCI_RESOURCE_STATUS_BUS_MASTER_ALREADY_ENABLED,
     PCI_RESOURCE_STATUS_BUS_MASTER_DISABLED,
+    PCI_RESOURCE_STATUS_DEVICE_PRESENT,
     PCI_RESOURCE_STATUS_CLAIM_INCONSISTENT,
     PCI_RESOURCE_STATUS_COUNT
 };
@@ -95,6 +96,8 @@ struct pci_mmio_region {
 
 struct pci_device_claim {
     struct pci_address device;
+    uint16_t vendor_id;
+    uint16_t device_id;
     uint16_t original_command;
     uint16_t current_command;
     uint64_t identifier;
@@ -154,6 +157,13 @@ enum pci_resource_status pci_claim_enable_bus_master(
     const struct pci_bus_master_request *request
 );
 enum pci_resource_status pci_claim_disable_bus_master(
+    struct pci_device_claim *claim
+);
+enum pci_resource_status pci_claim_device_changed(
+    const struct pci_device_claim *claim,
+    bool *changed
+);
+enum pci_resource_status pci_release_changed_device(
     struct pci_device_claim *claim
 );
 enum pci_resource_status pci_release_device(struct pci_device_claim *claim);

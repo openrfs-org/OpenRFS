@@ -24,6 +24,7 @@
 #include <openrfs/interrupts.h>
 #include <openrfs/ioapic.h>
 #include <openrfs/memory.h>
+#include <openrfs/msix.h>
 #include <openrfs/network.h>
 #include <openrfs/native_process.h>
 #include <openrfs/network_syscall.h>
@@ -5312,7 +5313,8 @@ static void network_native_teardown_census(void)
 {
     struct network_state state = network_get_state();
 
-    if (state.udp_sockets != 0U || state.tcp_connections != 0U ||
+    if (state.dns_requests != 0U || state.udp_sockets != 0U ||
+        state.tcp_connections != 0U ||
         state.tcp_listeners != 0U || state.timers != 0U ||
         (state.active && network_shutdown() != NETWORK_STATUS_OK)) {
         kernel_test_fail("native network teardown retained an endpoint");
@@ -5322,7 +5324,8 @@ static void network_native_teardown_census(void)
         state.configuration.configured || state.configuration.address != 0U ||
         state.configuration.gateway != 0U ||
         state.configuration.dns_server != 0U || state.arp_entries != 0U ||
-        state.dns_entries != 0U || state.udp_sockets != 0U ||
+        state.dns_entries != 0U || state.dns_requests != 0U ||
+        state.udp_sockets != 0U ||
         state.tcp_connections != 0U || state.timers != 0U ||
         pci_resource_verify() != PCI_RESOURCE_STATUS_OK ||
         dma_verify() != DMA_STATUS_OK) {
@@ -5372,7 +5375,8 @@ _Noreturn void kernel_test_complete_native_network(void)
         kernel_test_fail("native network app did not exit with a clean census");
     }
     network = network_get_state();
-    if (network.udp_sockets != 0U || network.tcp_connections != 0U ||
+    if (network.dns_requests != 0U || network.udp_sockets != 0U ||
+        network.tcp_connections != 0U ||
         network.timers != 0U) {
         kernel_test_fail("native network handles survived process teardown");
     }
@@ -5665,7 +5669,8 @@ _Noreturn void kernel_test_complete_native_https(void)
         kernel_test_fail("native HTTPS client did not leave a clean census");
     }
     network = network_get_state();
-    if (network.udp_sockets != 0U || network.tcp_connections != 0U ||
+    if (network.dns_requests != 0U || network.udp_sockets != 0U ||
+        network.tcp_connections != 0U ||
         network.timers != 0U) {
         kernel_test_fail("native HTTPS network resources survived teardown");
     }
@@ -5825,7 +5830,8 @@ _Noreturn void kernel_test_complete_native_openrfs(void)
         kernel_test_fail("native openrfs reboot authority is unavailable");
     }
     network = network_get_state();
-    if (network.udp_sockets != 0U || network.tcp_connections != 0U ||
+    if (network.dns_requests != 0U || network.udp_sockets != 0U ||
+        network.tcp_connections != 0U ||
         network.timers != 0U) {
         kernel_test_fail("native openrfs network resources survived teardown");
     }
@@ -7763,6 +7769,7 @@ static void network_tcp_connect_close(bool expect_reset)
 #define NETWORK_TEST_KNOCK_PORT UINT16_C(4243)
 #define NETWORK_TEST_KNOCK_SOURCE UINT16_C(50003)
 #define NETWORK_TEST_SECOND_KNOCK_SOURCE UINT16_C(50004)
+#define NETWORK_TEST_LIFECYCLE_KNOCK_SOURCE UINT16_C(50005)
 #define NETWORK_TEST_LISTEN_PORT UINT16_C(7777)
 #define NETWORK_TEST_CLOSED_PORT UINT16_C(7778)
 
@@ -7793,6 +7800,112 @@ static network_handle network_announce_port(
         kernel_test_fail("the listening port could not be announced");
     }
     return knock;
+}
+
+static network_handle network_announce_port_mode(
+    uint16_t from_port,
+    uint8_t behavior
+)
+{
+    network_handle knock;
+    uint8_t message[7] = {
+        (uint8_t)'O', (uint8_t)'R', (uint8_t)'F', (uint8_t)'1',
+        (uint8_t)(NETWORK_TEST_LISTEN_PORT >> 8U),
+        (uint8_t)NETWORK_TEST_LISTEN_PORT, behavior
+    };
+
+    if (network_udp_open(NETWORK_TEST_OWNER, &knock) != NETWORK_STATUS_OK ||
+        network_udp_bind(NETWORK_TEST_OWNER, knock, from_port) !=
+            NETWORK_STATUS_OK ||
+        network_udp_send(NETWORK_TEST_OWNER, knock, NETWORK_TEST_HTTP,
+            NETWORK_TEST_KNOCK_PORT, message, sizeof(message),
+            NETWORK_DEFAULT_OPERATION_TIMEOUT_NS) != NETWORK_STATUS_OK) {
+        kernel_test_fail("the passive lifecycle control could not start");
+    }
+    return knock;
+}
+
+static void network_wait_tcp_connections(size_t expected, uint64_t timeout_ns)
+{
+    const uint64_t deadline = clock_monotonic_ns() + timeout_ns;
+
+    while (network_get_state().tcp_connections != expected &&
+        clock_monotonic_ns() < deadline) {
+        const enum network_status status = network_service();
+
+        if (status != NETWORK_STATUS_OK) {
+            kernel_test_fail("passive lifecycle service failed");
+        }
+        (void)timer_sleep_ns(UINT64_C(10000000));
+    }
+    if (network_get_state().tcp_connections != expected) {
+        kernel_test_fail("passive lifecycle did not reach its bounded state");
+    }
+}
+
+static void network_tcp_passive_lifecycle(void)
+{
+    network_handle listener;
+    network_handle knock;
+    network_handle accepted = 0U;
+    uint32_t source = 0U;
+    uint16_t port = 0U;
+
+    if (network_tcp_open(NETWORK_TEST_OWNER, &listener) != NETWORK_STATUS_OK ||
+        network_tcp_listen(NETWORK_TEST_OWNER, listener,
+            NETWORK_TEST_LISTEN_PORT, 1U) != NETWORK_STATUS_OK) {
+        kernel_test_fail("passive lifecycle listener was unavailable");
+    }
+
+    knock = network_announce_port_mode(NETWORK_TEST_LIFECYCLE_KNOCK_SOURCE,
+        1U);
+    network_wait_tcp_connections(2U, UINT64_C(2000000000));
+    network_wait_tcp_connections(1U, UINT64_C(5000000000));
+    if (network_close(NETWORK_TEST_OWNER, knock) != NETWORK_STATUS_OK) {
+        kernel_test_fail("half-open expiry control leaked its datagram");
+    }
+
+    knock = network_announce_port_mode(
+        NETWORK_TEST_LIFECYCLE_KNOCK_SOURCE + 1U, 2U);
+    network_wait_tcp_connections(2U, UINT64_C(2000000000));
+    network_wait_tcp_connections(1U, UINT64_C(5000000000));
+    if (network_close(NETWORK_TEST_OWNER, knock) != NETWORK_STATUS_OK) {
+        kernel_test_fail("unaccepted expiry control leaked its datagram");
+    }
+
+    knock = network_announce_port_mode(
+        NETWORK_TEST_LIFECYCLE_KNOCK_SOURCE + 2U, 3U);
+    for (size_t pass = 0U; pass < 50U; ++pass) {
+        if (network_service() != NETWORK_STATUS_OK) {
+            kernel_test_fail("duplicate passive sequence service failed");
+        }
+        (void)timer_sleep_ns(UINT64_C(10000000));
+    }
+    network_wait_tcp_connections(1U, UINT64_C(5000000000));
+    if (network_close(NETWORK_TEST_OWNER, knock) != NETWORK_STATUS_OK) {
+        kernel_test_fail("duplicate SYN ACK FIN RST retained a child");
+    }
+
+    knock = network_announce_port_mode(
+        NETWORK_TEST_LIFECYCLE_KNOCK_SOURCE + 3U, 0U);
+    if (network_tcp_accept(NETWORK_TEST_OWNER, listener, &accepted, &source,
+            &port, UINT64_C(5000000000)) != NETWORK_STATUS_OK ||
+        accepted == 0U || source != NETWORK_TEST_HTTP || port == 0U ||
+        network_close(NETWORK_TEST_OWNER, accepted) != NETWORK_STATUS_OK ||
+        network_close(NETWORK_TEST_OWNER, knock) != NETWORK_STATUS_OK) {
+        kernel_test_fail("expired backlog slot was not reusable");
+    }
+
+    (void)network_announce_port_mode(
+        NETWORK_TEST_LIFECYCLE_KNOCK_SOURCE + 4U, 2U);
+    network_wait_tcp_connections(2U, UINT64_C(2000000000));
+    network_process_terminated(NETWORK_TEST_OWNER);
+    if (network_get_state().tcp_connections != 0U ||
+        network_get_state().tcp_listeners != 0U ||
+        network_get_state().udp_sockets != 0U) {
+        kernel_test_fail("process exit retained listener-owned children");
+    }
+    console_serial_write("ST TCP passive expiry backlog duplicates process-exit passed\n");
 }
 
 static void network_tcp_listen_controls(network_handle listener)
@@ -7996,6 +8109,7 @@ static void network_tcp_listen_scenario(void)
             &port, UINT64_C(1000000)) != NETWORK_STATUS_STALE_HANDLE) {
         kernel_test_fail("a closed listener still accepted connections");
     }
+    network_tcp_passive_lifecycle();
 }
 
 static void network_tcp_refused_scenario(void)
@@ -8204,12 +8318,50 @@ _Noreturn void kernel_test_complete_network(void)
             kernel_test_fail("absent NIC was invented");
         }
         break;
-    case KERNEL_TEST_NETWORK_LINK_DOWN:
-        if (!network_get_state().device.present ||
+    case KERNEL_TEST_NETWORK_LINK_DOWN: {
+        network_handle socket;
+        network_handle listener;
+        network_handle knock;
+        uint8_t byte = UINT8_C(0xA5);
+        uint32_t source = 0U;
+        uint16_t port = 0U;
+        size_t received = 0U;
+
+        network_require_dhcp();
+        if (network_tcp_open(NETWORK_TEST_OWNER, &listener) !=
+                NETWORK_STATUS_OK ||
+            network_tcp_listen(NETWORK_TEST_OWNER, listener,
+                NETWORK_TEST_LISTEN_PORT, 1U) != NETWORK_STATUS_OK) {
+            kernel_test_fail("link-down listener could not become active");
+        }
+        knock = network_announce_port_mode(50009U, 1U);
+        network_wait_tcp_connections(2U, UINT64_C(2000000000));
+        if (network_udp_open(NETWORK_TEST_OWNER, &socket) !=
+                NETWORK_STATUS_OK ||
+            network_udp_bind(NETWORK_TEST_OWNER, socket, 50007U) !=
+                NETWORK_STATUS_OK ||
+            network_udp_send(NETWORK_TEST_OWNER, socket, NETWORK_TEST_HTTP,
+                4244U, &byte, 1U, UINT64_C(1000000000)) !=
+                NETWORK_STATUS_OK) {
+            kernel_test_fail("link-down operation could not become active");
+        }
+        console_serial_write("ST NETWORK link-down operation ready\n");
+        if (network_udp_receive(NETWORK_TEST_OWNER, socket, &source, &port,
+                &byte, 1U, &received, UINT64_C(5000000000)) !=
+                NETWORK_STATUS_LINK_DOWN ||
+            network_udp_send(NETWORK_TEST_OWNER, socket, NETWORK_TEST_HTTP,
+                4244U, &byte, 1U, UINT64_C(1000000000)) !=
+                NETWORK_STATUS_LINK_DOWN ||
+            network_get_state().tcp_connections != 1U ||
+            network_close(NETWORK_TEST_OWNER, listener) != NETWORK_STATUS_OK ||
+            network_close(NETWORK_TEST_OWNER, knock) != NETWORK_STATUS_OK ||
+            network_close(NETWORK_TEST_OWNER, socket) != NETWORK_STATUS_OK ||
+            !network_get_state().device.present ||
             network_get_state().device.link_up) {
-            kernel_test_fail("link-down state was not retained");
+            kernel_test_fail("active operation did not observe stable link loss");
         }
         break;
+    }
     case KERNEL_TEST_NETWORK_DHCP: {
         if (shell_execute("dhcp") != SHELL_STATUS_OK ||
             !network_get_state().configuration.configured) {
@@ -8315,9 +8467,11 @@ _Noreturn void kernel_test_complete_network(void)
         uint32_t address;
 
         network_require_dhcp();
-        if (network_resolve("openrfs.test", &address,
+        if (network_resolve(NETWORK_TEST_OWNER, "openrfs.test", &address,
                 NETWORK_DEFAULT_OPERATION_TIMEOUT_NS) != NETWORK_STATUS_OK ||
-            address != NETWORK_TEST_HTTP) {
+            address != NETWORK_TEST_HTTP ||
+            network_get_state().dns_requests != 0U ||
+            network_get_state().timers != 0U) {
             kernel_test_fail("DNS resolution did not return fixture address");
         }
         break;
@@ -8332,6 +8486,11 @@ _Noreturn void kernel_test_complete_network(void)
             {"poison.test", NETWORK_STATUS_DNS_FAILURE},
             {"compression.test", NETWORK_STATUS_DNS_FAILURE},
             {"unrelated.test", NETWORK_STATUS_DNS_FAILURE},
+            {"wrong-source.test", NETWORK_STATUS_TIMEOUT},
+            {"wrong-source-port.test", NETWORK_STATUS_TIMEOUT},
+            {"wrong-destination-port.test", NETWORK_STATUS_TIMEOUT},
+            {"wrong-type.test", NETWORK_STATUS_DNS_FAILURE},
+            {"wrong-class.test", NETWORK_STATUS_DNS_FAILURE},
             {"timeout.test", NETWORK_STATUS_TIMEOUT}
         };
 
@@ -8340,10 +8499,12 @@ _Noreturn void kernel_test_complete_network(void)
              index < sizeof(controls) / sizeof(controls[0]); ++index) {
             uint32_t address = 0U;
             const enum network_status status = network_resolve(
-                controls[index].name, &address, UINT64_C(1000000000));
+                NETWORK_TEST_OWNER, controls[index].name, &address,
+                UINT64_C(1000000000));
 
             if (status != controls[index].expected || address != 0U ||
                 network_get_state().dns_entries != 0U ||
+                network_get_state().dns_requests != 0U ||
                 network_get_state().timers != 0U) {
                 kernel_test_fail("DNS malformed or poisoned response was accepted");
             }
@@ -8433,31 +8594,186 @@ _Noreturn void kernel_test_complete_network(void)
     }
     case KERNEL_TEST_NETWORK_NIC_RESET: {
         network_handle stale;
+        network_handle listener;
+        network_handle knock;
+        network_handle removed_socket;
+        network_handle removed_listener;
+        network_handle removed_knock;
+        uint8_t active_byte = UINT8_C(0x5A);
+        uint32_t source = 0U;
+        uint16_t port = 0U;
+        size_t received = 0U;
         enum network_status open_status;
+        enum network_status bind_status;
+        enum network_status send_status;
         enum network_status shutdown_status;
+        enum network_status refused_initialize_status;
+        enum network_status retry_shutdown_status;
         enum network_status initialize_status;
         enum network_status stale_status;
+        enum network_status stale_listener_status;
+        enum network_status stale_knock_status;
+        enum network_status removed_receive_status;
+        enum network_status removed_send_status;
+        const struct dma_state dma_before = dma_get_state();
+        const struct msix_state msix_before = msix_get_state();
+        const struct pci_resource_state pci_before = pci_resource_get_state();
 
         network_require_dhcp();
+        if (network_tcp_open(NETWORK_TEST_OWNER, &listener) !=
+                NETWORK_STATUS_OK ||
+            network_tcp_listen(NETWORK_TEST_OWNER, listener,
+                NETWORK_TEST_LISTEN_PORT, 1U) != NETWORK_STATUS_OK) {
+            kernel_test_fail("reset listener could not become active");
+        }
+        knock = network_announce_port_mode(50010U, 1U);
+        network_wait_tcp_connections(2U, UINT64_C(2000000000));
         open_status = network_udp_open(NETWORK_TEST_OWNER, &stale);
+        bind_status = network_udp_bind(NETWORK_TEST_OWNER, stale, 50008U);
+        send_status = network_udp_send(NETWORK_TEST_OWNER, stale,
+            NETWORK_TEST_HTTP, 4242U, &active_byte, 1U,
+            UINT64_C(1000000000));
+        msix_test_inject_unbind_failure_once();
         shutdown_status = network_shutdown();
+        refused_initialize_status = network_initialize();
+        const struct dma_state dma_retained = dma_get_state();
+        const struct msix_state msix_retained = msix_get_state();
+        const struct pci_resource_state pci_retained =
+            pci_resource_get_state();
+        const struct network_state refused_state = network_get_state();
+        retry_shutdown_status = network_shutdown();
         initialize_status = network_initialize();
         stale_status = network_close(NETWORK_TEST_OWNER, stale);
+        stale_listener_status = network_close(NETWORK_TEST_OWNER, listener);
+        stale_knock_status = network_close(NETWORK_TEST_OWNER, knock);
         if (open_status != NETWORK_STATUS_OK ||
-            shutdown_status != NETWORK_STATUS_OK ||
+            bind_status != NETWORK_STATUS_OK ||
+            send_status != NETWORK_STATUS_OK ||
+            shutdown_status != NETWORK_STATUS_UNAVAILABLE ||
+            refused_initialize_status != NETWORK_STATUS_UNAVAILABLE ||
+            dma_retained.active_allocations != dma_before.active_allocations ||
+            msix_retained.active_bindings != msix_before.active_bindings ||
+            pci_retained.active_claims != pci_before.active_claims ||
+            refused_state.tcp_connections != 0U ||
+            refused_state.tcp_listeners != 0U ||
+            refused_state.udp_sockets != 0U ||
+            retry_shutdown_status != NETWORK_STATUS_OK ||
             initialize_status != NETWORK_STATUS_OK ||
-            stale_status != NETWORK_STATUS_STALE_HANDLE) {
+            stale_status != NETWORK_STATUS_STALE_HANDLE ||
+            stale_listener_status != NETWORK_STATUS_STALE_HANDLE ||
+            stale_knock_status != NETWORK_STATUS_STALE_HANDLE) {
             console_write("ST NETWORK RESET open ");
             console_write(network_status_string(open_status));
             console_write(" shutdown ");
             console_write(network_status_string(shutdown_status));
+            console_write(" retry ");
+            console_write(network_status_string(retry_shutdown_status));
             console_write(" initialize ");
             console_write(network_status_string(initialize_status));
             console_write(" stale ");
             console_write(network_status_string(stale_status));
             console_putc('\n');
-            kernel_test_fail("NIC reset retained an open handle");
+            kernel_test_fail("NIC reset teardown refusal was not recoverable");
         }
+        console_serial_write("ST NETWORK active reset teardown refusal retry passed\n");
+
+        network_require_dhcp();
+        if (network_tcp_open(NETWORK_TEST_OWNER, &removed_listener) !=
+                NETWORK_STATUS_OK ||
+            network_tcp_listen(NETWORK_TEST_OWNER, removed_listener,
+                NETWORK_TEST_LISTEN_PORT, 1U) != NETWORK_STATUS_OK) {
+            kernel_test_fail("removal listener could not become active");
+        }
+        removed_knock = network_announce_port_mode(50011U, 1U);
+        network_wait_tcp_connections(2U, UINT64_C(2000000000));
+        if (network_udp_open(NETWORK_TEST_OWNER, &removed_socket) !=
+                NETWORK_STATUS_OK ||
+            network_udp_bind(NETWORK_TEST_OWNER, removed_socket, 50012U) !=
+                NETWORK_STATUS_OK ||
+            network_udp_send(NETWORK_TEST_OWNER, removed_socket,
+                NETWORK_TEST_HTTP, 4243U, &active_byte, 1U,
+                UINT64_C(1000000000)) != NETWORK_STATUS_OK) {
+            kernel_test_fail("removal operation could not become active");
+        }
+        const struct dma_state dma_remove_before = dma_get_state();
+        const struct msix_state msix_remove_before = msix_get_state();
+        const struct pci_resource_state pci_remove_before =
+            pci_resource_get_state();
+
+        console_serial_write("ST NETWORK removal operation ready\n");
+        removed_receive_status = network_udp_receive(NETWORK_TEST_OWNER,
+            removed_socket, &source, &port, &active_byte, 1U, &received,
+            UINT64_C(5000000000));
+        removed_send_status = network_udp_send(NETWORK_TEST_OWNER,
+            removed_socket, NETWORK_TEST_HTTP, 4243U, &active_byte, 1U,
+            UINT64_C(1000000000));
+        const struct network_state removed_state = network_get_state();
+        const struct dma_state dma_remove_after = dma_get_state();
+        const struct msix_state msix_remove_after = msix_get_state();
+        const struct pci_resource_state pci_remove_after =
+            pci_resource_get_state();
+
+        if (removed_receive_status != NETWORK_STATUS_UNAVAILABLE ||
+            removed_send_status != NETWORK_STATUS_UNAVAILABLE ||
+            removed_state.device.present || removed_state.device.active ||
+            removed_state.tcp_connections != 1U ||
+            removed_state.tcp_listeners != 1U ||
+            removed_state.udp_sockets != 2U ||
+            dma_remove_before.active_allocations < 3U ||
+            dma_remove_after.active_allocations + 3U !=
+                dma_remove_before.active_allocations ||
+            msix_remove_before.active_bindings == 0U ||
+            msix_remove_after.active_bindings + 1U !=
+                msix_remove_before.active_bindings ||
+            pci_remove_before.active_claims == 0U ||
+            pci_remove_before.bus_masters == 0U ||
+            pci_remove_after.active_claims + 1U !=
+                pci_remove_before.active_claims ||
+            pci_remove_after.bus_masters + 1U !=
+                pci_remove_before.bus_masters ||
+            pci_resource_verify() != PCI_RESOURCE_STATUS_OK ||
+            dma_verify() != DMA_STATUS_OK ||
+            network_close(NETWORK_TEST_OWNER, removed_listener) !=
+                NETWORK_STATUS_OK ||
+            network_close(NETWORK_TEST_OWNER, removed_knock) !=
+                NETWORK_STATUS_OK ||
+            network_close(NETWORK_TEST_OWNER, removed_socket) !=
+                NETWORK_STATUS_OK) {
+            console_write("ST NETWORK REMOVE receive ");
+            console_write(network_status_string(removed_receive_status));
+            console_write(" send ");
+            console_write(network_status_string(removed_send_status));
+            console_write(" device ");
+            console_write(removed_state.device.present ? "present" : "absent");
+            console_write(" active ");
+            console_write(removed_state.device.active ? "yes" : "no");
+            console_write(" tcp/listen/udp ");
+            console_write_u64(removed_state.tcp_connections);
+            console_putc('/');
+            console_write_u64(removed_state.tcp_listeners);
+            console_putc('/');
+            console_write_u64(removed_state.udp_sockets);
+            console_write(" dma ");
+            console_write_u64(dma_remove_before.active_allocations);
+            console_putc('/');
+            console_write_u64(dma_remove_after.active_allocations);
+            console_write(" msix ");
+            console_write_u64(msix_remove_before.active_bindings);
+            console_putc('/');
+            console_write_u64(msix_remove_after.active_bindings);
+            console_write(" pci ");
+            console_write_u64(pci_remove_before.active_claims);
+            console_putc('/');
+            console_write_u64(pci_remove_after.active_claims);
+            console_write(" master ");
+            console_write_u64(pci_remove_before.bus_masters);
+            console_putc('/');
+            console_write_u64(pci_remove_after.bus_masters);
+            console_putc('\n');
+            kernel_test_fail("NIC removal did not invalidate and release ownership");
+        }
+        console_serial_write(
+            "ST NETWORK active removal invalidation and teardown passed\n");
         break;
     }
     case KERNEL_TEST_NETWORK_SYSTEM_IMMUTABLE: {
@@ -8552,7 +8868,8 @@ _Noreturn void kernel_test_complete_network(void)
     }
     const struct network_state before_teardown = network_get_state();
 
-    if (before_teardown.udp_sockets != 0U ||
+    if (before_teardown.dns_requests != 0U ||
+        before_teardown.udp_sockets != 0U ||
         before_teardown.tcp_connections != 0U ||
         before_teardown.tcp_listeners != 0U ||
         before_teardown.timers != 0U) {
@@ -8572,6 +8889,7 @@ _Noreturn void kernel_test_complete_network(void)
         after_teardown.configuration.dns_server != 0U ||
         after_teardown.arp_entries != 0U ||
         after_teardown.dns_entries != 0U ||
+        after_teardown.dns_requests != 0U ||
         after_teardown.udp_sockets != 0U ||
         after_teardown.tcp_connections != 0U ||
         after_teardown.timers != 0U ||

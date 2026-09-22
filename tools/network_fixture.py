@@ -166,6 +166,7 @@ class ClientSession:
     established: bool = False
     reply_seen: bool = False
     finished: bool = False
+    behavior: int = 0
 
 
 @dataclass
@@ -363,6 +364,9 @@ class Fixture:
             question = payload[12:question_end]
             address = (b"\xc0\x0c\x00\x01\x00\x01\x00\x00\x00\x3c"
                        b"\x00\x04" + HTTP_IP)
+            reply_source = DNS_IP
+            reply_source_port = 53
+            reply_destination_port = source_port
             if name == b"timeout.test":
                 print("DNS control timeout.test", flush=True)
                 return
@@ -382,12 +386,33 @@ class Fixture:
                 wrong = dns_wire_name(b"openrfs.test") + b"\x00\x01\x00\x01"
                 answer = identifier + struct.pack("!HHHHH", 0x8180, 1, 1, 0, 0)
                 answer += wrong + address
+            elif name == b"wrong-source.test":
+                reply_source = GATEWAY_IP
+                answer = identifier + struct.pack("!HHHHH", 0x8180, 1, 1, 0, 0)
+                answer += question + address
+            elif name == b"wrong-source-port.test":
+                reply_source_port = 54
+                answer = identifier + struct.pack("!HHHHH", 0x8180, 1, 1, 0, 0)
+                answer += question + address
+            elif name == b"wrong-destination-port.test":
+                reply_destination_port = source_port + 1
+                answer = identifier + struct.pack("!HHHHH", 0x8180, 1, 1, 0, 0)
+                answer += question + address
+            elif name == b"wrong-type.test":
+                wrong = question[:-4] + b"\x00\x1c\x00\x01"
+                answer = identifier + struct.pack("!HHHHH", 0x8180, 1, 1, 0, 0)
+                answer += wrong + address
+            elif name == b"wrong-class.test":
+                wrong = question[:-4] + b"\x00\x01\x00\x03"
+                answer = identifier + struct.pack("!HHHHH", 0x8180, 1, 1, 0, 0)
+                answer += wrong + address
             else:
                 answer = identifier + struct.pack("!HHHHH", 0x8380, 1, 0, 0, 0)
                 answer += question
             print(f"DNS control {name.decode('ascii')}", flush=True)
-            datagram = udp(DNS_IP, source_ip, 53, source_port, answer)
-            self.send_ipv4(GUEST_MAC, DNS_IP, source_ip, 17, datagram)
+            datagram = udp(reply_source, source_ip, reply_source_port,
+                           reply_destination_port, answer)
+            self.send_ipv4(GUEST_MAC, reply_source, source_ip, 17, datagram)
             return
         flags = 0x8180
         answers = 1
@@ -463,9 +488,7 @@ class Fixture:
                      payload: bytes) -> None:
         if self.mode not in ("tcp-listen", "tcp-refused"):
             return
-        if len(payload) != 6 or payload[:4] != KNOCK_MAGIC:
-            return
-        if self.session is not None and not self.session.finished:
+        if len(payload) not in (6, 7) or payload[:4] != KNOCK_MAGIC:
             return
         target = struct.unpack_from("!H", payload, 4)[0]
         if target == 0:
@@ -473,8 +496,9 @@ class Fixture:
         # A fresh local port per announcement, so a late segment from the
         # previous connection can never be mistaken for this one.
         self.knock = (source_ip, source_port)
+        behavior = payload[6] if len(payload) == 7 else 0
         self.session = ClientSession(CLIENT_PORT + self.session_count, target,
-                                     CLIENT_ISN)
+                                     CLIENT_ISN, behavior=behavior)
         self.session_count += 1
         self.send_client(self.session, 0x02)
 
@@ -500,9 +524,23 @@ class Fixture:
         if not session.established:
             if flags & 0x12 != 0x12 or acknowledgement != session.send_next:
                 return
+            if session.behavior == 1:
+                return
             session.receive_next = (sequence + 1) & 0xFFFFFFFF
             session.established = True
             self.send_client(session, 0x10)
+            if session.behavior == 2:
+                return
+            if session.behavior == 3:
+                duplicate_sequence = session.send_next
+                self.send_client(session, 0x10)
+                session.send_next = duplicate_sequence
+                self.send_client(session, 0x11)
+                session.send_next = duplicate_sequence
+                self.send_client(session, 0x11)
+                self.send_client(session, 0x14)
+                session.finished = True
+                return
             self.send_client(session, 0x18, LISTEN_REQUEST)
             return
         if payload:

@@ -82,6 +82,8 @@
 #define TCP_DEFAULT_WINDOW UINT16_C(8192)
 #define TCP_MSS UINT16_C(1460)
 #define TCP_RETRANSMISSION_NS UINT64_C(400000000)
+#define TCP_PENDING_SYN_LIFETIME_NS UINT64_C(3000000000)
+#define TCP_PENDING_ACCEPT_LIFETIME_NS UINT64_C(3000000000)
 #define TCP_EPHEMERAL_FIRST UINT16_C(49152)
 #define TCP_EPHEMERAL_LAST UINT16_C(65535)
 
@@ -90,7 +92,6 @@
 #define HANDLE_INDEX_MASK UINT64_C(0xFF)
 #define HANDLE_GENERATION_MASK UINT64_C(0x0000FFFFFFFFFFFF)
 
-#define NETWORK_OWNER_SHELL UINT64_C(1)
 #define BROADCAST_IPV4 UINT32_C(0xFFFFFFFF)
 #define DHCP_BUFFER_BYTES 576U
 #define NETWORK_WAIT_SLICE_NS UINT64_C(10000000)
@@ -151,6 +152,8 @@ struct tcp_connection {
     uint64_t generation;
     uint64_t device_generation;
     uint64_t retransmit_deadline_ns;
+    uint64_t pending_expires_ns;
+    uint64_t listener_generation;
     uint32_t remote_address;
     uint32_t send_unacknowledged;
     uint32_t send_next;
@@ -206,6 +209,11 @@ struct dhcp_pending {
 
 struct dns_pending {
     char question[NETWORK_MAX_HOSTNAME + 1U];
+    uint64_t owner;
+    uint64_t generation;
+    uint64_t configuration_generation;
+    uint64_t device_generation;
+    uint64_t deadline_ns;
     uint16_t identifier;
     uint16_t local_port;
     uint32_t address;
@@ -213,6 +221,8 @@ struct dns_pending {
     enum network_status status;
     bool waiting;
     bool received;
+    bool terminal;
+    bool cancelled;
 };
 
 struct ping_pending {
@@ -236,6 +246,7 @@ struct network_runtime {
     struct dns_pending dns_query;
     struct ping_pending ping;
     uint64_t next_socket_generation;
+    uint64_t next_dns_generation;
     uint64_t dns_insertion;
     uint16_t ipv4_identifier;
     uint16_t next_ephemeral;
@@ -491,6 +502,23 @@ static void timer_release(void)
         --runtime.timers;
     }
     runtime.public.timers = runtime.timers;
+}
+
+static void dns_complete(enum network_status status, bool cancelled)
+{
+    if (!runtime.dns_query.waiting || runtime.dns_query.terminal) {
+        return;
+    }
+    runtime.dns_query.status = status;
+    runtime.dns_query.cancelled = cancelled;
+    runtime.dns_query.received = true;
+    runtime.dns_query.terminal = true;
+}
+
+static void dns_release(void)
+{
+    zero_bytes(&runtime.dns_query, sizeof(runtime.dns_query));
+    runtime.public.dns_requests = 0U;
 }
 
 static bool mac_is_broadcast(const uint8_t mac[6])
@@ -1085,6 +1113,7 @@ static void dhcp_parse(
 
 static enum network_status dns_parse_response(
     uint32_t source,
+    uint32_t destination,
     const uint8_t *bytes,
     size_t length
 );
@@ -1135,7 +1164,8 @@ static void udp_receive_packet(
     if (runtime.dns_query.waiting &&
         destination_port == runtime.dns_query.local_port &&
         source_port == DNS_SERVER_PORT) {
-        (void)dns_parse_response(source, payload, payload_length);
+        (void)dns_parse_response(source, destination, payload,
+            payload_length);
         return;
     }
     for (size_t index = 0U; index < NETWORK_MAX_UDP_SOCKETS; ++index) {
@@ -1364,6 +1394,35 @@ static void ethernet_receive(const uint8_t *frame, size_t length)
 
 static void dhcp_service_lease(void);
 static void dhcp_discard_lease(void);
+static void tcp_service_all_pending(void);
+static void tcp_release(struct tcp_connection *connection);
+
+static void network_fail_endpoints(enum network_status status)
+{
+    for (size_t index = 0U; index < NETWORK_MAX_UDP_SOCKETS; ++index) {
+        if (runtime.udp[index].active) {
+            runtime.udp[index].device_generation =
+                runtime.public.device.device_generation;
+            runtime.udp[index].error = status;
+        }
+    }
+    for (size_t index = 0U; index < NETWORK_MAX_TCP_CONNECTIONS; ++index) {
+        if (runtime.tcp[index].active) {
+            runtime.tcp[index].device_generation =
+                runtime.public.device.device_generation;
+            runtime.tcp[index].error = status;
+            runtime.tcp[index].state = TCP_CONNECTION_RESET;
+        }
+    }
+    /* Pending children have no published handle. Keeping them after their
+     * listener can no longer accept would make the slots unreachable.
+     */
+    for (size_t index = 0U; index < NETWORK_MAX_TCP_CONNECTIONS; ++index) {
+        if (runtime.tcp[index].active && runtime.tcp[index].pending) {
+            tcp_release(&runtime.tcp[index]);
+        }
+    }
+}
 
 static enum network_status network_service_pump(void)
 {
@@ -1372,36 +1431,28 @@ static enum network_status network_service_pump(void)
     device_status = virtio_net_service();
     if (device_status == VIRTIO_NET_STATUS_RESET) {
         enum virtio_net_status reset_status = virtio_net_reset();
+        const enum network_status terminal =
+            reset_status == VIRTIO_NET_STATUS_OK ||
+            reset_status == VIRTIO_NET_STATUS_LINK_DOWN ?
+            NETWORK_STATUS_RESET : NETWORK_STATUS_UNAVAILABLE;
 
+        dns_complete(terminal, true);
         runtime.public.device = virtio_net_get_state();
         dhcp_discard_lease();
         ++runtime.public.statistics.resets;
-        for (size_t index = 0U; index < NETWORK_MAX_UDP_SOCKETS; ++index) {
-            if (runtime.udp[index].active) {
-                runtime.udp[index].device_generation =
-                    runtime.public.device.device_generation;
-                runtime.udp[index].error = NETWORK_STATUS_RESET;
-            }
-        }
-        for (size_t index = 0U; index < NETWORK_MAX_TCP_CONNECTIONS;
-             ++index) {
-            if (runtime.tcp[index].active) {
-                runtime.tcp[index].device_generation =
-                    runtime.public.device.device_generation;
-                runtime.tcp[index].error = NETWORK_STATUS_RESET;
-                runtime.tcp[index].state = TCP_CONNECTION_RESET;
-            }
-        }
-        return reset_status == VIRTIO_NET_STATUS_OK ||
-            reset_status == VIRTIO_NET_STATUS_LINK_DOWN ?
-            NETWORK_STATUS_RESET : NETWORK_STATUS_UNAVAILABLE;
+        network_fail_endpoints(terminal);
+        return terminal;
     }
     if (device_status != VIRTIO_NET_STATUS_OK &&
         device_status != VIRTIO_NET_STATUS_RX_EMPTY) {
         if (device_status == VIRTIO_NET_STATUS_LINK_DOWN) {
             runtime.public.device.link_up = false;
+            dns_complete(NETWORK_STATUS_LINK_DOWN, true);
+            network_fail_endpoints(NETWORK_STATUS_LINK_DOWN);
             return NETWORK_STATUS_LINK_DOWN;
         }
+        dns_complete(NETWORK_STATUS_UNAVAILABLE, true);
+        network_fail_endpoints(NETWORK_STATUS_UNAVAILABLE);
         return NETWORK_STATUS_UNAVAILABLE;
     }
     runtime.public.device = virtio_net_get_state();
@@ -1419,6 +1470,7 @@ static enum network_status network_service_pump(void)
         }
         ethernet_receive(receive_frame, length);
     }
+    tcp_service_all_pending();
     dhcp_service_lease();
     return NETWORK_STATUS_OK;
 }
@@ -1456,11 +1508,12 @@ enum network_status network_initialize(void)
     if (runtime.teardown_pending) {
         return NETWORK_STATUS_UNAVAILABLE;
     }
-    if (!virtio_net_self_test(&driver_tests) || driver_tests != 14U) {
+    if (!virtio_net_self_test(&driver_tests) || driver_tests != 30U) {
         return NETWORK_STATUS_UNAVAILABLE;
     }
     zero_bytes(&runtime, sizeof(runtime));
     runtime.next_socket_generation = 1U;
+    runtime.next_dns_generation = 1U;
     runtime.next_ephemeral = (uint16_t)(TCP_EPHEMERAL_FIRST +
         random_u16() % (TCP_EPHEMERAL_LAST - TCP_EPHEMERAL_FIRST + 1U));
     runtime.public.configuration.generation = previous_generation + 1U;
@@ -1508,6 +1561,7 @@ enum network_status network_configure_static(
         (dns_server != 0U && !ipv4_is_unicast(dns_server))) {
         return NETWORK_STATUS_INVALID_ARGUMENT;
     }
+    dns_complete(NETWORK_STATUS_UNCONFIGURED, true);
     runtime.public.configuration.address = address;
     runtime.public.configuration.subnet_mask = subnet_mask;
     runtime.public.configuration.gateway = gateway;
@@ -1586,6 +1640,7 @@ static void dhcp_discard_lease(void)
 {
     const uint64_t generation = runtime.public.configuration.generation + 1U;
 
+    dns_complete(NETWORK_STATUS_UNCONFIGURED, true);
     zero_bytes(&runtime.public.configuration,
         sizeof(runtime.public.configuration));
     runtime.public.configuration.generation = generation;
@@ -1623,6 +1678,7 @@ static bool dhcp_apply_lease(const struct dhcp_pending *lease)
     if (!dhcp_lease_valid(lease) || now > UINT64_MAX - lifetime) {
         return false;
     }
+    dns_complete(NETWORK_STATUS_UNCONFIGURED, true);
     runtime.public.configuration.address = lease->offered_address;
     runtime.public.configuration.subnet_mask = lease->subnet_mask;
     runtime.public.configuration.gateway = lease->router;
@@ -2080,6 +2136,7 @@ static void dns_cache_insert(
 
 static enum network_status dns_parse_response(
     uint32_t source,
+    uint32_t destination,
     const uint8_t *bytes,
     size_t length
 )
@@ -2097,8 +2154,25 @@ static enum network_status dns_parse_response(
     size_t cname_follows = 0U;
     bool answer_seen = false;
 
-    if (!runtime.dns_query.waiting ||
-        source != runtime.public.configuration.dns_server || length < 2U ||
+    if (!runtime.dns_query.waiting) {
+        return NETWORK_STATUS_DNS_FAILURE;
+    }
+    if (runtime.dns_query.device_generation !=
+            runtime.public.device.device_generation) {
+        dns_complete(NETWORK_STATUS_RESET, true);
+        return NETWORK_STATUS_RESET;
+    }
+    if (runtime.dns_query.configuration_generation !=
+            runtime.public.configuration.generation) {
+        dns_complete(NETWORK_STATUS_UNCONFIGURED, true);
+        return NETWORK_STATUS_UNCONFIGURED;
+    }
+    if (clock_monotonic_ns() >= runtime.dns_query.deadline_ns) {
+        dns_complete(NETWORK_STATUS_TIMEOUT, false);
+        return NETWORK_STATUS_TIMEOUT;
+    }
+    if (source != runtime.public.configuration.dns_server ||
+        destination != runtime.public.configuration.address || length < 2U ||
         read_be16(bytes + 0U) != runtime.dns_query.identifier) {
         return NETWORK_STATUS_DNS_FAILURE;
     }
@@ -2219,6 +2293,7 @@ static enum network_status dns_parse_response(
 }
 
 enum network_status network_resolve(
+    uint64_t owner,
     const char *hostname,
     uint32_t *address,
     uint64_t timeout_ns
@@ -2231,7 +2306,7 @@ enum network_status network_resolve(
     struct dns_cache_entry *cached;
     enum network_status status = NETWORK_STATUS_TIMEOUT;
 
-    if (address == NULL || hostname == NULL) {
+    if (address == NULL || hostname == NULL || owner == 0U) {
         return NETWORK_STATUS_NULL_ARGUMENT;
     }
     if (network_parse_ipv4(hostname, address)) {
@@ -2262,12 +2337,22 @@ enum network_status network_resolve(
         return NETWORK_STATUS_NO_RESOURCES;
     }
     zero_bytes(&runtime.dns_query, sizeof(runtime.dns_query));
+    runtime.dns_query.owner = owner;
+    runtime.dns_query.generation = runtime.next_dns_generation++;
+    if (runtime.next_dns_generation == 0U) {
+        runtime.next_dns_generation = 1U;
+    }
+    runtime.dns_query.configuration_generation =
+        runtime.public.configuration.generation;
+    runtime.dns_query.device_generation =
+        runtime.public.device.device_generation;
     runtime.dns_query.identifier = random_u16();
     runtime.dns_query.local_port = (uint16_t)(TCP_EPHEMERAL_FIRST +
         random_u16() % (TCP_EPHEMERAL_LAST - TCP_EPHEMERAL_FIRST + 1U));
     string_copy(runtime.dns_query.question, hostname,
         string_length_bounded(hostname, NETWORK_MAX_HOSTNAME));
     runtime.dns_query.waiting = true;
+    runtime.public.dns_requests = 1U;
     zero_bytes(query, sizeof(query));
     write_be16(query + 0U, runtime.dns_query.identifier);
     write_be16(query + 2U, UINT16_C(0x0100));
@@ -2275,7 +2360,7 @@ enum network_status network_resolve(
     encoded = dns_encode_name(query + DNS_HEADER_BYTES,
         sizeof(query) - DNS_HEADER_BYTES, hostname);
     if (encoded == 0U || DNS_HEADER_BYTES + encoded + 4U > sizeof(query)) {
-        zero_bytes(&runtime.dns_query, sizeof(runtime.dns_query));
+        dns_release();
         timer_release();
         return NETWORK_STATUS_INVALID_ARGUMENT;
     }
@@ -2284,6 +2369,7 @@ enum network_status network_resolve(
     write_be16(query + length + 2U, DNS_CLASS_IN);
     length += 4U;
     deadline = clock_monotonic_ns() + timeout_ns;
+    runtime.dns_query.deadline_ns = deadline;
     for (size_t retry = 0U; retry < 3U && clock_monotonic_ns() < deadline;
          ++retry) {
         runtime.dns_query.received = false;
@@ -2303,12 +2389,14 @@ enum network_status network_resolve(
             if (serviced == NETWORK_STATUS_RESET ||
                 serviced == NETWORK_STATUS_UNAVAILABLE ||
                 serviced == NETWORK_STATUS_LINK_DOWN) {
-                zero_bytes(&runtime.dns_query,
-                    sizeof(runtime.dns_query));
+                dns_complete(serviced, true);
+                status = serviced;
+                dns_release();
                 timer_release();
-                return serviced;
+                return status;
             }
             if (runtime.dns_query.received) {
+                runtime.dns_query.terminal = true;
                 status = runtime.dns_query.status;
                 break;
             }
@@ -2316,14 +2404,15 @@ enum network_status network_resolve(
                 clock_monotonic_ns() < attempt_end) {
                 if (!network_wait_for_interrupt(attempt_end < deadline ?
                         attempt_end : deadline)) {
-                    zero_bytes(&runtime.dns_query,
-                        sizeof(runtime.dns_query));
+                    dns_complete(NETWORK_STATUS_NO_RESOURCES, true);
+                    dns_release();
                     timer_release();
                     return NETWORK_STATUS_NO_RESOURCES;
                 }
             }
         }
         if (runtime.dns_query.received) {
+            runtime.dns_query.terminal = true;
             break;
         }
         status = NETWORK_STATUS_TIMEOUT;
@@ -2334,7 +2423,7 @@ enum network_status network_resolve(
             dns_cache_insert(hostname, *address, runtime.dns_query.ttl, false);
         }
     }
-    zero_bytes(&runtime.dns_query, sizeof(runtime.dns_query));
+    dns_release();
     timer_release();
     return status;
 }
@@ -2507,12 +2596,16 @@ static size_t tcp_pending_count(const struct tcp_connection *listener)
         const struct tcp_connection *connection = &runtime.tcp[index];
 
         if (connection->active && connection->pending &&
-            connection->listener == parent) {
+            connection->listener == parent &&
+            connection->listener_generation == listener->generation &&
+            connection->owner == listener->owner) {
             ++count;
         }
     }
     return count;
 }
+
+static void tcp_service_pending(const struct tcp_connection *listener);
 
 /*
  * A segment nobody is listening for is answered, not swallowed. RFC 793
@@ -2583,6 +2676,7 @@ static struct tcp_connection *tcp_open_child(
     uint16_t peer_window
 )
 {
+    tcp_service_pending(listener);
     if (tcp_pending_count(listener) >= listener->backlog) {
         return NULL;
     }
@@ -2607,6 +2701,7 @@ static struct tcp_connection *tcp_open_child(
         connection->send_next = connection->send_unacknowledged + 1U;
         connection->state = TCP_CONNECTION_SYN_RECEIVED;
         connection->listener = (uint8_t)tcp_index_of(listener);
+        connection->listener_generation = listener->generation;
         connection->pending = true;
         connection->active = true;
         connection->retransmit_flags = TCP_FLAG_SYN | TCP_FLAG_ACK;
@@ -2614,6 +2709,8 @@ static struct tcp_connection *tcp_open_child(
         connection->retransmit_count = 0U;
         connection->retransmit_deadline_ns = clock_monotonic_ns() +
             TCP_RETRANSMISSION_NS;
+        connection->pending_expires_ns = clock_monotonic_ns() +
+            TCP_PENDING_SYN_LIFETIME_NS;
         ++runtime.public.tcp_connections;
         (void)tcp_emit(connection, TCP_FLAG_SYN | TCP_FLAG_ACK, NULL, 0U,
             connection->send_unacknowledged, false, false);
@@ -2638,7 +2735,9 @@ static void tcp_release_children(const struct tcp_connection *listener)
     for (size_t slot = 0U; slot < NETWORK_MAX_TCP_CONNECTIONS; ++slot) {
         struct tcp_connection *child = &runtime.tcp[slot];
 
-        if (!child->active || !child->pending || child->listener != parent) {
+        if (!child->active || !child->pending || child->listener != parent ||
+            child->listener_generation != listener->generation ||
+            child->owner != listener->owner) {
             continue;
         }
         tcp_refuse(child->remote_address, child->remote_port,
@@ -2734,6 +2833,10 @@ static void tcp_receive_segment(
         connection->retransmit_flags = 0U;
         connection->retransmit_bytes = 0U;
         connection->state = TCP_CONNECTION_ESTABLISHED;
+        if (connection->pending) {
+            connection->pending_expires_ns = clock_monotonic_ns() +
+                TCP_PENDING_ACCEPT_LIFETIME_NS;
+        }
         connection->peer_window = read_be16(bytes + 14U);
         ++runtime.public.statistics.tcp_passive_opens;
     }
@@ -2782,7 +2885,7 @@ static void tcp_receive_segment(
             ++connection->receive_next;
             connection->peer_closed = true;
             connection->state = connection->fin_sent ?
-                TCP_CONNECTION_CLOSED : TCP_CONNECTION_CLOSE_WAIT;
+                TCP_CONNECTION_FIN_WAIT : TCP_CONNECTION_CLOSE_WAIT;
         }
         (void)tcp_ack(connection);
     }
@@ -2896,6 +2999,9 @@ enum network_status network_udp_send(
     }
     if (socket->cancelled) {
         return NETWORK_STATUS_CANCELLED;
+    }
+    if (socket->error != NETWORK_STATUS_OK) {
+        return socket->error;
     }
     return udp_send_raw(runtime.public.configuration.address, socket->port,
         destination, port, bytes, length, timeout_ns);
@@ -3100,14 +3206,8 @@ enum network_status network_tcp_connect(
 }
 
 /*
- * A passive open is the one place where the stack, rather than a caller,
- * decides that a connection exists. Everything about it is therefore bounded
- * in advance: one port, a declared backlog no larger than
- * NETWORK_TCP_MAX_BACKLOG, and children drawn from the same fixed connection
- * table an active open draws from. A handshake completes on any pump, but the
- * retransmission and reaping of half-open children happen only inside
- * network_tcp_accept -- that is deliberate, and it is what keeps half-open
- * state from outliving the caller that asked for it.
+ * Passive children are owned by their listener until accepted. The normal
+ * network pump reaps them even if the owner never calls accept again.
  */
 enum network_status network_tcp_listen(
     uint64_t owner,
@@ -3149,7 +3249,10 @@ static struct tcp_connection *tcp_acceptable(
 
         if (connection->active && connection->pending &&
             connection->listener == parent &&
-            connection->state == TCP_CONNECTION_ESTABLISHED) {
+            connection->listener_generation == listener->generation &&
+            connection->owner == listener->owner &&
+            (connection->state == TCP_CONNECTION_ESTABLISHED ||
+                connection->state == TCP_CONNECTION_CLOSE_WAIT)) {
             return connection;
         }
     }
@@ -3157,10 +3260,9 @@ static struct tcp_connection *tcp_acceptable(
 }
 
 /*
- * Accepting is also when a listener's half-open children are driven. Their
- * acknowledgement is retransmitted here when its deadline passes, and a child
- * that exhausts the retransmission limit is reclaimed rather than left to hold
- * a slot: a peer that opens and vanishes must cost this side nothing durable.
+ * Every pump drives bounded passive-open retransmission and reaps expired or
+ * reset children. This also runs before admitting a new SYN so an abandoned
+ * child cannot indefinitely deny a fresh peer a backlog slot.
  */
 static void tcp_service_pending(const struct tcp_connection *listener)
 {
@@ -3171,11 +3273,14 @@ static void tcp_service_pending(const struct tcp_connection *listener)
         struct tcp_connection *connection = &runtime.tcp[index];
 
         if (!connection->active || !connection->pending ||
-            connection->listener != parent) {
+            connection->listener != parent ||
+            connection->listener_generation != listener->generation ||
+            connection->owner != listener->owner) {
             continue;
         }
         if (connection->state == TCP_CONNECTION_RESET ||
-            connection->error != NETWORK_STATUS_OK) {
+            connection->error != NETWORK_STATUS_OK ||
+            now >= connection->pending_expires_ns) {
             tcp_release(connection);
             continue;
         }
@@ -3186,6 +3291,32 @@ static void tcp_service_pending(const struct tcp_connection *listener)
         if (tcp_retransmit(connection) != NETWORK_STATUS_OK &&
             connection->error != NETWORK_STATUS_OK) {
             tcp_release(connection);
+        }
+    }
+}
+
+static void tcp_service_all_pending(void)
+{
+    for (size_t index = 0U; index < NETWORK_MAX_TCP_CONNECTIONS; ++index) {
+        struct tcp_connection *child = &runtime.tcp[index];
+        struct tcp_connection *listener;
+
+        if (!child->active || !child->pending ||
+            child->listener >= NETWORK_MAX_TCP_CONNECTIONS) {
+            continue;
+        }
+        listener = &runtime.tcp[child->listener];
+        if (!listener->active || listener->state != TCP_CONNECTION_LISTEN ||
+            listener->generation != child->listener_generation ||
+            listener->owner != child->owner) {
+            tcp_release(child);
+        }
+    }
+    for (size_t index = 0U; index < NETWORK_MAX_TCP_CONNECTIONS; ++index) {
+        const struct tcp_connection *listener = &runtime.tcp[index];
+
+        if (listener->active && listener->state == TCP_CONNECTION_LISTEN) {
+            tcp_service_pending(listener);
         }
     }
 }
@@ -3234,7 +3365,6 @@ enum network_status network_tcp_accept(
             timer_release();
             return status;
         }
-        tcp_service_pending(listener);
         child = tcp_acceptable(listener);
         if (child != NULL) {
             child->pending = false;
@@ -3278,7 +3408,11 @@ enum network_status network_tcp_write(
         return NETWORK_STATUS_NULL_ARGUMENT;
     }
     *written = 0U;
-    if (connection->state != TCP_CONNECTION_ESTABLISHED) {
+    if (connection->error != NETWORK_STATUS_OK) {
+        return connection->error;
+    }
+    if (connection->state != TCP_CONNECTION_ESTABLISHED &&
+        connection->state != TCP_CONNECTION_CLOSE_WAIT) {
         return NETWORK_STATUS_WRONG_MODE;
     }
     if (!timer_acquire()) {
@@ -3405,6 +3539,9 @@ enum network_status network_tcp_shutdown(
     }
     if (!deadline_valid(timeout_ns)) {
         return NETWORK_STATUS_INVALID_ARGUMENT;
+    }
+    if (connection->error != NETWORK_STATUS_OK) {
+        return connection->error;
     }
     if (connection->state == TCP_CONNECTION_CLOSED ||
         connection->state == TCP_CONNECTION_RESET) {
@@ -3750,6 +3887,9 @@ void network_process_terminated(uint64_t owner)
 {
     if (owner == 0U) {
         return;
+    }
+    if (runtime.dns_query.waiting && runtime.dns_query.owner == owner) {
+        dns_complete(NETWORK_STATUS_CANCELLED, true);
     }
     for (size_t index = 0U; index < NETWORK_MAX_UDP_SOCKETS; ++index) {
         if (runtime.udp[index].active && runtime.udp[index].owner == owner) {
@@ -4398,7 +4538,8 @@ static enum network_status http_open_request(
     if (!url->numeric) {
         uint64_t now = clock_monotonic_ns();
         if (now >= deadline) { return NETWORK_STATUS_TIMEOUT; }
-        status = network_resolve(url->host, &address, deadline - now);
+        status = network_resolve(owner, url->host, &address,
+            deadline - now);
         if (status != NETWORK_STATUS_OK) { return status; }
     }
     status = network_tcp_open(owner, &handle);
@@ -4775,6 +4916,8 @@ enum network_status network_shutdown(void)
     if (!runtime.public.active && !runtime.teardown_pending) {
         return NETWORK_STATUS_NOT_INITIALIZED;
     }
+    dns_complete(NETWORK_STATUS_CANCELLED, true);
+    dns_release();
     for (size_t index = 0U; index < NETWORK_MAX_UDP_SOCKETS; ++index) {
         if (runtime.udp[index].active) {
             zero_bytes(&runtime.udp[index], sizeof(runtime.udp[index]));

@@ -477,6 +477,10 @@ enum msix_status msix_unbind(struct msix_binding *binding)
     if (!binding->active) {
         return MSIX_STATUS_NOT_BOUND;
     }
+    if (state.unbind_failure_injection_armed) {
+        state.unbind_failure_injection_armed = false;
+        return MSIX_STATUS_INJECTED_FAILURE;
+    }
 
     binding->active = false;
     --state.active_bindings;
@@ -484,9 +488,56 @@ enum msix_status msix_unbind(struct msix_binding *binding)
     return status;
 }
 
+enum msix_status msix_abandon_changed_device(struct msix_binding *binding)
+{
+    bool changed = false;
+
+    if (binding == NULL) {
+        return MSIX_STATUS_NULL_ARGUMENT;
+    }
+    if (cpu_interrupts_enabled()) {
+        return MSIX_STATUS_INTERRUPTS_ENABLED;
+    }
+    if (!binding->active || binding->claim == NULL ||
+        pci_claim_device_changed(binding->claim, &changed) !=
+            PCI_RESOURCE_STATUS_OK || !changed) {
+        return MSIX_STATUS_BAD_CLAIM;
+    }
+    if (state.unbind_failure_injection_armed) {
+        state.unbind_failure_injection_armed = false;
+        return MSIX_STATUS_INJECTED_FAILURE;
+    }
+
+    /* The original function is no longer at this BDF. Touching either its
+     * capability or table would access absent hardware or a replacement.
+     */
+    if (binding->handler_installed) {
+        if (interrupt_unregister_handler(binding->vector.vector) !=
+                INTERRUPT_STATUS_OK) {
+            return MSIX_STATUS_ROLLBACK_FAILURE;
+        }
+        binding->handler_installed = false;
+    }
+    if (binding->vector.active &&
+        interrupt_vector_release(&binding->vector) !=
+            INTERRUPT_VECTOR_STATUS_OK) {
+        return MSIX_STATUS_ROLLBACK_FAILURE;
+    }
+    binding->active = false;
+    binding->delivery_masked = true;
+    binding->entry = NULL;
+    --state.active_bindings;
+    return MSIX_STATUS_OK;
+}
+
 void msix_test_inject_failure_once(void)
 {
     state.failure_injection_armed = true;
+}
+
+void msix_test_inject_unbind_failure_once(void)
+{
+    state.unbind_failure_injection_armed = true;
 }
 
 struct msix_state msix_get_state(void)

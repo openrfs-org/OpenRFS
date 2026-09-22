@@ -57,6 +57,7 @@ struct msix_state {
     size_t active_bindings;
     size_t rollback_count;
     bool failure_injection_armed;
+    bool unbind_failure_injection_armed;
 };
 
 enum msix_status msix_bind(
@@ -78,7 +79,9 @@ enum msix_status msix_set_masked(
     bool masked
 );
 enum msix_status msix_unbind(struct msix_binding *binding);
+enum msix_status msix_abandon_changed_device(struct msix_binding *binding);
 void msix_test_inject_failure_once(void);
+void msix_test_inject_unbind_failure_once(void);
 struct msix_state msix_get_state(void);
 bool msix_self_test(void);
 const char *msix_status_string(enum msix_status status);
