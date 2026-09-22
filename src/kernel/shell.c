@@ -215,7 +215,8 @@ static void command_help(void)
     console_write("  netstat   bounded socket and packet counters\n");
     console_write("  reboot    sync, unmount, and restart cleanly\n");
     console_write("  clear     clear the screen\n");
-    console_write("  fetch     OpenRFS identity and live system summary\n");
+    console_write("  gfetch    OpenRFS identity and live system summary\n");
+    console_write("  fetch     compatibility alias for gfetch\n");
     console_write("  uptime    nanoseconds since the clock started\n");
     console_write("  mem       physical frames and kernel heap\n");
     console_write("  pci       every function enumeration found\n");
@@ -1032,7 +1033,28 @@ static void print_fetch_drive(struct openrfsfs_drive_info drive)
     }
 }
 
-static void command_fetch(void)
+/*
+ * The mark printed by gfetch is the same monochrome fish used by the
+ * opengatcommandline loader.  Keep it as plain ASCII so this remains readable
+ * on the serial console and on a machine without a framebuffer.
+ */
+static const char *const GFETCH_FISH[] = {
+    "                .:..",
+    "               +##*##*:",
+    ".**=         .+########*=.",
+    ":###*:       +##########*##*.",
+    ".*####=     =#####*#+::=**#+-.",
+    " :*####= :*#########==*+***#+.",
+    " :*####*=*############*###**=",
+    " +####- =++*################*:",
+    ".*##+     :####*########****",
+    "-*=.    :*#####*-:=####*---.",
+    "       .-::-:.     :*#:",
+};
+
+#define GFETCH_FISH_ROWS (sizeof(GFETCH_FISH) / sizeof(GFETCH_FISH[0]))
+
+static void command_gfetch(void)
 {
     const struct screen_state screen = screen_get_state();
     const struct heap_state heap = heap_get_state();
@@ -1040,8 +1062,10 @@ static void command_fetch(void)
     const struct openrfsfs_drive_info data = openrfsfs_drive(OPENRFSFS_VOLUME_DATA);
 
     console_write("\n");
-    if (ui_terminal_draw_logo() != UI_STATUS_OK) {
-        console_write("  [ OpenRFS ]\n");
+    for (size_t row = 0U; row < GFETCH_FISH_ROWS; ++row) {
+        console_write("  ");
+        console_write(GFETCH_FISH[row]);
+        console_putc('\n');
     }
     console_write("\n");
     console_write("  OpenRFS\n");
@@ -1661,8 +1685,8 @@ enum shell_status shell_execute(const char *text)
         if (screen_is_active()) {
             (void)screen_clear();
         }
-    } else if (matches(text, "fetch")) {
-        command_fetch();
+    } else if (matches(text, "gfetch") || matches(text, "fetch")) {
+        command_gfetch();
     } else if (matches(text, "uptime")) {
         command_uptime();
     } else if (matches(text, "mem")) {
