@@ -62,9 +62,12 @@ before returning. A reset after TLS record bytes is reported as
 TLS truncation; OpenRFS ABI v1 otherwise exposes orderly TCP closure and reset
 through overlapping stream errors. Cancellation is also available directly
 through `openrfs_tls_client_cancel()` on the lower-level client. The synchronous
-`openrfs_https_get()` helper does not expose its internal client, so callers
-cancel that complete operation through native process termination; teardown
-closes its typed network handles.
+`openrfs_https_get()` helper does not expose its internal client. On the current
+native scheduler, process or sibling-thread termination cannot overlap that
+synchronous syscall sequence; deadlines bound it, and process teardown closes
+its typed network handles after control returns or the process faults. The
+POSIX host adapter separately proves concurrent lower-level cancellation. No
+asynchronous native HTTPS cancellation claim is made.
 
 ## Deterministic offline evidence
 

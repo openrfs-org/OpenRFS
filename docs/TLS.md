@@ -65,10 +65,14 @@ an explicit publisher/policy decision before constructing these records.
 `openrfs_tls_client_open_diagnostic()` preserves the BearSSL and OpenRFS
 transport refusal values even though a failed open returns no client object.
 `openrfs_tls_client_cancel()` atomically publishes cancellation and routes it to
-the underlying OpenRFS stream handle, so a second thread can interrupt a
-blocking TLS operation. The owner waits for that operation to return before it
-closes the client. Every open and application operation uses the caller's
-absolute monotonic deadline. Realtime is accepted only in the explicit
+the underlying OpenRFS stream handle. The POSIX host adapter proves that a
+second host thread can interrupt a blocking TLS operation. In the native guest,
+network syscalls are synchronous and do not schedule a sibling native thread
+inside the call, so native cancellation becomes observable between syscalls or
+through handle/process cleanup after the call returns; it is not claimed as a
+concurrent syscall interruption. The owner waits for any operation to return
+before it closes the client. Every open and application operation uses the
+caller's absolute monotonic deadline. Realtime is accepted only in the explicit
 2020--2099 plausibility window before BearSSL applies each certificate's exact
 interval.
 

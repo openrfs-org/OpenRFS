@@ -2876,6 +2876,10 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 		cat "$$log"; \
 		exit 1; \
 	fi; \
+	$(PYTHON) tools/write_qemu_result.py --scenario '$*' \
+		--expected "$$expected" --observed "$$result" \
+		--expected-begins "$$expected_begin" --serial "$$log" \
+		--output '$(TEST_BUILD_DIR)/$*/scenario-result.json'; \
 	echo 'QEMU scenario $* passed'
 
 qemu-tests: $(TEST_TARGETS)

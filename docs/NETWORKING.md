@@ -32,7 +32,27 @@ offloads, multiqueue, control queues, and indirect descriptors are refused.
 Every packet has an explicit owner. Reset first stops the device, disables bus
 mastering, unbinds MSI-X, returns DMA to the CPU, releases the allocations and
 PCI claim, invalidates sockets and caches, and advances the device generation.
-Stale handles cannot alias a later device generation.
+Stale handles cannot alias a later device generation. Used-ring progress,
+descriptor identifiers, packet ownership, and RX/TX completion lengths are
+validated before reuse. An impossible completion freezes all further queue and
+MMIO service until controlled reset. A runt or oversized Ethernet frame that
+still fits the posted 2,048-byte RX buffer is counted and recycled as a packet
+refusal; a completion shorter than the required virtio header or longer than
+the posted buffer is device corruption. If bus-master disable, MSI-X unbind, DMA
+return, or PCI release fails, shutdown reports teardown failure and retains any
+resource that hardware may still reach instead of pretending it was released.
+
+For a NIC directly below a PCIe hotplug-capable slot with a power controller,
+an attention-button removal request is an owned teardown event. The driver
+quiesces and resets the endpoint, disables bus mastering, unbinds MSI-X,
+returns and releases DMA, and releases the endpoint claim before acknowledging
+and powering off the verified upstream slot. A surprise disappearance or BDF
+identity replacement takes a separate no-device-access path: the unreachable
+MSI-X callback and stale PCI accounting are abandoned without touching dead or
+replacement MMIO, then DMA returns to CPU ownership. Configuration-access
+failure is not treated as proof of removal and retains reachable resources.
+General PCIe switch hotplug, ACPI PCI hotplug, device insertion, and physical
+NICs remain unsupported.
 
 ## Protocol contract
 
@@ -59,9 +79,14 @@ Stale handles cannot alias a later device generation.
 - DNS supports bounded A and CNAME resolution, backward-only compression
   pointers with a 16-pointer loop bound, four CNAME follows, 512-byte messages,
   eight cached entries, matched NXDOMAIN caching, TTL expiry, and
-  configuration/device generations. Only matching answer-section records can
-  satisfy a query; contradictory duplicate A answers and unrelated questions
-  are refused.
+  configuration/device generations. One resolver operation may be active. It
+  records an owner, request generation, configuration and device generations,
+  transaction identifier, local port, deadline, and terminal/cancel state.
+  Only a response from the configured server to the query port, with the exact
+  identifier, question, type, class, and valid compression structure can
+  complete it. Contradictory duplicate A answers and unrelated responses are
+  refused. Configuration replacement, lease expiry, link loss, device reset,
+  process cleanup, and network shutdown terminalize the owned request.
 - TCP provides eight connections, 8,192 receive bytes and one 1,460-byte
   retransmission segment per connection, four retransmissions, checked sequence
   and acknowledgement state, active and passive open, FIN close, RST handling
@@ -81,15 +106,13 @@ four-tuple produces a child connection in `SYN_RECEIVED`, drawn from the same
 eight-slot table an outbound connection is drawn from, and `network_tcp_accept`
 hands it over once the peer's acknowledgement completes the handshake.
 
-Three bounds define listener behavior:
+Four bounds define listener behavior:
 
-- **A listener costs nothing before acceptance.** A handshake completes on
-  any pump -- the peer's acknowledgement is an inbound segment like any other --
-  but *retransmission and reaping* of half-open children happen only inside
-  `network_tcp_accept`. A peer that opens a connection and vanishes therefore
-  leaves nothing durable behind, and a listener whose peer's hardware address is
-  unknown makes progress only while an accept is outstanding. Listener work is
-  driven by `network_tcp_accept` rather than a background timer.
+- **Every normal network pump services pending children.** A half-open child
+  retransmits from the ordinary service path and expires three seconds after
+  its SYN. A completed but unaccepted child receives a fresh three-second
+  lifetime. Neither bound depends on an outstanding `accept()` call, so an
+  abandoned peer cannot occupy a backlog slot indefinitely.
 - **Closing a listener refuses its unaccepted children.** Such a child belongs
   to the listener, and closing the listener resets those peers and reclaims
   their slots. A child already accepted is an independent connection with its
@@ -97,6 +120,10 @@ Three bounds define listener behavior:
 - **The backlog is checked before a slot is taken, not after.** A SYN beyond
   the declared backlog, or beyond the connection table, is refused with a reset
   rather than queued.
+- **Parent identity is exact.** Each child records the listener table index,
+  listener generation, and owner. An orphan, generation mismatch, process exit,
+  reset, removal, RST, or expired child is reclaimed once; `accept()` publishes
+  a handle only after revalidating that relationship.
 
 `network_poll` reports a listener as `NETWORK_READY_ACCEPTABLE` when a
 completed connection is waiting, and never as connected or writable.
@@ -105,7 +132,19 @@ The `network-tcp-listen` scenario proves both halves. Its first peer is
 accepted, sends bytes, receives bytes, closes, and is closed. Its second peer is
 left unaccepted: the listener is polled until it reports the waiting
 connection as acceptable, then closed, and the peer reports the reset it
-received back over UDP. Nothing is left allocated afterwards.
+received back over UDP. Additional packet-driven peers prove half-open expiry,
+completed-child expiry without `accept()`, backlog reuse, duplicate ACK/FIN/RST
+reclamation, and process-exit cleanup. Nothing is left allocated afterwards.
+
+The supported TCP close model is deliberately bounded. Exact in-window ACKs
+advance transmit state; duplicate/old ACKs do not. Out-of-order data is not
+buffered and elicits the current ACK. A full receive window advertises zero and
+refuses excess data. Peer FIN moves an open connection to `CLOSE_WAIT`, where
+remaining application writes and reads are allowed before local shutdown.
+Local FIN, peer FIN, simultaneous close, RST, timeout, cancellation, reset, and
+listener/process teardown all reach a terminal or explicitly releasable state.
+There is no SACK, congestion-control implementation, half-close read shutdown,
+TIME-WAIT table, or arbitrary out-of-order reassembly claim.
 
 ## Closed ports are answered
 
@@ -150,7 +189,10 @@ immutable system volume are QEMU-tested.
 generation-authenticated handles, deadlines, readiness and cancellation. The
 global bounds are eight UDP sockets, eight TCP connections, 32 timers, eight
 poll handles per call, four queued datagrams per UDP socket, and 512 bytes per
-datagram.
+datagram. Shell, native-process, private-boundary, and test owners occupy
+disjoint tagged domains. Stream syscalls return a completed positive byte count
+when an earlier bounded chunk succeeded and a later chunk failed; the stable
+error is returned by the next call. Datagram operations remain atomic.
 
 `include/openrfs/network_syscall.h` is an experimental OpenRFS-private ABI version
 1 for future native processes. At most four authenticated process contexts may
@@ -160,6 +202,16 @@ every user range is translated and checked for user access, leaf level,
 writability where required, canonical range shape, overflow, and allocatable
 physical backing. Process termination cancels owned work and invalidates its
 token.
+
+Native networking ownership is per process generation, not per thread. A
+native thread exit therefore leaves the process's handles and resolver
+ownership intact for sibling threads; final process cleanup closes them. The
+current native scheduler executes DNS and stream syscalls synchronously on the
+calling thread, so another native thread or process teardown cannot overlap a
+resolver call. The resolver nevertheless records explicit ownership and all
+terminal causes, and every synchronous return releases its single timer and
+request slot exactly once. This is the actual current cancellation boundary,
+not an asynchronous-DNS claim.
 
 Operations cover monotonic time, bounded random bytes, DNS, TCP lifecycle and
 I/O, poll, cancel, HTTP-to-memory, and HTTP-to-file. The
@@ -214,22 +266,17 @@ summaries, and scans the captured streams for plaintext HTTP payloads. The
 production proof is false if a required layer is missing, a packet is
 malformed, or HTTPS plaintext is found. `tools/run_network_scenario.py` owns
 fixture/QEMU lifecycle, isolated ports, per-test storage copies, link-down QMP
-control, stable exit codes, serial markers, and packet audit. Every network
+control, native PCIe hot-unplug behind a dedicated root port, stable exit codes,
+serial markers, and packet audit. Every network
 scenario now checks that sockets and timers are gone, shuts down the NIC, and
 emits a teardown receipt after checking the cleared address, route, caches,
 and PCI/DMA accounting. The native HTTPS and package proofs emit the same
 receipt before guest exit or reboot.
 
-## Measured reference run
-
-These are diagnostic measurements from the 30-byte offline fixture under QEMU
-TCG on the v2.1.0 development host, not general throughput claims:
-
-| Path | HTTP elapsed | FAT32 sync | payload rate | polling CPU | interrupt CPU | drops |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| chunked | 44.53 ms | 16.10 ms | 673 B/s | 2.34 ms | 0.087 ms | 0 |
-| one redirect | 46.62 ms | 16.06 ms | 643 B/s | 4.42 ms | 0.136 ms | 0 |
-
-The 22-second evidence interaction completed DHCP, ping, DNS, HTTP streaming,
-FAT32 synchronization, screen updates, keyboard/pointer input, and `netstat`
-without packet drops.
+`.github/workflows/networking-milestone.yml` builds exact-head evidence for
+the complete supported path. It records the PR head, base commit and tree,
+source and synthetic-merge trees, tool versions, all 115 scenario results, all
+36 network results, two additional fresh 36-network-plus-native-HTTPS sweeps,
+serial hashes, exact exits and receipts, timeout and resource reports, packet
+audits and PCAP hashes, TLS/HTTPS summaries, source and artifact manifests, and
+`SHA256SUMS`. A second job downloads and revalidates the artifact contents.
