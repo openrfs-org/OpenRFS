@@ -68,10 +68,10 @@ make boot-artifact-signature-test
 
 The host test uses RFC 4231 HMAC and NIST CAVP HMAC_DRBG vectors, checks the
 HKDF result against Python's independent `hmac`/`hashlib`, then injects no
-entropy, a repeated source, a failed source, and a failed reseed. The QEMU
-gate boots the same image with `-cpu max` and
-`-cpu max,-rdrand,-rdseed`, using a modern virtio NIC. It requires normal
-guest completion and the corresponding network initialization or refusal
+entropy, a repeated source, a biased source, a failed source, and a failed
+reseed. The QEMU gate boots the same image with `-cpu max`,
+`-cpu max,-rdseed`, and `-cpu max,-rdrand,-rdseed`, using a modern virtio NIC.
+It requires normal guest completion and the corresponding initialization or refusal
 marker. A timeout is a failure.
 
 The wider `make verify`, `make qemu-tests`, migration, power-cut, media
