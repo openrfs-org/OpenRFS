@@ -4,22 +4,24 @@
 
 ## Status of the port to current main
 
-This branch is a draft integration. The 42-driver count below describes the
+This is an opt-in driver layer. The 42-driver count below describes the
 source branch's QEMU model evidence, not 42 drivers available to every
-production consumer on current main. The iPXE NIC registry feeds the normal
-network stack, and SeaBIOS USB HID feeds the normal keyboard and pointer
+production consumer. Without `openrfs.drivers=`, none of these drivers bind.
+The iPXE NIC registry feeds the normal network stack, and SeaBIOS USB HID
+feeds the normal keyboard and pointer
 queues. The storage, display, PCM, and TPM scenarios exercise the real
 vendored drivers through their registries, but current production FAT32/ext4
 and VFS still use NVMe sessions, the active UI still uses the loader
 framebuffer, native audio still uses HD Audio, and no non-test platform
-service calls the TPM registry. Those connections and their end-to-end tests
-are required before this port can be merged.
+service calls the TPM registry. Those connections need separate end-to-end
+integration before they can be described as production consumer support.
 
-The bind and removal review is also open: iPXE and SeaBIOS currently share
+The bind and removal review remains open: iPXE and SeaBIOS currently share
 one DMA arena across devices in a layer, and failure and teardown paths need
 transactional registry rollback and device quiescence before claims or DMA
-memory are released. The named `ramfb` fw_cfg wait has no timeout. No
-physical hardware has been tested.
+memory are released. Use `openrfs.drivers=auto` only for the documented QEMU
+models while this work is open. The named `ramfb` fw_cfg wait has no timeout.
+No physical hardware has been tested.
 
 OpenRFS runs hardware drivers taken unmodified from three long-lived open
 source projects:
