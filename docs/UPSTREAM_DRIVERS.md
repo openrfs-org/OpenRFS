@@ -176,7 +176,9 @@ between the stacks.
 - **GPL-2.0-only code**, which cannot be combined with OpenRFS's
   GPL-3.0-only licence. That excludes every Linux driver, including the AMD
   and Intel graphics drivers, and iPXE's GPL-2.0-only drivers (for example
-  tg3, bnxt, sky2).
+  tg3, bnxt, sky2). iPXE's `src/include/mii.h` is also GPL-2.0-only and is
+  excluded; `ports/ipxe/include/mii.h` declares the small set of IEEE MII
+  register values used by the selected drivers.
 - **iPXE's virtio-net.** The implementation with years of use depends on
   `virtio-pci.c`, which carries no licence declaration; its relicensed
   replacement is in no iPXE release yet. OpenRFS has its own virtio-net

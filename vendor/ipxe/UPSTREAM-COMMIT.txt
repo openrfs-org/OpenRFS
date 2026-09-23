@@ -24,8 +24,11 @@ Vendored paths (byte-for-byte upstream; SOURCE-MANIFEST.sha256):
   src/core/iobuf.c, list.c                GPL2_OR_LATER_OR_UBDL
   src/net/iobpad.c                        GPL2_OR_LATER_OR_UBDL
   src/include/ipxe/{bitbash,ethernet,if_ether,iobuf,isa_ids,list,mii,nvs,
-    spi,spi_bit,threewire}.h, src/include/mii.h
+    spi,spi_bit,threewire}.h
                                           GPL2_OR_LATER(_OR_UBDL)
+
+  src/include/mii.h is excluded: it declares GPL2_ONLY. The OpenRFS-owned
+  ports/ipxe/include/mii.h supplies only the needed IEEE MII register values.
 
   USB stack (all GPL2_OR_LATER_OR_UBDL; Michael Brown, 2014-2015):
   src/drivers/bus/usb.c, cdc.c            USB core, CDC descriptors

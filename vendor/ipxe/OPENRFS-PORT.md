@@ -13,6 +13,10 @@ I/O, timer, malloc, net device and legacy NIC interfaces - with iPXE's names
 and contracts. `ports/ipxe/ipxe_glue.c` implements them and
 `src/kernel/ipxe_host.c` connects them to the kernel:
 
+iPXE's `src/include/mii.h` is GPL-2.0-only and is excluded. The
+OpenRFS-owned `ports/ipxe/include/mii.h` contains only the MII hardware
+register values these selected drivers use.
+
 * **PCI.** A driver's device is claimed through the upstream driver framework
   (`src/kernel/hwdrv.c`) before its probe runs. Configuration writes that
   would change decode, bus mastering, BARs or the expansion ROM are refused
