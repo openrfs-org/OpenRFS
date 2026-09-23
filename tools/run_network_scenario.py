@@ -246,9 +246,11 @@ def run(args: argparse.Namespace) -> int:
         "-monitor", "none", "-serial", "stdio", "-device",
         "isa-debug-exit,iobase=0xf4,iosize=0x04",
     ]
+    # Production network identifiers now require the entropy CPU service.
+    # tools/test_entropy_qemu.py separately proves refusal without it.
+    qemu.extend(["-cpu", "max"])
     if args.scenario in ("native-https", "native-openrfs"):
         qemu.extend([
-            "-cpu", "max",
             "-rtc", "base=" + (
                 "2027-01-15T08:01:00" if args.scenario == "native-openrfs"
                 else "2026-08-31T00:00:00"
