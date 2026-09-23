@@ -887,7 +887,7 @@ $(DYNAMIC_DATA_IMAGE): tools/fat32_image.py | $(DYNAMIC_APP_DIR)
 $(RUST_APP): apps/native-rust/Cargo.toml apps/native-rust/Cargo.lock \
 		apps/native-rust/manifest.json apps/native-rust/src/main.rs \
 		rust/openrfs/Cargo.toml rust/openrfs/src/lib.rs sdk/linker.ld | $(RUST_APP_DIR)
-	CARGO_TARGET_DIR='$(CURDIR)/$(RUST_APP_CARGO_TARGET)' \
+	CARGO_TARGET_DIR='$(abspath $(RUST_APP_CARGO_TARGET))' \
 		RUSTFLAGS='$(RUST_APP_FLAGS)' $(CARGO) build \
 		--manifest-path apps/native-rust/Cargo.toml --release \
 		--target x86_64-unknown-none --locked --offline
@@ -964,29 +964,29 @@ native-openrfs-proof: $(OPENRFSAPP_SYSTEM_IMAGE) $(OPENRFSAPP_DATA_IMAGE) \
 	@echo 'native signed HTTPS package lifecycle proof built'
 
 port-tests: native-apps audio-wav-tests sdl-preference-tests
-	OPENRFS_NATIVE_TEST_ELF='$(CURDIR)/$(NATIVE_TEST_APP)' \
+	OPENRFS_NATIVE_TEST_ELF='$(abspath $(NATIVE_TEST_APP))' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/native-image-host-test.rs -o $(RUST_NATIVE_IMAGE_TEST)
 	$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(CURDIR)/$(LUA_APP)' \
+	OPENRFS_NATIVE_TEST_ELF='$(abspath $(LUA_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(CURDIR)/$(SQLITE_APP)' \
+	OPENRFS_NATIVE_TEST_ELF='$(abspath $(SQLITE_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(CURDIR)/$(NETAPP_APP)' \
+	OPENRFS_NATIVE_TEST_ELF='$(abspath $(NETAPP_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(CURDIR)/$(HTTPSAPP_APP)' \
+	OPENRFS_NATIVE_TEST_ELF='$(abspath $(HTTPSAPP_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(CURDIR)/$(OPENRFSAPP_APP)' \
+	OPENRFS_NATIVE_TEST_ELF='$(abspath $(OPENRFSAPP_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(CURDIR)/$(AUDIO_APP)' \
+	OPENRFS_NATIVE_TEST_ELF='$(abspath $(AUDIO_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(CURDIR)/$(SDL_PROOF_APP)' \
+	OPENRFS_NATIVE_TEST_ELF='$(abspath $(SDL_PROOF_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(CURDIR)/$(SDL_CHESS_APP)' \
+	OPENRFS_NATIVE_TEST_ELF='$(abspath $(SDL_CHESS_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(CURDIR)/$(RUST_APP)' \
+	OPENRFS_NATIVE_TEST_ELF='$(abspath $(RUST_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(CURDIR)/$(CRASH_APP)' \
+	OPENRFS_NATIVE_TEST_ELF='$(abspath $(CRASH_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
 	OPENRFS_REQUIRE_ED25519=1 $(PYTHON) -u tools/openrfs_package_host_test.py
 	$(PYTHON) tools/openrfs-package.py inspect $(NATIVE_TEST_PACKAGE)
@@ -1175,11 +1175,11 @@ $(RUST_LIB): $(RUST_SOURCES) $(RUST_MANIFEST) $(RUST_LOCKFILE) \
 		.cargo/config.toml $(RUST_VENDOR_SOURCES) \
 		$(LOGO_BLOB) \
 		$(WALLPAPER_BLOB) $(FONT_BLOB) $(UI_FONT_BLOB) | $(BUILD_DIR)
-	OPENRFS_LOGO_BLOB='$(CURDIR)/$(LOGO_BLOB)' \
-	OPENRFS_WALLPAPER_BLOB='$(CURDIR)/$(WALLPAPER_BLOB)' \
-	OPENRFS_FONT_BLOB='$(CURDIR)/$(FONT_BLOB)' \
-	OPENRFS_UI_FONT_BLOB='$(CURDIR)/$(UI_FONT_BLOB)' \
-	CARGO_TARGET_DIR='$(CURDIR)/$(BUILD_DIR)/rust-target' \
+	OPENRFS_LOGO_BLOB='$(abspath $(LOGO_BLOB))' \
+	OPENRFS_WALLPAPER_BLOB='$(abspath $(WALLPAPER_BLOB))' \
+	OPENRFS_FONT_BLOB='$(abspath $(FONT_BLOB))' \
+	OPENRFS_UI_FONT_BLOB='$(abspath $(UI_FONT_BLOB))' \
+	CARGO_TARGET_DIR='$(abspath $(BUILD_DIR))/rust-target' \
 	RUSTFLAGS='$(RUSTFLAGS)' \
 		$(CARGO) build --manifest-path $(RUST_MANIFEST) \
 			--target $(RUST_TARGET) --release --locked --offline
@@ -1362,11 +1362,11 @@ $(BUILD_DIR)/ext4-sparse-truncate-host-test: tools/ext4-sparse-truncate-host-tes
 
 ext4-sparse-truncate-test: $(BUILD_DIR)/ext4-sparse-truncate-host-test tools/ext4_image.py tools/ext4_host_test.py
 	$(BUILD_DIR)/ext4-sparse-truncate-host-test
-	OPENRFS_EXT4_RUST_FIXTURE='$(CURDIR)/$(BUILD_DIR)/ext4-rust-fixture.img' \
+	OPENRFS_EXT4_RUST_FIXTURE='$(abspath $(BUILD_DIR))/ext4-rust-fixture.img' \
 		$(PYTHON) -u tools/ext4_host_test.py
 	if test -f '$(BUILD_DIR)/ext4-rust-fixture.img'; then \
-		OPENRFS_EXT4_RUST_FIXTURE='$(CURDIR)/$(BUILD_DIR)/ext4-rust-fixture.img' $(CARGO_TEST_ENV) \
-		CARGO_TARGET_DIR='$(CURDIR)/$(BUILD_DIR)/ext4-transaction-target' \
+		OPENRFS_EXT4_RUST_FIXTURE='$(abspath $(BUILD_DIR))/ext4-rust-fixture.img' $(CARGO_TEST_ENV) \
+		CARGO_TARGET_DIR='$(abspath $(BUILD_DIR))/ext4-transaction-target' \
 		$(CARGO) test --manifest-path tools/ext4-transaction-tests/Cargo.toml \
 		--locked --offline --test coordinator \
 		bounded_sparse_growth_partial_write_and_truncate_retry_contract -- --nocapture; \
@@ -1510,11 +1510,11 @@ ext4-tests: tools/ext4_image.py tools/ext4_host_test.py $(BUILD_DIR)/sdk-filesys
 	$(BUILD_DIR)/ext4-nvme-close-host-test
 	$(BUILD_DIR)/ext4-msix-close-host-test
 	$(BUILD_DIR)/shell-ext4-host-test
-	OPENRFS_EXT4_RUST_FIXTURE='$(CURDIR)/$(BUILD_DIR)/ext4-rust-fixture.img' \
+	OPENRFS_EXT4_RUST_FIXTURE='$(abspath $(BUILD_DIR))/ext4-rust-fixture.img' \
 		$(PYTHON) -u tools/ext4_host_test.py
 	if test -f '$(BUILD_DIR)/ext4-rust-fixture.img'; then \
-		OPENRFS_EXT4_RUST_FIXTURE='$(CURDIR)/$(BUILD_DIR)/ext4-rust-fixture.img' $(CARGO_TEST_ENV) \
-		CARGO_TARGET_DIR='$(CURDIR)/$(BUILD_DIR)/ext4-transaction-target' \
+		OPENRFS_EXT4_RUST_FIXTURE='$(abspath $(BUILD_DIR))/ext4-rust-fixture.img' $(CARGO_TEST_ENV) \
+		CARGO_TARGET_DIR='$(abspath $(BUILD_DIR))/ext4-transaction-target' \
 		$(CARGO) test \
 		--manifest-path tools/ext4-transaction-tests/Cargo.toml \
 		--locked --offline -- --include-ignored --nocapture; \
@@ -1868,23 +1868,23 @@ endif
 	$(MAKE) $(LINUX_ABI_FIXTURE)
 	@test "$$(sha256sum $(LINUX_ABI_FIXTURE) | awk '{ print toupper($$1) }')" = \
 		'4E7D0FEB6F6356503E968EA8BBF1A76924CCC2B35BDD4CD245106685A6CFC9FB'
-	OPENRFS_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_BINARY)' \
+	OPENRFS_BUSYBOX_BINARY='$(abspath $(BUSYBOX_BINARY))' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-fat16-host-test.rs -o $(RUST_LINUX_FAT16_TEST)
 	$(RUST_LINUX_FAT16_TEST)
-	OPENRFS_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_BINARY)' \
+	OPENRFS_BUSYBOX_BINARY='$(abspath $(BUSYBOX_BINARY))' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-elf64-host-test.rs -o $(RUST_LINUX_ELF64_TEST)
 	$(RUST_LINUX_ELF64_TEST)
 	$(MAKE) $(LINUX_UNAME_FIXTURE)
 	@test "$$(sha256sum $(LINUX_UNAME_FIXTURE) | awk '{ print toupper($$1) }')" = \
 		'FC92FE49F976F42BC2DBDEA2692A220E3F7C46981F269D886A6967AB09445715'
-	OPENRFS_UNAME_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_UNAME_BINARY)' \
+	OPENRFS_UNAME_BUSYBOX_BINARY='$(abspath $(BUSYBOX_UNAME_BINARY))' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-uname-fat16-host-test.rs \
 		-o $(RUST_LINUX_UNAME_FAT16_TEST)
 	$(RUST_LINUX_UNAME_FAT16_TEST)
-	OPENRFS_UNAME_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_UNAME_BINARY)' \
+	OPENRFS_UNAME_BUSYBOX_BINARY='$(abspath $(BUSYBOX_UNAME_BINARY))' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-uname-elf64-host-test.rs \
 		-o $(RUST_LINUX_UNAME_ELF64_TEST)
@@ -1892,12 +1892,12 @@ endif
 	$(MAKE) $(BUSYBOX_CAT_BINARY)
 	@test "$$(sha256sum $(BUSYBOX_CAT_BINARY) | awk '{ print toupper($$1) }')" = \
 		'8191596A22778B575942895071A2E50CCEEE0F82F4D88B6D986584CE0914FC3E'
-	OPENRFS_CAT_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_CAT_BINARY)' \
+	OPENRFS_CAT_BUSYBOX_BINARY='$(abspath $(BUSYBOX_CAT_BINARY))' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-cat-fat16-host-test.rs \
 		-o $(RUST_LINUX_CAT_FAT16_TEST)
 	$(RUST_LINUX_CAT_FAT16_TEST)
-	OPENRFS_CAT_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_CAT_BINARY)' \
+	OPENRFS_CAT_BUSYBOX_BINARY='$(abspath $(BUSYBOX_CAT_BINARY))' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-cat-elf64-host-test.rs \
 		-o $(RUST_LINUX_CAT_ELF64_TEST)
