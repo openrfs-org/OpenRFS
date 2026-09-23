@@ -19,7 +19,7 @@ current OpenRFS. No reference README or descriptive page was copied here.
 | AEAD | Vendored Monocypher 4.0.3, BSD-2-Clause OR CC0-1.0 | Monocypher already linked | No duplicate copied |
 | Credential records and Argon2id | Reference v2 design and parsers | v1 iterated SHA-256 account record | **Not ported** |
 | Vault and Data file migration | Reference design and tests | Plaintext FAT32/ext4 Data paths through VFS | **Not ported** |
-| Kernel authenticity | Reference acknowledges no image verification | Unsigned GRUB Multiboot2 image and configuration | **Not enforcing** |
+| Kernel authenticity | Reference acknowledges no image verification | Unsigned GRUB Multiboot2 image and configuration | Detached host verifier added; **not enforcing at boot** |
 | TPM and rollback | Reference measurement model | No external freshness authority | **Not integrated** |
 | Process and package controls | Reference proposals | Current native and package paths | **Not audited to completion** |
 
@@ -63,6 +63,7 @@ QEMU's CPU options test available and absent behavior only.
 make random-host-test
 make kernel
 make entropy-qemu-test
+make boot-artifact-signature-test
 ```
 
 The host test uses RFC 4231 HMAC and NIST CAVP HMAC_DRBG vectors, checks the
@@ -81,6 +82,8 @@ inspection, hardware, and independent-review gates remain open.
 The current ISO rule copies `openrfs.elf` and `grub.cfg` into a GRUB image.
 The Multiboot2 configuration loads the kernel without an external signature
 check. A hash or TPM quote produced by that kernel cannot authenticate it.
+The detached verifier and the missing external chain are mapped in
+[`BOOT_TRUST_PLAN.md`](BOOT_TRUST_PLAN.md).
 Enforcing image authenticity requires an operator-controlled firmware or
 external verification chain covering GRUB, configuration, kernel, and modules,
 plus a rollback floor and recovery image. No such chain is claimed here.
