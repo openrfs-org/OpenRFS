@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include <openrfs/cpu.h>
+#include <openrfs/hwdrv.h>
 #include <openrfs/interrupts.h>
 #include <openrfs/ioapic.h>
 #include <openrfs/keyboard.h>
@@ -507,6 +508,8 @@ bool keyboard_is_initialized(void)
 
 bool keyboard_events_pending(void)
 {
+    /* Keyboards polled by upstream drivers report when they are asked. */
+    hwdrv_poll_input();
     return state.active && queue_head != queue_tail;
 }
 
@@ -521,6 +524,8 @@ enum keyboard_status keyboard_read(struct keyboard_event *event)
     if (event == NULL) {
         return KEYBOARD_STATUS_CONTROLLER_REFUSED;
     }
+
+    hwdrv_poll_input();
 
     /* Serialize the single-core interrupt writer with the thread reader. */
     enabled = cpu_interrupts_enabled();
@@ -553,6 +558,26 @@ struct keyboard_state keyboard_get_state(void)
 
     snapshot.queued = (queue_tail - queue_head) & KEYBOARD_QUEUE_MASK;
     return snapshot;
+}
+
+enum keyboard_status keyboard_submit_scancode(uint8_t scancode)
+{
+    bool enabled;
+
+    if (!state.active) {
+        return KEYBOARD_STATUS_NOT_INITIALIZED;
+    }
+    /* The same serialization with the IRQ 1 writer that keyboard_read uses. */
+    enabled = cpu_interrupts_enabled();
+    if (enabled) {
+        cpu_interrupt_disable();
+    }
+    state.submitted += 1U;
+    handle_byte(scancode);
+    if (enabled) {
+        cpu_interrupt_enable();
+    }
+    return KEYBOARD_STATUS_OK;
 }
 
 enum keyboard_status keyboard_inject_scancode(uint8_t scancode)

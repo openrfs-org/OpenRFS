@@ -40,6 +40,7 @@ EXPECTED_SHELL_ASSERTION_COUNT := 459
 CC := gcc
 LD := ld
 NM := nm
+OBJCOPY := objcopy
 OBJDUMP := objdump
 RUSTC := rustc
 CARGO := cargo
@@ -370,7 +371,114 @@ MONOCYPHER_HOST_OBJECTS := $(TEST_BUILD_DIR)/monocypher/monocypher.o \
 	$(TEST_BUILD_DIR)/monocypher/monocypher-ed25519.o
 ASM_SOURCES := $(wildcard src/arch/x86_64/*.S)
 ASM_OBJECTS := $(patsubst src/arch/x86_64/%.S,$(BUILD_DIR)/arch_%.o,$(ASM_SOURCES))
+# Upstream driver layers. Vendored sources are byte-for-byte upstream and are
+# compiled freestanding against their compatibility headers only: -nostdinc
+# keeps the host C library out, and the layer's compiler.h is force-included
+# exactly as the upstream build force-includes its own.
+include ports/ipxe/sources.mk
+GCC_FREESTANDING_INCLUDE := $(shell $(CC) -print-file-name=include)
+IPXE_OBJECT_DIR := $(BUILD_DIR)/ipxe
+IPXE_OBJECTS := $(patsubst %.c,$(IPXE_OBJECT_DIR)/%.o,\
+	$(IPXE_VENDOR_SOURCES) $(IPXE_GLUE_SOURCES))
+# iPXE's USB stack registers its drivers and processes through linker
+# tables, so its objects are partially linked with ports/ipxe/usb-layer.ld,
+# which keeps the table sections in order, and every symbol except the
+# entry points in ports/ipxe/usb-exports.txt is made local.
+IPXE_USB_OBJECTS := $(patsubst %.c,$(IPXE_OBJECT_DIR)/%.o,\
+	$(IPXE_USB_VENDOR_SOURCES) $(IPXE_USB_GLUE_SOURCES))
+IPXE_USB_LAYER_OBJECT := $(IPXE_OBJECT_DIR)/ipxe-usb-layer.o
+IPXE_USB_EXPORTS := ports/ipxe/usb-exports.txt
+IPXE_USB_LINKER_SCRIPT := ports/ipxe/usb-layer.ld
+IPXE_BASE_CFLAGS := $(COMMON_FLAGS) -std=gnu11 -O2 -mno-red-zone -mno-mmx \
+	-mno-sse -mno-sse2 -msoft-float -fno-tree-vectorize -fno-builtin \
+	-fno-strict-aliasing -fno-asynchronous-unwind-tables -fno-unwind-tables \
+	-nostdinc -isystem $(GCC_FREESTANDING_INCLUDE) -Iports/ipxe/include \
+	-Ivendor/ipxe/src/include -Iinclude \
+	-include ports/ipxe/include/compiler.h \
+	$(if $(IPXE_DEBUG),-DOPENRFS_IPXE_DEBUG_OUTPUT)
+# Upstream code keeps upstream's warning profile: every warning iPXE's own
+# build treats as an error is an error here too.
+IPXE_VENDOR_CFLAGS := $(IPXE_BASE_CFLAGS) -Wall -Werror -Wno-address \
+	-Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable \
+	-Wno-array-bounds -Wno-stringop-overflow -Wno-maybe-uninitialized
+IPXE_GLUE_CFLAGS := $(IPXE_BASE_CFLAGS) -Wall -Wextra -Werror -Wshadow \
+	-Wundef -Wstrict-prototypes -Wmissing-prototypes -Wno-unused-parameter
+# The SeaBIOS layer. Its vendored drivers are compiled as SeaBIOS compiles
+# them for 32-bit flat mode (-fno-delete-null-pointer-checks, no strict
+# aliasing, packed-member addresses allowed), plus the pointer/integer casts
+# of that 32-bit code, which OpenRFS makes exact by keeping everything they
+# hand a device below 4 GiB. The objects are partially linked into one and
+# every symbol except the exported glue entry points is made local, so the
+# layer's own malloc, printf and PCI helpers never meet the kernel's.
+include ports/seabios/sources.mk
+SEABIOS_OBJECT_DIR := $(BUILD_DIR)/seabios
+SEABIOS_OBJECTS := $(patsubst %.c,$(SEABIOS_OBJECT_DIR)/%.o,\
+	$(SEABIOS_VENDOR_SOURCES) $(SEABIOS_LP64_SOURCES) \
+	$(SEABIOS_GLUE_SOURCES))
+SEABIOS_LAYER_OBJECT := $(SEABIOS_OBJECT_DIR)/seabios-layer.o
+# SeaBIOS's dprintf level; messages at or below it reach the serial console.
+SEABIOS_DEBUG_LEVEL ?= 1
+SEABIOS_BASE_CFLAGS := $(COMMON_FLAGS) -std=gnu11 -O2 -mno-red-zone -mno-mmx \
+	-mno-sse -mno-sse2 -msoft-float -fno-tree-vectorize -fno-strict-aliasing \
+	-fno-delete-null-pointer-checks -fno-common \
+	-fno-asynchronous-unwind-tables -fno-unwind-tables \
+	-nostdinc -isystem $(GCC_FREESTANDING_INCLUDE) -Iports/seabios/include \
+	-Ivendor/seabios/src -Iinclude -DCONFIG_DEBUG_LEVEL=$(SEABIOS_DEBUG_LEVEL)
+SEABIOS_VENDOR_CFLAGS := $(SEABIOS_BASE_CFLAGS) -Wall -Werror \
+	-Wno-address-of-packed-member -Wno-pointer-to-int-cast \
+	-Wno-int-to-pointer-cast -Wno-unused-function -Wno-array-bounds \
+	-Wno-stringop-overflow -Wno-maybe-uninitialized
+SEABIOS_GLUE_CFLAGS := $(SEABIOS_BASE_CFLAGS) -Wall -Wextra -Werror \
+	-Wno-unused-parameter -Wno-address-of-packed-member -Wno-sign-compare
+
+# The SeaBIOS VGA drivers: the same environment, with the VGA configuration
+# in front of the storage layer's and real-mode segments resolved at run
+# time (see ports/seabios/include/farptr.h). One object per card type.
+include ports/seavga/sources.mk
+SEAVGA_OBJECT_DIR := $(BUILD_DIR)/seavga
+SEAVGA_BASE_CFLAGS := $(subst -Iports/seabios/include,-Iports/seavga/include \
+	-Iports/seabios/include -Ivendor/seabios/vgasrc,$(SEABIOS_BASE_CFLAGS)) \
+	-DOPENRFS_SEABIOS_FAR_SEGMENTS
+SEAVGA_VENDOR_CFLAGS := $(SEAVGA_BASE_CFLAGS) -Wall -Werror \
+	-Wno-address-of-packed-member -Wno-pointer-to-int-cast \
+	-Wno-int-to-pointer-cast -Wno-unused-function -Wno-array-bounds \
+	-Wno-stringop-overflow -Wno-maybe-uninitialized
+SEAVGA_GLUE_CFLAGS := $(SEAVGA_BASE_CFLAGS) -Wall -Wextra -Werror \
+	-Wno-unused-parameter -Wno-address-of-packed-member -Wno-sign-compare
+SEAVGA_LIBC_OBJECT := $(SEAVGA_OBJECT_DIR)/libc.o
+
+# The MINIX 3 audio drivers, compiled as MINIX's i386 port compiles them
+# (32-bit phys_bytes, negative errno under _SYSTEM) against the small part
+# of MINIX's system library ports/minix/include declares. One object per
+# driver, each with only its dispatch entry global.
+include ports/minix/sources.mk
+MINIX_OBJECT_DIR := $(BUILD_DIR)/minix
+MINIX_BASE_CFLAGS := $(COMMON_FLAGS) -std=gnu11 -O2 -mno-red-zone -mno-mmx \
+	-mno-sse -mno-sse2 -msoft-float -fno-tree-vectorize -fno-strict-aliasing \
+	-fno-common -fno-asynchronous-unwind-tables -fno-unwind-tables \
+	-nostdinc -isystem $(GCC_FREESTANDING_INCLUDE) -Iports/minix/include \
+	-Ivendor/minix/minix/include
+MINIX_VENDOR_CFLAGS := $(MINIX_BASE_CFLAGS) -Wall -Werror \
+	-Wno-unused-function -Wno-unused-variable
+MINIX_GLUE_CFLAGS := $(MINIX_BASE_CFLAGS) -Iinclude -Wall -Wextra -Werror \
+	-Wno-unused-parameter -Wno-sign-compare
+MINIX_LAYER_OBJECTS := $(patsubst %,$(MINIX_OBJECT_DIR)/minix-%.o,\
+	$(MINIX_DRIVERS))
+MINIX_OBJECTS := $(foreach driver,$(MINIX_DRIVERS),\
+	$(patsubst vendor/%.c,$(MINIX_OBJECT_DIR)/$(driver)/%.o,\
+		$(MINIX_$(driver)_SOURCES)) \
+	$(MINIX_OBJECT_DIR)/$(driver)/audio_glue.o)
+SEAVGA_LAYER_OBJECTS := $(patsubst %,$(SEAVGA_OBJECT_DIR)/seavga-%.o,\
+	$(SEAVGA_VARIANTS))
+SEAVGA_OBJECTS := $(SEAVGA_LIBC_OBJECT) $(foreach variant,$(SEAVGA_VARIANTS),\
+	$(patsubst %,$(SEAVGA_OBJECT_DIR)/$(variant)/%.o,\
+		$(SEAVGA_$(variant)_FILES) seavga_glue) \
+	$(patsubst %,$(SEAVGA_OBJECT_DIR)/$(variant)/lp64/%.o,\
+		$(SEAVGA_$(variant)_LP64_FILES)))
+
 OBJECTS := $(ASM_OBJECTS) $(C_OBJECTS) $(MONOCYPHER_OBJECTS) \
+	$(IPXE_OBJECTS) $(IPXE_USB_LAYER_OBJECT) $(SEABIOS_LAYER_OBJECT) \
+	$(SEAVGA_LAYER_OBJECTS) $(MINIX_LAYER_OBJECTS) \
 	$(PACKAGE_TRUST_ASSET_OBJECT)
 
 MONOCYPHER_CFLAGS := $(COMMON_FLAGS) -std=c11 -O2 -mno-red-zone \
@@ -391,6 +499,9 @@ RUSTFLAGS := -C panic=abort -C relocation-model=static \
 	-C llvm-args=-max-store-memcpy=1024 \
 	-C llvm-args=-max-store-memset=1024
 DEPENDENCIES := $(C_OBJECTS:.o=.d) $(MONOCYPHER_OBJECTS:.o=.d) \
+	$(IPXE_OBJECTS:.o=.d) $(IPXE_USB_OBJECTS:.o=.d) \
+	$(SEABIOS_OBJECTS:.o=.d) $(SEAVGA_OBJECTS:.o=.d) \
+	$(MINIX_OBJECTS:.o=.d) \
 	$(PACKAGE_TRUST_ASSET_OBJECT:.o=.d) $(SDL2_OBJECTS:.o=.d)
 
 # The qemu-test-% scenarios are deliberately absent from .PHONY. GNU Make skips
@@ -776,7 +887,7 @@ $(DYNAMIC_DATA_IMAGE): tools/fat32_image.py | $(DYNAMIC_APP_DIR)
 $(RUST_APP): apps/native-rust/Cargo.toml apps/native-rust/Cargo.lock \
 		apps/native-rust/manifest.json apps/native-rust/src/main.rs \
 		rust/openrfs/Cargo.toml rust/openrfs/src/lib.rs sdk/linker.ld | $(RUST_APP_DIR)
-	CARGO_TARGET_DIR='$(CURDIR)/$(RUST_APP_CARGO_TARGET)' \
+	CARGO_TARGET_DIR='$(abspath $(RUST_APP_CARGO_TARGET))' \
 		RUSTFLAGS='$(RUST_APP_FLAGS)' $(CARGO) build \
 		--manifest-path apps/native-rust/Cargo.toml --release \
 		--target x86_64-unknown-none --locked --offline
@@ -853,29 +964,29 @@ native-openrfs-proof: $(OPENRFSAPP_SYSTEM_IMAGE) $(OPENRFSAPP_DATA_IMAGE) \
 	@echo 'native signed HTTPS package lifecycle proof built'
 
 port-tests: native-apps audio-wav-tests sdl-preference-tests
-	OPENRFS_NATIVE_TEST_ELF='$(CURDIR)/$(NATIVE_TEST_APP)' \
+	OPENRFS_NATIVE_TEST_ELF='$(abspath $(NATIVE_TEST_APP))' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/native-image-host-test.rs -o $(RUST_NATIVE_IMAGE_TEST)
 	$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(CURDIR)/$(LUA_APP)' \
+	OPENRFS_NATIVE_TEST_ELF='$(abspath $(LUA_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(CURDIR)/$(SQLITE_APP)' \
+	OPENRFS_NATIVE_TEST_ELF='$(abspath $(SQLITE_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(CURDIR)/$(NETAPP_APP)' \
+	OPENRFS_NATIVE_TEST_ELF='$(abspath $(NETAPP_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(CURDIR)/$(HTTPSAPP_APP)' \
+	OPENRFS_NATIVE_TEST_ELF='$(abspath $(HTTPSAPP_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(CURDIR)/$(OPENRFSAPP_APP)' \
+	OPENRFS_NATIVE_TEST_ELF='$(abspath $(OPENRFSAPP_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(CURDIR)/$(AUDIO_APP)' \
+	OPENRFS_NATIVE_TEST_ELF='$(abspath $(AUDIO_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(CURDIR)/$(SDL_PROOF_APP)' \
+	OPENRFS_NATIVE_TEST_ELF='$(abspath $(SDL_PROOF_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(CURDIR)/$(SDL_CHESS_APP)' \
+	OPENRFS_NATIVE_TEST_ELF='$(abspath $(SDL_CHESS_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(CURDIR)/$(RUST_APP)' \
+	OPENRFS_NATIVE_TEST_ELF='$(abspath $(RUST_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(CURDIR)/$(CRASH_APP)' \
+	OPENRFS_NATIVE_TEST_ELF='$(abspath $(CRASH_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
 	OPENRFS_REQUIRE_ED25519=1 $(PYTHON) -u tools/openrfs_package_host_test.py
 	$(PYTHON) tools/openrfs-package.py inspect $(NATIVE_TEST_PACKAGE)
@@ -917,6 +1028,97 @@ $(BUILD_DIR)/arch_%.o: src/arch/x86_64/%.S | $(BUILD_DIR)
 
 $(BUILD_DIR)/%.o: src/kernel/%.c | $(BUILD_DIR)
 	$(KERNEL_CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c $< -o $@
+
+$(IPXE_OBJECT_DIR)/vendor/%.o: vendor/%.c ports/ipxe/include/compiler.h
+	mkdir -p $(dir $@)
+	$(KERNEL_CC) $(IPXE_VENDOR_CFLAGS) -MMD -MP -c $< -o $@
+
+$(IPXE_OBJECT_DIR)/ports/%.o: ports/%.c ports/ipxe/include/compiler.h
+	mkdir -p $(dir $@)
+	$(KERNEL_CC) $(IPXE_GLUE_CFLAGS) -MMD -MP -c $< -o $@
+
+$(IPXE_USB_LAYER_OBJECT): $(IPXE_USB_OBJECTS) $(IPXE_USB_EXPORTS) \
+		$(IPXE_USB_LINKER_SCRIPT)
+	$(KERNEL_LD) -r -T $(IPXE_USB_LINKER_SCRIPT) -o $@.partial \
+		$(IPXE_USB_OBJECTS)
+	$(OBJCOPY) --keep-global-symbols=$(IPXE_USB_EXPORTS) $@.partial $@
+	rm -f $@.partial
+
+$(SEABIOS_OBJECT_DIR)/vendor/%.o: vendor/%.c
+	mkdir -p $(dir $@)
+	$(KERNEL_CC) $(SEABIOS_VENDOR_CFLAGS) -MMD -MP -c $< -o $@
+
+# The LP64 wrappers compile vendored code: vendor warnings, plus the
+# pointer/u32 conversions the corrected header makes explicit to GCC.
+$(SEABIOS_OBJECT_DIR)/ports/seabios/lp64/%.o: ports/seabios/lp64/%.c
+	mkdir -p $(dir $@)
+	$(KERNEL_CC) $(SEABIOS_VENDOR_CFLAGS) -Iports/seabios/lp64 \
+		-Wno-int-conversion -MMD -MP -c $< -o $@
+
+$(SEABIOS_OBJECT_DIR)/ports/%.o: ports/%.c
+	mkdir -p $(dir $@)
+	$(KERNEL_CC) $(SEABIOS_GLUE_CFLAGS) -MMD -MP -c $< -o $@
+
+$(SEABIOS_LAYER_OBJECT): $(SEABIOS_OBJECTS) $(SEABIOS_EXPORTS)
+	$(KERNEL_LD) -r -o $@.partial $(SEABIOS_OBJECTS)
+	$(OBJCOPY) --keep-global-symbols=$(SEABIOS_EXPORTS) $@.partial $@
+	rm -f $@.partial
+
+$(SEAVGA_LIBC_OBJECT): ports/seabios/libc.c
+	mkdir -p $(dir $@)
+	$(KERNEL_CC) $(SEAVGA_GLUE_CFLAGS) -MMD -MP -c $< -o $@
+
+# One card type's build: its vgasrc files and the glue, compiled with its
+# SEAVGA_VARIANT_* definition, then linked with every symbol but its
+# dispatch entry made local.
+define SEAVGA_VARIANT_RULES
+$$(SEAVGA_OBJECT_DIR)/$(1)/%.o: vendor/seabios/vgasrc/%.c
+	mkdir -p $$(dir $$@)
+	$$(KERNEL_CC) $$(SEAVGA_VENDOR_CFLAGS) -D$$(SEAVGA_$(1)_DEFINE) \
+		-MMD -MP -c $$< -o $$@
+
+$$(SEAVGA_OBJECT_DIR)/$(1)/lp64/%.o: ports/seavga/lp64/%.c
+	mkdir -p $$(dir $$@)
+	$$(KERNEL_CC) $$(SEAVGA_VENDOR_CFLAGS) -D$$(SEAVGA_$(1)_DEFINE) \
+		-MMD -MP -c $$< -o $$@
+
+$$(SEAVGA_OBJECT_DIR)/$(1)/seavga_glue.o: ports/seavga/seavga_glue.c
+	mkdir -p $$(dir $$@)
+	$$(KERNEL_CC) $$(SEAVGA_GLUE_CFLAGS) -D$$(SEAVGA_$(1)_DEFINE) \
+		-DSEAVGA_DISPATCH=seavga_$(1)_dispatch -MMD -MP -c $$< -o $$@
+
+$$(SEAVGA_OBJECT_DIR)/seavga-$(1).o: $$(patsubst %,$$(SEAVGA_OBJECT_DIR)/$(1)/%.o,\
+		$$(SEAVGA_$(1)_FILES) seavga_glue) \
+		$$(patsubst %,$$(SEAVGA_OBJECT_DIR)/$(1)/lp64/%.o,\
+		$$(SEAVGA_$(1)_LP64_FILES)) $$(SEAVGA_LIBC_OBJECT)
+	$$(KERNEL_LD) -r -o $$@.partial $$^
+	$$(OBJCOPY) --keep-global-symbol=seavga_$(1)_dispatch $$@.partial $$@
+	rm -f $$@.partial
+endef
+$(foreach variant,$(SEAVGA_VARIANTS),\
+	$(eval $(call SEAVGA_VARIANT_RULES,$(variant))))
+
+# One MINIX driver: its sources and the glue, linked with every symbol but
+# its dispatch entry made local.
+define MINIX_DRIVER_RULES
+$$(MINIX_OBJECT_DIR)/$(1)/%.o: vendor/%.c
+	mkdir -p $$(dir $$@)
+	$$(KERNEL_CC) $$(MINIX_VENDOR_CFLAGS) -MMD -MP -c $$< -o $$@
+
+$$(MINIX_OBJECT_DIR)/$(1)/audio_glue.o: ports/minix/audio_glue.c
+	mkdir -p $$(dir $$@)
+	$$(KERNEL_CC) $$(MINIX_GLUE_CFLAGS) \
+		-DMINIX_AUDIO_DISPATCH=minix_$(1)_dispatch -MMD -MP -c $$< -o $$@
+
+$$(MINIX_OBJECT_DIR)/minix-$(1).o: $$(patsubst vendor/%.c,\
+		$$(MINIX_OBJECT_DIR)/$(1)/%.o,$$(MINIX_$(1)_SOURCES)) \
+		$$(MINIX_OBJECT_DIR)/$(1)/audio_glue.o
+	$$(KERNEL_LD) -r -o $$@.partial $$^
+	$$(OBJCOPY) --keep-global-symbol=minix_$(1)_dispatch $$@.partial $$@
+	rm -f $$@.partial
+endef
+$(foreach driver,$(MINIX_DRIVERS),\
+	$(eval $(call MINIX_DRIVER_RULES,$(driver))))
 
 $(BUILD_DIR)/package_trust.o: CPPFLAGS += -Ivendor/monocypher/src \
 	-Ivendor/monocypher/src/optional
@@ -973,11 +1175,11 @@ $(RUST_LIB): $(RUST_SOURCES) $(RUST_MANIFEST) $(RUST_LOCKFILE) \
 		.cargo/config.toml $(RUST_VENDOR_SOURCES) \
 		$(LOGO_BLOB) \
 		$(WALLPAPER_BLOB) $(FONT_BLOB) $(UI_FONT_BLOB) | $(BUILD_DIR)
-	OPENRFS_LOGO_BLOB='$(CURDIR)/$(LOGO_BLOB)' \
-	OPENRFS_WALLPAPER_BLOB='$(CURDIR)/$(WALLPAPER_BLOB)' \
-	OPENRFS_FONT_BLOB='$(CURDIR)/$(FONT_BLOB)' \
-	OPENRFS_UI_FONT_BLOB='$(CURDIR)/$(UI_FONT_BLOB)' \
-	CARGO_TARGET_DIR='$(CURDIR)/$(BUILD_DIR)/rust-target' \
+	OPENRFS_LOGO_BLOB='$(abspath $(LOGO_BLOB))' \
+	OPENRFS_WALLPAPER_BLOB='$(abspath $(WALLPAPER_BLOB))' \
+	OPENRFS_FONT_BLOB='$(abspath $(FONT_BLOB))' \
+	OPENRFS_UI_FONT_BLOB='$(abspath $(UI_FONT_BLOB))' \
+	CARGO_TARGET_DIR='$(abspath $(BUILD_DIR))/rust-target' \
 	RUSTFLAGS='$(RUSTFLAGS)' \
 		$(CARGO) build --manifest-path $(RUST_MANIFEST) \
 			--target $(RUST_TARGET) --release --locked --offline
@@ -1160,11 +1362,11 @@ $(BUILD_DIR)/ext4-sparse-truncate-host-test: tools/ext4-sparse-truncate-host-tes
 
 ext4-sparse-truncate-test: $(BUILD_DIR)/ext4-sparse-truncate-host-test tools/ext4_image.py tools/ext4_host_test.py
 	$(BUILD_DIR)/ext4-sparse-truncate-host-test
-	OPENRFS_EXT4_RUST_FIXTURE='$(CURDIR)/$(BUILD_DIR)/ext4-rust-fixture.img' \
+	OPENRFS_EXT4_RUST_FIXTURE='$(abspath $(BUILD_DIR))/ext4-rust-fixture.img' \
 		$(PYTHON) -u tools/ext4_host_test.py
 	if test -f '$(BUILD_DIR)/ext4-rust-fixture.img'; then \
-		OPENRFS_EXT4_RUST_FIXTURE='$(CURDIR)/$(BUILD_DIR)/ext4-rust-fixture.img' $(CARGO_TEST_ENV) \
-		CARGO_TARGET_DIR='$(CURDIR)/$(BUILD_DIR)/ext4-transaction-target' \
+		OPENRFS_EXT4_RUST_FIXTURE='$(abspath $(BUILD_DIR))/ext4-rust-fixture.img' $(CARGO_TEST_ENV) \
+		CARGO_TARGET_DIR='$(abspath $(BUILD_DIR))/ext4-transaction-target' \
 		$(CARGO) test --manifest-path tools/ext4-transaction-tests/Cargo.toml \
 		--locked --offline --test coordinator \
 		bounded_sparse_growth_partial_write_and_truncate_retry_contract -- --nocapture; \
@@ -1308,11 +1510,11 @@ ext4-tests: tools/ext4_image.py tools/ext4_host_test.py $(BUILD_DIR)/sdk-filesys
 	$(BUILD_DIR)/ext4-nvme-close-host-test
 	$(BUILD_DIR)/ext4-msix-close-host-test
 	$(BUILD_DIR)/shell-ext4-host-test
-	OPENRFS_EXT4_RUST_FIXTURE='$(CURDIR)/$(BUILD_DIR)/ext4-rust-fixture.img' \
+	OPENRFS_EXT4_RUST_FIXTURE='$(abspath $(BUILD_DIR))/ext4-rust-fixture.img' \
 		$(PYTHON) -u tools/ext4_host_test.py
 	if test -f '$(BUILD_DIR)/ext4-rust-fixture.img'; then \
-		OPENRFS_EXT4_RUST_FIXTURE='$(CURDIR)/$(BUILD_DIR)/ext4-rust-fixture.img' $(CARGO_TEST_ENV) \
-		CARGO_TARGET_DIR='$(CURDIR)/$(BUILD_DIR)/ext4-transaction-target' \
+		OPENRFS_EXT4_RUST_FIXTURE='$(abspath $(BUILD_DIR))/ext4-rust-fixture.img' $(CARGO_TEST_ENV) \
+		CARGO_TARGET_DIR='$(abspath $(BUILD_DIR))/ext4-transaction-target' \
 		$(CARGO) test \
 		--manifest-path tools/ext4-transaction-tests/Cargo.toml \
 		--locked --offline -- --include-ignored --nocapture; \
@@ -1683,23 +1885,23 @@ endif
 	$(MAKE) $(LINUX_ABI_FIXTURE)
 	@test "$$(sha256sum $(LINUX_ABI_FIXTURE) | awk '{ print toupper($$1) }')" = \
 		'4E7D0FEB6F6356503E968EA8BBF1A76924CCC2B35BDD4CD245106685A6CFC9FB'
-	OPENRFS_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_BINARY)' \
+	OPENRFS_BUSYBOX_BINARY='$(abspath $(BUSYBOX_BINARY))' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-fat16-host-test.rs -o $(RUST_LINUX_FAT16_TEST)
 	$(RUST_LINUX_FAT16_TEST)
-	OPENRFS_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_BINARY)' \
+	OPENRFS_BUSYBOX_BINARY='$(abspath $(BUSYBOX_BINARY))' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-elf64-host-test.rs -o $(RUST_LINUX_ELF64_TEST)
 	$(RUST_LINUX_ELF64_TEST)
 	$(MAKE) $(LINUX_UNAME_FIXTURE)
 	@test "$$(sha256sum $(LINUX_UNAME_FIXTURE) | awk '{ print toupper($$1) }')" = \
 		'FC92FE49F976F42BC2DBDEA2692A220E3F7C46981F269D886A6967AB09445715'
-	OPENRFS_UNAME_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_UNAME_BINARY)' \
+	OPENRFS_UNAME_BUSYBOX_BINARY='$(abspath $(BUSYBOX_UNAME_BINARY))' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-uname-fat16-host-test.rs \
 		-o $(RUST_LINUX_UNAME_FAT16_TEST)
 	$(RUST_LINUX_UNAME_FAT16_TEST)
-	OPENRFS_UNAME_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_UNAME_BINARY)' \
+	OPENRFS_UNAME_BUSYBOX_BINARY='$(abspath $(BUSYBOX_UNAME_BINARY))' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-uname-elf64-host-test.rs \
 		-o $(RUST_LINUX_UNAME_ELF64_TEST)
@@ -1707,12 +1909,12 @@ endif
 	$(MAKE) $(BUSYBOX_CAT_BINARY)
 	@test "$$(sha256sum $(BUSYBOX_CAT_BINARY) | awk '{ print toupper($$1) }')" = \
 		'8191596A22778B575942895071A2E50CCEEE0F82F4D88B6D986584CE0914FC3E'
-	OPENRFS_CAT_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_CAT_BINARY)' \
+	OPENRFS_CAT_BUSYBOX_BINARY='$(abspath $(BUSYBOX_CAT_BINARY))' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-cat-fat16-host-test.rs \
 		-o $(RUST_LINUX_CAT_FAT16_TEST)
 	$(RUST_LINUX_CAT_FAT16_TEST)
-	OPENRFS_CAT_BUSYBOX_BINARY='$(CURDIR)/$(BUSYBOX_CAT_BINARY)' \
+	OPENRFS_CAT_BUSYBOX_BINARY='$(abspath $(BUSYBOX_CAT_BINARY))' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-cat-elf64-host-test.rs \
 		-o $(RUST_LINUX_CAT_ELF64_TEST)
@@ -3426,6 +3628,49 @@ qemu-tests: $(TEST_TARGETS) entropy-qemu-test
 
 smoke: qemu-test-normal
 	@echo "strict boot smoke test passed"
+
+# The upstream driver suite: one QEMU boot per device profile, outside the
+# 115-scenario matrix. See tools/run_driver_tests.py for what each requires.
+DRIVER_TEST_DIR := $(TEST_BUILD_DIR)/drivers
+.PHONY: qemu-test-drivers qemu-test-drivers-list run-drivers driver-provenance
+# Every vendored upstream driver file still matches its pinned upstream bytes.
+driver-provenance:
+	cd vendor/ipxe && sha256sum --check --quiet SOURCE-MANIFEST.sha256
+	cd vendor/seabios && sha256sum --check --quiet SOURCE-MANIFEST.sha256
+	cd vendor/minix && sha256sum --check --quiet SOURCE-MANIFEST.sha256
+
+qemu-test-drivers: $(KERNEL) driver-provenance
+	$(PYTHON) tools/run_driver_tests.py --kernel '$(KERNEL)' \
+		--output '$(DRIVER_TEST_DIR)' --qemu qemu-system-x86_64 \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' --accel '$(QEMU_ACCEL)' \
+		$(foreach scenario,$(DRIVER_SCENARIOS),--scenario $(scenario))
+
+qemu-test-drivers-list:
+	@$(PYTHON) tools/run_driver_tests.py --kernel '$(KERNEL)' \
+		--output '$(DRIVER_TEST_DIR)' --list
+
+# An interactive boot with every compiled upstream driver enabled.
+DRIVER_ISO := $(BUILD_DIR)/openrfs-drivers.iso
+$(DRIVER_ISO): $(KERNEL)
+	rm -rf $(BUILD_DIR)/iso-drivers
+	mkdir -p $(BUILD_DIR)/iso-drivers/boot/grub
+	cp $(KERNEL) $(BUILD_DIR)/iso-drivers/boot/openrfs.elf
+	printf '%s\n' 'set default=0' 'set timeout=0' '' \
+		'menuentry "OpenRFS (upstream drivers)" {' \
+		'    multiboot2 /boot/openrfs.elf openrfs.drivers=auto' \
+		'    boot' '}' >$(BUILD_DIR)/iso-drivers/boot/grub/grub.cfg
+	$(GRUB_MKRESCUE) $(GRUB_MKRESCUE_FLAGS) -o $@ $(BUILD_DIR)/iso-drivers
+
+run-drivers: $(DRIVER_ISO) $(DESKTOP_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
+	cp $(FAT32_DATA_IMAGE) $(FAT32_RUN_DATA_IMAGE)
+	qemu-system-x86_64 -m 256M -smp 1 -boot order=d -cdrom $(DRIVER_ISO) \
+		-blockdev driver=file,filename=$(DESKTOP_SYSTEM_IMAGE),node-name=system-file,read-only=on,auto-read-only=off \
+		-blockdev driver=raw,file=system-file,node-name=system-raw,read-only=on \
+		-device nvme,serial=openrfs-system-fat32,drive=system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
+		-blockdev driver=file,filename=$(FAT32_RUN_DATA_IMAGE),node-name=data-file,read-only=off,auto-read-only=off \
+		-blockdev driver=raw,file=data-file,node-name=data-raw,read-only=off \
+		-device nvme,serial=openrfs-data-fat32,drive=data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
+		-nic user,model=e1000 -serial stdio -no-reboot -no-shutdown
 
 run: iso $(DESKTOP_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 	cp $(FAT32_DATA_IMAGE) $(FAT32_RUN_DATA_IMAGE)

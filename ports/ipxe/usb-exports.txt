@@ -1,0 +1,11 @@
+ipxe_usb_host_count
+ipxe_usb_host_name
+ipxe_usb_host_label
+ipxe_usb_host_path
+ipxe_usb_host_driver
+ipxe_usb_function_count
+ipxe_usb_function_name
+ipxe_usb_function_path
+ipxe_usb_start
+ipxe_usb_step
+ipxe_usb_describe_netdev

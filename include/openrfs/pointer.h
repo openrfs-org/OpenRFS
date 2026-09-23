@@ -47,6 +47,7 @@ struct pointer_state {
     uint64_t button_transitions;
     uint64_t overflows;
     uint64_t desynchronizations;
+    uint64_t submitted_packets;  /* from devices not on the i8042 */
 };
 
 /* Optional hardware decision. ABSENT is a valid, completed decision. */
@@ -57,6 +58,18 @@ bool pointer_is_present(void);
 
 /* Real 8042 auxiliary-output injection used by the installed QEMU proof. */
 enum pointer_status pointer_inject_packet(
+    uint8_t flags,
+    uint8_t delta_x,
+    uint8_t delta_y
+);
+
+/*
+ * Decode one three-byte PS/2 packet from a pointing device that is not on the
+ * i8042 - a USB mouse, whose HID driver reports in that format - through the
+ * same decoder and event publication as the auxiliary port. A PS/2 packet
+ * already half received is kept intact around it.
+ */
+enum pointer_status pointer_submit_packet(
     uint8_t flags,
     uint8_t delta_x,
     uint8_t delta_y

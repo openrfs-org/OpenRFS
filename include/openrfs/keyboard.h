@@ -58,6 +58,7 @@ struct keyboard_state {
     uint64_t events;        /* how many events reached the queue */
     uint64_t dropped;       /* how many were lost to a full queue */
     uint64_t extended;      /* how many 0xE0 prefixes were seen */
+    uint64_t submitted;     /* bytes from keyboards not on the i8042 */
     size_t queued;          /* how many are waiting to be read now */
     bool shift;
     bool control;
@@ -93,6 +94,13 @@ struct keyboard_state keyboard_get_state(void);
  * than a test hook: 0xD2, "write keyboard output buffer".
  */
 enum keyboard_status keyboard_inject_scancode(uint8_t scancode);
+
+/*
+ * Decode one set 1 scancode byte from a keyboard that is not behind the
+ * i8042 - a USB keyboard, through its HID driver - exactly as a byte from the
+ * controller would be decoded, prefixes and release bit included.
+ */
+enum keyboard_status keyboard_submit_scancode(uint8_t scancode);
 
 /* Translate one set 1 scancode as if it arrived now, without touching state. */
 char keyboard_character_for(uint8_t scancode, bool shift, bool caps_lock);
