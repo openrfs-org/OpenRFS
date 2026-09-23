@@ -241,6 +241,7 @@ def storage_arguments(userspace, system, data):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--qemu", default="qemu-system-x86_64")
+    parser.add_argument("--cpu", default="max")
     parser.add_argument("--iso", required=True)
     parser.add_argument("--userspace")
     parser.add_argument("--system")
@@ -265,7 +266,8 @@ def main():
         serial.unlink()
     port = free_port()
     command = [
-        args.qemu, "-machine", "accel=tcg", "-m", "128M", "-smp", "1",
+        args.qemu, "-machine", "accel=tcg", "-cpu", args.cpu,
+        "-m", "128M", "-smp", "1",
         "-boot", "order=d", "-cdrom", str(Path(args.iso).resolve()),
         "-display", "none",
         *storage_arguments(args.userspace, args.system, durable_data),
