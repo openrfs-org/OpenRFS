@@ -72,6 +72,36 @@ equation check, and supports the package format's zeroed embedded-signature
 range without copying a 256 MiB object. The exact profile and non-uniqueness
 caveat are recorded in `vendor/monocypher/OPENRFS-PORT.md`.
 
+## Upstream hardware drivers
+
+Three projects' drivers are vendored byte-for-byte and run through
+compatibility layers; `docs/UPSTREAM_DRIVERS.md` lists every driver with its
+binding rule and QEMU evidence, and `make driver-provenance` checks each
+project's `SOURCE-MANIFEST.sha256`.
+
+- **iPXE** is pinned to commit `744cdb451ef28bc894df72b6b40fdf1fda04acfc`
+  (2026-09-22). Every vendored file declares GPL-2.0-or-later,
+  GPL-2.0-or-later OR UBDL-1.0, GPL-1.0-or-later or BSD-2-Clause; GPL-2.0-only
+  files are excluded. Its network drivers compile against
+  `ports/ipxe/include`; its USB stack (USB core, xHCI, EHCI, UHCI, hub,
+  CDC-ECM, RNDIS, scheduler) is partially linked with its linker tables kept
+  in order and every symbol but the glue entry points made local.
+- **SeaBIOS** is pinned to commit `81ec9ec0bcf45df11fb7f98339ec9036b546fca0`
+  (2026-07-31) under LGPL-3.0. Its storage, USB and TPM drivers run in a
+  32-bit flat-mode environment recreated by `ports/seabios`; its VGA drivers
+  (`vgasrc`) are built once per card type by `ports/seavga`. Two files are
+  compiled through wrappers that correct an LP64 structure layout without
+  changing the vendored source (`ports/seabios/lp64`, `ports/seavga/lp64`).
+- **MINIX 3** is pinned to commit `4db99f4012570a577414fe2a43697b2f239b699e`
+  (2018-11-14, the repository's last) under the MINIX 3 BSD-3-Clause
+  licence. Its ES1370 and Sound Blaster 16 drivers run with
+  `ports/minix/audio_glue.c` in libaudiodriver's place.
+
+Each `vendor/<project>/UPSTREAM-COMMIT.txt` records the repository, commit
+date, Git tree and licence analysis, and each `OPENRFS-PORT.md` records what
+the compatibility layer provides and where it differs from the upstream
+runtime.
+
 ## Host signature implementation
 
 Format-v3 package construction and inspection use the distribution-provided

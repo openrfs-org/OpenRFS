@@ -13,6 +13,11 @@ void console_write_hex(uint64_t value);
 void console_write_u64(uint64_t value);
 void console_serial_write(const char *text);
 void console_serial_write_u64(uint64_t value);
+/*
+ * Stop mirroring output into the VGA text buffer at 0xB8000, for good. A
+ * caller that sets a graphics mode on the adapter owns that memory now.
+ */
+void console_release_vga_text(void);
 _Noreturn void console_halt(void);
 _Noreturn void console_panic(const char *message);
 

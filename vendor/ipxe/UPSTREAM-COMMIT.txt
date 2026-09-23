@@ -1,0 +1,68 @@
+iPXE (network boot firmware) driver sources
+Official repository: https://github.com/ipxe/ipxe
+Commit: 744cdb451ef28bc894df72b6b40fdf1fda04acfc
+Commit date: 2026-09-22 22:37:11 +0100
+Git tree: 0bbafb335224fb1dbfc28a8cbad3216a17c67aee
+Licence: per-file FILE_LICENCE declarations (COPYING, COPYING.GPLv2,
+COPYING.UBDL). Every vendored file declares GPL-2.0-or-later,
+GPL-2.0-or-later OR UBDL-1.0, GPL-any-version or BSD-2-Clause, each of which
+may be distributed under GPL-3.0 as part of OpenRFS.
+
+Vendored paths (byte-for-byte upstream; SOURCE-MANIFEST.sha256):
+  src/drivers/net/intel.c, intel.h        GPL2_OR_LATER_OR_UBDL
+  src/drivers/net/eepro100.c, eepro100.h  GPL2_OR_LATER
+  src/drivers/net/realtek.c, realtek.h    GPL2_OR_LATER_OR_UBDL
+  src/drivers/net/pcnet32.c, pcnet32.h    GPL2_OR_LATER
+  src/drivers/net/vmxnet3.c, vmxnet3.h    GPL2_OR_LATER_OR_UBDL
+  src/drivers/net/tulip.c                 GPL_ANY
+  src/drivers/net/ns8390.c, ns8390.h      BSD2
+  src/drivers/net/ne2k_isa.c              BSD2 (NE1000/NE2000, ISA)
+  src/drivers/net/legacy.c                GPL2_OR_LATER_OR_UBDL
+  src/drivers/net/mii.c                   GPL2_OR_LATER_OR_UBDL
+  src/drivers/nvs/nvs.c, threewire.c      GPL2_OR_LATER_OR_UBDL
+  src/drivers/bitbash/bitbash.c, spi_bit.c GPL2_OR_LATER_OR_UBDL
+  src/core/iobuf.c, list.c                GPL2_OR_LATER_OR_UBDL
+  src/net/iobpad.c                        GPL2_OR_LATER_OR_UBDL
+  src/include/ipxe/{bitbash,ethernet,if_ether,iobuf,isa_ids,list,mii,nvs,
+    spi,spi_bit,threewire}.h
+                                          GPL2_OR_LATER(_OR_UBDL)
+
+  src/include/mii.h is excluded: it declares GPL2_ONLY. The OpenRFS-owned
+  ports/ipxe/include/mii.h supplies only the needed IEEE MII register values.
+
+  USB stack (all GPL2_OR_LATER_OR_UBDL; Michael Brown, 2014-2015):
+  src/drivers/bus/usb.c, cdc.c            USB core, CDC descriptors
+  src/drivers/usb/xhci.c                  xHCI host controller
+  src/drivers/usb/ehci.c, ehci.h          EHCI host controller
+  src/drivers/usb/uhci.c, uhci.h          UHCI host controller
+  src/drivers/usb/usbhub.c, usbhub.h      USB hub
+  src/drivers/usb/usbnet.c                USB network device helper
+  src/drivers/net/ecm.c, ecm.h            CDC-ECM network adapters
+  src/drivers/net/acm.c, acm.h            RNDIS adapters (CDC-ACM and
+                                          wireless-controller classes)
+  src/net/rndis.c                         RNDIS protocol
+  src/core/process.c                      process scheduler (step())
+  src/core/base16.c                       hex decoding (ECM MAC strings)
+  src/include/ipxe/{usb,xhci,usbnet,cdc,rndis,process,init,tables,base16,
+    acpimac}.h
+
+  The USB files are those of iPXE v2.0.0 (2026-03-06) plus the hardening
+  fixes made since: usb.c, cdc.c and ecm.c guard against invalid descriptor
+  lengths (6215a88), xhci.c removes undefined left shifts (d2df712) and
+  allows residual byte counts above 64 kB (da52150), and uhci.c adds a
+  missing little-endian conversion (3b06e41) and corrects the descriptor
+  count of zero-length stream transfers (3812a69). No other commit since
+  v2.0.0 touches a vendored USB file.
+
+Deliberately excluded: every GPL2_ONLY file (for example sky2, skge,
+myri10ge, cs89x0, tg3, bnxt and the vxge core), because GPL-2.0-only code
+cannot be combined with OpenRFS's GPL-3.0-only licence; iPXE's network stack,
+settings tree, console, timers and build system, which OpenRFS replaces.
+
+Also not vendored: virtio-net. The implementation iPXE shipped until May 2026
+(src/drivers/net/virtio-net.c with src/drivers/bus/virtio-pci.c and
+virtio-ring.c) is the one with years of use, but virtio-pci.c and its headers
+carry no licence declaration, so their compatibility with GPL-3.0-only
+cannot be established from the files; its replacement (commit ca85200,
+2026-05-13, GPL2_OR_LATER_OR_UBDL) is in no iPXE release yet. OpenRFS keeps
+its own virtio-net driver.

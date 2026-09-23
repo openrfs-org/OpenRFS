@@ -13,6 +13,7 @@
 #define PCI_BAR_STRIDE UINT16_C(4)
 #define PCI_BAR_IO_INDICATOR UINT32_C(0x00000001)
 #define PCI_BAR_IO_BASE_MASK UINT32_C(0xFFFFFFFC)
+#define PCI_BAR_IO_UPPER_MASK UINT32_C(0xFFFF0000)
 #define PCI_BAR_MEMORY_TYPE_MASK UINT32_C(0x00000006)
 #define PCI_BAR_MEMORY_TYPE_32 UINT32_C(0x00000000)
 #define PCI_BAR_MEMORY_TYPE_64 UINT32_C(0x00000004)
@@ -326,7 +327,19 @@ static enum pci_resource_status probe_bars(
         }
 
         if ((low & PCI_BAR_IO_INDICATOR) != 0U) {
-            const uint32_t mask = mask_low & PCI_BAR_IO_BASE_MASK;
+            /*
+             * PCI Local Bus Specification 3.0 section 6.2.5.1 lets a device
+             * that decodes only sixteen bits of I/O address hardwire the upper
+             * half of its BAR to zero, so the sizing read-back of such a BAR
+             * carries no ones above bit 15. Those bits are not part of the
+             * decoder, and treating them as zero-sized would make every such
+             * device - common on real hardware - an unclaimable
+             * non-power-of-two window.
+             */
+            const uint32_t decoded = (mask_low & PCI_BAR_IO_UPPER_MASK) == 0U
+                ? (mask_low | PCI_BAR_IO_UPPER_MASK)
+                : mask_low;
+            const uint32_t mask = decoded & PCI_BAR_IO_BASE_MASK;
             const uint32_t size = (uint32_t)(~mask + 1U);
 
             bar->kind = PCI_BAR_IO;
@@ -616,6 +629,8 @@ enum pci_resource_status pci_claim_device(
     claim->active = true;
     claim->memory_decode_enabled =
         (claim->current_command & PCI_COMMAND_MEMORY_SPACE) != 0U;
+    claim->io_decode_enabled =
+        (claim->current_command & PCI_COMMAND_IO_SPACE) != 0U;
     claim->bus_master_enabled = false;
     ++state.active_claims;
     return PCI_RESOURCE_STATUS_OK;
@@ -881,6 +896,67 @@ enum pci_resource_status pci_claim_unmap_last_bar(
     return PCI_RESOURCE_STATUS_OK;
 }
 
+enum pci_resource_status pci_claim_enable_io(struct pci_device_claim *claim)
+{
+    enum pci_resource_status status = validate_active_claim(claim);
+    bool has_io_bar = false;
+    uint16_t enabled;
+
+    if (status != PCI_RESOURCE_STATUS_OK) {
+        return status;
+    }
+    if (cpu_interrupts_enabled()) {
+        return PCI_RESOURCE_STATUS_INTERRUPTS_ENABLED;
+    }
+    for (size_t index = 0U; index < claim->bar_count; ++index) {
+        if (claim->bars[index].implemented &&
+            claim->bars[index].kind == PCI_BAR_IO) {
+            has_io_bar = true;
+            break;
+        }
+    }
+    if (!has_io_bar) {
+        return PCI_RESOURCE_STATUS_NO_IO_BAR;
+    }
+    if (claim->io_decode_enabled) {
+        return PCI_RESOURCE_STATUS_OK;
+    }
+    enabled = claim->current_command | PCI_COMMAND_IO_SPACE;
+    if (write_command(claim->device, enabled) != PCI_RESOURCE_STATUS_OK) {
+        return PCI_RESOURCE_STATUS_CONFIG_ACCESS;
+    }
+    claim->current_command = enabled;
+    claim->io_decode_enabled = true;
+    return PCI_RESOURCE_STATUS_OK;
+}
+
+enum pci_resource_status pci_claim_update_command(
+    struct pci_device_claim *claim,
+    uint16_t mask,
+    uint16_t value
+)
+{
+    enum pci_resource_status status = validate_active_claim(claim);
+    uint16_t command;
+
+    if (status != PCI_RESOURCE_STATUS_OK) {
+        return status;
+    }
+    if ((mask & (uint16_t)~PCI_COMMAND_UNPRIVILEGED_MASK) != 0U) {
+        return PCI_RESOURCE_STATUS_NULL_ARGUMENT;
+    }
+    command = (uint16_t)((claim->current_command & (uint16_t)~mask) |
+        (value & mask));
+    if (command == claim->current_command) {
+        return PCI_RESOURCE_STATUS_OK;
+    }
+    if (write_command(claim->device, command) != PCI_RESOURCE_STATUS_OK) {
+        return PCI_RESOURCE_STATUS_CONFIG_ACCESS;
+    }
+    claim->current_command = command;
+    return PCI_RESOURCE_STATUS_OK;
+}
+
 enum pci_resource_status pci_claim_enable_bus_master(
     struct pci_device_claim *claim,
     const struct pci_bus_master_request *request
@@ -901,7 +977,8 @@ enum pci_resource_status pci_claim_enable_bus_master(
     if (claim->bus_master_enabled) {
         return PCI_RESOURCE_STATUS_BUS_MASTER_ALREADY_ENABLED;
     }
-    if (!claim->memory_decode_enabled || claim->mapping_count == 0U) {
+    if ((!claim->memory_decode_enabled || claim->mapping_count == 0U) &&
+        !claim->io_decode_enabled) {
         return PCI_RESOURCE_STATUS_DMA_NOT_PREPARED;
     }
     for (size_t index = 0U; index < request->allocation_count; ++index) {
@@ -1041,6 +1118,7 @@ enum pci_resource_status pci_release_changed_device(
         return status;
     }
     claim->memory_decode_enabled = false;
+    claim->io_decode_enabled = false;
     claim->active = false;
     record->active = false;
     --state.active_claims;
@@ -1077,6 +1155,8 @@ enum pci_resource_status pci_release_device(struct pci_device_claim *claim)
     claim->current_command = claim->original_command;
     claim->memory_decode_enabled =
         (claim->original_command & PCI_COMMAND_MEMORY_SPACE) != 0U;
+    claim->io_decode_enabled =
+        (claim->original_command & PCI_COMMAND_IO_SPACE) != 0U;
     claim->active = false;
     record->active = false;
     --state.active_claims;
@@ -1224,7 +1304,8 @@ const char *pci_resource_status_string(enum pci_resource_status status)
         "PCI bus mastering is already enabled",
         "PCI bus mastering is already disabled",
         "PCI function identity has not changed",
-        "PCI claim or mapping accounting is inconsistent"
+        "PCI claim or mapping accounting is inconsistent",
+        "PCI function implements no I/O BAR"
     };
 
     _Static_assert(sizeof(messages) / sizeof(messages[0]) ==

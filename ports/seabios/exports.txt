@@ -1,0 +1,6 @@
+seabios_glue_driver_count
+seabios_glue_driver_name
+seabios_glue_driver_path
+seabios_glue_match
+seabios_glue_dispatch
+seabios_glue_bind_pass

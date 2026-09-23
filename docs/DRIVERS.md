@@ -7,6 +7,11 @@ Realtek, AMD, and Cirrus Logic, plus the Bochs Display Interface. Each driver
 matches the device, establishes a known state, checks its identity against the
 hardware specification, and releases its resources.
 
+The opt-in upstream driver layer builds data-moving drivers from iPXE, SeaBIOS
+and MINIX 3 without changing their vendored bytes. See
+[`UPSTREAM_DRIVERS.md`](UPSTREAM_DRIVERS.md) for its QEMU evidence, binding
+rules, and the production integration that remains.
+
 ## Common behavior
 
 Every driver here:

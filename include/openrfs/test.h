@@ -128,6 +128,12 @@ enum kernel_test_scenario {
     KERNEL_TEST_NATIVE_HTTPS,
     KERNEL_TEST_NATIVE_OPENRFS,
     KERNEL_TEST_EXT4_RECOVERY,
+    /*
+     * The upstream driver suite. It is deliberately outside the 115-scenario
+     * matrix: tools/run_driver_tests.py drives it with its own device
+     * profiles, one QEMU boot per openrfs.drvtest= plan.
+     */
+    KERNEL_TEST_DRIVERS,
     KERNEL_TEST_INVALID
 };
 
@@ -186,6 +192,9 @@ _Noreturn void kernel_test_complete_driver_matrix(void);
 bool kernel_test_driver_matrix_exit_self_test(void);
 _Noreturn void kernel_test_complete_audio(void);
 _Noreturn void kernel_test_complete_nvidia(void);
+_Noreturn void kernel_test_complete_drivers(void);
+/* The kernel command line kernel_test_select() saw, for scenario options. */
+const char *kernel_test_command_line(size_t *length);
 _Noreturn void kernel_test_complete_native(void);
 _Noreturn void kernel_test_complete_native_lua(void);
 _Noreturn void kernel_test_complete_native_sqlite(void);

@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include <openrfs/cpu.h>
+#include <openrfs/hwdrv.h>
 #include <openrfs/interrupts.h>
 #include <openrfs/ioapic.h>
 #include <openrfs/keyboard.h>
@@ -247,6 +248,43 @@ static void decode_byte(struct pointer_state *target, uint8_t byte, bool publish
     }
 }
 
+enum pointer_status pointer_submit_packet(
+    uint8_t flags,
+    uint8_t delta_x,
+    uint8_t delta_y
+)
+{
+    uint8_t partial[POINTER_PACKET_SIZE];
+    uint8_t partial_index;
+    bool enabled;
+
+    if ((flags & POINTER_PACKET_ALWAYS_ONE) == 0U) {
+        return POINTER_STATUS_INJECTION_FAILURE;
+    }
+    enabled = cpu_interrupts_enabled();
+    if (enabled) {
+        cpu_interrupt_disable();
+    }
+    partial_index = state.packet_index;
+    for (size_t index = 0U; index < POINTER_PACKET_SIZE; ++index) {
+        partial[index] = state.packet[index];
+    }
+    state.packet[0] = flags;
+    state.packet[1] = delta_x;
+    state.packet[2] = delta_y;
+    state.bytes += POINTER_PACKET_SIZE;
+    state.submitted_packets += 1U;
+    decode_packet(&state, true);
+    for (size_t index = 0U; index < POINTER_PACKET_SIZE; ++index) {
+        state.packet[index] = partial[index];
+    }
+    state.packet_index = partial_index;
+    if (enabled) {
+        cpu_interrupt_enable();
+    }
+    return POINTER_STATUS_OK;
+}
+
 static void pointer_interrupt(struct interrupt_frame *frame, void *context)
 {
     (void)frame;
@@ -370,6 +408,7 @@ enum pointer_status pointer_set_bounds(uint32_t width, uint32_t height)
 
 struct pointer_state pointer_get_state(void)
 {
+    hwdrv_poll_input();
     return state;
 }
 

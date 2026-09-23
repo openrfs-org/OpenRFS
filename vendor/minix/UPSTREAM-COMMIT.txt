@@ -1,0 +1,32 @@
+MINIX 3 audio driver sources
+Official repository: https://github.com/Stichting-MINIX-Research-Foundation/minix
+Commit: 4db99f4012570a577414fe2a43697b2f239b699e
+Commit date: 2018-11-14 08:26:58 +0100 (the repository's last commit)
+Git tree: 80db89de58d5ecaf31efe48b4d1d98c7e285e81f
+Licence: the MINIX 3 licence (LICENSE), a BSD three-clause licence from the
+Vrije Universiteit Amsterdam: redistribution with the copyright notice and
+disclaimer, no use of the names for endorsement. The vendored files carry no
+licence notice of their own and fall under it. Its closing sentence ("Any
+deviations from these conditions require written permission from the
+copyright holder in advance") restates that permission beyond the three
+conditions must be sought; it adds no condition on redistribution under
+them. On that reading the files may be combined into, and conveyed as part
+of, a GPL-3.0-only work such as OpenRFS, keeping LICENSE with them.
+
+Vendored paths (byte-for-byte upstream; SOURCE-MANIFEST.sha256):
+  minix/drivers/audio/es1370/es1370.c, es1370.h   Ensoniq AudioPCI ES1370
+  minix/drivers/audio/es1370/ak4531.c, ak4531.h   its AK4531 codec
+  minix/drivers/audio/es1370/pci_helper.c, pci_helper.h
+  minix/drivers/audio/sb16/sb16.c, sb16.h         Sound Blaster 16 (ISA)
+  minix/drivers/audio/sb16/mixer.c, mixer.h       its mixer
+  minix/drivers/audio/sb16/README
+  minix/include/minix/audio_fw.h                  the drv_* interface
+  minix/include/minix/sound.h
+  minix/include/sys/ioc_sound.h                   the DSPIO*/MIXIO* codes
+  LICENSE
+
+Deliberately not vendored: libaudiodriver (minix/lib/libaudiodriver), whose
+playback path ports/minix/audio_glue.c reproduces for OpenRFS, and every
+MINIX system header; ports/minix/include declares the part of MINIX's
+system library the drivers use. es1370/AC97.h is not included by any
+vendored file and is left out.
