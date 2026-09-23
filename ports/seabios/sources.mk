@@ -15,11 +15,23 @@ SEABIOS_VENDOR_SOURCES := \
 	vendor/seabios/src/hw/nvme.c \
 	vendor/seabios/src/hw/pvscsi.c \
 	vendor/seabios/src/hw/sdcard.c \
+	vendor/seabios/src/hw/usb.c \
+	vendor/seabios/src/hw/usb-ehci.c \
+	vendor/seabios/src/hw/usb-hid.c \
+	vendor/seabios/src/hw/usb-hub.c \
+	vendor/seabios/src/hw/usb-msc.c \
+	vendor/seabios/src/hw/usb-ohci.c \
+	vendor/seabios/src/hw/usb-uas.c \
+	vendor/seabios/src/hw/usb-xhci.c \
 	vendor/seabios/src/hw/virtio-blk.c \
 	vendor/seabios/src/hw/virtio-mmio.c \
 	vendor/seabios/src/hw/virtio-pci.c \
 	vendor/seabios/src/hw/virtio-ring.c \
 	vendor/seabios/src/hw/virtio-scsi.c
+# Vendored drivers compiled through a wrapper that supplies an LP64-correct
+# copy of one hardware header (see ports/seabios/lp64/).
+SEABIOS_LP64_SOURCES := \
+	ports/seabios/lp64/usb-uhci.c
 SEABIOS_GLUE_SOURCES := \
 	ports/seabios/seabios_glue.c \
 	ports/seabios/libc.c

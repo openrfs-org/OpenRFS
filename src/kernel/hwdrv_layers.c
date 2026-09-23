@@ -10,9 +10,9 @@ static const struct hwdrv_layer layers[] = {
      * before any other arena exists.
      */
     { "seabios", seabios_layer_bind_all, seabios_layer_driver_count,
-        seabios_layer_driver_name },
+        seabios_layer_driver_name, seabios_layer_poll_input },
     { "ipxe", ipxe_layer_bind_all, ipxe_layer_driver_count,
-        ipxe_layer_driver_name }
+        ipxe_layer_driver_name, NULL }
 };
 
 size_t hwdrv_layer_count(void)

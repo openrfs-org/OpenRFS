@@ -194,6 +194,15 @@ const struct hwdrv_binding *hwdrv_binding_at(size_t index);
 const struct hwdrv_binding *hwdrv_find_binding(const char *instance);
 size_t hwdrv_count_class(enum hwdrv_class device_class);
 
+/*
+ * Let polled input devices report. Keyboard, pointer and UI queue readers
+ * call this before looking at their queues; it does nothing until a layer
+ * has bound an input device, and at most once per HWDRV_INPUT_POLL_NS.
+ */
+#define HWDRV_INPUT_POLL_NS UINT64_C(4000000)
+void hwdrv_poll_input(void);
+void hwdrv_note_input_device(void);
+
 /* Drivers compiled into every layer, and one of them by overall index. */
 size_t hwdrv_compiled_driver_count(void);
 const char *hwdrv_compiled_driver_name(size_t index);

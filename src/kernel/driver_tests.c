@@ -17,8 +17,10 @@
 #include <openrfs/console.h>
 #include <openrfs/driver_tests.h>
 #include <openrfs/hwdrv.h>
+#include <openrfs/keyboard.h>
 #include <openrfs/netdev.h>
 #include <openrfs/network.h>
+#include <openrfs/pointer.h>
 
 #define DRIVER_TEST_MAX_TOKEN 64U
 #define DRIVER_TEST_DOWNLOAD_BYTES (256U * 1024U)
@@ -36,10 +38,14 @@
 #define DRIVER_TEST_READ_RUN_BYTES (160U * 1024U)
 #define DRIVER_TEST_WRITE_UNITS 48U
 
+/* How long the HID plan waits for the runner's injected input. */
+#define DRIVER_TEST_HID_TIMEOUT_NS UINT64_C(30000000000)
+
 struct driver_test_options {
     char plan[DRIVER_TEST_MAX_TOKEN];
     char driver[DRIVER_TEST_MAX_TOKEN];
     char kind[DRIVER_TEST_MAX_TOKEN];
+    char text[DRIVER_TEST_MAX_TOKEN];
     uint32_t port;
     uint32_t bytes;
     uint32_t units;
@@ -517,6 +523,119 @@ static bool storage_plan(const struct driver_test_options *options,
     return info.errors == 0U;
 }
 
+/*
+ * USB HID: the runner types openrfs.drvtext on the emulated keyboard and
+ * moves and clicks the emulated mouse through QEMU's input-send-event, once
+ * "ST DRV hid ready" appears. The events must arrive through the USB host
+ * controller, the upstream HID driver, and OpenRFS's own keyboard queue and
+ * pointer decoder - the same path the shell and desktop read.
+ */
+static bool hid_plan(const struct driver_test_options *options,
+    const char **reason)
+{
+    const bool want_keyboard = text_equal(options->kind, "kbd") ||
+        text_equal(options->kind, "both");
+    const bool want_mouse = text_equal(options->kind, "mouse") ||
+        text_equal(options->kind, "both");
+    char typed[DRIVER_TEST_MAX_TOKEN];
+    size_t typed_length = 0U;
+    struct pointer_state pointer;
+    uint32_t start_x = 0U;
+    uint32_t start_y = 0U;
+    uint64_t start_transitions = 0U;
+    uint64_t start_pointer_packets = 0U;
+    uint64_t start_pointer_interrupts = 0U;
+    const struct keyboard_state keyboard_before = keyboard_get_state();
+    struct keyboard_state keyboard_after;
+    uint64_t deadline;
+    bool keys_done = !want_keyboard;
+    bool mouse_done = !want_mouse;
+
+    if ((want_keyboard && hwdrv_find_binding("kbd0") == NULL) ||
+        (want_mouse && hwdrv_find_binding("mouse0") == NULL)) {
+        *reason = "the expected USB HID devices are not bound";
+        return false;
+    }
+    if (want_mouse) {
+        if (pointer_set_bounds(1024U, 768U) != POINTER_STATUS_OK) {
+            *reason = "the pointer layer is not available";
+            return false;
+        }
+        pointer = pointer_get_state();
+        start_x = pointer.x;
+        start_y = pointer.y;
+        start_transitions = pointer.button_transitions;
+        start_pointer_packets = pointer.submitted_packets;
+        start_pointer_interrupts = pointer.interrupts;
+    }
+    while (keyboard_read(&(struct keyboard_event){ 0 }) == KEYBOARD_STATUS_OK) {
+    }
+    console_write("ST DRV hid ready\n");
+    deadline = clock_monotonic_ns() + DRIVER_TEST_HID_TIMEOUT_NS;
+    while ((!keys_done || !mouse_done) && clock_monotonic_ns() < deadline) {
+        struct keyboard_event event;
+
+        while (want_keyboard &&
+            keyboard_read(&event) == KEYBOARD_STATUS_OK) {
+            if (event.pressed && event.character != '\0' &&
+                typed_length + 1U < sizeof(typed)) {
+                typed[typed_length++] = event.character;
+                typed[typed_length] = '\0';
+            }
+        }
+        if (want_keyboard && typed_length != 0U &&
+            text_equal(typed, options->text)) {
+            keys_done = true;
+        }
+        if (want_mouse) {
+            pointer = pointer_get_state();
+            if (pointer.x != start_x && pointer.y != start_y &&
+                pointer.button_transitions >= start_transitions + 2U &&
+                !pointer.left) {
+                mouse_done = true;
+            }
+        }
+        __asm__ volatile ("pause" : : : "memory");
+    }
+    typed[typed_length] = '\0';
+    keyboard_after = keyboard_get_state();
+    if (want_keyboard) {
+        /* Which path carried the keys: bytes submitted by the USB HID driver
+         * versus IRQ 1 from the i8042, which must not have moved. */
+        console_write("ST DRV hid keys ");
+        console_write(typed_length != 0U ? typed : "(none)");
+        console_write(" usb-bytes ");
+        console_write_u64(keyboard_after.submitted - keyboard_before.submitted);
+        console_write(" i8042-interrupts ");
+        console_write_u64(keyboard_after.interrupts -
+            keyboard_before.interrupts);
+        console_putc('\n');
+    }
+    if (want_mouse) {
+        pointer = pointer_get_state();
+        console_write("ST DRV hid pointer dx ");
+        console_write_u64(pointer.x - start_x);
+        console_write(" dy ");
+        console_write_u64(pointer.y - start_y);
+        console_write(" button-transitions ");
+        console_write_u64(pointer.button_transitions - start_transitions);
+        console_write(" usb-packets ");
+        console_write_u64(pointer.submitted_packets - start_pointer_packets);
+        console_write(" i8042-interrupts ");
+        console_write_u64(pointer.interrupts - start_pointer_interrupts);
+        console_putc('\n');
+    }
+    if (!keys_done) {
+        *reason = "typed keys did not arrive through the USB keyboard";
+        return false;
+    }
+    if (!mouse_done) {
+        *reason = "mouse input did not arrive through the USB mouse";
+        return false;
+    }
+    return true;
+}
+
 bool driver_tests_run(const char *command_line, size_t length,
     const char **reason)
 {
@@ -547,6 +666,8 @@ bool driver_tests_run(const char *command_line, size_t length,
     }
     (void)token_value(command_line, length, "openrfs.drvkind=",
         options.kind, sizeof(options.kind));
+    (void)token_value(command_line, length, "openrfs.drvtext=",
+        options.text, sizeof(options.text));
     if (token_value(command_line, length, "openrfs.drvunits=", number,
             sizeof(number)) && !parse_decimal(number, &options.units)) {
         *reason = "openrfs.drvunits is not a number";
@@ -585,6 +706,9 @@ bool driver_tests_run(const char *command_line, size_t length,
     }
     if (text_equal(options.plan, "net")) {
         return network_plan(&options, reason);
+    }
+    if (text_equal(options.plan, "hid")) {
+        return hid_plan(&options, reason);
     }
     if (text_equal(options.plan, "blk")) {
         if (!storage_plan(&options, reason)) {

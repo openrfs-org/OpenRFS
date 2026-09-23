@@ -16,8 +16,10 @@
 #include <openrfs/hwdrv_layers.h>
 #include <openrfs/interrupts.h>
 #include <openrfs/ioapic.h>
+#include <openrfs/keyboard.h>
 #include <openrfs/pci.h>
 #include <openrfs/pci_resource.h>
+#include <openrfs/pointer.h>
 #include <openrfs/seabios_host.h>
 #include <openrfs/thread.h>
 
@@ -69,7 +71,15 @@ static const struct hwdrv_origin seabios_origins[] = {
     { "SeaBIOS", SEABIOS_REVISION, "src/hw/pvscsi.c", "LGPL-3.0-only" },
     { "SeaBIOS", SEABIOS_REVISION, "src/hw/sdcard.c", "LGPL-3.0-only" },
     { "SeaBIOS", SEABIOS_REVISION, "src/hw/nvme.c", "LGPL-3.0-only" },
-    { "SeaBIOS", SEABIOS_REVISION, "src/hw/floppy.c", "LGPL-3.0-only" }
+    { "SeaBIOS", SEABIOS_REVISION, "src/hw/floppy.c", "LGPL-3.0-only" },
+    { "SeaBIOS", SEABIOS_REVISION, "src/hw/usb-xhci.c", "LGPL-3.0-only" },
+    { "SeaBIOS", SEABIOS_REVISION, "src/hw/usb-ehci.c", "LGPL-3.0-only" },
+    { "SeaBIOS", SEABIOS_REVISION, "src/hw/usb-uhci.c", "LGPL-3.0-only" },
+    { "SeaBIOS", SEABIOS_REVISION, "src/hw/usb-ohci.c", "LGPL-3.0-only" },
+    { "SeaBIOS", SEABIOS_REVISION, "src/hw/usb-hid.c", "LGPL-3.0-only" },
+    { "SeaBIOS", SEABIOS_REVISION, "src/hw/usb-msc.c", "LGPL-3.0-only" },
+    { "SeaBIOS", SEABIOS_REVISION, "src/hw/usb-uas.c", "LGPL-3.0-only" },
+    { "SeaBIOS", SEABIOS_REVISION, "src/hw/usb-hub.c", "LGPL-3.0-only" }
 };
 
 static struct dma_arena seabios_arena;
@@ -82,6 +92,10 @@ static struct dma_arena isa_arena;
 static uint8_t *isa_io_buffer;
 static volatile uint32_t isa_irq_pending;
 static uint32_t isa_irq_enabled;
+static bool input_attached;
+static uint32_t usb_host_count;
+static uint32_t keyboard_count;
+static uint32_t mouse_count;
 
 static bool text_equal(const char *left, const char *right)
 {
@@ -618,6 +632,93 @@ bool seabios_host_publish(void *handle, const struct seabios_host_drive *drive,
     return true;
 }
 
+static void format_instance(char *instance, size_t capacity,
+    const char *prefix, uint32_t number)
+{
+    char digits[10];
+    size_t used = 0U;
+    size_t count = 0U;
+
+    while (prefix[used] != '\0' && used + 1U < capacity) {
+        instance[used] = prefix[used];
+        ++used;
+    }
+    do {
+        digits[count++] = (char)('0' + (char)(number % 10U));
+        number /= 10U;
+    } while (number != 0U && count < sizeof(digits));
+    while (count > 0U && used + 1U < capacity) {
+        instance[used++] = digits[--count];
+    }
+    instance[used] = '\0';
+}
+
+bool seabios_host_record(void *handle, enum seabios_host_device_class kind,
+    const char *driver, const char *source_path, const char *prefix,
+    const char *description, char *instance, size_t instance_capacity)
+{
+    struct seabios_host_claim *claim = handle;
+    const struct hwdrv_origin *origin = origin_for(source_path);
+    uint32_t *counter;
+
+    if (driver == NULL || prefix == NULL || description == NULL ||
+        instance == NULL || instance_capacity < HWDRV_INSTANCE_CAPACITY ||
+        origin == NULL || (claim != NULL && !claim->active)) {
+        return false;
+    }
+    if (kind == SEABIOS_HOST_DEVICE_USB_HOST) {
+        counter = &usb_host_count;
+    } else if (prefix[0] == 'k') {
+        counter = &keyboard_count;
+    } else {
+        counter = &mouse_count;
+    }
+    format_instance(instance, instance_capacity, prefix, *counter);
+    if (hwdrv_record_binding(driver, instance, description, origin,
+            kind == SEABIOS_HOST_DEVICE_USB_HOST ? HWDRV_CLASS_USB_HOST :
+                HWDRV_CLASS_INPUT,
+            claim != NULL ? claim->device.function : NULL) !=
+        HWDRV_STATUS_OK) {
+        return false;
+    }
+    ++*counter;
+    if (kind == SEABIOS_HOST_DEVICE_INPUT) {
+        input_attached = true;
+        hwdrv_note_input_device();
+    }
+    console_write("OpenRFS: ");
+    console_write(instance);
+    console_write(" bound by SeaBIOS ");
+    console_write(driver);
+    console_write(": ");
+    console_write(description);
+    console_putc('\n');
+    return true;
+}
+
+void seabios_host_keyboard_byte(uint8_t scancode)
+{
+    (void)keyboard_submit_scancode(scancode);
+}
+
+void seabios_host_pointer_packet(uint8_t flags, uint8_t delta_x,
+    uint8_t delta_y)
+{
+    (void)pointer_submit_packet(flags, delta_x, delta_y);
+}
+
+void seabios_layer_poll_input(void)
+{
+    struct seabios_call call = {
+        .kind = SEABIOS_CALL_POLL_INPUT,
+        .result = 0
+    };
+
+    if (input_attached && !in_call) {
+        (void)seabios_call(&call);
+    }
+}
+
 size_t seabios_layer_driver_count(void)
 {
     return seabios_glue_driver_count();
@@ -628,50 +729,58 @@ const char *seabios_layer_driver_name(size_t index)
     return seabios_glue_driver_name(index);
 }
 
+/* Bind one PCI function if a driver of this pass matches it. */
+static size_t bind_function(size_t index, int pass)
+{
+    const struct pci_function *function = pci_function_at(index);
+    struct seabios_host_pci_info info;
+    struct seabios_call call;
+    const char *name;
+    int driver;
+
+    if (function == NULL ||
+        function->header_type != PCI_HEADER_TYPE_ENDPOINT ||
+        hwdrv_pci_function_claimed(function) ||
+        !seabios_host_pci_info(index, &info)) {
+        return 0U;
+    }
+    driver = seabios_glue_match(&info);
+    if (driver < 0 || seabios_glue_bind_pass((size_t)driver) != pass) {
+        return 0U;
+    }
+    name = seabios_glue_driver_name((size_t)driver);
+    if (!hwdrv_driver_enabled(name) ||
+        (seabios_host_native_driver_exists(&info) &&
+            hwdrv_get_mode() != HWDRV_MODE_SELECTED)) {
+        return 0U;
+    }
+    call = (struct seabios_call){
+        .kind = SEABIOS_CALL_BIND_PCI,
+        .function_index = index,
+        .info = &info,
+        .result = 0
+    };
+    if (!seabios_call(&call)) {
+        hwdrv_record_probe_failure();
+        return 0U;
+    }
+    if (call.result <= 0) {
+        console_write("OpenRFS: SeaBIOS ");
+        console_write(name);
+        console_write(" found no devices\n");
+        return 0U;
+    }
+    return (size_t)call.result;
+}
+
 enum hwdrv_status seabios_layer_bind_all(void)
 {
     size_t published = 0U;
 
-    for (size_t index = 0U; index < pci_function_count(); ++index) {
-        const struct pci_function *function = pci_function_at(index);
-        struct seabios_host_pci_info info;
-        struct seabios_call call;
-        const char *name;
-        int driver;
-
-        if (function == NULL ||
-            function->header_type != PCI_HEADER_TYPE_ENDPOINT ||
-            hwdrv_pci_function_claimed(function) ||
-            !seabios_host_pci_info(index, &info)) {
-            continue;
+    for (int pass = 0; pass < SEABIOS_BIND_PASSES; ++pass) {
+        for (size_t index = 0U; index < pci_function_count(); ++index) {
+            published += bind_function(index, pass);
         }
-        driver = seabios_glue_match(&info);
-        if (driver < 0) {
-            continue;
-        }
-        name = seabios_glue_driver_name((size_t)driver);
-        if (!hwdrv_driver_enabled(name) ||
-            (seabios_host_native_driver_exists(&info) &&
-                hwdrv_get_mode() != HWDRV_MODE_SELECTED)) {
-            continue;
-        }
-        call = (struct seabios_call){
-            .kind = SEABIOS_CALL_BIND_PCI,
-            .function_index = index,
-            .info = &info,
-            .result = 0
-        };
-        if (!seabios_call(&call)) {
-            hwdrv_record_probe_failure();
-            continue;
-        }
-        if (call.result <= 0) {
-            console_write("OpenRFS: SeaBIOS ");
-            console_write(name);
-            console_write(" attached no media\n");
-            continue;
-        }
-        published += (size_t)call.result;
     }
     /* The floppy controller is an ISA device at fixed ports. */
     if (hwdrv_driver_enabled("floppy")) {

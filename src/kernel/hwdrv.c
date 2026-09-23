@@ -592,6 +592,38 @@ bool hwdrv_pci_function_claimed(const struct pci_function *function)
     return false;
 }
 
+static bool input_devices;
+static bool input_polling;
+static uint64_t input_polled_ns;
+
+void hwdrv_note_input_device(void)
+{
+    input_devices = true;
+}
+
+void hwdrv_poll_input(void)
+{
+    uint64_t now;
+
+    if (!input_devices || input_polling) {
+        return;
+    }
+    now = clock_monotonic_ns();
+    if (input_polled_ns != 0U && now - input_polled_ns < HWDRV_INPUT_POLL_NS) {
+        return;
+    }
+    input_polling = true;
+    input_polled_ns = now;
+    for (size_t index = 0U; index < hwdrv_layer_count(); ++index) {
+        const struct hwdrv_layer *layer = hwdrv_layer_at(index);
+
+        if (layer != NULL && layer->poll_input != NULL) {
+            layer->poll_input();
+        }
+    }
+    input_polling = false;
+}
+
 uint64_t hwdrv_now_ns(void)
 {
     return clock_monotonic_ns();

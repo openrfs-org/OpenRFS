@@ -25,6 +25,7 @@ extern struct bios_data_area_s openrfs_seabios_bda;
 #define FUNC16(func) SEGOFF(0, 0)
 
 #define SEG_LOW 0
+#define LOWFLAT2LOW(var) (var)
 
 #define GET_GLOBAL(var) (var)
 #define SET_GLOBAL(var, val) do { (var) = (val); } while (0)

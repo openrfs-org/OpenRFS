@@ -46,6 +46,10 @@
 #include "hw/pic.h"
 #include "hw/pvscsi.h"
 #include "hw/rtc.h"
+#include "hw/usb.h"
+#include "hw/usb-hid.h"
+#include "hw/usb-msc.h"
+#include "hw/usb-uas.h"
 #include "hw/virtio-blk.h"
 #include "hw/virtio-scsi.h"
 #include "std/disk.h"
@@ -82,6 +86,8 @@ struct glue_driver {
     const char *path;
     int (*match)(const struct seabios_host_pci_info *info);
     void (*setup)(void);
+    int pass;
+    int usb;
 };
 
 /* What the bind in progress has published so far. */
@@ -184,23 +190,79 @@ static int match_nvme(const struct seabios_host_pci_info *info)
         info->prog_if == 0x02;
 }
 
+/* usb-*.c *_setup: the serial-bus USB class and each controller's
+ * programming interface (pci_classprog). */
+static int match_usb(const struct seabios_host_pci_info *info, u8 prog_if)
+{
+    return info->class_code == 0x0c && info->subclass == 0x03 &&
+        info->prog_if == prog_if;
+}
+
+static int match_xhci(const struct seabios_host_pci_info *info)
+{
+    return match_usb(info, 0x30);
+}
+
+static int match_ehci(const struct seabios_host_pci_info *info)
+{
+    return match_usb(info, 0x20);
+}
+
+static int match_uhci(const struct seabios_host_pci_info *info)
+{
+    return match_usb(info, 0x00);
+}
+
+static int match_ohci(const struct seabios_host_pci_info *info)
+{
+    return match_usb(info, 0x10);
+}
+
+/*
+ * The USB controllers all bind through usb_setup(), which runs every
+ * controller type's setup over the (one-entry) device list and initializes
+ * usb.c's attach timeout as SeaBIOS's POST does.
+ */
 static const struct glue_driver glue_drivers[] = {
-    { "ahci", "src/hw/ahci.c", match_ahci, ahci_setup },
-    { "ata", "src/hw/ata.c", match_ata, ata_setup },
+    { "ahci", "src/hw/ahci.c", match_ahci, ahci_setup, 0, 0 },
+    { "ata", "src/hw/ata.c", match_ata, ata_setup, 0, 0 },
     { "virtio-blk", "src/hw/virtio-blk.c", match_virtio_blk,
-      virtio_blk_setup },
+      virtio_blk_setup, 0, 0 },
     { "virtio-scsi", "src/hw/virtio-scsi.c", match_virtio_scsi,
-      virtio_scsi_setup },
-    { "lsi-scsi", "src/hw/lsi-scsi.c", match_lsi_scsi, lsi_scsi_setup },
-    { "esp-scsi", "src/hw/esp-scsi.c", match_esp_scsi, esp_scsi_setup },
-    { "megasas", "src/hw/megasas.c", match_megasas, megasas_setup },
-    { "mpt-scsi", "src/hw/mpt-scsi.c", match_mpt_scsi, mpt_scsi_setup },
-    { "pvscsi", "src/hw/pvscsi.c", match_pvscsi, pvscsi_setup },
-    { "sdcard", "src/hw/sdcard.c", match_sdcard, sdcard_setup },
-    { "nvme", "src/hw/nvme.c", match_nvme, nvme_setup },
+      virtio_scsi_setup, 0, 0 },
+    { "lsi-scsi", "src/hw/lsi-scsi.c", match_lsi_scsi, lsi_scsi_setup, 0, 0 },
+    { "esp-scsi", "src/hw/esp-scsi.c", match_esp_scsi, esp_scsi_setup, 0, 0 },
+    { "megasas", "src/hw/megasas.c", match_megasas, megasas_setup, 0, 0 },
+    { "mpt-scsi", "src/hw/mpt-scsi.c", match_mpt_scsi, mpt_scsi_setup, 0, 0 },
+    { "pvscsi", "src/hw/pvscsi.c", match_pvscsi, pvscsi_setup, 0, 0 },
+    { "sdcard", "src/hw/sdcard.c", match_sdcard, sdcard_setup, 0, 0 },
+    { "nvme", "src/hw/nvme.c", match_nvme, nvme_setup, 0, 0 },
+    { "xhci", "src/hw/usb-xhci.c", match_xhci, usb_setup, 1, 1 },
+    { "ehci", "src/hw/usb-ehci.c", match_ehci, usb_setup, 2, 1 },
+    { "uhci", "src/hw/usb-uhci.c", match_uhci, usb_setup, 3, 1 },
+    { "ohci", "src/hw/usb-ohci.c", match_ohci, usb_setup, 3, 1 },
     /* ISA: bound by a pass of its own, never matched against PCI. */
-    { "floppy", "src/hw/floppy.c", NULL, floppy_setup },
+    { "floppy", "src/hw/floppy.c", NULL, floppy_setup, 0, 0 },
 };
+
+/* Class drivers credited for what they attach behind a controller. */
+static const struct glue_driver usb_msc_driver = {
+    "usb-msc", "src/hw/usb-msc.c", NULL, NULL, 0, 0
+};
+static const struct glue_driver usb_uas_driver = {
+    "usb-uas", "src/hw/usb-uas.c", NULL, NULL, 0, 0
+};
+
+/*
+ * usb-hid.c keeps every bound keyboard and mouse on a list of these; the
+ * layout is that file's (two pointers). Walking the lists is how a bind
+ * learns which HID devices its controller brought.
+ */
+struct pipe_node {
+    struct usb_pipe *pipe;
+    struct pipe_node *next;
+};
+extern struct pipe_node *keyboards, *mice;
 
 #define GLUE_FLOPPY_IRQ 6
 
@@ -217,6 +279,11 @@ const char *seabios_glue_driver_name(size_t index)
 const char *seabios_glue_driver_path(size_t index)
 {
     return index < ARRAY_SIZE(glue_drivers) ? glue_drivers[index].path : NULL;
+}
+
+int seabios_glue_bind_pass(size_t index)
+{
+    return index < ARRAY_SIZE(glue_drivers) ? glue_drivers[index].pass : -1;
 }
 
 int seabios_glue_match(const struct seabios_host_pci_info *info)
@@ -469,6 +536,32 @@ int in_post(void)
 }
 
 /****************************************************************
+ * Keyboard and mouse input (kbd.c, mouse.c)
+ ****************************************************************/
+
+/* usb-hid.c reports keys as set 1 scancodes, as kbd.c would receive. */
+void process_key(u8 key)
+{
+    seabios_host_keyboard_byte(key);
+}
+
+/* ... and mouse reports as the three bytes of a PS/2 packet. */
+static u8 mouse_packet[3];
+static int mouse_index;
+
+void process_mouse(u8 data)
+{
+    if (mouse_index == 0 && !(data & 0x08))
+        return;
+    mouse_packet[mouse_index++] = data;
+    if (mouse_index == 3) {
+        mouse_index = 0;
+        seabios_host_pointer_packet(mouse_packet[0], mouse_packet[1],
+                                    mouse_packet[2]);
+    }
+}
+
+/****************************************************************
  * Timers (hw/timer.c): a wrapping microsecond clock
  ****************************************************************/
 
@@ -495,6 +588,19 @@ int timer_check(u32 end)
 u32 irqtimer_calc(u32 msecs)
 {
     return timer_calc(msecs);
+}
+
+/* hw/timer.c's conversions: PIT period 65536, PM timer 3.579545 MHz. */
+u32 ticks_to_ms(u32 ticks)
+{
+    u64 t = 65536ULL * 1000ULL * 3ULL * ticks;
+    return (u32)DIV_ROUND_UP(t, 3579545ULL);
+}
+
+u32 ticks_from_ms(u32 ms)
+{
+    u64 t = (u64)ms * 3579545ULL;
+    return (u32)DIV_ROUND_UP(t, 65536ULL * 1000ULL * 3ULL);
 }
 
 int irqtimer_check(u32 end)
@@ -698,6 +804,13 @@ int acpi_dsdt_find_irq(struct acpi_device *dev, u64 *irq)
 {
     (void)dev; (void)irq;
     return -1;
+}
+
+struct acpi_device *acpi_dsdt_find_eisaid(struct acpi_device *prev,
+                                          u16 eisaid)
+{
+    (void)prev; (void)eisaid;
+    return NULL;
 }
 
 /****************************************************************
@@ -950,6 +1063,12 @@ static int dispatch_op(struct disk_op_s *op)
         return sdcard_process_op(op);
     case DTYPE_NVME:
         return nvme_process_op(op);
+    case DTYPE_USB:
+    case DTYPE_USB_32:
+        return usb_process_op(op);
+    case DTYPE_UAS:
+    case DTYPE_UAS_32:
+        return uas_process_op(op);
     default:
         return DISK_RET_EPARAM;
     }
@@ -1004,19 +1123,35 @@ static int optical_capacity(struct drive_s *drive, u64 *blocks, u32 *blksize)
     return 1;
 }
 
+static const struct glue_driver *driver_for_drive(struct drive_s *drive)
+{
+    switch (drive->type) {
+    case DTYPE_USB:
+    case DTYPE_USB_32:
+        return &usb_msc_driver;
+    case DTYPE_UAS:
+    case DTYPE_UAS_32:
+        return &usb_uas_driver;
+    default:
+        return bind_driver;
+    }
+}
+
 static void publish(struct drive_s *drive, const char *desc,
                     enum seabios_host_medium medium)
 {
+    const struct glue_driver *driver;
     struct seabios_host_drive host;
     char instance[16];
 
     if (!binding || bind_driver == NULL || drive == NULL)
         return;
+    driver = driver_for_drive(drive);
     memset(&host, 0, sizeof(host));
     host.glue_drive = drive;
-    host.driver = bind_driver->name;
-    host.description = desc ? desc : bind_driver->name;
-    host.source_path = bind_driver->path;
+    host.driver = driver->name;
+    host.description = desc ? desc : driver->name;
+    host.source_path = driver->path;
     host.medium = medium;
     host.block_size = drive->blksize;
     host.block_count = drive->sectors;
@@ -1067,6 +1202,45 @@ void boot_add_floppy(struct drive_s *drive_g, const char *desc, int prio)
  * Entry from the kernel
  ****************************************************************/
 
+/*
+ * After usb_setup() on one controller: credit the HID devices it added to
+ * usb-hid.c's lists, and record the controller itself if anything is
+ * attached - media were published as they were found. A controller with
+ * nothing attached was already shut down by its own setup code.
+ */
+static void record_usb(void *handle, const struct glue_driver *driver,
+                       const struct seabios_host_pci_info *info,
+                       struct pipe_node *keyboards_before,
+                       struct pipe_node *mice_before)
+{
+    char description[64];
+    char instance[16];
+    struct pipe_node *node;
+    int attached = bind_published;
+
+    for (node = keyboards; node && node != keyboards_before; node = node->next)
+        if (seabios_host_record(handle, SEABIOS_HOST_DEVICE_INPUT, "usb-hid",
+                                "src/hw/usb-hid.c", "kbd",
+                                "USB HID boot keyboard", instance,
+                                sizeof(instance)))
+            attached++;
+    for (node = mice; node && node != mice_before; node = node->next)
+        if (seabios_host_record(handle, SEABIOS_HOST_DEVICE_INPUT, "usb-hid",
+                                "src/hw/usb-hid.c", "mouse",
+                                "USB HID boot mouse", instance,
+                                sizeof(instance)))
+            attached++;
+    if (!attached)
+        return;
+    snprintf(description, sizeof(description), "%s USB host controller %02x:%02x.%x",
+             driver->name, info->bus, info->device, info->function);
+    if (seabios_host_record(handle, SEABIOS_HOST_DEVICE_USB_HOST,
+                            driver->name, driver->path, "usb", description,
+                            instance, sizeof(instance)))
+        attached++;
+    bind_published = attached;
+}
+
 static void bind_pci(struct seabios_call *call)
 {
     const struct seabios_host_pci_info *info = call->info;
@@ -1107,7 +1281,15 @@ static void bind_pci(struct seabios_call *call)
     bind_driver = &glue_drivers[which];
     bind_published = 0;
     binding = 1;
-    bind_driver->setup();
+    {
+        struct pipe_node *keyboards_before = keyboards;
+        struct pipe_node *mice_before = mice;
+
+        bind_driver->setup();
+        if (bind_driver->usb)
+            record_usb(handle, bind_driver, info, keyboards_before,
+                       mice_before);
+    }
     binding = 0;
     PCIDevices.first = NULL;
     call->result = bind_published;
@@ -1194,6 +1376,11 @@ void seabios_glue_dispatch(void *argument)
         break;
     case SEABIOS_CALL_BIND_ISA:
         bind_isa(call);
+        break;
+    case SEABIOS_CALL_POLL_INPUT:
+        if (usb_kbd_active() || usb_mouse_active())
+            usb_check_event();
+        call->result = 0;
         break;
     default:
         call->result = -1;

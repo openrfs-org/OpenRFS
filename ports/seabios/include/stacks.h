@@ -33,4 +33,14 @@ void finish_preempt(void);
 int wait_preempt(void);
 void check_preempt(void);
 
+/*
+ * usb.c reaches the xHCI poll routine through call32_params because SeaBIOS
+ * polls USB from 16-bit mode. Here everything is flat, so it is a call.
+ */
+#define call32_params(func, eax, edx, ecx, errret) ({   \
+        (void)(ecx);                                    \
+        (void)(errret);                                 \
+        func((void *)(eax), (void *)(edx));             \
+    })
+
 #endif

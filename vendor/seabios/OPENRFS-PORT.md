@@ -56,6 +56,27 @@ with SeaBIOS's names; `ports/seabios/seabios_glue.c` implements them and
   build happens not to cache those values; compiled a file at a time, GCC
   did, and the driver saw its own pre-transfer values. The barrier makes
   the port access the synchronisation point the driver assumes.
+* **USB.** The four controller drivers bind through `usb_setup()`, which
+  runs every controller type's setup over the one-function list and sets
+  the attach timeout as POST would. Controllers bind in SeaBIOS's order -
+  storage first, then xHCI, EHCI, and last UHCI and OHCI - so EHCI can
+  route full- and low-speed ports to its companions before they enumerate.
+  A controller that attaches nothing was already shut down by its own setup
+  code and is released. Keyboard reports reach OpenRFS as the set 1
+  scancodes `usb-hid.c` hands to `process_key()`, and mouse reports as the
+  three PS/2 bytes it hands to `process_mouse()`; the kernel decodes them
+  in its own keyboard queue and pointer decoder (`keyboard_submit_scancode`,
+  `pointer_submit_packet`). SeaBIOS polls HID devices from its timer
+  interrupt; OpenRFS polls them when the keyboard, pointer or UI queues are
+  read, at most once every 4 ms (`hwdrv_poll_input`).
+* **One LP64 header.** `struct uhci_td` in `src/hw/usb-uhci.h` declares the
+  descriptor's hardware buffer pointer as `void *`, which is four bytes only
+  in SeaBIOS's 32-bit builds. On x86-64 it made each descriptor 20 bytes,
+  so a transfer's second descriptor started inside the first one's buffer
+  field and the controller saw garbage. `ports/seabios/lp64/usb-uhci.c`
+  compiles the unchanged `usb-uhci.c` after defining that header's guard
+  through `ports/seabios/lp64/usb-uhci.h`, a copy whose only change is
+  `u32 buffer`. No other vendored hardware structure holds a pointer.
 * **Platform.** `runningOnQEMU()` answers from the QEMU host-bridge
   subsystem ID (1af4:1100), the test SeaBIOS's coreboot build uses, so the
   three drivers SeaBIOS enables only on QEMU (lsi-scsi, esp-scsi, mpt-scsi)

@@ -26,6 +26,16 @@ Vendored paths (byte-for-byte upstream; SOURCE-MANIFEST.sha256):
   src/hw/sdcard.c                    SD Host Controller (SDHCI) and cards
   src/hw/nvme.c, nvme.h, nvme-int.h  NVM Express
   src/hw/floppy.c, dma.c             82077AA floppy controller, 8237 ISA DMA
+  src/hw/usb.c, usb.h                USB core and enumeration
+  src/hw/usb-xhci.c, usb-xhci.h      xHCI host controllers
+  src/hw/usb-ehci.c, usb-ehci.h      EHCI host controllers
+  src/hw/usb-uhci.c, usb-uhci.h      UHCI host controllers (see below)
+  src/hw/usb-ohci.c, usb-ohci.h      OHCI host controllers
+  src/hw/usb-hub.c, usb-hub.h        USB hubs
+  src/hw/usb-hid.c, usb-hid.h        USB boot-protocol keyboards and mice
+  src/hw/usb-msc.c, usb-msc.h        USB mass storage (bulk-only)
+  src/hw/usb-uas.c, usb-uas.h        USB Attached SCSI
+  src/hw/ps2port.h
   src/hw/pci.h, pcidevice.h, pic.h, rtc.h
   src/block.h, bregs.h, byteorder.h, list.h, std/bda.h, std/disk.h
 
@@ -36,3 +46,10 @@ malloc.h, output.h, stacks.h, util.h, string.h, config.h and friends);
 ports/seabios/include replaces them. hw/pci_regs.h and hw/pci_ids.h are also
 replaced there with the PCI-specification constants the drivers use, because
 SeaBIOS's copies came from Linux without a licence notice of their own.
+
+One vendored file is also compiled through an OpenRFS wrapper:
+src/hw/usb-uhci.c is built from ports/seabios/lp64/usb-uhci.c, which first
+includes ports/seabios/lp64/usb-uhci.h - a copy of src/hw/usb-uhci.h whose
+struct uhci_td declares the hardware buffer pointer as u32 instead of
+void *. That copy (LGPL-3.0, like its original) is the only modified
+SeaBIOS text in OpenRFS; the vendored file itself is unchanged.

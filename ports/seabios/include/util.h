@@ -41,6 +41,8 @@ struct acpi_device *acpi_dsdt_find_string(struct acpi_device *prev,
 char *acpi_dsdt_name(struct acpi_device *dev);
 int acpi_dsdt_find_mem(struct acpi_device *dev, u64 *min, u64 *max);
 int acpi_dsdt_find_irq(struct acpi_device *dev, u64 *irq);
+struct acpi_device *acpi_dsdt_find_eisaid(struct acpi_device *prev,
+                                          u16 eisaid);
 
 /* misc.c: the diskette parameter table floppy_setup copies into place. */
 struct floppy_dbt_s;
@@ -76,6 +78,9 @@ void usleep(u32 count);
 void msleep(u32 count);
 u32 irqtimer_calc(u32 msecs);
 int irqtimer_check(u32 end);
+/* SeaBIOS's "ticks" are its 18.2 Hz timer interrupts (PIT period 65536). */
+u32 ticks_to_ms(u32 ticks);
+u32 ticks_from_ms(u32 ms);
 
 /* kbd.c and mouse.c: where USB HID reports are delivered. */
 void process_key(u8 key);

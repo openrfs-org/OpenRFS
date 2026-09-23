@@ -403,7 +403,8 @@ IPXE_GLUE_CFLAGS := $(IPXE_BASE_CFLAGS) -Wall -Wextra -Werror -Wshadow \
 include ports/seabios/sources.mk
 SEABIOS_OBJECT_DIR := $(BUILD_DIR)/seabios
 SEABIOS_OBJECTS := $(patsubst %.c,$(SEABIOS_OBJECT_DIR)/%.o,\
-	$(SEABIOS_VENDOR_SOURCES) $(SEABIOS_GLUE_SOURCES))
+	$(SEABIOS_VENDOR_SOURCES) $(SEABIOS_LP64_SOURCES) \
+	$(SEABIOS_GLUE_SOURCES))
 SEABIOS_LAYER_OBJECT := $(SEABIOS_OBJECT_DIR)/seabios-layer.o
 # SeaBIOS's dprintf level; messages at or below it reach the serial console.
 SEABIOS_DEBUG_LEVEL ?= 1
@@ -980,6 +981,13 @@ $(IPXE_OBJECT_DIR)/ports/%.o: ports/%.c ports/ipxe/include/compiler.h
 $(SEABIOS_OBJECT_DIR)/vendor/%.o: vendor/%.c
 	mkdir -p $(dir $@)
 	$(KERNEL_CC) $(SEABIOS_VENDOR_CFLAGS) -MMD -MP -c $< -o $@
+
+# The LP64 wrappers compile vendored code: vendor warnings, plus the
+# pointer/u32 conversions the corrected header makes explicit to GCC.
+$(SEABIOS_OBJECT_DIR)/ports/seabios/lp64/%.o: ports/seabios/lp64/%.c
+	mkdir -p $(dir $@)
+	$(KERNEL_CC) $(SEABIOS_VENDOR_CFLAGS) -Iports/seabios/lp64 \
+		-Wno-int-conversion -MMD -MP -c $< -o $@
 
 $(SEABIOS_OBJECT_DIR)/ports/%.o: ports/%.c
 	mkdir -p $(dir $@)

@@ -51,6 +51,13 @@ void memcpy_fl(void *d_fl, const void *s_fl, size_t len)
     memcpy(d_fl, s_fl, len);
 }
 
+void memcpy_far(u16 d_seg, void *d_far, u16 s_seg, const void *s_far,
+                size_t len)
+{
+    memcpy((u8 *)d_far + ((openrfs_seabios_uintptr)d_seg << 4),
+           (const u8 *)s_far + ((openrfs_seabios_uintptr)s_seg << 4), len);
+}
+
 void *memmove(void *d, const void *s, size_t len)
 {
     u8 *destination = d;

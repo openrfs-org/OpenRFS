@@ -33,12 +33,15 @@ from __future__ import annotations
 
 import argparse
 import http.server
+import json
 import re
 import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -101,6 +104,8 @@ class Scenario:
     # namespace it finds (tools/make-nvme-fixture.py); a scenario that
     # attaches NVMe for an upstream driver carries that block as well.
     native_nvme_fixture: bool = False
+    # HID: what the runner types once the guest says it is ready.
+    text: str = ""
 
 
 def network_scenario(model: str, driver: str, description: str,
@@ -136,7 +141,9 @@ def storage_scenario(driver: str, description: str, devices: list[str],
                      kind: str = "disk", machine: str = "pc",
                      units: int = DISK_UNITS, drivers_option: str = "auto",
                      expected_failure: str = "", block_size: int = 0,
-                     native_nvme_fixture: bool = False) -> Scenario:
+                     native_nvme_fixture: bool = False,
+                     extra_markers: tuple[str, ...] = (),
+                     timeout: int = 120) -> Scenario:
     block_size = block_size or (2048 if kind == "cd" else 512)
     blocks = units * UNIT_BYTES // block_size
     kind_name = {"disk": "disk", "cd": "optical", "fd": "floppy",
@@ -163,12 +170,42 @@ def storage_scenario(driver: str, description: str, devices: list[str],
         ]
     else:
         markers.append(r"^ST DRV blk write refused read-only$")
+    markers += list(extra_markers)
     return Scenario(plan="blk", description=description, driver=driver,
                     qemu=devices, markers=markers, machine=machine,
+                    timeout=timeout,
                     kind=kind, units=units, block_size=block_size,
                     write=write, drivers_option=drivers_option,
                     expected_failure=expected_failure,
                     native_nvme_fixture=native_nvme_fixture)
+
+
+def hid_scenario(kind: str, description: str, devices: list[str],
+                 host: str, machine: str = "pc", text: str = "openrfs"
+                 ) -> Scenario:
+    markers = [r"^ST DRV hid ready$", usb_host_marker(host)]
+    if kind in ("kbd", "both"):
+        markers += [
+            r"^OpenRFS: kbd0 bound by SeaBIOS usb-hid: USB HID boot keyboard$",
+            # Every key pressed and released, all through the USB driver,
+            # none through the i8042.
+            rf"^ST DRV hid keys {text} usb-bytes [1-9][0-9]* "
+            r"i8042-interrupts 0$",
+        ]
+    if kind in ("mouse", "both"):
+        markers += [
+            r"^OpenRFS: mouse0 bound by SeaBIOS usb-hid: USB HID boot mouse$",
+            r"^ST DRV hid pointer dx [1-9][0-9]* dy [1-9][0-9]* "
+            r"button-transitions [2-9][0-9]* usb-packets [1-9][0-9]* "
+            r"i8042-interrupts 0$",
+        ]
+    return Scenario(plan="hid", description=description, qemu=devices,
+                    markers=markers, machine=machine, kind=kind, text=text)
+
+
+def usb_host_marker(driver: str) -> str:
+    return (rf"^OpenRFS: usb[0-9]+ bound by SeaBIOS {driver}: "
+            rf"{driver} USB host controller ")
 
 
 DISK = "if=none,id=drvdisk,file={image},format=raw"
@@ -287,6 +324,72 @@ SCENARIOS: dict[str, Scenario] = {
         ["-drive", DISK,
          "-device", "floppy,unit=0,drive=drvdisk,drive-type=144"],
         kind="fd", units=2880),
+    "blk-usb-msc-ehci": storage_scenario(
+        "usb-msc", "USB mass storage (bulk-only) on an EHCI controller",
+        ["-device", "usb-ehci,id=usbhc", "-drive", DISK,
+         "-device", "usb-storage,bus=usbhc.0,drive=drvdisk"],
+        extra_markers=(usb_host_marker("ehci"),)),
+    "blk-usb-msc-uhci": storage_scenario(
+        "usb-msc", "USB mass storage (bulk-only) on a PIIX3 UHCI controller",
+        ["-device", "piix3-usb-uhci,id=usbhc", "-drive", DISK,
+         "-device", "usb-storage,bus=usbhc.0,drive=drvdisk"],
+        extra_markers=(usb_host_marker("uhci"),), timeout=300),
+    "blk-usb-msc-ohci": storage_scenario(
+        "usb-msc", "USB mass storage (bulk-only) on an OHCI controller",
+        ["-device", "pci-ohci,id=usbhc", "-drive", DISK,
+         "-device", "usb-storage,bus=usbhc.0,drive=drvdisk"],
+        extra_markers=(usb_host_marker("ohci"),), timeout=300),
+    # SeaBIOS's UAS driver runs UAS at high speed only ("Superspeed UAS
+    # devices not supported (yet)"), so the device sits on EHCI.
+    "blk-usb-uas": storage_scenario(
+        "usb-uas", "USB Attached SCSI disk on an EHCI controller",
+        ["-device", "usb-ehci,id=usbhc",
+         "-device", "usb-uas,id=uas,bus=usbhc.0", "-drive", DISK,
+         "-device", "scsi-hd,bus=uas.0,scsi-id=0,lun=0,drive=drvdisk"],
+        extra_markers=(usb_host_marker("ehci"),)),
+    # xHCI mass storage goes through a full-speed hub: OpenRFS's own xHCI
+    # boot proof reads the first connected device and accepts only USB 2
+    # root ports, and QEMU attaches usb-storage to a USB 3 port directly.
+    "blk-usb-hub": storage_scenario(
+        "usb-msc", "USB mass storage behind a USB 1.1 hub on xHCI",
+        ["-device", "qemu-xhci,id=usbhc",
+         "-device", "usb-hub,bus=usbhc.0,port=1", "-drive", DISK,
+         "-device", "usb-storage,bus=usbhc.0,port=1.1,drive=drvdisk"],
+        extra_markers=(usb_host_marker("xhci"),), timeout=300),
+    # The keyboard sits on root port 1 as a USB 2 device: exactly the
+    # fixture OpenRFS's own xHCI boot proof reads before the upstream
+    # driver takes the controller.
+    "hid-kbd-xhci": hid_scenario(
+        "kbd", "USB HID keyboard on an xHCI controller",
+        ["-device", "qemu-xhci,id=usbhc",
+         "-device", "usb-kbd,id=usbkbd,bus=usbhc.0,port=1,usb_version=2"],
+        host="xhci"),
+    "hid-kbd-uhci": hid_scenario(
+        "kbd", "USB HID keyboard on a PIIX3 UHCI controller",
+        ["-device", "piix3-usb-uhci,id=usbhc",
+         "-device", "usb-kbd,id=usbkbd,bus=usbhc.0"],
+        host="uhci"),
+    "hid-mouse-ohci": hid_scenario(
+        "mouse", "USB HID mouse on an OHCI controller",
+        ["-device", "pci-ohci,id=usbhc",
+         "-device", "usb-mouse,id=usbmouse,bus=usbhc.0"],
+        host="ohci"),
+    # ICH9 EHCI with its three UHCI companions, bound in SeaBIOS's order
+    # (EHCI first). QEMU's EHCI model drives these full-speed devices on
+    # its own ports rather than handing them to a companion, so the
+    # companions bind, find nothing and are released.
+    "hid-ich9-ehci": hid_scenario(
+        "both", "ICH9 EHCI (UHCI companions present): keyboard and mouse",
+        ["-device", "ich9-usb-ehci1,id=usbhc,addr=1d.7,multifunction=on",
+         "-device", "ich9-usb-uhci1,masterbus=usbhc.0,firstport=0,"
+                    "addr=1d.0,multifunction=on",
+         "-device", "ich9-usb-uhci2,masterbus=usbhc.0,firstport=2,"
+                    "addr=1d.1,multifunction=on",
+         "-device", "ich9-usb-uhci3,masterbus=usbhc.0,firstport=4,"
+                    "addr=1d.2,multifunction=on",
+         "-device", "usb-kbd,id=usbkbd,bus=usbhc.0,port=1",
+         "-device", "usb-mouse,id=usbmouse,bus=usbhc.0,port=2"],
+        host="ehci", machine="q35"),
     "blk-nvme": storage_scenario(
         "nvme", "NVM Express controller (SeaBIOS driver, selected)",
         ["-drive", DISK,
@@ -385,6 +488,15 @@ def run_scenario(name: str, scenario: Scenario, args: argparse.Namespace
                     f"openrfs.drvwrite={1 if scenario.write else 0}"]
     qemu += [argument.replace("{image}", str(image))
              for argument in scenario.qemu]
+    injector = None
+    if scenario.plan == "hid":
+        options += [f"openrfs.drvkind={scenario.kind}",
+                    f"openrfs.drvtext={scenario.text}"]
+        # A Unix socket path must fit in 108 bytes; the work tree may not.
+        qmp = Path(tempfile.mkdtemp(prefix="orfs-qmp-")) / "qmp.sock"
+        qemu += ["-qmp", f"unix:{qmp},server=on,wait=off"]
+        injector = threading.Thread(
+            target=inject_input, args=(log, qmp, scenario), daemon=True)
     iso = build_iso(args.kernel, work, " ".join(options), args.grub_mkrescue)
     qemu += ["-cdrom", str(iso)] + args.qemu_arg
     if log.exists():
@@ -392,6 +504,8 @@ def run_scenario(name: str, scenario: Scenario, args: argparse.Namespace
     try:
         process = subprocess.Popen(qemu, stdout=subprocess.DEVNULL,
                                    stderr=subprocess.PIPE)
+        if injector is not None:
+            injector.start()
         try:
             _, stderr_bytes = process.communicate(timeout=scenario.timeout)
             status = process.returncode
@@ -423,9 +537,66 @@ def run_scenario(name: str, scenario: Scenario, args: argparse.Namespace
             problems.append(f"missing marker {marker}")
     if scenario.plan == "blk" and not problems:
         problems += check_medium(image, scenario)
+    if scenario.plan == "hid" and scenario.kind in ("kbd", "both"):
+        # A make and a break byte per key, except that the guest stops
+        # reading at the last key's press.
+        for line in lines:
+            match = re.match(r"^ST DRV hid keys \S+ usb-bytes ([0-9]+) ", line)
+            if match and int(match.group(1)) < 2 * len(scenario.text) - 1:
+                problems.append("fewer USB scancode bytes than keystrokes")
+    if injector is not None:
+        shutil.rmtree(qmp.parent, ignore_errors=True)
     evidence = [line for line in lines if line.startswith("ST DRV")]
     (work / "evidence.txt").write_text("\n".join(evidence) + "\n")
     return not problems, "; ".join(problems)
+
+
+def inject_input(log: Path, qmp: Path, scenario: Scenario) -> None:
+    """Type and move through QMP once the guest reports it is ready."""
+    deadline = time.monotonic() + scenario.timeout
+    while time.monotonic() < deadline:
+        if log.exists() and "ST DRV hid ready" in log.read_text(
+                errors="replace"):
+            break
+        time.sleep(0.2)
+    else:
+        return
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.connect(str(qmp))
+        stream = sock.makefile("rw")
+
+        def command(name: str, arguments: dict | None = None) -> None:
+            message = {"execute": name}
+            if arguments is not None:
+                message["arguments"] = arguments
+            stream.write(json.dumps(message) + "\n")
+            stream.flush()
+            while True:
+                reply = json.loads(stream.readline())
+                if "return" in reply or "error" in reply:
+                    return
+
+        stream.readline()  # greeting
+        command("qmp_capabilities")
+        if scenario.kind in ("kbd", "both"):
+            for character in scenario.text:
+                for down in (True, False):
+                    command("input-send-event", {"events": [
+                        {"type": "key", "data": {
+                            "down": down,
+                            "key": {"type": "qcode", "data": character}}}]})
+                    time.sleep(0.08)
+        if scenario.kind in ("mouse", "both"):
+            for _ in range(4):
+                command("input-send-event", {"events": [
+                    {"type": "rel", "data": {"axis": "x", "value": 10}},
+                    {"type": "rel", "data": {"axis": "y", "value": 5}}]})
+                time.sleep(0.08)
+            for down in (True, False):
+                command("input-send-event", {"events": [
+                    {"type": "btn", "data": {"down": down,
+                                             "button": "left"}}]})
+                time.sleep(0.08)
 
 
 def check_medium(image: Path, scenario: Scenario) -> list[str]:

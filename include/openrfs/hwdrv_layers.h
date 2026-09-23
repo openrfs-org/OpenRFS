@@ -16,6 +16,8 @@ struct hwdrv_layer {
     enum hwdrv_status (*bind_all)(void);
     size_t (*driver_count)(void);
     const char *(*driver_name)(size_t index);
+    /* Collect reports from polled input devices; NULL if the layer has none. */
+    void (*poll_input)(void);
 };
 
 size_t hwdrv_layer_count(void);
@@ -29,5 +31,6 @@ const char *ipxe_layer_driver_name(size_t index);
 enum hwdrv_status seabios_layer_bind_all(void);
 size_t seabios_layer_driver_count(void);
 const char *seabios_layer_driver_name(size_t index);
+void seabios_layer_poll_input(void);
 
 #endif

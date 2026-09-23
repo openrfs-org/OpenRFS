@@ -17,6 +17,9 @@ void *memset(void *s, int c, size_t n);
 void memset_fl(void *ptr, u8 val, size_t size);
 void memset16_fl(void *ptr, u16 val, size_t size);
 void memcpy_fl(void *d_fl, const void *s_fl, size_t len);
+/* Segments are zero in flat mode (GET_SEG and SEG_LOW), so this is memcpy. */
+void memcpy_far(u16 d_seg, void *d_far, u16 s_seg, const void *s_far,
+                size_t len);
 void *memcpy(void *d1, const void *s1, size_t len);
 #define memcpy __builtin_memcpy
 void iomemcpy(void *d, const void *s, u32 len);

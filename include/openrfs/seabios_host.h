@@ -72,7 +72,15 @@ enum seabios_call_kind {
     SEABIOS_CALL_BIND_PCI = 0,
     SEABIOS_CALL_BIND_ISA,
     SEABIOS_CALL_READ,
-    SEABIOS_CALL_WRITE
+    SEABIOS_CALL_WRITE,
+    /* usb_check_event(): collect keyboard and mouse reports. */
+    SEABIOS_CALL_POLL_INPUT
+};
+
+/* Framework records for devices that are not block media. */
+enum seabios_host_device_class {
+    SEABIOS_HOST_DEVICE_USB_HOST = 0,
+    SEABIOS_HOST_DEVICE_INPUT
 };
 
 struct seabios_call {
@@ -127,6 +135,17 @@ bool seabios_host_isa_irq_enable(unsigned int irq);
 void seabios_host_isa_irq_disable(unsigned int irq);
 uint32_t seabios_host_poll_irqs(void);
 /*
+ * Record a bound device that is not a medium - a USB host controller, a USB
+ * keyboard or mouse - under an instance name made from prefix ("usb0").
+ */
+bool seabios_host_record(void *handle, enum seabios_host_device_class kind,
+    const char *driver, const char *source_path, const char *prefix,
+    const char *description, char *instance, size_t instance_capacity);
+/* Input reports from USB HID devices, already in PS/2 form. */
+void seabios_host_keyboard_byte(uint8_t scancode);
+void seabios_host_pointer_packet(uint8_t flags, uint8_t delta_x,
+    uint8_t delta_y);
+/*
  * Publish a medium: register it with the block layer and record the
  * framework binding against the claim (NULL for ISA devices). The block
  * device's name ("disk0") is written back.
@@ -140,6 +159,13 @@ const char *seabios_glue_driver_name(size_t index);
 const char *seabios_glue_driver_path(size_t index);
 /* Which compiled driver would bind this function, or -1. */
 int seabios_glue_match(const struct seabios_host_pci_info *info);
+/*
+ * The pass a driver binds in: storage first, then xHCI, EHCI and last UHCI
+ * and OHCI, the order SeaBIOS's usb_setup uses so EHCI can hand full- and
+ * low-speed ports to its companion controllers before they enumerate.
+ */
+int seabios_glue_bind_pass(size_t index);
+#define SEABIOS_BIND_PASSES 4
 /* Runs on the arena stack with interrupts disabled. */
 void seabios_glue_dispatch(void *call);
 

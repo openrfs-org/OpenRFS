@@ -18,6 +18,7 @@
 #include <openrfs/de/window.h>
 #include <openrfs/framebuffer.h>
 #include <openrfs/heap.h>
+#include <openrfs/hwdrv.h>
 #include <openrfs/minimal_de.h>
 #include <openrfs/pointer.h>
 #include <openrfs/screen.h>
@@ -1302,5 +1303,6 @@ const char *ui_element_name(enum ui_element_id element)
 /* The minimal console renders pending damage without an event queue. */
 bool ui_events_pending(void)
 {
+    hwdrv_poll_input();
     return state.active && redraw_pending;
 }
