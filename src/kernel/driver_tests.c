@@ -15,12 +15,14 @@
 #include <openrfs/blockdev.h>
 #include <openrfs/clock.h>
 #include <openrfs/console.h>
+#include <openrfs/display.h>
 #include <openrfs/driver_tests.h>
 #include <openrfs/hwdrv.h>
 #include <openrfs/keyboard.h>
 #include <openrfs/netdev.h>
 #include <openrfs/network.h>
 #include <openrfs/pointer.h>
+#include <openrfs/screen.h>
 
 #define DRIVER_TEST_MAX_TOKEN 64U
 #define DRIVER_TEST_DOWNLOAD_BYTES (256U * 1024U)
@@ -41,11 +43,18 @@
 /* How long the HID plan waits for the runner's injected input. */
 #define DRIVER_TEST_HID_TIMEOUT_NS UINT64_C(30000000000)
 
+/* How long the display plan waits for the runner to capture the screen. */
+#define DRIVER_TEST_DISPLAY_TIMEOUT_NS UINT64_C(60000000000)
+/* A geometry no adapter lists, for the refusal control. */
+#define DRIVER_TEST_DISPLAY_BOGUS_WIDTH 1234U
+#define DRIVER_TEST_DISPLAY_BOGUS_HEIGHT 567U
+
 struct driver_test_options {
     char plan[DRIVER_TEST_MAX_TOKEN];
     char driver[DRIVER_TEST_MAX_TOKEN];
     char kind[DRIVER_TEST_MAX_TOKEN];
     char text[DRIVER_TEST_MAX_TOKEN];
+    char mode[DRIVER_TEST_MAX_TOKEN];
     uint32_t port;
     uint32_t bytes;
     uint32_t units;
@@ -636,6 +645,262 @@ static bool hid_plan(const struct driver_test_options *options,
     return true;
 }
 
+/* "800x600x32" */
+static bool parse_mode(const char *text, uint32_t values[3])
+{
+    size_t field = 0U;
+    uint32_t current = 0U;
+    bool digits = false;
+
+    for (size_t index = 0U; text[index] != '\0'; ++index) {
+        const char character = text[index];
+
+        if (character >= '0' && character <= '9') {
+            current = current * 10U + (uint32_t)(character - '0');
+            if (current > 65535U) {
+                return false;
+            }
+            digits = true;
+        } else if (character == 'x' && digits && field < 2U) {
+            values[field++] = current;
+            current = 0U;
+            digits = false;
+        } else {
+            return false;
+        }
+    }
+    if (!digits || field != 2U) {
+        return false;
+    }
+    values[2] = current;
+    return true;
+}
+
+/*
+ * The quadrant pattern, top left to bottom right: red, green, blue, white.
+ * Direct-colour modes use the channel layouts SeaBIOS's vbe.c reports for
+ * each depth; the 8-bit modes use the standard VGA palette the drivers load,
+ * whose entries 4, 2, 1 and 15 are red, green, blue and white.
+ */
+static bool pattern_colors(const struct display_mode *mode,
+    uint32_t colors[4])
+{
+    static const uint32_t palette[4] = { 4U, 2U, 1U, 15U };
+    static const uint32_t rgb555[4] = { 0x7C00U, 0x03E0U, 0x001FU, 0x7FFFU };
+    static const uint32_t rgb565[4] = { 0xF800U, 0x07E0U, 0x001FU, 0xFFFFU };
+    static const uint32_t rgb888[4] = {
+        0xFF0000U, 0x00FF00U, 0x0000FFU, 0xFFFFFFU
+    };
+    const uint32_t *source;
+
+    switch (mode->bits_per_pixel) {
+    case 8U:
+        if (!mode->palette) {
+            return false;
+        }
+        source = palette;
+        break;
+    case 15U:
+        source = rgb555;
+        break;
+    case 16U:
+        source = rgb565;
+        break;
+    case 24U:
+    case 32U:
+        source = rgb888;
+        break;
+    default:
+        return false;
+    }
+    for (size_t index = 0U; index < 4U; ++index) {
+        colors[index] = source[index];
+    }
+    return true;
+}
+
+static void put_pixel(volatile uint8_t *at, uint32_t bytes, uint32_t value)
+{
+    switch (bytes) {
+    case 1U:
+        at[0] = (uint8_t)value;
+        break;
+    case 2U:
+        *(volatile uint16_t *)at = (uint16_t)value;
+        break;
+    case 3U:
+        at[0] = (uint8_t)value;
+        at[1] = (uint8_t)(value >> 8U);
+        at[2] = (uint8_t)(value >> 16U);
+        break;
+    default:
+        *(volatile uint32_t *)at = value;
+        break;
+    }
+}
+
+static uint32_t get_pixel(const volatile uint8_t *at, uint32_t bytes)
+{
+    switch (bytes) {
+    case 1U:
+        return at[0];
+    case 2U:
+        return *(const volatile uint16_t *)at;
+    case 3U:
+        return (uint32_t)at[0] | ((uint32_t)at[1] << 8U) |
+            ((uint32_t)at[2] << 16U);
+    default:
+        return *(const volatile uint32_t *)at;
+    }
+}
+
+static uint32_t quadrant_color(const struct display_mode *mode,
+    const uint32_t colors[4], uint32_t x, uint32_t y)
+{
+    return colors[(y >= mode->height / 2U ? 2U : 0U) +
+        (x >= mode->width / 2U ? 1U : 0U)];
+}
+
+static bool display_plan(const struct driver_test_options *options,
+    const char **reason)
+{
+    uint32_t geometry[3];
+    uint32_t colors[4];
+    uint32_t bytes;
+    uint64_t mismatches = 0U;
+    uint64_t deadline;
+    struct display_info info;
+    struct display_mode mode = { 0 };
+    enum display_status status;
+    size_t index = SIZE_MAX;
+    bool acknowledged = false;
+
+    if (!parse_mode(options->mode, geometry)) {
+        *reason = "openrfs.drvmode must be WIDTHxHEIGHTxBPP";
+        return false;
+    }
+    for (size_t slot = 0U; slot < display_count(); ++slot) {
+        if (!display_info(slot, &info)) {
+            continue;
+        }
+        console_write("ST DRV display candidate ");
+        console_write(info.name);
+        console_write(" ");
+        console_write(info.driver);
+        console_write(" ");
+        console_write(info.description);
+        console_putc('\n');
+        if (index == SIZE_MAX && (options->driver[0] == '\0' ||
+                text_equal(info.driver, options->driver))) {
+            index = slot;
+        }
+    }
+    if (index == SIZE_MAX) {
+        *reason = "no display adapter was bound by the named driver";
+        return false;
+    }
+    /* A geometry the adapter does not list is refused, not approximated. */
+    status = display_set_mode(index, DRIVER_TEST_DISPLAY_BOGUS_WIDTH,
+        DRIVER_TEST_DISPLAY_BOGUS_HEIGHT, geometry[2], &mode);
+    console_write("ST DRV display refusal ");
+    console_write_u64(DRIVER_TEST_DISPLAY_BOGUS_WIDTH);
+    console_putc('x');
+    console_write_u64(DRIVER_TEST_DISPLAY_BOGUS_HEIGHT);
+    console_write(" ");
+    console_write(display_status_string(status));
+    console_putc('\n');
+    if (status != DISPLAY_STATUS_NO_SUCH_MODE) {
+        *reason = "a mode the adapter does not list was not refused";
+        return false;
+    }
+    /*
+     * From here the adapter is the driver's: the kernel's screen console
+     * and the VGA text mirror stop drawing on it before the mode changes.
+     */
+    if (screen_is_active()) {
+        (void)screen_release();
+    }
+    console_release_vga_text();
+    status = display_set_mode(index, geometry[0], geometry[1], geometry[2],
+        &mode);
+    if (status != DISPLAY_STATUS_OK) {
+        console_write("ST DRV display set-mode ");
+        console_write(display_status_string(status));
+        console_putc('\n');
+        *reason = "the driver did not set the requested mode";
+        return false;
+    }
+    console_write("ST DRV display mode ");
+    console_write_u64(mode.width);
+    console_putc('x');
+    console_write_u64(mode.height);
+    console_putc('x');
+    console_write_u64(mode.bits_per_pixel);
+    console_write(" pitch ");
+    console_write_u64(mode.pitch);
+    console_write(" framebuffer ");
+    console_write_hex(mode.framebuffer);
+    console_write(" mode-number ");
+    console_write_hex(mode.mode_number);
+    console_write(mode.palette ? " palette" : " direct");
+    console_putc('\n');
+    if (!pattern_colors(&mode, colors)) {
+        *reason = "the mode's pixel format is not one the plan draws";
+        return false;
+    }
+    bytes = (mode.bits_per_pixel + 7U) / 8U;
+    for (uint32_t y = 0U; y < mode.height; ++y) {
+        volatile uint8_t *row = mode.pixels + (uint64_t)y * mode.pitch;
+
+        for (uint32_t x = 0U; x < mode.width; ++x) {
+            put_pixel(row + (uint64_t)x * bytes, bytes,
+                quadrant_color(&mode, colors, x, y));
+        }
+    }
+    /* Every pixel reads back as written: the mapping is the adapter's. */
+    for (uint32_t y = 0U; y < mode.height; ++y) {
+        const volatile uint8_t *row = mode.pixels + (uint64_t)y * mode.pitch;
+
+        for (uint32_t x = 0U; x < mode.width; ++x) {
+            if (get_pixel(row + (uint64_t)x * bytes, bytes) !=
+                quadrant_color(&mode, colors, x, y)) {
+                ++mismatches;
+            }
+        }
+    }
+    console_write("ST DRV display pattern ");
+    console_write_u64((uint64_t)mode.width * mode.height);
+    console_write(" pixels mismatches ");
+    console_write_u64(mismatches);
+    console_putc('\n');
+    if (mismatches != 0U) {
+        *reason = "the framebuffer did not hold the pattern";
+        return false;
+    }
+    while (keyboard_read(&(struct keyboard_event){ 0 }) ==
+        KEYBOARD_STATUS_OK) {
+    }
+    /* The runner captures the screen now and answers with a key press. */
+    console_write("ST DRV display ready\n");
+    deadline = clock_monotonic_ns() + DRIVER_TEST_DISPLAY_TIMEOUT_NS;
+    while (!acknowledged && clock_monotonic_ns() < deadline) {
+        struct keyboard_event event;
+
+        while (keyboard_read(&event) == KEYBOARD_STATUS_OK) {
+            if (event.pressed) {
+                acknowledged = true;
+            }
+        }
+        __asm__ volatile ("pause" : : : "memory");
+    }
+    if (!acknowledged) {
+        *reason = "the runner never captured the screen";
+        return false;
+    }
+    console_write("ST DRV display captured\n");
+    return true;
+}
+
 bool driver_tests_run(const char *command_line, size_t length,
     const char **reason)
 {
@@ -668,6 +933,8 @@ bool driver_tests_run(const char *command_line, size_t length,
         options.kind, sizeof(options.kind));
     (void)token_value(command_line, length, "openrfs.drvtext=",
         options.text, sizeof(options.text));
+    (void)token_value(command_line, length, "openrfs.drvmode=",
+        options.mode, sizeof(options.mode));
     if (token_value(command_line, length, "openrfs.drvunits=", number,
             sizeof(number)) && !parse_decimal(number, &options.units)) {
         *reason = "openrfs.drvunits is not a number";
@@ -709,6 +976,9 @@ bool driver_tests_run(const char *command_line, size_t length,
     }
     if (text_equal(options.plan, "hid")) {
         return hid_plan(&options, reason);
+    }
+    if (text_equal(options.plan, "display")) {
+        return display_plan(&options, reason);
     }
     if (text_equal(options.plan, "blk")) {
         if (!storage_plan(&options, reason)) {

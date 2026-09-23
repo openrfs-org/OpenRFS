@@ -33,4 +33,9 @@ size_t seabios_layer_driver_count(void);
 const char *seabios_layer_driver_name(size_t index);
 void seabios_layer_poll_input(void);
 
+/* SeaBIOS VGA drivers: ports/seavga, vendor/seabios/vgasrc. */
+enum hwdrv_status seavga_layer_bind_all(void);
+size_t seavga_layer_driver_count(void);
+const char *seavga_layer_driver_name(size_t index);
+
 #endif

@@ -164,6 +164,17 @@ static inline void outsl(u16 port, u32 *data, u32 count)
                          : "+c"(count), "+S"(data) : "d"(port) : "memory");
 }
 
+/* Descriptor bits vgafb.c names on a 16-bit-only path. */
+#define GDT_CODE     (0x9bULL << 40)
+#define GDT_DATA     (0x93ULL << 40)
+#define GDT_B        (0x1ULL << 54)
+#define GDT_G        (0x1ULL << 55)
+#define GDT_BASE(v)  ((((u64)(v) & 0xff000000) << 32)           \
+                      | (((u64)(v) & 0x00ffffff) << 16))
+#define GDT_LIMIT(v) ((((u64)(v) & 0x000f0000) << 32)   \
+                      | (((u64)(v) & 0x0000ffff) << 0))
+#define GDT_GRANLIMIT(v) (GDT_G | GDT_LIMIT((v) >> 12))
+
 /* x86 keeps loads and stores in order; the barriers stop the compiler. */
 static inline void smp_rmb(void)
 {

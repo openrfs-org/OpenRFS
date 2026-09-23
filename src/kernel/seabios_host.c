@@ -159,15 +159,15 @@ static bool arena_ready(void)
 }
 
 /*
- * One trip into the vendored code: on the arena stack, with interrupts
- * disabled for its whole duration, and never re-entered.
+ * One trip into vendored code: on the arena stack, with interrupts disabled
+ * for its whole duration, and never re-entered.
  */
-static bool seabios_call(struct seabios_call *call)
+bool seabios_host_run(void (*entry)(void *), void *argument)
 {
     uint64_t flags;
     bool preemptive;
 
-    if (in_call || !arena_ready()) {
+    if (entry == NULL || in_call || !arena_ready()) {
         return false;
     }
     __asm__ volatile ("pushfq; popq %0; cli" : "=r"(flags) : : "memory");
@@ -177,8 +177,7 @@ static bool seabios_call(struct seabios_call *call)
     if (preemptive) {
         (void)thread_disable_preemption();
     }
-    hwdrv_call_on_stack(seabios_glue_dispatch, call,
-        call_stack + SEABIOS_STACK_BYTES);
+    hwdrv_call_on_stack(entry, argument, call_stack + SEABIOS_STACK_BYTES);
     if (preemptive) {
         (void)thread_enable_preemption();
     }
@@ -187,6 +186,11 @@ static bool seabios_call(struct seabios_call *call)
         __asm__ volatile ("sti" : : : "memory");
     }
     return true;
+}
+
+static bool seabios_call(struct seabios_call *call)
+{
+    return seabios_host_run(seabios_glue_dispatch, call);
 }
 
 static bool isa_arena_ready(void)

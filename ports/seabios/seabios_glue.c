@@ -64,6 +64,7 @@
 struct hlist_head PCIDevices;
 int MaxPCIBus;
 struct bios_data_area_s openrfs_seabios_bda;
+struct rmode_IVT openrfs_seabios_ivt;
 struct floppy_dbt_s diskette_param_table;
 u8 *bounce_buf_fl;
 

@@ -106,6 +106,10 @@ class Scenario:
     native_nvme_fixture: bool = False
     # HID: what the runner types once the guest says it is ready.
     text: str = ""
+    # Display: the mode the guest sets (WIDTHxHEIGHTxBPP) and the QEMU
+    # device whose screen the runner captures.
+    mode: str = ""
+    screen: str = ""
 
 
 def network_scenario(model: str, driver: str, description: str,
@@ -201,6 +205,28 @@ def hid_scenario(kind: str, description: str, devices: list[str],
         ]
     return Scenario(plan="hid", description=description, qemu=devices,
                     markers=markers, machine=machine, kind=kind, text=text)
+
+
+DISPLAY_BOGUS_MODE = "1234x567"   # must match driver_tests.c
+
+
+def display_scenario(driver: str, description: str, device: str, mode: str,
+                     machine: str = "pc", timeout: int = 180) -> Scenario:
+    """One adapter as the only display, driven into one mode."""
+    width, height, _ = (int(value) for value in mode.split("x"))
+    markers = [
+        rf"^OpenRFS: display0 bound by SeaBIOS {re.escape(driver)}: ",
+        rf"^ST DRV display refusal {DISPLAY_BOGUS_MODE} "
+        r"the adapter has no such mode$",
+        rf"^ST DRV display mode {mode} pitch [1-9][0-9]* framebuffer "
+        r"0x[0-9A-Fa-f]+ mode-number 0x[0-9A-Fa-f]+ (palette|direct)$",
+        rf"^ST DRV display pattern {width * height} pixels mismatches 0$",
+        r"^ST DRV display captured$",
+    ]
+    return Scenario(plan="display", description=description, driver=driver,
+                    qemu=["-vga", "none", "-device", f"{device},id=video0"],
+                    markers=markers, machine=machine, timeout=timeout,
+                    drivers_option=driver, mode=mode, screen="video0")
 
 
 def usb_host_marker(driver: str) -> str:
@@ -390,6 +416,50 @@ SCENARIOS: dict[str, Scenario] = {
          "-device", "usb-kbd,id=usbkbd,bus=usbhc.0,port=1",
          "-device", "usb-mouse,id=usbmouse,bus=usbhc.0,port=2"],
         host="ehci", machine="q35"),
+    # The standard VGA and Cirrus builds program an adapter that no option
+    # ROM has touched: with romfile= empty the firmware has no VGA BIOS to
+    # run, GRUB sets no mode (so OpenRFS boots on serial alone), and the
+    # driver's own setup brings the card up from reset. This is also the
+    # only way to boot OpenRFS on a Cirrus card: its VGA BIOS offers no
+    # 32-bit mode, and OpenRFS refuses any other Multiboot2 framebuffer.
+    # With a ROM, the standard VGA would be left in a Bochs VBE mode, which
+    # QEMU's VGA core keeps overriding the standard CRTC registers with.
+    "display-stdvga": display_scenario(
+        "stdvga", "QEMU standard VGA from reset, VGA mode 13h (320x200x8)",
+        "VGA,romfile=", "320x200x8"),
+    "display-bochsvga": display_scenario(
+        "bochsvga", "QEMU standard VGA (Bochs VBE DISPI), 800x600 32 bpp",
+        "VGA", "800x600x32"),
+    "display-bochsvga-8bpp": display_scenario(
+        "bochsvga", "QEMU standard VGA (Bochs VBE DISPI), 1024x768 8 bpp",
+        "VGA", "1024x768x8"),
+    "display-bochsvga-vmware": display_scenario(
+        "bochsvga", "VMware SVGA II through its VBE DISPI interface",
+        "vmware-svga", "800x600x32"),
+    "display-bochsvga-qxl": display_scenario(
+        "bochsvga", "QXL VGA through its VBE DISPI interface",
+        "qxl-vga", "800x600x32"),
+    "display-bochsvga-virtio": display_scenario(
+        "bochsvga", "virtio-vga through its VBE DISPI interface",
+        "virtio-vga", "800x600x32"),
+    "display-cirrus": display_scenario(
+        "cirrus", "Cirrus Logic CL-GD5446 from reset, 800x600 24 bpp",
+        "cirrus-vga,romfile=", "800x600x24"),
+    "display-cirrus-16bpp": display_scenario(
+        "cirrus", "Cirrus Logic CL-GD5446 from reset, 1024x768 16 bpp",
+        "cirrus-vga,romfile=", "1024x768x16"),
+    "display-ati-rv100": display_scenario(
+        "ati", "ATI Radeon 7000 (RV100), 800x600 32 bpp",
+        "ati-vga,model=rv100", "800x600x32"),
+    "display-ati-rage128": display_scenario(
+        "ati", "ATI Rage 128 Pro, 640x480 16 bpp",
+        "ati-vga,model=rage128p", "640x480x16"),
+    "display-bochs-display": display_scenario(
+        "bochs-display", "QEMU bochs-display (no legacy VGA), 1024x768",
+        "bochs-display,xres=1024,yres=768", "1024x768x32"),
+    "display-ramfb": display_scenario(
+        "ramfb", "QEMU ramfb (fw_cfg RAM framebuffer), 1024x768",
+        "ramfb", "1024x768x32"),
     "blk-nvme": storage_scenario(
         "nvme", "NVM Express controller (SeaBIOS driver, selected)",
         ["-drive", DISK,
@@ -489,6 +559,16 @@ def run_scenario(name: str, scenario: Scenario, args: argparse.Namespace
     qemu += [argument.replace("{image}", str(image))
              for argument in scenario.qemu]
     injector = None
+    screen = work / "screen.ppm"
+    if screen.exists():
+        screen.unlink()
+    if scenario.plan == "display":
+        options += [f"openrfs.drvmode={scenario.mode}"]
+        qmp = Path(tempfile.mkdtemp(prefix="orfs-qmp-")) / "qmp.sock"
+        qemu += ["-qmp", f"unix:{qmp},server=on,wait=off"]
+        injector = threading.Thread(
+            target=capture_screen, args=(log, qmp, scenario, screen, work),
+            daemon=True)
     if scenario.plan == "hid":
         options += [f"openrfs.drvkind={scenario.kind}",
                     f"openrfs.drvtext={scenario.text}"]
@@ -537,6 +617,8 @@ def run_scenario(name: str, scenario: Scenario, args: argparse.Namespace
             problems.append(f"missing marker {marker}")
     if scenario.plan == "blk" and not problems:
         problems += check_medium(image, scenario)
+    if scenario.plan == "display" and not problems:
+        problems += check_screen(screen, scenario, work)
     if scenario.plan == "hid" and scenario.kind in ("kbd", "both"):
         # A make and a break byte per key, except that the guest stops
         # reading at the last key's press.
@@ -597,6 +679,132 @@ def inject_input(log: Path, qmp: Path, scenario: Scenario) -> None:
                     {"type": "btn", "data": {"down": down,
                                              "button": "left"}}]})
                 time.sleep(0.08)
+
+
+def capture_screen(log: Path, qmp: Path, scenario: Scenario, screen: Path,
+                   work: Path) -> None:
+    """Once the guest has drawn, dump the screen and acknowledge it."""
+    deadline = time.monotonic() + scenario.timeout
+    while time.monotonic() < deadline:
+        if log.exists() and "ST DRV display ready" in log.read_text(
+                errors="replace"):
+            break
+        time.sleep(0.2)
+    else:
+        return
+    errors = []
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.connect(str(qmp))
+        stream = sock.makefile("rw")
+
+        def command(name: str, arguments: dict | None = None) -> None:
+            message = {"execute": name}
+            if arguments is not None:
+                message["arguments"] = arguments
+            stream.write(json.dumps(message) + "\n")
+            stream.flush()
+            while True:
+                reply = json.loads(stream.readline())
+                if "error" in reply:
+                    errors.append(f"{name}: {reply['error']}")
+                    return
+                if "return" in reply:
+                    return
+
+        stream.readline()  # greeting
+        command("qmp_capabilities")
+        arguments = {"filename": str(screen)}
+        if scenario.screen:
+            arguments["device"] = scenario.screen
+        command("screendump", arguments)
+        for down in (True, False):
+            command("input-send-event", {"events": [
+                {"type": "key", "data": {
+                    "down": down, "key": {"type": "qcode", "data": "ret"}}}]})
+            time.sleep(0.1)
+    if errors:
+        (work / "qmp-errors.txt").write_text("\n".join(errors) + "\n")
+
+
+def read_ppm(path: Path) -> tuple[int, int, bytes]:
+    """A binary PPM (P6, maxval 255) as width, height and RGB bytes."""
+    data = path.read_bytes()
+    fields: list[bytes] = []
+    offset = 0
+    while len(fields) < 4:
+        while data[offset:offset + 1].isspace():
+            offset += 1
+        if data[offset:offset + 1] == b"#":
+            offset = data.index(b"\n", offset) + 1
+            continue
+        end = offset
+        while not data[end:end + 1].isspace():
+            end += 1
+        fields.append(data[offset:end])
+        offset = end
+    if fields[0] != b"P6" or int(fields[3]) != 255:
+        raise ValueError("not a P6 PPM with maxval 255")
+    width, height = int(fields[1]), int(fields[2])
+    pixels = data[offset + 1:offset + 1 + width * height * 3]
+    if len(pixels) != width * height * 3:
+        raise ValueError("truncated PPM")
+    return width, height, pixels
+
+
+# The guest's quadrants: red, green, blue, white (see driver_tests.c).
+QUADRANT_COLORS = ((1, 0, 0), (0, 1, 0), (0, 0, 1), (1, 1, 1))
+
+
+def check_screen(screen: Path, scenario: Scenario, work: Path) -> list[str]:
+    """Check what QEMU's display model scanned out of the adapter."""
+    if not screen.exists():
+        errors = work / "qmp-errors.txt"
+        detail = errors.read_text().strip() if errors.exists() else ""
+        return [f"no screendump was captured {detail}".strip()]
+    try:
+        width, height, pixels = read_ppm(screen)
+    except (ValueError, IndexError) as error:
+        return [f"unreadable screendump: {error}"]
+    mode_width, mode_height, _ = (int(v) for v in scenario.mode.split("x"))
+    if width % mode_width or height % mode_height:
+        return [f"screen is {width}x{height}, not the mode "
+                f"{mode_width}x{mode_height} or a whole multiple of it"]
+    scale_x, scale_y = width // mode_width, height // mode_height
+    if scale_x not in (1, 2) or scale_y not in (1, 2):
+        return [f"screen is {width}x{height} for a "
+                f"{mode_width}x{mode_height} mode"]
+
+    def colour(x: int, y: int) -> tuple[int | None, ...]:
+        at = ((y * scale_y) * width + x * scale_x) * 3
+        return tuple(1 if value >= 0x80 else 0 if value <= 0x40 else None
+                     for value in pixels[at:at + 3])
+
+    def expected(x: int, y: int) -> tuple[int, int, int]:
+        return QUADRANT_COLORS[(2 if y >= mode_height // 2 else 0) +
+                               (1 if x >= mode_width // 2 else 0)]
+
+    points = set()
+    step_x, step_y = max(1, mode_width // 32), max(1, mode_height // 32)
+    for y in range(0, mode_height, step_y):
+        for x in range(0, mode_width, step_x):
+            points.add((x, y))
+    # The quadrant edges fall exactly on the middle row and column on every
+    # line: a wrong pitch would shear them.
+    for y in range(0, mode_height, step_y):
+        points.update({(mode_width // 2 - 1, y), (mode_width // 2, y)})
+    for x in range(0, mode_width, step_x):
+        points.update({(x, mode_height // 2 - 1), (x, mode_height // 2)})
+    points.update({(0, 0), (mode_width - 1, 0), (0, mode_height - 1),
+                   (mode_width - 1, mode_height - 1)})
+    wrong = [(x, y) for x, y in sorted(points) if colour(x, y) != expected(x, y)]
+    (work / "screen-check.txt").write_text(
+        f"screen {width}x{height} mode {scenario.mode} "
+        f"samples {len(points)} wrong {len(wrong)}\n")
+    if wrong:
+        x, y = wrong[0]
+        return [f"{len(wrong)} of {len(points)} sampled pixels wrong, "
+                f"first at {x},{y}: {colour(x, y)} for {expected(x, y)}"]
+    return []
 
 
 def check_medium(image: Path, scenario: Scenario) -> list[str]:

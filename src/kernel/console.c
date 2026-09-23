@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -15,6 +16,12 @@
 
 static size_t console_row;
 static size_t console_column;
+/*
+ * Cleared once a display driver owns the adapter: in a graphics mode the
+ * page at 0xB8000 is no longer a text buffer, and on some adapters it is
+ * the adapter's memory, so mirrored text would land in the picture.
+ */
+static bool vga_text_attached = true;
 
 static inline void outb(uint16_t port, uint8_t value)
 {
@@ -67,6 +74,11 @@ static void console_clear(void)
 
 static void console_scroll(void)
 {
+    if (!vga_text_attached) {
+        console_row = VGA_HEIGHT - 1U;
+        return;
+    }
+
     for (size_t row = 1; row < VGA_HEIGHT; ++row) {
         for (size_t column = 0; column < VGA_WIDTH; ++column) {
             VGA_MEMORY[(row - 1U) * VGA_WIDTH + column] =
@@ -108,7 +120,10 @@ void console_putc(char character)
         console_column = 0;
         ++console_row;
     } else {
-        VGA_MEMORY[console_row * VGA_WIDTH + console_column] = vga_entry(character);
+        if (vga_text_attached) {
+            VGA_MEMORY[console_row * VGA_WIDTH + console_column] =
+                vga_entry(character);
+        }
         ++console_column;
 
         if (console_column == VGA_WIDTH) {
@@ -120,6 +135,11 @@ void console_putc(char character)
     if (console_row == VGA_HEIGHT) {
         console_scroll();
     }
+}
+
+void console_release_vga_text(void)
+{
+    vga_text_attached = false;
 }
 
 void console_write(const char *text)

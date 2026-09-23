@@ -12,7 +12,10 @@ static const struct hwdrv_layer layers[] = {
     { "seabios", seabios_layer_bind_all, seabios_layer_driver_count,
         seabios_layer_driver_name, seabios_layer_poll_input },
     { "ipxe", ipxe_layer_bind_all, ipxe_layer_driver_count,
-        ipxe_layer_driver_name, NULL }
+        ipxe_layer_driver_name, NULL },
+    /* Display adapters, bound only when named (see seavga_host.c). */
+    { "seavga", seavga_layer_bind_all, seavga_layer_driver_count,
+        seavga_layer_driver_name, NULL }
 };
 
 size_t hwdrv_layer_count(void)

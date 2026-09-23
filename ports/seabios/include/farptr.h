@@ -12,17 +12,32 @@
 #include "types.h"
 #include "x86.h"
 
+#ifdef OPENRFS_SEABIOS_FAR_SEGMENTS
+/*
+ * The VGA drivers legitimately address real-mode memory: the VGA windows at
+ * segments A000, B000 and B800, which resolve to the identity-mapped
+ * physical windows. The BIOS Data Area (segment 40, where the VGA BIOS keeps
+ * its mode state) resolves to the layer's private copy, as GET_BDA does, and
+ * segment zero is flat memory. Any other segment is refused at run time.
+ */
+void *openrfs_seavga_far(u16 seg, const volatile void *offset, u32 size);
+#define GET_FARVAR(seg, var) \
+    (*(typeof(&(var)))openrfs_seavga_far((seg), &(var), sizeof(var)))
+#define SET_FARVAR(seg, var, val) \
+    do { GET_FARVAR((seg), (var)) = (val); } while (0)
+#else
 /*
  * A far access in flat mode reads real-mode memory (the IVT and BDA at
- * physical 0x0-0x4FF). OpenRFS never lends that memory to a driver:
- * biosvar.h redirects the BDA to a private copy, and any other far access
- * fails at link time instead of touching low memory.
+ * physical 0x0-0x4FF). The storage and USB drivers never need it: biosvar.h
+ * redirects the BDA to a private copy, and any other far access fails at
+ * link time instead of touching low memory.
  */
 extern void openrfs_seabios_far_access_unsupported(void) __noreturn;
 #define GET_FARVAR(seg, var) \
     (openrfs_seabios_far_access_unsupported(), (var))
 #define SET_FARVAR(seg, var, val) \
     do { openrfs_seabios_far_access_unsupported(); (void)(val); } while (0)
+#endif
 #define GET_VAR(seg, var) (var)
 #define SET_VAR(seg, var, val) do { (var) = (val); } while (0)
 #define SET_SEG(SEG, value) ((void)(value))

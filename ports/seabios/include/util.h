@@ -44,6 +44,11 @@ int acpi_dsdt_find_irq(struct acpi_device *dev, u64 *irq);
 struct acpi_device *acpi_dsdt_find_eisaid(struct acpi_device *prev,
                                           u16 eisaid);
 
+/* fw/coreboot.c: OpenRFS lends the drivers no coreboot tables. */
+struct cb_header;
+struct cb_header *find_cb_table(void);
+void *find_cb_subtable(struct cb_header *cbh, u32 tag);
+
 /* misc.c: the diskette parameter table floppy_setup copies into place. */
 struct floppy_dbt_s;
 extern struct floppy_dbt_s diskette_param_table;

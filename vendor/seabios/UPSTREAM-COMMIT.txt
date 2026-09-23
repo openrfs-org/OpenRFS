@@ -38,18 +38,37 @@ Vendored paths (byte-for-byte upstream; SOURCE-MANIFEST.sha256):
   src/hw/ps2port.h
   src/hw/pci.h, pcidevice.h, pic.h, rtc.h
   src/block.h, bregs.h, byteorder.h, list.h, std/bda.h, std/disk.h
+  vgasrc/stdvga.c, stdvga.h, stdvgaio.c, stdvgamodes.c
+                                     standard VGA registers and modes
+  vgasrc/bochsvga.c, bochsvga.h      Bochs VBE DISPI (QEMU std VGA, VMware
+                                     SVGA, QXL, virtio-vga)
+  vgasrc/clext.c                     Cirrus Logic CL-GD5446
+  vgasrc/atiext.c                    ATI Rage 128 Pro / Radeon RV100
+  vgasrc/bochsdisplay.c              QEMU bochs-display
+  vgasrc/ramfb.c                     QEMU ramfb (see below)
+  vgasrc/cbvga.c, svgamodes.c, svgamodes.h, vgafonts.c, vgabios.h,
+    vgafb.h, vgahw.h, vgautil.h, geodevga.h
+  src/std/vga.h, std/vbe.h, std/pmm.h
 
 Deliberately not vendored: SeaBIOS's POST, int13/int15 handlers, boot
-menu, memory manager, threads, output engine and every header that describes
+menu, memory manager, threads, output engine, the VGA BIOS's INT 10h and
+VBE handlers (vgabios.c, vbe.c, vgainit.c, vgafb.c, swcursor.c, the entry
+assembly) and every header that describes
 the 16-bit or segmented environment (types.h, farptr.h, biosvar.h, x86.h,
 malloc.h, output.h, stacks.h, util.h, string.h, config.h and friends);
 ports/seabios/include replaces them. hw/pci_regs.h and hw/pci_ids.h are also
 replaced there with the PCI-specification constants the drivers use, because
 SeaBIOS's copies came from Linux without a licence notice of their own.
 
-One vendored file is also compiled through an OpenRFS wrapper:
-src/hw/usb-uhci.c is built from ports/seabios/lp64/usb-uhci.c, which first
-includes ports/seabios/lp64/usb-uhci.h - a copy of src/hw/usb-uhci.h whose
-struct uhci_td declares the hardware buffer pointer as u32 instead of
-void *. That copy (LGPL-3.0, like its original) is the only modified
-SeaBIOS text in OpenRFS; the vendored file itself is unchanged.
+Two vendored files are also compiled through OpenRFS wrappers, both for
+the same reason: SeaBIOS builds them for i386, and one structure each
+changes shape on x86-64.
+  src/hw/usb-uhci.c is built from ports/seabios/lp64/usb-uhci.c, which first
+  includes ports/seabios/lp64/usb-uhci.h - a copy of src/hw/usb-uhci.h
+  whose struct uhci_td declares the hardware buffer pointer as u32 instead
+  of void *. That copy (LGPL-3.0, like its original) is the only modified
+  SeaBIOS text in OpenRFS.
+  vgasrc/ramfb.c is built from ports/seavga/lp64/ramfb.c, which includes
+  every header ramfb.c uses and then ramfb.c itself under #pragma pack(4),
+  so struct QemuRAMFBCfg has its i386 size of 28 bytes (QEMU's etc/ramfb).
+The vendored files themselves are unchanged.

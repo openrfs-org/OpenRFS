@@ -421,8 +421,32 @@ SEABIOS_VENDOR_CFLAGS := $(SEABIOS_BASE_CFLAGS) -Wall -Werror \
 SEABIOS_GLUE_CFLAGS := $(SEABIOS_BASE_CFLAGS) -Wall -Wextra -Werror \
 	-Wno-unused-parameter -Wno-address-of-packed-member -Wno-sign-compare
 
+# The SeaBIOS VGA drivers: the same environment, with the VGA configuration
+# in front of the storage layer's and real-mode segments resolved at run
+# time (see ports/seabios/include/farptr.h). One object per card type.
+include ports/seavga/sources.mk
+SEAVGA_OBJECT_DIR := $(BUILD_DIR)/seavga
+SEAVGA_BASE_CFLAGS := $(subst -Iports/seabios/include,-Iports/seavga/include \
+	-Iports/seabios/include -Ivendor/seabios/vgasrc,$(SEABIOS_BASE_CFLAGS)) \
+	-DOPENRFS_SEABIOS_FAR_SEGMENTS
+SEAVGA_VENDOR_CFLAGS := $(SEAVGA_BASE_CFLAGS) -Wall -Werror \
+	-Wno-address-of-packed-member -Wno-pointer-to-int-cast \
+	-Wno-int-to-pointer-cast -Wno-unused-function -Wno-array-bounds \
+	-Wno-stringop-overflow -Wno-maybe-uninitialized
+SEAVGA_GLUE_CFLAGS := $(SEAVGA_BASE_CFLAGS) -Wall -Wextra -Werror \
+	-Wno-unused-parameter -Wno-address-of-packed-member -Wno-sign-compare
+SEAVGA_LIBC_OBJECT := $(SEAVGA_OBJECT_DIR)/libc.o
+SEAVGA_LAYER_OBJECTS := $(patsubst %,$(SEAVGA_OBJECT_DIR)/seavga-%.o,\
+	$(SEAVGA_VARIANTS))
+SEAVGA_OBJECTS := $(SEAVGA_LIBC_OBJECT) $(foreach variant,$(SEAVGA_VARIANTS),\
+	$(patsubst %,$(SEAVGA_OBJECT_DIR)/$(variant)/%.o,\
+		$(SEAVGA_$(variant)_FILES) seavga_glue) \
+	$(patsubst %,$(SEAVGA_OBJECT_DIR)/$(variant)/lp64/%.o,\
+		$(SEAVGA_$(variant)_LP64_FILES)))
+
 OBJECTS := $(ASM_OBJECTS) $(C_OBJECTS) $(MONOCYPHER_OBJECTS) \
-	$(IPXE_OBJECTS) $(SEABIOS_LAYER_OBJECT) $(PACKAGE_TRUST_ASSET_OBJECT)
+	$(IPXE_OBJECTS) $(SEABIOS_LAYER_OBJECT) $(SEAVGA_LAYER_OBJECTS) \
+	$(PACKAGE_TRUST_ASSET_OBJECT)
 
 MONOCYPHER_CFLAGS := $(COMMON_FLAGS) -std=c11 -O2 -mno-red-zone \
 	-mno-mmx -mno-sse -mno-sse2 -msoft-float -fno-tree-vectorize \
@@ -442,7 +466,7 @@ RUSTFLAGS := -C panic=abort -C relocation-model=static \
 	-C llvm-args=-max-store-memcpy=1024 \
 	-C llvm-args=-max-store-memset=1024
 DEPENDENCIES := $(C_OBJECTS:.o=.d) $(MONOCYPHER_OBJECTS:.o=.d) \
-	$(IPXE_OBJECTS:.o=.d) $(SEABIOS_OBJECTS:.o=.d) \
+	$(IPXE_OBJECTS:.o=.d) $(SEABIOS_OBJECTS:.o=.d) $(SEAVGA_OBJECTS:.o=.d) \
 	$(PACKAGE_TRUST_ASSET_OBJECT:.o=.d) $(SDL2_OBJECTS:.o=.d)
 
 # The qemu-test-% scenarios are deliberately absent from .PHONY. GNU Make skips
@@ -997,6 +1021,40 @@ $(SEABIOS_LAYER_OBJECT): $(SEABIOS_OBJECTS) $(SEABIOS_EXPORTS)
 	$(KERNEL_LD) -r -o $@.partial $(SEABIOS_OBJECTS)
 	$(OBJCOPY) --keep-global-symbols=$(SEABIOS_EXPORTS) $@.partial $@
 	rm -f $@.partial
+
+$(SEAVGA_LIBC_OBJECT): ports/seabios/libc.c
+	mkdir -p $(dir $@)
+	$(KERNEL_CC) $(SEAVGA_GLUE_CFLAGS) -MMD -MP -c $< -o $@
+
+# One card type's build: its vgasrc files and the glue, compiled with its
+# SEAVGA_VARIANT_* definition, then linked with every symbol but its
+# dispatch entry made local.
+define SEAVGA_VARIANT_RULES
+$$(SEAVGA_OBJECT_DIR)/$(1)/%.o: vendor/seabios/vgasrc/%.c
+	mkdir -p $$(dir $$@)
+	$$(KERNEL_CC) $$(SEAVGA_VENDOR_CFLAGS) -D$$(SEAVGA_$(1)_DEFINE) \
+		-MMD -MP -c $$< -o $$@
+
+$$(SEAVGA_OBJECT_DIR)/$(1)/lp64/%.o: ports/seavga/lp64/%.c
+	mkdir -p $$(dir $$@)
+	$$(KERNEL_CC) $$(SEAVGA_VENDOR_CFLAGS) -D$$(SEAVGA_$(1)_DEFINE) \
+		-MMD -MP -c $$< -o $$@
+
+$$(SEAVGA_OBJECT_DIR)/$(1)/seavga_glue.o: ports/seavga/seavga_glue.c
+	mkdir -p $$(dir $$@)
+	$$(KERNEL_CC) $$(SEAVGA_GLUE_CFLAGS) -D$$(SEAVGA_$(1)_DEFINE) \
+		-DSEAVGA_DISPATCH=seavga_$(1)_dispatch -MMD -MP -c $$< -o $$@
+
+$$(SEAVGA_OBJECT_DIR)/seavga-$(1).o: $$(patsubst %,$$(SEAVGA_OBJECT_DIR)/$(1)/%.o,\
+		$$(SEAVGA_$(1)_FILES) seavga_glue) \
+		$$(patsubst %,$$(SEAVGA_OBJECT_DIR)/$(1)/lp64/%.o,\
+		$$(SEAVGA_$(1)_LP64_FILES)) $$(SEAVGA_LIBC_OBJECT)
+	$$(KERNEL_LD) -r -o $$@.partial $$^
+	$$(OBJCOPY) --keep-global-symbol=seavga_$(1)_dispatch $$@.partial $$@
+	rm -f $$@.partial
+endef
+$(foreach variant,$(SEAVGA_VARIANTS),\
+	$(eval $(call SEAVGA_VARIANT_RULES,$(variant))))
 
 $(BUILD_DIR)/package_trust.o: CPPFLAGS += -Ivendor/monocypher/src \
 	-Ivendor/monocypher/src/optional

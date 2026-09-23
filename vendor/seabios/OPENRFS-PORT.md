@@ -5,8 +5,9 @@ The files in this directory are byte-for-byte SeaBIOS sources (see
 them. They are compiled for x86-64 in the equivalent of SeaBIOS's 32-bit flat
 mode (`MODE16=0`, `MODESEGMENT=0`) with SeaBIOS's own code-generation choices
 (`-fno-strict-aliasing`, `-fno-delete-null-pointer-checks`), then partially
-linked into one object whose only global symbols are the five
-`seabios_glue_*` entry points (`ports/seabios/exports.txt`).
+linked into one object whose only global symbols are the six
+`seabios_glue_*` entry points (`ports/seabios/exports.txt`). The VGA
+drivers are built separately, once per card type (see "VGA drivers").
 
 ## What OpenRFS provides instead of SeaBIOS's POST
 
@@ -76,11 +77,61 @@ with SeaBIOS's names; `ports/seabios/seabios_glue.c` implements them and
   field and the controller saw garbage. `ports/seabios/lp64/usb-uhci.c`
   compiles the unchanged `usb-uhci.c` after defining that header's guard
   through `ports/seabios/lp64/usb-uhci.h`, a copy whose only change is
-  `u32 buffer`. No other vendored hardware structure holds a pointer.
+  `u32 buffer`. No other vendored hardware structure holds a pointer; the
+  one other structure whose i386 layout matters is ramfb's (below).
 * **Platform.** `runningOnQEMU()` answers from the QEMU host-bridge
   subsystem ID (1af4:1100), the test SeaBIOS's coreboot build uses, so the
   three drivers SeaBIOS enables only on QEMU (lsi-scsi, esp-scsi, mpt-scsi)
   decline elsewhere. Boot-order and firmware-file lookups miss.
+
+## VGA drivers
+
+SeaBIOS builds one VGA BIOS per card type; `vgahw.h` dispatches on Kconfig
+constants, so a build holds one card's driver and the standard VGA code it
+falls back on. OpenRFS compiles `vgasrc/` the same way, once per card type
+(`ports/seavga/sources.mk`: stdvga, bochsvga, cirrus, ati, bochs-display,
+ramfb), each selected by one `SEAVGA_VARIANT_*` definition in
+`ports/seavga/include/config.h` and partially linked into its own object
+whose only global symbol is `seavga_<card>_dispatch`.
+
+* **What runs.** SeaBIOS's `vgainit.c`, `vgabios.c` (INT 10h) and `vbe.c`
+  are not compiled. The kernel calls the card driver directly:
+  `vgahw_setup()` when it binds the adapter, and `vgahw_list_modes()`,
+  `vgahw_find_mode()` and `vgahw_set_mode()` (with `MF_LINEARFB` for VBE
+  modes) when it asks for an exact width, height and depth. The pitch
+  reported is `vgahw_minimum_linelength()`, the `bytes_per_scanline` that
+  `vbe.c` puts in the mode information block. `ports/seavga/seavga_glue.c`
+  supplies the globals `vgainit.c` and `vbe.c` own, the `vgabios.c`
+  helpers the drivers call (`vga_bpp`, `calc_page_size`) and refuses the
+  INT 10h-only paths (`bda_save_restore`, `handle_gfx_op`).
+* **Segments.** The drivers address real-mode memory through
+  `GET_FARVAR`/`SET_FARVAR` and the `*_far` string routines. Built with
+  `OPENRFS_SEABIOS_FAR_SEGMENTS`, these resolve segment:offset at run time:
+  segment 0 is flat, segment 0x40 is the build's private BIOS Data Area
+  (where the VGA BIOS keeps `VGA_CUSTOM_BDA`), segments A000-BFFF are the
+  VGA windows at physical 0xA0000-0xBFFFF, and anything else stops the
+  kernel. No other real-mode memory is reachable.
+* **PCI.** A build drives the one adapter the kernel claimed, and
+  configuration access reaches only it. `atiext.c` sizes its framebuffer
+  BAR by writing all ones; the kernel does not let a driver rewrite a BAR
+  of a decoding device, so the glue answers that sequence from the claim's
+  own probe of the BAR. The kernel maps the adapter's register BARs before
+  setup and the BAR holding `VBE_framebuffer` after it. The legacy VGA
+  ports have no BAR; a build that uses them binds only if the firmware
+  left I/O decode on.
+* **ramfb.** `ramfb.c` talks to QEMU's fw_cfg through its DMA interface
+  and waits for each transfer without a timeout. The glue binds it only
+  after the legacy fw_cfg interface answers with QEMU's signature and
+  reports the DMA feature. Its framebuffer comes from a dedicated
+  identity-mapped allocation below 4 GiB (`allocate_pmm`), and its
+  `struct QemuRAMFBCfg` is compiled with its i386 layout
+  (`ports/seavga/lp64/ramfb.c`): padded to 32 bytes on x86-64, the fw_cfg
+  write is refused by QEMU and the adapter keeps showing the old picture.
+* **When they bind.** Only when named on the command line
+  (`openrfs.drivers=bochsvga`), never under `auto`: the primary adapter is
+  the one the loader set a mode on and the kernel's screen console draws
+  to. The display test releases that console and the VGA text mirror
+  before it sets a mode.
 
 ## Evidence and its limits
 
@@ -92,3 +143,15 @@ rewrite a region and read it back with its neighbours intact; the runner
 then checks the rewritten units in the image file itself. QEMU models the
 register interfaces of the real parts; a pass is evidence about those
 models, not about physical hardware.
+
+Display scenarios set a mode through the card driver, draw a four-colour
+quadrant pattern with the reported pitch, read every pixel back, and then
+the runner captures what QEMU's display model scans out (QMP `screendump`)
+and checks the colours on a grid and on both sides of every quadrant edge,
+where a wrong pitch would shear the picture. The standard VGA and Cirrus
+scenarios attach the adapter without an option ROM, so the driver brings
+the card up from reset: OpenRFS cannot boot on a Cirrus card with its VGA
+BIOS (it offers no 32-bit mode, and OpenRFS refuses other Multiboot2
+framebuffers), and a standard VGA left in a Bochs VBE mode has its CRTC
+programming overridden by QEMU's VGA core, which the standard VGA build -
+written for plain VGA hardware - has no reason to know about.

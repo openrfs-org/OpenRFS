@@ -96,6 +96,13 @@ struct seabios_call {
 };
 
 /* Kernel-side services, implemented in src/kernel/seabios_host.c. */
+/*
+ * Run entry(argument) the way every glue call runs: on the layer's arena
+ * stack, interrupts disabled, preemption held, never re-entered. The
+ * SeaBIOS VGA builds (include/openrfs/seavga_host.h) run through it too.
+ * False, without running entry, if a call is already in progress.
+ */
+bool seabios_host_run(void (*entry)(void *), void *argument);
 void *seabios_host_alloc(size_t size, size_t alignment);
 void seabios_host_free(void *pointer);
 bool seabios_host_arena_contains(const void *pointer, size_t length);

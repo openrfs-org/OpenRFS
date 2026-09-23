@@ -32,6 +32,7 @@ void hexdump(const void *d, int len);
             __dprintf((fmt) , ##args );                         \
     } while (0)
 #define debug_isr(lvl) do { } while (0)
+#define debug_stub(regs) do { (void)(regs); } while (0)
 #define warn_internalerror()                    \
     __warn_internalerror(__LINE__, __func__)
 #define warn_noalloc()                          \
