@@ -852,8 +852,13 @@ def inject_input(log: Path, qmp: Path, scenario: Scenario) -> None:
         stream.readline()  # greeting
         command("qmp_capabilities")
         if scenario.kind in ("kbd", "both"):
-            for character in scenario.text:
+            for index, character in enumerate(scenario.text):
                 for down in (True, False):
+                    # A keyboard-only guest exits on the final press. There
+                    # is no receiver left for its release event.
+                    if not down and scenario.kind == "kbd" and \
+                            index + 1 == len(scenario.text):
+                        break
                     command("input-send-event", {"events": [
                         {"type": "key", "data": {
                             "down": down,
@@ -908,11 +913,11 @@ def capture_screen(log: Path, qmp: Path, scenario: Scenario, screen: Path,
         if scenario.screen:
             arguments["device"] = scenario.screen
         command("screendump", arguments)
-        for down in (True, False):
-            command("input-send-event", {"events": [
-                {"type": "key", "data": {
-                    "down": down, "key": {"type": "qcode", "data": "ret"}}}]})
-            time.sleep(0.1)
+        # The display guest exits on this press; a release races its QMP
+        # socket shutdown and does not contribute to the screenshot proof.
+        command("input-send-event", {"events": [
+            {"type": "key", "data": {
+                "down": True, "key": {"type": "qcode", "data": "ret"}}}]})
     if errors:
         (work / "qmp-errors.txt").write_text("\n".join(errors) + "\n")
 
