@@ -61,6 +61,10 @@ def main() -> int:
             "OpenRFS: virtio-net0 initialized", None,
         )
         run_case(
+            args.qemu, iso, args.output / "rdrand-only.log", "max,-rdseed",
+            "OpenRFS: virtio-net0 initialized", None,
+        )
+        run_case(
             args.qemu, iso, args.output / "absent.log",
             "max,-rdrand,-rdseed",
             "OpenRFS: networking refused: entropy unavailable",
