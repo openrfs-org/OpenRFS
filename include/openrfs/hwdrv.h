@@ -16,9 +16,9 @@
  * OpenRFS's own controllers - virtio-net, NVMe, xHCI, HD Audio - are written
  * for this kernel. The drivers bound here are not: they are pinned,
  * byte-for-byte sources from projects that have driven the same hardware on
- * real machines for years (iPXE's network and USB drivers, SeaBIOS's storage,
- * USB and display drivers), compiled against small compatibility layers that
- * give them the environment they were written for.
+ * real machines for years (iPXE's network drivers, SeaBIOS's storage, USB and
+ * display drivers, MINIX 3's sound drivers), compiled against small
+ * compatibility layers that give them the environment they were written for.
  *
  * The framework owns what those layers must not decide for themselves: which
  * drivers may bind on this boot, the PCI claim and bus-master transitions a

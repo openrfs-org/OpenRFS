@@ -229,6 +229,35 @@ def display_scenario(driver: str, description: str, device: str, mode: str,
                     drivers_option=driver, mode=mode, screen="video0")
 
 
+AUDIO_RATE = 44100            # must match driver_tests.c
+AUDIO_FRAGMENTS = 12
+AUDIO_SILENT_FRAGMENTS = 1
+AUDIO_LEFT_HALF_PERIOD = 50
+AUDIO_RIGHT_HALF_PERIOD = 25
+AUDIO_LEFT_LEVEL = 12000
+AUDIO_RIGHT_STEP = 1000
+
+
+def audio_scenario(driver: str, description: str, devices: list[str],
+                   timeout: int = 180) -> Scenario:
+    """A sound card whose output QEMU records to a WAV file."""
+    markers = [
+        rf"^OpenRFS: pcm0 bound by MINIX {re.escape(driver)}: ",
+        r"^ST DRV audio refusal rate 96000 format not supported by the "
+        r"driver$",
+        r"^ST DRV audio open pcm0 rate 44100 channels 2 bits 16 fragment "
+        r"[1-9][0-9]*$",
+        rf"^ST DRV audio played fragments "
+        rf"{AUDIO_FRAGMENTS + AUDIO_SILENT_FRAGMENTS} interrupts "
+        rf"{AUDIO_FRAGMENTS + AUDIO_SILENT_FRAGMENTS} pauses [0-9]+ "
+        r"drain ok$",
+    ]
+    return Scenario(plan="audio", description=description, driver=driver,
+                    qemu=["-audiodev", "wav,id=drvsnd,path={capture}"]
+                    + devices,
+                    markers=markers, timeout=timeout, drivers_option=driver)
+
+
 def usb_host_marker(driver: str) -> str:
     return (rf"^OpenRFS: usb[0-9]+ bound by SeaBIOS {driver}: "
             rf"{driver} USB host controller ")
@@ -460,6 +489,15 @@ SCENARIOS: dict[str, Scenario] = {
     "display-ramfb": display_scenario(
         "ramfb", "QEMU ramfb (fw_cfg RAM framebuffer), 1024x768",
         "ramfb", "1024x768x32"),
+    "audio-es1370": audio_scenario(
+        "es1370", "Ensoniq AudioPCI ES1370 (MINIX 3 driver)",
+        ["-device", "ES1370,audiodev=drvsnd"]),
+    # MINIX's driver is built for IRQ 7, base 0x220 and DMA 1/5; the
+    # parallel port that would share IRQ 7 is removed.
+    "audio-sb16": audio_scenario(
+        "sb16", "Creative Sound Blaster 16 (ISA, MINIX 3 driver)",
+        ["-device", "sb16,audiodev=drvsnd,iobase=0x220,irq=7,dma=1,dma16=5",
+         "-parallel", "none"]),
     "blk-nvme": storage_scenario(
         "nvme", "NVM Express controller (SeaBIOS driver, selected)",
         ["-drive", DISK,
@@ -556,7 +594,11 @@ def run_scenario(name: str, scenario: Scenario, args: argparse.Namespace
         options += [f"openrfs.drvkind={scenario.kind}",
                     f"openrfs.drvunits={scenario.units}",
                     f"openrfs.drvwrite={1 if scenario.write else 0}"]
+    capture = work / "capture.wav"
+    if capture.exists():
+        capture.unlink()
     qemu += [argument.replace("{image}", str(image))
+             .replace("{capture}", str(capture))
              for argument in scenario.qemu]
     injector = None
     screen = work / "screen.ppm"
@@ -619,6 +661,14 @@ def run_scenario(name: str, scenario: Scenario, args: argparse.Namespace
         problems += check_medium(image, scenario)
     if scenario.plan == "display" and not problems:
         problems += check_screen(screen, scenario, work)
+    if scenario.plan == "audio" and not problems:
+        fragment_bytes = 0
+        for line in lines:
+            match = re.match(r"^ST DRV audio open \S+ .* fragment ([0-9]+)$",
+                             line)
+            if match:
+                fragment_bytes = int(match.group(1))
+        problems += check_capture(capture, work, fragment_bytes // 4)
     if scenario.plan == "hid" and scenario.kind in ("kbd", "both"):
         # A make and a break byte per key, except that the guest stops
         # reading at the last key's press.
@@ -805,6 +855,87 @@ def check_screen(screen: Path, scenario: Scenario, work: Path) -> list[str]:
         return [f"{len(wrong)} of {len(points)} sampled pixels wrong, "
                 f"first at {x},{y}: {colour(x, y)} for {expected(x, y)}"]
     return []
+
+
+def read_wav(path: Path) -> tuple[int, int, int, bytes]:
+    """A PCM WAV file as rate, channels, bits and its sample bytes.
+
+    QEMU writes the RIFF sizes when it shuts its audio down; a guest that
+    leaves through the debug-exit device can leave them zero, so the data
+    runs to the end of the file."""
+    data = path.read_bytes()
+    if data[:4] != b"RIFF" or data[8:12] != b"WAVE":
+        raise ValueError("not a RIFF WAVE file")
+    offset = 12
+    rate = channels = bits = 0
+    while offset + 8 <= len(data):
+        chunk = data[offset:offset + 4]
+        size = int.from_bytes(data[offset + 4:offset + 8], "little")
+        body = offset + 8
+        if chunk == b"fmt ":
+            if int.from_bytes(data[body:body + 2], "little") != 1:
+                raise ValueError("not integer PCM")
+            channels = int.from_bytes(data[body + 2:body + 4], "little")
+            rate = int.from_bytes(data[body + 4:body + 8], "little")
+            bits = int.from_bytes(data[body + 14:body + 16], "little")
+        elif chunk == b"data":
+            return rate, channels, bits, data[body:]
+        offset = body + size + (size & 1)
+    raise ValueError("no data chunk")
+
+
+def check_capture(capture: Path, work: Path,
+                  per_fragment: int) -> list[str]:
+    """Check what QEMU's model of the card played, sample by sample."""
+    if not capture.exists():
+        return ["QEMU recorded no audio"]
+    try:
+        rate, channels, bits, samples = read_wav(capture)
+    except (ValueError, IndexError) as error:
+        return [f"unreadable capture: {error}"]
+    if (rate, channels, bits) != (AUDIO_RATE, 2, 16):
+        return [f"capture is {rate} Hz, {channels} channels, {bits} bits"]
+    frames = [(int.from_bytes(samples[at:at + 2], "little", signed=True),
+               int.from_bytes(samples[at + 2:at + 4], "little", signed=True))
+              for at in range(0, len(samples) - 3, 4)]
+    loud = [index for index, (left, _) in enumerate(frames)
+            if abs(left) > AUDIO_LEFT_LEVEL // 4]
+    if not loud:
+        return ["the capture is silent"]
+    tone = frames[loud[0]:loud[-1] + 1]
+    report = [f"capture frames {len(frames)} tone frames {len(tone)} "
+              f"first at {loud[0]}"]
+    problems = []
+    if per_fragment == 0 or len(tone) != AUDIO_FRAGMENTS * per_fragment:
+        problems.append(f"{len(tone)} tone frames is not {AUDIO_FRAGMENTS} "
+                        f"fragments of {per_fragment} frames")
+    else:
+        # Scale by what the card's path did to the left channel's level.
+        levels = sorted(abs(left) for left, _ in tone)
+        scale = levels[len(levels) // 2] / AUDIO_LEFT_LEVEL
+        wrong = 0
+        first = None
+        for n, (left, right) in enumerate(tone):
+            fragment = n // per_fragment
+            want_left = (AUDIO_LEFT_LEVEL if (n // AUDIO_LEFT_HALF_PERIOD)
+                         % 2 == 0 else -AUDIO_LEFT_LEVEL) * scale
+            level = AUDIO_RIGHT_STEP * (fragment + 1) * scale
+            want_right = (level if (n // AUDIO_RIGHT_HALF_PERIOD) % 2 == 0
+                          else -level)
+            if (abs(left - want_left) > 0.02 * AUDIO_LEFT_LEVEL + 4 or
+                    abs(right - want_right) > 0.02 * level + 4):
+                wrong += 1
+                if first is None:
+                    first = (n, left, right, round(want_left),
+                             round(want_right))
+        report.append(f"fragment frames {per_fragment} scale {scale:.4f} "
+                      f"wrong {wrong}")
+        if wrong:
+            problems.append(f"{wrong} of {len(tone)} frames differ from the "
+                            f"signal; first (frame, left, right, expected "
+                            f"left, expected right) {first}")
+    (work / "capture-check.txt").write_text("\n".join(report) + "\n")
+    return problems
 
 
 def check_medium(image: Path, scenario: Scenario) -> list[str]:

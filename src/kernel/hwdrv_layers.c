@@ -11,6 +11,9 @@ static const struct hwdrv_layer layers[] = {
      */
     { "seabios", seabios_layer_bind_all, seabios_layer_driver_count,
         seabios_layer_driver_name, seabios_layer_poll_input },
+    /* The ISA sound card's DMA buffer must also lie below 16 MiB. */
+    { "minix", minix_layer_bind_all, minix_layer_driver_count,
+        minix_layer_driver_name, NULL },
     { "ipxe", ipxe_layer_bind_all, ipxe_layer_driver_count,
         ipxe_layer_driver_name, NULL },
     /* Display adapters, bound only when named (see seavga_host.c). */

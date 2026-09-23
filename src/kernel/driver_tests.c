@@ -21,6 +21,7 @@
 #include <openrfs/keyboard.h>
 #include <openrfs/netdev.h>
 #include <openrfs/network.h>
+#include <openrfs/pcm.h>
 #include <openrfs/pointer.h>
 #include <openrfs/screen.h>
 
@@ -49,6 +50,33 @@
 #define DRIVER_TEST_DISPLAY_BOGUS_WIDTH 1234U
 #define DRIVER_TEST_DISPLAY_BOGUS_HEIGHT 567U
 
+/*
+ * The audio plan's signal (tools/run_driver_tests.py checks it in QEMU's
+ * capture): 16-bit signed stereo at 44.1 kHz; the left channel a square
+ * wave of 12000 and a 100-frame period, the right channel a square wave of
+ * a 50-frame period whose level steps by 1000 with every fragment, so the
+ * capture shows whether any fragment was dropped, repeated or reordered.
+ */
+#define DRIVER_TEST_AUDIO_RATE 44100U
+#define DRIVER_TEST_AUDIO_BOGUS_RATE 96000U
+#define DRIVER_TEST_AUDIO_FRAGMENTS 12U
+/*
+ * One silent fragment follows the signal. A card reports a fragment done
+ * when it has fetched it, not when it has been heard, and QEMU's models
+ * drop what is still in the mixing buffer when the channel pauses; the
+ * silence is what that trims.
+ */
+#define DRIVER_TEST_AUDIO_SILENT_FRAGMENTS 1U
+#define DRIVER_TEST_AUDIO_MAX_FRAGMENT (64U * 1024U)
+#define DRIVER_TEST_AUDIO_LEFT_HALF_PERIOD 50U
+#define DRIVER_TEST_AUDIO_RIGHT_HALF_PERIOD 25U
+#define DRIVER_TEST_AUDIO_LEFT_LEVEL 12000
+#define DRIVER_TEST_AUDIO_RIGHT_STEP 1000
+#define DRIVER_TEST_AUDIO_WRITE_TIMEOUT_NS UINT64_C(5000000000)
+#define DRIVER_TEST_AUDIO_DRAIN_TIMEOUT_NS UINT64_C(20000000000)
+/* Time for QEMU's audio backend to take the last fragment's samples. */
+#define DRIVER_TEST_AUDIO_TAIL_NS UINT64_C(500000000)
+
 struct driver_test_options {
     char plan[DRIVER_TEST_MAX_TOKEN];
     char driver[DRIVER_TEST_MAX_TOKEN];
@@ -62,6 +90,7 @@ struct driver_test_options {
 };
 
 static uint8_t download[DRIVER_TEST_DOWNLOAD_BYTES];
+static uint8_t audio_fragment[DRIVER_TEST_AUDIO_MAX_FRAGMENT];
 
 static bool token_value(const char *command_line, size_t length,
     const char *prefix, char *value, size_t capacity)
@@ -901,6 +930,145 @@ static bool display_plan(const struct driver_test_options *options,
     return true;
 }
 
+static void fill_audio_fragment(uint32_t fragment, uint32_t bytes)
+{
+    const uint32_t frames = bytes / 4U;
+
+    if (fragment >= DRIVER_TEST_AUDIO_FRAGMENTS) {
+        for (uint32_t byte = 0U; byte < bytes; ++byte) {
+            audio_fragment[byte] = 0U;
+        }
+        return;
+    }
+    for (uint32_t frame = 0U; frame < frames; ++frame) {
+        const uint32_t n = fragment * frames + frame;
+        const int32_t left =
+            ((n / DRIVER_TEST_AUDIO_LEFT_HALF_PERIOD) % 2U) == 0U ?
+            DRIVER_TEST_AUDIO_LEFT_LEVEL : -DRIVER_TEST_AUDIO_LEFT_LEVEL;
+        const int32_t level =
+            DRIVER_TEST_AUDIO_RIGHT_STEP * (int32_t)(fragment + 1U);
+        const int32_t right =
+            ((n / DRIVER_TEST_AUDIO_RIGHT_HALF_PERIOD) % 2U) == 0U ?
+            level : -level;
+        uint8_t *at = &audio_fragment[frame * 4U];
+
+        at[0] = (uint8_t)((uint32_t)left & 0xFFU);
+        at[1] = (uint8_t)(((uint32_t)left >> 8U) & 0xFFU);
+        at[2] = (uint8_t)((uint32_t)right & 0xFFU);
+        at[3] = (uint8_t)(((uint32_t)right >> 8U) & 0xFFU);
+    }
+}
+
+static bool audio_plan(const struct driver_test_options *options,
+    const char **reason)
+{
+    const struct pcm_format bogus = {
+        DRIVER_TEST_AUDIO_BOGUS_RATE, 2U, 16U, true
+    };
+    const struct pcm_format format = {
+        DRIVER_TEST_AUDIO_RATE, 2U, 16U, true
+    };
+    struct pcm_statistics statistics = { 0 };
+    struct pcm_info info;
+    enum pcm_status status;
+    uint32_t fragment_bytes = 0U;
+    size_t index = SIZE_MAX;
+    uint64_t tail;
+
+    for (size_t slot = 0U; slot < pcm_count(); ++slot) {
+        if (!pcm_info(slot, &info)) {
+            continue;
+        }
+        console_write("ST DRV audio candidate ");
+        console_write(info.name);
+        console_write(" ");
+        console_write(info.driver);
+        console_write(" ");
+        console_write(info.description);
+        console_putc('\n');
+        if (index == SIZE_MAX && (options->driver[0] == '\0' ||
+                text_equal(info.driver, options->driver))) {
+            index = slot;
+        }
+    }
+    if (index == SIZE_MAX || !pcm_info(index, &info)) {
+        *reason = "no PCM device was bound by the named driver";
+        return false;
+    }
+    /* A rate the driver cannot play is refused at open, not approximated. */
+    status = pcm_open(index, &bogus, &fragment_bytes);
+    console_write("ST DRV audio refusal rate ");
+    console_write_u64(DRIVER_TEST_AUDIO_BOGUS_RATE);
+    console_write(" ");
+    console_write(pcm_status_string(status));
+    console_putc('\n');
+    if (status == PCM_STATUS_OK) {
+        (void)pcm_close(index);
+        *reason = "an unplayable rate was accepted";
+        return false;
+    }
+    status = pcm_open(index, &format, &fragment_bytes);
+    if (status != PCM_STATUS_OK) {
+        console_write("ST DRV audio open ");
+        console_write(pcm_status_string(status));
+        console_putc('\n');
+        *reason = "the driver refused 44.1 kHz 16-bit stereo";
+        return false;
+    }
+    console_write("ST DRV audio open ");
+    console_write(info.name);
+    console_write(" rate 44100 channels 2 bits 16 fragment ");
+    console_write_u64(fragment_bytes);
+    console_putc('\n');
+    if (fragment_bytes > sizeof(audio_fragment) || fragment_bytes % 4U != 0U) {
+        (void)pcm_close(index);
+        *reason = "the driver chose a fragment the plan cannot fill";
+        return false;
+    }
+    for (uint32_t fragment = 0U; fragment < DRIVER_TEST_AUDIO_FRAGMENTS +
+         DRIVER_TEST_AUDIO_SILENT_FRAGMENTS; ++fragment) {
+        fill_audio_fragment(fragment, fragment_bytes);
+        status = pcm_write(index, audio_fragment, fragment_bytes,
+            DRIVER_TEST_AUDIO_WRITE_TIMEOUT_NS);
+        if (status != PCM_STATUS_OK) {
+            console_write("ST DRV audio write ");
+            console_write(pcm_status_string(status));
+            console_putc('\n');
+            (void)pcm_close(index);
+            *reason = "the driver stopped taking fragments";
+            return false;
+        }
+    }
+    status = pcm_drain(index, DRIVER_TEST_AUDIO_DRAIN_TIMEOUT_NS);
+    tail = clock_monotonic_ns() + DRIVER_TEST_AUDIO_TAIL_NS;
+    while (clock_monotonic_ns() < tail) {
+        __asm__ volatile ("pause" : : : "memory");
+    }
+    (void)pcm_statistics(index, &statistics);
+    console_write("ST DRV audio played fragments ");
+    console_write_u64(statistics.fragments_written);
+    console_write(" interrupts ");
+    console_write_u64(statistics.interrupts);
+    console_write(" pauses ");
+    console_write_u64(statistics.pauses);
+    console_write(" drain ");
+    console_write(pcm_status_string(status));
+    console_putc('\n');
+    if (pcm_close(index) != PCM_STATUS_OK) {
+        *reason = "the driver failed to stop the channel";
+        return false;
+    }
+    if (status != PCM_STATUS_OK ||
+        statistics.fragments_written != DRIVER_TEST_AUDIO_FRAGMENTS +
+            DRIVER_TEST_AUDIO_SILENT_FRAGMENTS ||
+        statistics.interrupts != DRIVER_TEST_AUDIO_FRAGMENTS +
+            DRIVER_TEST_AUDIO_SILENT_FRAGMENTS) {
+        *reason = "the device did not play every fragment exactly once";
+        return false;
+    }
+    return true;
+}
+
 bool driver_tests_run(const char *command_line, size_t length,
     const char **reason)
 {
@@ -979,6 +1147,9 @@ bool driver_tests_run(const char *command_line, size_t length,
     }
     if (text_equal(options.plan, "display")) {
         return display_plan(&options, reason);
+    }
+    if (text_equal(options.plan, "audio")) {
+        return audio_plan(&options, reason);
     }
     if (text_equal(options.plan, "blk")) {
         if (!storage_plan(&options, reason)) {

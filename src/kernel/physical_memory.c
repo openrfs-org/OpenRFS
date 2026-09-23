@@ -7,6 +7,7 @@
 #include <openrfs/memory.h>
 
 #define FRAME_COUNT ((size_t)(OPENRFS_EARLY_PHYSICAL_LIMIT / OPENRFS_PAGE_SIZE))
+#define ISA_DMA_FRAME_LIMIT ((size_t)(UINT64_C(0x1000000) / OPENRFS_PAGE_SIZE))
 #define BITMAP_BYTE_COUNT ((FRAME_COUNT + 7U) / 8U)
 
 extern uint8_t __kernel_start[];
@@ -373,25 +374,30 @@ enum frame_status frame_allocate(uintptr_t *physical_address)
         return FRAME_STATUS_OUT_OF_MEMORY;
     }
 
-    for (size_t step = 0; step < FRAME_COUNT; ++step) {
-        size_t frame = next_search_index + step;
+    /* Keep scarce ISA-addressable memory contiguous for devices such as the
+     * SB16. Ordinary CPU pages use higher RAM first, then fall back below
+     * 16 MiB only when no higher eligible frame remains. */
+    for (size_t pass = 0U; pass < 2U; ++pass) {
+        const size_t first = pass == 0U ? ISA_DMA_FRAME_LIMIT : 0U;
+        const size_t past = pass == 0U ? FRAME_COUNT : ISA_DMA_FRAME_LIMIT;
+        const size_t count = past - first;
+        const size_t start = next_search_index >= first && next_search_index < past
+            ? next_search_index : first;
 
-        if (frame >= FRAME_COUNT) {
-            frame -= FRAME_COUNT;
-        }
+        for (size_t step = 0U; step < count; ++step) {
+            const size_t frame = first + (start - first + step) % count;
 
-        if (bitmap_get(eligible_bitmap, frame) && !bitmap_get(used_bitmap, frame)) {
-            bitmap_set(used_bitmap, frame, true);
-            --allocator_stats.free_frames;
-            ++allocator_stats.allocated_frames;
-            next_search_index = frame + 1U;
-
-            if (next_search_index == FRAME_COUNT) {
-                next_search_index = 0;
+            if (bitmap_get(eligible_bitmap, frame) && !bitmap_get(used_bitmap, frame)) {
+                bitmap_set(used_bitmap, frame, true);
+                --allocator_stats.free_frames;
+                ++allocator_stats.allocated_frames;
+                next_search_index = frame + 1U;
+                if (next_search_index == FRAME_COUNT) {
+                    next_search_index = ISA_DMA_FRAME_LIMIT;
+                }
+                *physical_address = (uintptr_t)((uint64_t)frame * OPENRFS_PAGE_SIZE);
+                return FRAME_STATUS_OK;
             }
-
-            *physical_address = (uintptr_t)((uint64_t)frame * OPENRFS_PAGE_SIZE);
-            return FRAME_STATUS_OK;
         }
     }
 

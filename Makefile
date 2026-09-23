@@ -436,6 +436,28 @@ SEAVGA_VENDOR_CFLAGS := $(SEAVGA_BASE_CFLAGS) -Wall -Werror \
 SEAVGA_GLUE_CFLAGS := $(SEAVGA_BASE_CFLAGS) -Wall -Wextra -Werror \
 	-Wno-unused-parameter -Wno-address-of-packed-member -Wno-sign-compare
 SEAVGA_LIBC_OBJECT := $(SEAVGA_OBJECT_DIR)/libc.o
+
+# The MINIX 3 audio drivers, compiled as MINIX's i386 port compiles them
+# (32-bit phys_bytes, negative errno under _SYSTEM) against the small part
+# of MINIX's system library ports/minix/include declares. One object per
+# driver, each with only its dispatch entry global.
+include ports/minix/sources.mk
+MINIX_OBJECT_DIR := $(BUILD_DIR)/minix
+MINIX_BASE_CFLAGS := $(COMMON_FLAGS) -std=gnu11 -O2 -mno-red-zone -mno-mmx \
+	-mno-sse -mno-sse2 -msoft-float -fno-tree-vectorize -fno-strict-aliasing \
+	-fno-common -fno-asynchronous-unwind-tables -fno-unwind-tables \
+	-nostdinc -isystem $(GCC_FREESTANDING_INCLUDE) -Iports/minix/include \
+	-Ivendor/minix/minix/include
+MINIX_VENDOR_CFLAGS := $(MINIX_BASE_CFLAGS) -Wall -Werror \
+	-Wno-unused-function -Wno-unused-variable
+MINIX_GLUE_CFLAGS := $(MINIX_BASE_CFLAGS) -Iinclude -Wall -Wextra -Werror \
+	-Wno-unused-parameter -Wno-sign-compare
+MINIX_LAYER_OBJECTS := $(patsubst %,$(MINIX_OBJECT_DIR)/minix-%.o,\
+	$(MINIX_DRIVERS))
+MINIX_OBJECTS := $(foreach driver,$(MINIX_DRIVERS),\
+	$(patsubst vendor/%.c,$(MINIX_OBJECT_DIR)/$(driver)/%.o,\
+		$(MINIX_$(driver)_SOURCES)) \
+	$(MINIX_OBJECT_DIR)/$(driver)/audio_glue.o)
 SEAVGA_LAYER_OBJECTS := $(patsubst %,$(SEAVGA_OBJECT_DIR)/seavga-%.o,\
 	$(SEAVGA_VARIANTS))
 SEAVGA_OBJECTS := $(SEAVGA_LIBC_OBJECT) $(foreach variant,$(SEAVGA_VARIANTS),\
@@ -446,7 +468,7 @@ SEAVGA_OBJECTS := $(SEAVGA_LIBC_OBJECT) $(foreach variant,$(SEAVGA_VARIANTS),\
 
 OBJECTS := $(ASM_OBJECTS) $(C_OBJECTS) $(MONOCYPHER_OBJECTS) \
 	$(IPXE_OBJECTS) $(SEABIOS_LAYER_OBJECT) $(SEAVGA_LAYER_OBJECTS) \
-	$(PACKAGE_TRUST_ASSET_OBJECT)
+	$(MINIX_LAYER_OBJECTS) $(PACKAGE_TRUST_ASSET_OBJECT)
 
 MONOCYPHER_CFLAGS := $(COMMON_FLAGS) -std=c11 -O2 -mno-red-zone \
 	-mno-mmx -mno-sse -mno-sse2 -msoft-float -fno-tree-vectorize \
@@ -467,6 +489,7 @@ RUSTFLAGS := -C panic=abort -C relocation-model=static \
 	-C llvm-args=-max-store-memset=1024
 DEPENDENCIES := $(C_OBJECTS:.o=.d) $(MONOCYPHER_OBJECTS:.o=.d) \
 	$(IPXE_OBJECTS:.o=.d) $(SEABIOS_OBJECTS:.o=.d) $(SEAVGA_OBJECTS:.o=.d) \
+	$(MINIX_OBJECTS:.o=.d) \
 	$(PACKAGE_TRUST_ASSET_OBJECT:.o=.d) $(SDL2_OBJECTS:.o=.d)
 
 # The qemu-test-% scenarios are deliberately absent from .PHONY. GNU Make skips
@@ -1055,6 +1078,28 @@ $$(SEAVGA_OBJECT_DIR)/seavga-$(1).o: $$(patsubst %,$$(SEAVGA_OBJECT_DIR)/$(1)/%.
 endef
 $(foreach variant,$(SEAVGA_VARIANTS),\
 	$(eval $(call SEAVGA_VARIANT_RULES,$(variant))))
+
+# One MINIX driver: its sources and the glue, linked with every symbol but
+# its dispatch entry made local.
+define MINIX_DRIVER_RULES
+$$(MINIX_OBJECT_DIR)/$(1)/%.o: vendor/%.c
+	mkdir -p $$(dir $$@)
+	$$(KERNEL_CC) $$(MINIX_VENDOR_CFLAGS) -MMD -MP -c $$< -o $$@
+
+$$(MINIX_OBJECT_DIR)/$(1)/audio_glue.o: ports/minix/audio_glue.c
+	mkdir -p $$(dir $$@)
+	$$(KERNEL_CC) $$(MINIX_GLUE_CFLAGS) \
+		-DMINIX_AUDIO_DISPATCH=minix_$(1)_dispatch -MMD -MP -c $$< -o $$@
+
+$$(MINIX_OBJECT_DIR)/minix-$(1).o: $$(patsubst vendor/%.c,\
+		$$(MINIX_OBJECT_DIR)/$(1)/%.o,$$(MINIX_$(1)_SOURCES)) \
+		$$(MINIX_OBJECT_DIR)/$(1)/audio_glue.o
+	$$(KERNEL_LD) -r -o $$@.partial $$^
+	$$(OBJCOPY) --keep-global-symbol=minix_$(1)_dispatch $$@.partial $$@
+	rm -f $$@.partial
+endef
+$(foreach driver,$(MINIX_DRIVERS),\
+	$(eval $(call MINIX_DRIVER_RULES,$(driver))))
 
 $(BUILD_DIR)/package_trust.o: CPPFLAGS += -Ivendor/monocypher/src \
 	-Ivendor/monocypher/src/optional
@@ -3552,6 +3597,7 @@ DRIVER_TEST_DIR := $(TEST_BUILD_DIR)/drivers
 driver-provenance:
 	cd vendor/ipxe && sha256sum --check --quiet SOURCE-MANIFEST.sha256
 	cd vendor/seabios && sha256sum --check --quiet SOURCE-MANIFEST.sha256
+	cd vendor/minix && sha256sum --check --quiet SOURCE-MANIFEST.sha256
 
 qemu-test-drivers: $(KERNEL) driver-provenance
 	$(PYTHON) tools/run_driver_tests.py --kernel '$(KERNEL)' \

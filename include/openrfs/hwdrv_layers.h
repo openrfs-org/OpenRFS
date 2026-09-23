@@ -33,6 +33,11 @@ size_t seabios_layer_driver_count(void);
 const char *seabios_layer_driver_name(size_t index);
 void seabios_layer_poll_input(void);
 
+/* MINIX 3 audio drivers: ports/minix, vendor/minix. */
+enum hwdrv_status minix_layer_bind_all(void);
+size_t minix_layer_driver_count(void);
+const char *minix_layer_driver_name(size_t index);
+
 /* SeaBIOS VGA drivers: ports/seavga, vendor/seabios/vgasrc. */
 enum hwdrv_status seavga_layer_bind_all(void);
 size_t seavga_layer_driver_count(void);
