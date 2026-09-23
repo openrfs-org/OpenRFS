@@ -74,7 +74,17 @@ enum seabios_call_kind {
     SEABIOS_CALL_READ,
     SEABIOS_CALL_WRITE,
     /* usb_check_event(): collect keyboard and mouse reports. */
-    SEABIOS_CALL_POLL_INPUT
+    SEABIOS_CALL_POLL_INPUT,
+    /* tpmhw_probe(): find a TPM behind the TIS or CRB interface. */
+    SEABIOS_CALL_TPM_PROBE,
+    /* tpmhw_transmit(): one TPM command and its response, locality 0. */
+    SEABIOS_CALL_TPM_TRANSMIT
+};
+
+/* The interface tpmhw_probe() chose (TPM_PROBE's tpm_interface). */
+enum seabios_host_tpm_interface {
+    SEABIOS_HOST_TPM_TIS = 0,
+    SEABIOS_HOST_TPM_CRB
 };
 
 /* Framework records for devices that are not block media. */
@@ -91,6 +101,14 @@ struct seabios_call {
     uint64_t lba;
     uint32_t count;
     void *buffer;
+    /* TPM_TRANSMIT: the command (its header gives its length) and a
+     * response buffer of response_length bytes, which returns the count. */
+    const void *command;
+    void *response;
+    uint32_t response_length;
+    /* Out of TPM_PROBE: the TPMVersion (0 none, 1 TPM 1.2, 2 TPM 2.0). */
+    int tpm_version;
+    enum seabios_host_tpm_interface tpm_interface;
     /* Out: media published by a bind, or the SeaBIOS DISK_RET_* code. */
     int result;
 };

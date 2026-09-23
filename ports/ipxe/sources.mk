@@ -19,7 +19,8 @@ IPXE_VENDOR_SOURCES := \
 	vendor/ipxe/src/drivers/net/pcnet32.c \
 	vendor/ipxe/src/drivers/net/vmxnet3.c \
 	vendor/ipxe/src/drivers/net/tulip.c \
-	vendor/ipxe/src/drivers/net/ns8390.c
+	vendor/ipxe/src/drivers/net/ns8390.c \
+	vendor/ipxe/src/drivers/net/ne2k_isa.c
 
 IPXE_GLUE_SOURCES := \
 	ports/ipxe/ipxe_glue.c \

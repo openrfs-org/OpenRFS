@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
  * The legacy Etherboot NIC interface (iPXE include/nic.h, GPL-2.0-or-later),
- * restricted to its PCI personality. Legacy drivers fill in a struct nic and
- * iPXE's drivers/net/legacy.c - vendored unmodified - adapts them to a
- * net_device. The DRIVER() macro produces the same probe/remove wrappers as
- * upstream's for the PCI bus.
+ * restricted to its PCI and ISA personalities. Legacy drivers fill in a
+ * struct nic and iPXE's drivers/net/legacy.c - vendored unmodified - adapts
+ * them to a net_device. The DRIVER() and ISA_DRIVER() macros produce the
+ * same probe/remove wrappers as upstream's for those two buses.
  */
 #ifndef OPENRFS_IPXE_NIC_H
 #define OPENRFS_IPXE_NIC_H
@@ -13,6 +13,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <byteswap.h>
+#include <errno.h>
+#include <ipxe/isa.h>
 #include <ipxe/pci.h>
 #include <ipxe/io.h>
 
@@ -103,6 +105,36 @@ static inline void *legacy_pci_get_drvdata(void *hwdev)
     return pci_get_drvdata(hwdev);
 }
 
+#define ISA_DRIVER(_name, _probe_addrs, _probe_addr, _vendor_id, _prod_id) \
+    static inline int _name ## _isa_legacy_probe(struct isa_device *isa); \
+    static inline int _name ## _isa_legacy_probe_at_addr( \
+        struct isa_device *isa) { \
+        if (!_probe_addr(isa->ioaddr)) \
+            return -ENODEV; \
+        return _name ## _isa_legacy_probe(isa); \
+    } \
+    static inline void _name ## _isa_legacy_remove(struct isa_device *isa); \
+    static const char _name ## _text[]; \
+    struct isa_driver _name __isa_driver = { \
+        .name = _name ## _text, \
+        .probe_addrs = _probe_addrs, \
+        .addr_count = sizeof(_probe_addrs) / sizeof(_probe_addrs[0]), \
+        .vendor_id = _vendor_id, \
+        .prod_id = _prod_id, \
+        .probe = _name ## _isa_legacy_probe_at_addr, \
+        .remove = _name ## _isa_legacy_remove, \
+    };
+
+static inline void legacy_isa_set_drvdata(void *hwdev, void *priv)
+{
+    isa_set_drvdata(hwdev, priv);
+}
+
+static inline void *legacy_isa_get_drvdata(void *hwdev)
+{
+    return isa_get_drvdata(hwdev);
+}
+
 #define DRIVER(_name_text, _unused2, _unused3, _name, _probe, _disable, \
         _fake_bss) \
     static __attribute__((unused)) const char _name ## _text[] = \
@@ -119,6 +151,15 @@ static inline void *legacy_pci_get_drvdata(void *hwdev)
     } \
     static inline void _name ## _pci_legacy_remove(struct pci_device *pci) { \
         legacy_remove(pci, legacy_pci_get_drvdata, _name ## _disable); \
+    } \
+    static inline __attribute__((unused)) int _name ## _isa_legacy_probe( \
+        struct isa_device *isa) { \
+        return legacy_probe(isa, legacy_isa_set_drvdata, &isa->dev, \
+            _name ## _probe, _name ## _disable, sizeof(_fake_bss)); \
+    } \
+    static inline __attribute__((unused)) void _name ## _isa_legacy_remove( \
+        struct isa_device *isa) { \
+        legacy_remove(isa, legacy_isa_get_drvdata, _name ## _disable); \
     }
 
 #endif

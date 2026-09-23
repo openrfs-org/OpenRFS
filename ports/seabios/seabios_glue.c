@@ -46,6 +46,7 @@
 #include "hw/pic.h"
 #include "hw/pvscsi.h"
 #include "hw/rtc.h"
+#include "hw/tpm_drivers.h"
 #include "hw/usb.h"
 #include "hw/usb-hid.h"
 #include "hw/usb-msc.h"
@@ -53,6 +54,7 @@
 #include "hw/virtio-blk.h"
 #include "hw/virtio-scsi.h"
 #include "std/disk.h"
+#include "std/tcg.h"
 
 #define GLUE_MAX_PCI 32
 #define GLUE_PRINT_BUFFER 256
@@ -244,6 +246,9 @@ static const struct glue_driver glue_drivers[] = {
     { "ohci", "src/hw/usb-ohci.c", match_ohci, usb_setup, 3, 1 },
     /* ISA: bound by a pass of its own, never matched against PCI. */
     { "floppy", "src/hw/floppy.c", NULL, floppy_setup, 0, 0 },
+    /* The TPM interfaces at 0xFED40000: probed by tpm_probe() below. */
+    { "tpm-tis", "src/hw/tpm_drivers.c", NULL, NULL, 0, 0 },
+    { "tpm-crb", "src/hw/tpm_drivers.c", NULL, NULL, 0, 0 },
 };
 
 /* Class drivers credited for what they attach behind a controller. */
@@ -1303,12 +1308,27 @@ static void bind_pci(struct seabios_call *call)
     }
 }
 
+static const struct glue_driver *glue_driver_named(const char *name)
+{
+    size_t index;
+
+    for (index = 0; index < ARRAY_SIZE(glue_drivers); index++) {
+        if (strcmp(glue_drivers[index].name, name) == 0)
+            return &glue_drivers[index];
+    }
+    return NULL;
+}
+
 static void bind_isa(struct seabios_call *call)
 {
     call->result = 0;
     bind_handle = NULL;
-    bind_driver = &glue_drivers[ARRAY_SIZE(glue_drivers) - 1];
+    bind_driver = glue_driver_named("floppy");
     bind_published = 0;
+    if (!bind_driver || !bind_driver->setup) {
+        bind_driver = NULL;
+        return;
+    }
     if (!seabios_host_isa_irq_enable(GLUE_FLOPPY_IRQ)) {
         dprintf(1, "floppy: IRQ %d is not available\n", GLUE_FLOPPY_IRQ);
         bind_driver = NULL;
@@ -1361,6 +1381,36 @@ static void transfer(struct seabios_call *call, int write)
     }
 }
 
+/****************************************************************
+ * TPM (hw/tpm_drivers.c)
+ ****************************************************************/
+
+/*
+ * tpmhw_probe() tries the TIS interface and then CRB, selecting (and
+ * locking) whichever the TPM offers. Which one it chose is the interface
+ * type in the identifier register both interfaces keep at offset 0x30:
+ * 1 is CRB, 0 (PTP FIFO) and 0xf (TIS 1.3) are the FIFO interface.
+ */
+static void tpm_probe(struct seabios_call *call)
+{
+    call->tpm_version = tpmhw_probe();
+    call->tpm_interface = SEABIOS_HOST_TPM_TIS;
+    if (call->tpm_version != TPM_VERSION_NONE &&
+        (readl(TIS_REG(0, TIS_REG_IFACE_ID)) & 0xf) == 1)
+        call->tpm_interface = SEABIOS_HOST_TPM_CRB;
+    call->result = call->tpm_version == TPM_VERSION_NONE ? -1 : 0;
+}
+
+static void tpm_transmit(struct seabios_call *call)
+{
+    u32 length = call->response_length;
+
+    call->result = tpmhw_transmit(0, (struct tpm_req_header *)call->command,
+                                  call->response, &length,
+                                  TPM_DURATION_TYPE_SHORT);
+    call->response_length = call->result == 0 ? length : 0;
+}
+
 void seabios_glue_dispatch(void *argument)
 {
     struct seabios_call *call = argument;
@@ -1382,6 +1432,12 @@ void seabios_glue_dispatch(void *argument)
         if (usb_kbd_active() || usb_mouse_active())
             usb_check_event();
         call->result = 0;
+        break;
+    case SEABIOS_CALL_TPM_PROBE:
+        tpm_probe(call);
+        break;
+    case SEABIOS_CALL_TPM_TRANSMIT:
+        tpm_transmit(call);
         break;
     default:
         call->result = -1;

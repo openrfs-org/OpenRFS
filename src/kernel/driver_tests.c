@@ -24,6 +24,7 @@
 #include <openrfs/pcm.h>
 #include <openrfs/pointer.h>
 #include <openrfs/screen.h>
+#include <openrfs/tpm.h>
 
 #define DRIVER_TEST_MAX_TOKEN 64U
 #define DRIVER_TEST_DOWNLOAD_BYTES (256U * 1024U)
@@ -76,6 +77,30 @@
 #define DRIVER_TEST_AUDIO_DRAIN_TIMEOUT_NS UINT64_C(20000000000)
 /* Time for QEMU's audio backend to take the last fragment's samples. */
 #define DRIVER_TEST_AUDIO_TAIL_NS UINT64_C(500000000)
+
+/*
+ * TPM 2.0 (TCG TPM 2.0 Library, Part 2: Structures): the tags, command
+ * codes and constants the TPM plan marshals.
+ */
+#define TPM2_ST_NO_SESSIONS 0x8001U
+#define TPM2_ST_SESSIONS 0x8002U
+#define TPM2_CC_PCR_RESET 0x0000013DU
+#define TPM2_CC_GET_CAPABILITY 0x0000017AU
+#define TPM2_CC_GET_RANDOM 0x0000017BU
+#define TPM2_CC_PCR_READ 0x0000017EU
+#define TPM2_CC_PCR_EXTEND 0x00000182U
+#define TPM2_CC_UNDEFINED 0x00000FFFU
+#define TPM2_RC_SUCCESS 0x000U
+#define TPM2_RC_COMMAND_CODE 0x143U
+#define TPM2_RS_PW 0x40000009U
+#define TPM2_CAP_TPM_PROPERTIES 0x00000006U
+#define TPM2_PT_FAMILY_INDICATOR 0x00000100U
+#define TPM2_PT_MANUFACTURER 0x00000105U
+#define TPM2_ALG_SHA256 0x000BU
+/* PCR 16 is the debug PCR: resettable from locality 0, used by nothing. */
+#define DRIVER_TEST_TPM_PCR 16U
+#define DRIVER_TEST_TPM_RANDOM_BYTES 16U
+#define DRIVER_TEST_TPM_BUFFER 1024U
 
 struct driver_test_options {
     char plan[DRIVER_TEST_MAX_TOKEN];
@@ -959,6 +984,257 @@ static void fill_audio_fragment(uint32_t fragment, uint32_t bytes)
     }
 }
 
+struct tpm_command {
+    uint8_t bytes[DRIVER_TEST_TPM_BUFFER];
+    uint32_t length;
+};
+
+static void tpm_put(struct tpm_command *command, uint32_t value,
+    unsigned int width)
+{
+    while (width-- > 0U && command->length < sizeof(command->bytes)) {
+        command->bytes[command->length++] = (uint8_t)(value >> (width * 8U));
+    }
+}
+
+static void tpm_begin(struct tpm_command *command, uint32_t tag,
+    uint32_t code)
+{
+    command->length = 0U;
+    tpm_put(command, tag, 2U);
+    tpm_put(command, 0U, 4U);
+    tpm_put(command, code, 4U);
+}
+
+/* An empty password session: the owner of PCR 16 needs no authorization. */
+static void tpm_password_session(struct tpm_command *command)
+{
+    tpm_put(command, 9U, 4U);          /* authorizationSize */
+    tpm_put(command, TPM2_RS_PW, 4U);  /* sessionHandle */
+    tpm_put(command, 0U, 2U);          /* nonce: empty */
+    tpm_put(command, 0U, 1U);          /* sessionAttributes */
+    tpm_put(command, 0U, 2U);          /* hmac: empty */
+}
+
+static uint32_t tpm_get(const uint8_t *bytes, uint32_t offset,
+    unsigned int width)
+{
+    uint32_t value = 0U;
+
+    while (width-- > 0U) {
+        value = (value << 8U) | bytes[offset++];
+    }
+    return value;
+}
+
+/* Send a command; the response code, or UINT32_MAX if the transport failed. */
+static uint32_t tpm_run(size_t index, struct tpm_command *command,
+    uint8_t *response, uint32_t *response_length)
+{
+    enum tpm_status status;
+
+    command->bytes[2] = (uint8_t)(command->length >> 24U);
+    command->bytes[3] = (uint8_t)(command->length >> 16U);
+    command->bytes[4] = (uint8_t)(command->length >> 8U);
+    command->bytes[5] = (uint8_t)command->length;
+    status = tpm_transmit(index, command->bytes, command->length, response,
+        DRIVER_TEST_TPM_BUFFER, response_length);
+    if (status != TPM_STATUS_OK) {
+        console_write("ST DRV tpm transport ");
+        console_write(tpm_status_string(status));
+        console_putc('\n');
+        return UINT32_MAX;
+    }
+    return tpm_get(response, 6U, 4U);
+}
+
+static void write_hex_bytes(const uint8_t *bytes, uint32_t count)
+{
+    static const char digits[] = "0123456789abcdef";
+
+    for (uint32_t index = 0U; index < count; ++index) {
+        console_putc(digits[bytes[index] >> 4U]);
+        console_putc(digits[bytes[index] & 0xFU]);
+    }
+}
+
+/* One tagged TPM property through TPM2_GetCapability. */
+static bool tpm_property(size_t index, uint32_t property, uint32_t *value)
+{
+    struct tpm_command command;
+    uint8_t response[DRIVER_TEST_TPM_BUFFER];
+    uint32_t length = 0U;
+
+    tpm_begin(&command, TPM2_ST_NO_SESSIONS, TPM2_CC_GET_CAPABILITY);
+    tpm_put(&command, TPM2_CAP_TPM_PROPERTIES, 4U);
+    tpm_put(&command, property, 4U);
+    tpm_put(&command, 1U, 4U);
+    /* header, moreData, capability, count, then property and value */
+    if (tpm_run(index, &command, response, &length) != TPM2_RC_SUCCESS ||
+        length < 27U || tpm_get(response, 11U, 4U) !=
+            TPM2_CAP_TPM_PROPERTIES ||
+        tpm_get(response, 15U, 4U) < 1U ||
+        tpm_get(response, 19U, 4U) != property) {
+        return false;
+    }
+    *value = tpm_get(response, 23U, 4U);
+    return true;
+}
+
+static bool tpm_random(size_t index, uint8_t *bytes)
+{
+    struct tpm_command command;
+    uint8_t response[DRIVER_TEST_TPM_BUFFER];
+    uint32_t length = 0U;
+
+    tpm_begin(&command, TPM2_ST_NO_SESSIONS, TPM2_CC_GET_RANDOM);
+    tpm_put(&command, DRIVER_TEST_TPM_RANDOM_BYTES, 2U);
+    if (tpm_run(index, &command, response, &length) != TPM2_RC_SUCCESS ||
+        length != 12U + DRIVER_TEST_TPM_RANDOM_BYTES ||
+        tpm_get(response, 10U, 2U) != DRIVER_TEST_TPM_RANDOM_BYTES) {
+        return false;
+    }
+    for (uint32_t byte = 0U; byte < DRIVER_TEST_TPM_RANDOM_BYTES; ++byte) {
+        bytes[byte] = response[12U + byte];
+    }
+    return true;
+}
+
+/* The digest the plan extends PCR 16 with; the runner uses the same. */
+static uint8_t tpm_extend_byte(uint32_t index)
+{
+    return (uint8_t)(index * 7U + 3U);
+}
+
+static bool tpm_plan(const struct driver_test_options *options,
+    const char **reason)
+{
+    struct tpm_command command;
+    uint8_t response[DRIVER_TEST_TPM_BUFFER];
+    uint8_t first[DRIVER_TEST_TPM_RANDOM_BYTES];
+    uint8_t second[DRIVER_TEST_TPM_RANDOM_BYTES];
+    uint32_t length = 0U;
+    uint32_t family = 0U;
+    uint32_t manufacturer = 0U;
+    uint32_t code;
+    struct tpm_info info;
+    size_t index = SIZE_MAX;
+    bool differ = false;
+
+    for (size_t slot = 0U; slot < tpm_count(); ++slot) {
+        if (tpm_info(slot, &info) && (options->driver[0] == '\0' ||
+                text_equal(info.driver, options->driver))) {
+            index = slot;
+            break;
+        }
+    }
+    if (index == SIZE_MAX) {
+        *reason = "no TPM was bound by the named driver";
+        return false;
+    }
+    console_write("ST DRV tpm device ");
+    console_write(info.name);
+    console_write(" ");
+    console_write(info.driver);
+    console_write(" version ");
+    console_write_u64(info.version);
+    console_putc('\n');
+    if (info.version != 2U) {
+        *reason = "the plan speaks TPM 2.0 only";
+        return false;
+    }
+    if (!tpm_property(index, TPM2_PT_FAMILY_INDICATOR, &family) ||
+        !tpm_property(index, TPM2_PT_MANUFACTURER, &manufacturer)) {
+        *reason = "TPM2_GetCapability failed";
+        return false;
+    }
+    console_write("ST DRV tpm family ");
+    for (unsigned int shift = 32U; shift > 0U; shift -= 8U) {
+        const char c = (char)(family >> (shift - 8U));
+        console_putc(c >= ' ' && c <= '~' ? c : '.');
+    }
+    console_write(" manufacturer ");
+    for (unsigned int shift = 32U; shift > 0U; shift -= 8U) {
+        const char c = (char)(manufacturer >> (shift - 8U));
+        console_putc(c >= ' ' && c <= '~' ? c : '.');
+    }
+    console_putc('\n');
+    if (!tpm_random(index, first) || !tpm_random(index, second)) {
+        *reason = "TPM2_GetRandom failed";
+        return false;
+    }
+    for (uint32_t byte = 0U; byte < DRIVER_TEST_TPM_RANDOM_BYTES; ++byte) {
+        differ = differ || first[byte] != second[byte];
+    }
+    console_write("ST DRV tpm random ");
+    write_hex_bytes(first, DRIVER_TEST_TPM_RANDOM_BYTES);
+    console_write(" ");
+    write_hex_bytes(second, DRIVER_TEST_TPM_RANDOM_BYTES);
+    console_putc('\n');
+    if (!differ) {
+        *reason = "two TPM2_GetRandom answers were identical";
+        return false;
+    }
+    /* A command code the TPM does not implement is answered, not dropped. */
+    tpm_begin(&command, TPM2_ST_NO_SESSIONS, TPM2_CC_UNDEFINED);
+    code = tpm_run(index, &command, response, &length);
+    console_write("ST DRV tpm undefined-command rc ");
+    console_write_hex(code);
+    console_putc('\n');
+    if ((code & 0xFFFU) != TPM2_RC_COMMAND_CODE) {
+        *reason = "the TPM did not refuse an undefined command";
+        return false;
+    }
+    tpm_begin(&command, TPM2_ST_SESSIONS, TPM2_CC_PCR_RESET);
+    tpm_put(&command, DRIVER_TEST_TPM_PCR, 4U);
+    tpm_password_session(&command);
+    code = tpm_run(index, &command, response, &length);
+    if (code != TPM2_RC_SUCCESS) {
+        console_write("ST DRV tpm pcr-reset rc ");
+        console_write_hex(code);
+        console_putc('\n');
+        *reason = "TPM2_PCR_Reset failed";
+        return false;
+    }
+    tpm_begin(&command, TPM2_ST_SESSIONS, TPM2_CC_PCR_EXTEND);
+    tpm_put(&command, DRIVER_TEST_TPM_PCR, 4U);
+    tpm_password_session(&command);
+    tpm_put(&command, 1U, 4U);                 /* TPML_DIGEST_VALUES.count */
+    tpm_put(&command, TPM2_ALG_SHA256, 2U);
+    for (uint32_t byte = 0U; byte < 32U; ++byte) {
+        tpm_put(&command, tpm_extend_byte(byte), 1U);
+    }
+    code = tpm_run(index, &command, response, &length);
+    if (code != TPM2_RC_SUCCESS) {
+        console_write("ST DRV tpm pcr-extend rc ");
+        console_write_hex(code);
+        console_putc('\n');
+        *reason = "TPM2_PCR_Extend failed";
+        return false;
+    }
+    tpm_begin(&command, TPM2_ST_NO_SESSIONS, TPM2_CC_PCR_READ);
+    tpm_put(&command, 1U, 4U);                 /* TPML_PCR_SELECTION.count */
+    tpm_put(&command, TPM2_ALG_SHA256, 2U);
+    tpm_put(&command, 3U, 1U);                 /* sizeofSelect */
+    tpm_put(&command, 0x00U, 1U);
+    tpm_put(&command, 0x00U, 1U);
+    tpm_put(&command, 0x01U, 1U);              /* PCR 16 */
+    code = tpm_run(index, &command, response, &length);
+    /*
+     * header, pcrUpdateCounter, a one-entry selection (4 + 2 + 1 + 3), a
+     * one-entry TPML_DIGEST (count, then a TPM2B of 32 bytes).
+     */
+    if (code != TPM2_RC_SUCCESS || length != 10U + 4U + 10U + 4U + 2U + 32U ||
+        tpm_get(response, 24U, 4U) != 1U || tpm_get(response, 28U, 2U) != 32U) {
+        *reason = "TPM2_PCR_Read returned no SHA-256 digest for PCR 16";
+        return false;
+    }
+    console_write("ST DRV tpm pcr16 sha256 ");
+    write_hex_bytes(&response[30], 32U);
+    console_putc('\n');
+    return true;
+}
+
 static bool audio_plan(const struct driver_test_options *options,
     const char **reason)
 {
@@ -1150,6 +1426,9 @@ bool driver_tests_run(const char *command_line, size_t length,
     }
     if (text_equal(options.plan, "audio")) {
         return audio_plan(&options, reason);
+    }
+    if (text_equal(options.plan, "tpm")) {
+        return tpm_plan(&options, reason);
     }
     if (text_equal(options.plan, "blk")) {
         if (!storage_plan(&options, reason)) {

@@ -27,6 +27,7 @@
 #include <ipxe/if_ether.h>
 #include <ipxe/iobuf.h>
 #include <ipxe/malloc.h>
+#include <ipxe/isa.h>
 #include <ipxe/netdevice.h>
 #include <ipxe/pci.h>
 #include <ipxe/timer.h>
@@ -49,8 +50,18 @@ struct glue_driver {
     struct pci_driver *driver;
 };
 
+struct glue_isa_driver {
+    const char *name;
+    const char *label;
+    const char *path;
+    struct isa_driver *driver;
+};
+
 struct openrfs_ipxe_pci {
     struct pci_device pci;
+    /* A legacy ISA card has no PCI function; this describes it instead. */
+    struct isa_device isa;
+    bool on_isa;
     const struct glue_driver *entry;
     void *handle;
     struct net_device *netdev;
@@ -86,6 +97,21 @@ static const struct glue_driver glue_drivers[] = {
 };
 
 #define GLUE_DRIVER_COUNT (sizeof(glue_drivers) / sizeof(glue_drivers[0]))
+
+extern struct isa_driver ne_driver;
+
+/*
+ * ISA cards, probed at the addresses their drivers list, and only when the
+ * command line names them: finding one means writing to I/O ports nothing
+ * described.
+ */
+static const struct glue_isa_driver glue_isa_drivers[] = {
+    { "ne2k-isa", "NE1000/NE2000 (ISA)", "src/drivers/net/ne2k_isa.c",
+        &ne_driver }
+};
+
+#define GLUE_ISA_DRIVER_COUNT \
+    (sizeof(glue_isa_drivers) / sizeof(glue_isa_drivers[0]))
 
 static struct openrfs_ipxe_pci devices[IPXE_GLUE_MAX_DEVICES];
 /* The device whose driver is running; ioremap() and register_netdev() use it. */
@@ -908,19 +934,30 @@ static void rx_flush(struct net_device *netdev)
 
 /* Binding. */
 
+/* PCI drivers first, then the ISA ones. */
 size_t ipxe_glue_driver_count(void)
 {
-    return GLUE_DRIVER_COUNT;
+    return GLUE_DRIVER_COUNT + GLUE_ISA_DRIVER_COUNT;
 }
 
 const char *ipxe_glue_driver_name(size_t index)
 {
-    return index < GLUE_DRIVER_COUNT ? glue_drivers[index].name : NULL;
+    if (index < GLUE_DRIVER_COUNT) {
+        return glue_drivers[index].name;
+    }
+    index -= GLUE_DRIVER_COUNT;
+    return index < GLUE_ISA_DRIVER_COUNT ? glue_isa_drivers[index].name :
+        NULL;
 }
 
 const char *ipxe_glue_driver_path(size_t index)
 {
-    return index < GLUE_DRIVER_COUNT ? glue_drivers[index].path : NULL;
+    if (index < GLUE_DRIVER_COUNT) {
+        return glue_drivers[index].path;
+    }
+    index -= GLUE_DRIVER_COUNT;
+    return index < GLUE_ISA_DRIVER_COUNT ? glue_isa_drivers[index].path :
+        NULL;
 }
 
 static struct pci_device_id *match_driver(struct pci_driver *driver,
@@ -1063,6 +1100,95 @@ bool ipxe_glue_try_bind(size_t index, const struct ipxe_host_pci_info *info)
         return true;
     }
     return false;
+}
+
+/*
+ * Probe one ISA driver at each address it lists, as iPXE's isa.c does:
+ * the driver's own probe_addr() check first, then its legacy probe, which
+ * registers the net_device.
+ */
+bool ipxe_glue_try_bind_isa(size_t isa_index)
+{
+    const struct glue_isa_driver *entry;
+    struct openrfs_ipxe_pci *device = NULL;
+
+    if (isa_index >= GLUE_ISA_DRIVER_COUNT) {
+        return false;
+    }
+    entry = &glue_isa_drivers[isa_index];
+    for (size_t slot = 0U; slot < IPXE_GLUE_MAX_DEVICES; ++slot) {
+        if (!devices[slot].bound && devices[slot].handle == NULL) {
+            device = &devices[slot];
+            break;
+        }
+    }
+    if (device == NULL) {
+        return false;
+    }
+    for (unsigned int address = 0U; address < entry->driver->addr_count;
+         ++address) {
+        struct isa_device *isa = &device->isa;
+        char description[64];
+        int rc;
+
+        memset(device, 0, sizeof(*device));
+        device->on_isa = true;
+        isa->ioaddr = entry->driver->probe_addrs[address];
+        isa->driver = entry->driver;
+        isa->dev.desc.bus_type = BUS_TYPE_ISA;
+        isa->dev.desc.location = isa->ioaddr;
+        isa->dev.desc.vendor = entry->driver->vendor_id;
+        isa->dev.desc.device = entry->driver->prod_id;
+        isa->dev.desc.ioaddr = isa->ioaddr;
+        INIT_LIST_HEAD(&isa->dev.siblings);
+        INIT_LIST_HEAD(&isa->dev.children);
+        current_device = device;
+        rc = entry->driver->probe(isa);
+        if (rc == 0 && device->netdev == NULL) {
+            entry->driver->remove(isa);
+            rc = -ENODEV;
+        }
+        if (rc == 0) {
+            const int open_rc = netdev_open(device->netdev);
+
+            if (open_rc != 0) {
+                printf("OpenRFS: iPXE %s open failed: %s\n", entry->name,
+                    strerror(open_rc));
+            }
+            snprintf(description, sizeof(description), "%s at I/O 0x%x",
+                entry->label, isa->ioaddr);
+            if (!ipxe_host_publish(device, NULL, entry->name, description,
+                    entry->path, device->instance,
+                    sizeof(device->instance))) {
+                netdev_close(device->netdev);
+                entry->driver->remove(isa);
+                rc = -ENOBUFS;
+            }
+        }
+        current_device = NULL;
+        if (rc != 0) {
+            memset(device, 0, sizeof(*device));
+            continue;
+        }
+        memcpy(device->netdev->name, device->instance,
+            sizeof(device->netdev->name) < sizeof(device->instance) ?
+            sizeof(device->netdev->name) : sizeof(device->instance));
+        device->netdev->name[sizeof(device->netdev->name) - 1U] = '\0';
+        device->bound = true;
+        return true;
+    }
+    return false;
+}
+
+size_t ipxe_glue_isa_driver_count(void)
+{
+    return GLUE_ISA_DRIVER_COUNT;
+}
+
+const char *ipxe_glue_isa_driver_name(size_t isa_index)
+{
+    return isa_index < GLUE_ISA_DRIVER_COUNT ?
+        glue_isa_drivers[isa_index].name : NULL;
 }
 
 /* The kernel's view of a bound device. */

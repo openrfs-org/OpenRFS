@@ -97,19 +97,25 @@ bool ipxe_host_config_write(void *handle, unsigned int offset,
     unsigned int width, uint32_t value);
 /*
  * Publish a probed net_device: register it with the netdev layer and record
- * the framework binding. The instance name ("net0") is written back.
+ * the framework binding (handle is NULL for an ISA card, which has no
+ * claim). The instance name ("net0") is written back.
  */
 bool ipxe_host_publish(void *glue_device, void *handle,
     const char *driver_name, const char *description,
     const char *source_path, char *instance, size_t instance_capacity);
 
 /* Glue-side services, implemented in ports/ipxe/ipxe_glue.c. */
+/* Every compiled driver: the PCI ones, then the ISA ones. */
 size_t ipxe_glue_driver_count(void);
 const char *ipxe_glue_driver_name(size_t index);
 const char *ipxe_glue_driver_path(size_t index);
 /* Try every compiled driver against PCI function index; true if bound. */
 bool ipxe_glue_try_bind(size_t index,
     const struct ipxe_host_pci_info *info);
+/* ISA drivers, probed at the addresses each lists (only when named). */
+size_t ipxe_glue_isa_driver_count(void);
+const char *ipxe_glue_isa_driver_name(size_t isa_index);
+bool ipxe_glue_try_bind_isa(size_t isa_index);
 enum ipxe_glue_result ipxe_glue_service(void *glue_device);
 enum ipxe_glue_result ipxe_glue_transmit(void *glue_device,
     const uint8_t *frame, size_t length);

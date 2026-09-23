@@ -84,6 +84,23 @@ with SeaBIOS's names; `ports/seabios/seabios_glue.c` implements them and
   three drivers SeaBIOS enables only on QEMU (lsi-scsi, esp-scsi, mpt-scsi)
   decline elsewhere. Boot-order and firmware-file lookups miss.
 
+## TPM interface drivers
+
+`hw/tpm_drivers.c` holds two interface drivers for a TPM at the PC Client
+platform's address, 0xFED40000: the TIS/FIFO interface and the Command
+Response Buffer. `tpmhw_probe()` tries TIS and then CRB, selects and locks
+the one the TPM offers; `tpmhw_transmit()` sends one command at locality 0
+and reads the response. The glue calls exactly those two, and reports which
+interface was chosen from the interface identifier register both keep at
+offset 0x30. SeaBIOS's TCG BIOS (`tcgbios.c`), which measures the boot, is
+not compiled: the kernel speaks TPM commands itself.
+
+The drivers reach the registers through the identity map. OpenRFS maps that
+range write-back; on hardware the firmware's MTRRs mark the chipset window
+uncacheable, which is what the effective type becomes, and QEMU does not
+model caching. They bind only when `tpm-tis` or `tpm-crb` is named, and the
+binding is recorded under the interface actually found.
+
 ## VGA drivers
 
 SeaBIOS builds one VGA BIOS per card type; `vgahw.h` dispatches on Kconfig
@@ -143,6 +160,14 @@ rewrite a region and read it back with its neighbours intact; the runner
 then checks the rewritten units in the image file itself. QEMU models the
 register interfaces of the real parts; a pass is evidence about those
 models, not about physical hardware.
+
+TPM scenarios attach QEMU's `tpm-tis` or `tpm-crb` model backed by swtpm
+(a TPM 2.0 emulator built on the TCG reference code). The guest reads the
+family and manufacturer properties, draws random bytes twice, requires an
+undefined command to be refused with `TPM_RC_COMMAND_CODE`, then resets
+PCR 16, extends it with a fixed digest and reads it back; the runner
+computes SHA-256 over the reset value and that digest itself and requires
+the guest's reading to equal it.
 
 Display scenarios set a mode through the card driver, draw a four-colour
 quadrant pattern with the reported pitch, read every pixel back, and then

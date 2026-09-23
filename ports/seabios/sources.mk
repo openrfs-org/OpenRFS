@@ -15,6 +15,7 @@ SEABIOS_VENDOR_SOURCES := \
 	vendor/seabios/src/hw/nvme.c \
 	vendor/seabios/src/hw/pvscsi.c \
 	vendor/seabios/src/hw/sdcard.c \
+	vendor/seabios/src/hw/tpm_drivers.c \
 	vendor/seabios/src/hw/usb.c \
 	vendor/seabios/src/hw/usb-ehci.c \
 	vendor/seabios/src/hw/usb-hid.c \

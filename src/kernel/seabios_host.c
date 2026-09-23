@@ -22,6 +22,7 @@
 #include <openrfs/pointer.h>
 #include <openrfs/seabios_host.h>
 #include <openrfs/thread.h>
+#include <openrfs/tpm.h>
 
 /*
  * 4 MiB below 4 GiB. Command lists, rings and bounce buffers for every
@@ -79,7 +80,8 @@ static const struct hwdrv_origin seabios_origins[] = {
     { "SeaBIOS", SEABIOS_REVISION, "src/hw/usb-hid.c", "LGPL-3.0-only" },
     { "SeaBIOS", SEABIOS_REVISION, "src/hw/usb-msc.c", "LGPL-3.0-only" },
     { "SeaBIOS", SEABIOS_REVISION, "src/hw/usb-uas.c", "LGPL-3.0-only" },
-    { "SeaBIOS", SEABIOS_REVISION, "src/hw/usb-hub.c", "LGPL-3.0-only" }
+    { "SeaBIOS", SEABIOS_REVISION, "src/hw/usb-hub.c", "LGPL-3.0-only" },
+    { "SeaBIOS", SEABIOS_REVISION, "src/hw/tpm_drivers.c", "LGPL-3.0-only" }
 };
 
 static struct dma_arena seabios_arena;
@@ -777,6 +779,90 @@ static size_t bind_function(size_t index, int pass)
     return (size_t)call.result;
 }
 
+static enum tpm_status tpm_device_transmit(void *context, const void *command,
+    void *response, uint32_t *response_length)
+{
+    struct seabios_call call = {
+        .kind = SEABIOS_CALL_TPM_TRANSMIT,
+        .command = command,
+        .response = response,
+        .response_length = *response_length,
+        .result = -1
+    };
+
+    (void)context;
+    if (!seabios_call(&call)) {
+        return TPM_STATUS_BUSY;
+    }
+    if (call.result != 0) {
+        return TPM_STATUS_DEVICE_ERROR;
+    }
+    *response_length = call.response_length;
+    return TPM_STATUS_OK;
+}
+
+static const struct tpm_operations tpm_device_operations = {
+    .transmit = tpm_device_transmit
+};
+
+/*
+ * The TPM sits at the PC Client platform's fixed address, 0xFED40000, not
+ * behind a PCI function, and tpmhw_probe() selects and locks the interface
+ * it finds. It runs only when tpm-tis or tpm-crb is named, and the binding
+ * is recorded under the interface the TPM actually offers.
+ */
+static size_t bind_tpm(void)
+{
+    struct seabios_call call = { .kind = SEABIOS_CALL_TPM_PROBE,
+        .result = -1 };
+    const char *driver;
+    const char *description;
+    char name[TPM_NAME_CAPACITY];
+    enum tpm_status status;
+
+    if (hwdrv_get_mode() != HWDRV_MODE_SELECTED ||
+        (!hwdrv_driver_enabled("tpm-tis") &&
+            !hwdrv_driver_enabled("tpm-crb"))) {
+        return 0U;
+    }
+    if (!seabios_call(&call) || call.result != 0) {
+        console_write("OpenRFS: SeaBIOS TPM driver found no TPM\n");
+        return 0U;
+    }
+    if (call.tpm_interface == SEABIOS_HOST_TPM_CRB) {
+        driver = "tpm-crb";
+        description = call.tpm_version == 2 ?
+            "TPM 2.0, Command Response Buffer interface" :
+            "TPM 1.2, Command Response Buffer interface";
+    } else {
+        driver = "tpm-tis";
+        description = call.tpm_version == 2 ?
+            "TPM 2.0, TIS/FIFO interface" : "TPM 1.2, TIS/FIFO interface";
+    }
+    if (!hwdrv_driver_enabled(driver)) {
+        console_write("OpenRFS: the TPM uses the interface of ");
+        console_write(driver);
+        console_write(", which was not named\n");
+        return 0U;
+    }
+    status = tpm_register(driver, description, (uint32_t)call.tpm_version,
+        &tpm_device_operations, NULL, name);
+    if (status != TPM_STATUS_OK ||
+        hwdrv_record_binding(driver, name, description,
+            origin_for("src/hw/tpm_drivers.c"), HWDRV_CLASS_PLATFORM,
+            NULL) != HWDRV_STATUS_OK) {
+        return 0U;
+    }
+    console_write("OpenRFS: ");
+    console_write(name);
+    console_write(" bound by SeaBIOS ");
+    console_write(driver);
+    console_write(": ");
+    console_write(description);
+    console_putc('\n');
+    return 1U;
+}
+
 enum hwdrv_status seabios_layer_bind_all(void)
 {
     size_t published = 0U;
@@ -797,5 +883,6 @@ enum hwdrv_status seabios_layer_bind_all(void)
             published += (size_t)call.result;
         }
     }
+    published += bind_tpm();
     return published != 0U ? HWDRV_STATUS_OK : HWDRV_STATUS_ABSENT;
 }

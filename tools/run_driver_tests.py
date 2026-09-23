@@ -32,6 +32,7 @@ models, not about physical hardware.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import http.server
 import json
 import re
@@ -113,8 +114,8 @@ class Scenario:
 
 
 def network_scenario(model: str, driver: str, description: str,
-                     machine: str = "pc", expected_failure: str = ""
-                     ) -> Scenario:
+                     machine: str = "pc", expected_failure: str = "",
+                     drivers_option: str = "auto") -> Scenario:
     return Scenario(
         plan="net",
         description=description,
@@ -122,6 +123,7 @@ def network_scenario(model: str, driver: str, description: str,
         nic_model=model,
         machine=machine,
         expected_failure=expected_failure,
+        drivers_option=drivers_option,
         markers=[
             rf"^ST DRV net0 driver {re.escape(driver)} mac "
             rf"{re.escape(GUEST_MAC)} link up$",
@@ -258,6 +260,36 @@ def audio_scenario(driver: str, description: str, devices: list[str],
                     markers=markers, timeout=timeout, drivers_option=driver)
 
 
+def tpm_extend_digest() -> bytes:
+    """The digest the guest extends PCR 16 with (driver_tests.c)."""
+    return bytes((index * 7 + 3) & 0xFF for index in range(32))
+
+
+def tpm_pcr16_expected() -> str:
+    """PCR 16 after a reset and one SHA-256 extend: H(zeros || digest)."""
+    return hashlib.sha256(bytes(32) + tpm_extend_digest()).hexdigest()
+
+
+def tpm_scenario(driver: str, description: str, device: str,
+                 machine: str = "pc") -> Scenario:
+    """A TPM 2.0 emulated by swtpm behind QEMU's TIS or CRB model."""
+    markers = [
+        rf"^OpenRFS: tpm0 bound by SeaBIOS {re.escape(driver)}: TPM 2\.0",
+        rf"^ST DRV tpm device tpm0 {re.escape(driver)} version 2$",
+        r"^ST DRV tpm family 2\.0\. manufacturer \S+",
+        r"^ST DRV tpm random [0-9a-f]{32} [0-9a-f]{32}$",
+        r"^ST DRV tpm undefined-command rc 0x0*143$",
+        # Computed here, not by the guest: SHA-256 over the reset PCR and
+        # the digest the guest sent.
+        rf"^ST DRV tpm pcr16 sha256 {tpm_pcr16_expected()}$",
+    ]
+    return Scenario(plan="tpm", description=description, driver=driver,
+                    qemu=["-chardev", "socket,id=drvtpm,path={tpmsock}",
+                          "-tpmdev", "emulator,id=drvtpm0,chardev=drvtpm",
+                          "-device", f"{device},tpmdev=drvtpm0"],
+                    markers=markers, machine=machine, drivers_option=driver)
+
+
 def usb_host_marker(driver: str) -> str:
     return (rf"^OpenRFS: usb[0-9]+ bound by SeaBIOS {driver}: "
             rf"{driver} USB host controller ")
@@ -301,6 +333,12 @@ SCENARIOS: dict[str, Scenario] = {
         "pcnet", "pcnet32", "AMD Am79C970A PCnet-PCI II"),
     "net-ne2k-pci": network_scenario(
         "ne2k_pci", "ne2k-pci", "Realtek RTL8029 NE2000 PCI"),
+    # An ISA card is probed only when named: finding it means writing to
+    # I/O ports nothing described. QEMU's ne2k_isa sits at 0x300, the first
+    # address the driver probes.
+    "net-ne2k-isa": network_scenario(
+        "ne2k_isa", "ne2k-isa", "Novell NE2000 (ISA, I/O 0x300)",
+        drivers_option="ne2k-isa"),
     "net-tulip": network_scenario(
         "tulip", "tulip", "DEC 21143 Tulip"),
     "net-vmxnet3": network_scenario(
@@ -498,6 +536,11 @@ SCENARIOS: dict[str, Scenario] = {
         "sb16", "Creative Sound Blaster 16 (ISA, MINIX 3 driver)",
         ["-device", "sb16,audiodev=drvsnd,iobase=0x220,irq=7,dma=1,dma16=5",
          "-parallel", "none"]),
+    "tpm-tis": tpm_scenario(
+        "tpm-tis", "TPM 2.0 (swtpm) behind the TIS/FIFO interface", "tpm-tis"),
+    "tpm-crb": tpm_scenario(
+        "tpm-crb", "TPM 2.0 (swtpm) behind the CRB interface", "tpm-crb",
+        machine="q35"),
     "blk-nvme": storage_scenario(
         "nvme", "NVM Express controller (SeaBIOS driver, selected)",
         ["-drive", DISK,
@@ -597,8 +640,25 @@ def run_scenario(name: str, scenario: Scenario, args: argparse.Namespace
     capture = work / "capture.wav"
     if capture.exists():
         capture.unlink()
+    swtpm = None
+    tpm_dir = None
+    tpm_socket = ""
+    if scenario.plan == "tpm":
+        # A fresh TPM 2.0 per boot; the socket path must fit in 108 bytes.
+        tpm_dir = Path(tempfile.mkdtemp(prefix="orfs-tpm-"))
+        tpm_socket = str(tpm_dir / "ctrl.sock")
+        swtpm = subprocess.Popen(
+            ["swtpm", "socket", "--tpm2", "--tpmstate",
+             f"dir={tpm_dir}", "--ctrl", f"type=unixio,path={tpm_socket}",
+             "--log", f"file={work / 'swtpm.log'},level=1"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for _ in range(100):
+            if Path(tpm_socket).exists():
+                break
+            time.sleep(0.05)
     qemu += [argument.replace("{image}", str(image))
              .replace("{capture}", str(capture))
+             .replace("{tpmsock}", tpm_socket)
              for argument in scenario.qemu]
     injector = None
     screen = work / "screen.ppm"
@@ -641,6 +701,14 @@ def run_scenario(name: str, scenario: Scenario, args: argparse.Namespace
         if server is not None:
             server.shutdown()
             server.server_close()
+        if swtpm is not None:
+            swtpm.terminate()
+            try:
+                swtpm.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                swtpm.kill()
+        if tpm_dir is not None:
+            shutil.rmtree(tpm_dir, ignore_errors=True)
     text = log.read_text(errors="replace") if log.exists() else ""
     lines = text.splitlines()
     problems = []

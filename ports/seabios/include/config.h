@@ -53,6 +53,12 @@ int openrfs_seabios_running_on_qemu(void);
 #define CONFIG_KEYBOARD 1
 #define CONFIG_MOUSE 1
 
+/*
+ * hw/tpm_drivers.c's TIS and CRB interfaces. SeaBIOS builds them into its
+ * TCG BIOS; OpenRFS compiles only the interface drivers, not tcgbios.c.
+ */
+#define CONFIG_TCGBIOS 1
+
 #define BUILD_BIOS_ADDR           0xf0000
 #define BUILD_LOWRAM_END          0xa0000
 #define SEG_IVT      0x0000

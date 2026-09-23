@@ -46,7 +46,9 @@ static const struct hwdrv_origin ipxe_origins[] = {
     { "iPXE", "744cdb451ef28bc894df72b6b40fdf1fda04acfc",
         "src/drivers/net/tulip.c", "GPL-1.0-or-later" },
     { "iPXE", "744cdb451ef28bc894df72b6b40fdf1fda04acfc",
-        "src/drivers/net/ns8390.c", "BSD-2-Clause" }
+        "src/drivers/net/ns8390.c", "BSD-2-Clause" },
+    { "iPXE", "744cdb451ef28bc894df72b6b40fdf1fda04acfc",
+        "src/drivers/net/ne2k_isa.c", "BSD-2-Clause" }
 };
 
 static struct dma_arena ipxe_arena;
@@ -392,7 +394,7 @@ bool ipxe_host_publish(void *glue_device, void *handle,
     const struct hwdrv_origin *origin = origin_for(source_path);
     size_t index = 0U;
 
-    if (claim == NULL || !claim->active || origin == NULL ||
+    if ((claim != NULL && !claim->active) || origin == NULL ||
         instance == NULL || instance_capacity < NETDEV_NAME_CAPACITY) {
         return false;
     }
@@ -409,7 +411,8 @@ bool ipxe_host_publish(void *glue_device, void *handle,
     }
     instance[instance_capacity - 1U] = '\0';
     if (hwdrv_record_binding(driver_name, info.name, description, origin,
-            HWDRV_CLASS_NETWORK, claim->device.function) != HWDRV_STATUS_OK) {
+            HWDRV_CLASS_NETWORK, claim != NULL ? claim->device.function :
+                NULL) != HWDRV_STATUS_OK) {
         return false;
     }
     console_write("OpenRFS: ");
@@ -444,6 +447,13 @@ enum hwdrv_status ipxe_layer_bind_all(void)
             continue;
         }
         if (ipxe_glue_try_bind(index, &info)) {
+            ++bound;
+        }
+    }
+    for (size_t index = 0U; index < ipxe_glue_isa_driver_count(); ++index) {
+        if (hwdrv_get_mode() == HWDRV_MODE_SELECTED &&
+            hwdrv_driver_enabled(ipxe_glue_isa_driver_name(index)) &&
+            ipxe_glue_try_bind_isa(index)) {
             ++bound;
         }
     }

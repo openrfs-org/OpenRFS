@@ -35,10 +35,20 @@ and contracts. `ports/ipxe/ipxe_glue.c` implements them and
 All drivers run polled. OpenRFS does not route PCI INTx interrupts, and iPXE's
 drivers are written to be polled.
 
+* **ISA.** `ne2k_isa.c` is a legacy ISA driver: `ISA_DRIVER()` lists the
+  I/O addresses it probes and its `ne_probe1()` check, and iPXE's isa.c
+  tries each address in turn. The glue does the same for a driver the
+  command line names (`openrfs.drivers=ne2k-isa`), never under `auto`,
+  because probing writes to I/O ports nothing described. `ne_probe1()` as
+  upstream writes its arguments to `outb()` in the wrong order, which sends
+  the low byte of the probe address to port 0x61 (the PC speaker gate); on
+  a PC that write is harmless, and the file is kept as upstream has it.
+
 ## Evidence and its limits
 
 `tools/run_driver_tests.py` boots each supported QEMU NIC model with
-`openrfs.drivers=auto` and requires DHCP, ICMP echo and a 256 KiB HTTP
+`openrfs.drivers=auto` (the ISA NE2000 by name) and requires DHCP, ICMP echo
+and a 256 KiB HTTP
 transfer verified byte for byte, with a packet capture kept beside each serial
 log. QEMU models the register interfaces of the real parts; a pass is evidence
 about those models, not about physical hardware.

@@ -35,6 +35,8 @@ Vendored paths (byte-for-byte upstream; SOURCE-MANIFEST.sha256):
   src/hw/usb-hid.c, usb-hid.h        USB boot-protocol keyboards and mice
   src/hw/usb-msc.c, usb-msc.h        USB mass storage (bulk-only)
   src/hw/usb-uas.c, usb-uas.h        USB Attached SCSI
+  src/hw/tpm_drivers.c, tpm_drivers.h, std/tcg.h
+                                     TPM TIS/FIFO and CRB interfaces
   src/hw/ps2port.h
   src/hw/pci.h, pcidevice.h, pic.h, rtc.h
   src/block.h, bregs.h, byteorder.h, list.h, std/bda.h, std/disk.h
@@ -51,7 +53,9 @@ Vendored paths (byte-for-byte upstream; SOURCE-MANIFEST.sha256):
   src/std/vga.h, std/vbe.h, std/pmm.h
 
 Deliberately not vendored: SeaBIOS's POST, int13/int15 handlers, boot
-menu, memory manager, threads, output engine, the VGA BIOS's INT 10h and
+menu, memory manager, threads, output engine, the TCG BIOS (tcgbios.c:
+measurements and the INT 1Ah interface; only the TPM interface drivers are
+used), the VGA BIOS's INT 10h and
 VBE handlers (vgabios.c, vbe.c, vgainit.c, vgafb.c, swcursor.c, the entry
 assembly) and every header that describes
 the 16-bit or segmented environment (types.h, farptr.h, biosvar.h, x86.h,

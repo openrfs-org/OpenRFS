@@ -16,17 +16,26 @@ Vendored paths (byte-for-byte upstream; SOURCE-MANIFEST.sha256):
   src/drivers/net/vmxnet3.c, vmxnet3.h    GPL2_OR_LATER_OR_UBDL
   src/drivers/net/tulip.c                 GPL_ANY
   src/drivers/net/ns8390.c, ns8390.h      BSD2
+  src/drivers/net/ne2k_isa.c              BSD2 (NE1000/NE2000, ISA)
   src/drivers/net/legacy.c                GPL2_OR_LATER_OR_UBDL
   src/drivers/net/mii.c                   GPL2_OR_LATER_OR_UBDL
   src/drivers/nvs/nvs.c, threewire.c      GPL2_OR_LATER_OR_UBDL
   src/drivers/bitbash/bitbash.c, spi_bit.c GPL2_OR_LATER_OR_UBDL
   src/core/iobuf.c, list.c                GPL2_OR_LATER_OR_UBDL
   src/net/iobpad.c                        GPL2_OR_LATER_OR_UBDL
-  src/include/ipxe/{bitbash,ethernet,if_ether,iobuf,list,mii,nvs,spi,
-    spi_bit,threewire}.h, src/include/mii.h
+  src/include/ipxe/{bitbash,ethernet,if_ether,iobuf,isa_ids,list,mii,nvs,
+    spi,spi_bit,threewire}.h, src/include/mii.h
                                           GPL2_OR_LATER(_OR_UBDL)
 
 Deliberately excluded: every GPL2_ONLY file (for example sky2, skge,
 myri10ge, cs89x0, tg3, bnxt and the vxge core), because GPL-2.0-only code
 cannot be combined with OpenRFS's GPL-3.0-only licence; iPXE's network stack,
 settings tree, console, timers and build system, which OpenRFS replaces.
+
+Also not vendored: virtio-net. The implementation iPXE shipped until May 2026
+(src/drivers/net/virtio-net.c with src/drivers/bus/virtio-pci.c and
+virtio-ring.c) is the one with years of use, but virtio-pci.c and its headers
+carry no licence declaration, so their compatibility with GPL-3.0-only
+cannot be established from the files; its replacement (commit ca85200,
+2026-05-13, GPL2_OR_LATER_OR_UBDL) is in no iPXE release yet. OpenRFS keeps
+its own virtio-net driver.
