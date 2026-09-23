@@ -166,6 +166,7 @@ class ClientSession:
     established: bool = False
     reply_seen: bool = False
     finished: bool = False
+    behavior: int = 0
 
 
 @dataclass
@@ -191,6 +192,8 @@ class Fixture:
         self.session_count = 0
         self.knock: tuple[bytes, int] | None = None
         self.reset_seen = False
+        self.dhcp_discovers = 0
+        self.dhcp_requests = 0
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM,
                                   socket.IPPROTO_UDP)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -232,7 +235,8 @@ class Fixture:
         if self.mode == "arp-conflict":
             self.send(arp_reply(sender_mac, sender_ip, target_ip, PEER_MAC))
 
-    def dhcp_payload(self, request: bytes, message_type: int) -> bytes:
+    def dhcp_payload(self, request: bytes, message_type: int,
+                     lease_seconds: int = 3600) -> bytes:
         response = bytearray(240)
         response[0:4] = b"\x02\x01\x06\x00"
         response[4:8] = request[4:8]
@@ -244,9 +248,10 @@ class Fixture:
         options += bytes((3, 4)) + GATEWAY_IP
         options += bytes((6, 4)) + DNS_IP
         options += bytes((54, 4)) + GATEWAY_IP
-        options += bytes((51, 4)) + struct.pack("!I", 3600)
-        options += bytes((58, 4)) + struct.pack("!I", 1800)
-        options += bytes((59, 4)) + struct.pack("!I", 3150) + b"\xff"
+        options += bytes((51, 4)) + struct.pack("!I", lease_seconds)
+        options += bytes((58, 4)) + struct.pack("!I", lease_seconds // 2)
+        options += bytes((59, 4)) + struct.pack(
+            "!I", lease_seconds * 7 // 8) + b"\xff"
         return bytes(response) + options
 
     @staticmethod
@@ -270,10 +275,71 @@ class Fixture:
             offset += length
         return 0
 
-    def handle_dhcp(self, source_ip: bytes, payload: bytes) -> None:
+    @staticmethod
+    def dhcp_option_codes(payload: bytes) -> set[int]:
+        codes: set[int] = set()
+        offset = 240
+        while offset < len(payload):
+            kind = payload[offset]
+            offset += 1
+            if kind == 255:
+                break
+            if kind == 0:
+                continue
+            if offset >= len(payload):
+                break
+            length = payload[offset]
+            offset += 1 + length
+            if offset > len(payload):
+                break
+            codes.add(kind)
+        return codes
+
+    def handle_dhcp(self, source_ip: bytes, destination_ip: bytes,
+                    payload: bytes) -> None:
         if self.mode in ("silent", "dhcp-timeout") or len(payload) < 248:
             return
         message = self.dhcp_type(payload)
+        if self.mode == "dhcp-adversarial":
+            if message == 1:
+                self.dhcp_discovers += 1
+                answer = self.dhcp_payload(payload, 2, 4)
+                if self.dhcp_discovers == 1:
+                    # A late duplicate option must not poison the next offer.
+                    answer = answer[:-1] + bytes((54, 4)) + GATEWAY_IP + b"\xff"
+                    print("DHCP malformed offer sent", flush=True)
+                else:
+                    print("DHCP valid offer after retry sent", flush=True)
+            elif message == 3:
+                self.dhcp_requests += 1
+                if self.dhcp_requests >= 3:
+                    if (source_ip != GUEST_IP or payload[12:16] != GUEST_IP or
+                            destination_ip not in (GATEWAY_IP, BROADCAST_IP) or
+                            {50, 54} & self.dhcp_option_codes(payload)):
+                        print("DHCP malformed renewal request refused", flush=True)
+                        return
+                    if destination_ip == BROADCAST_IP:
+                        print("DHCP rebinding broadcast observed", flush=True)
+                if self.dhcp_requests > 3:
+                    print("DHCP renewal refusal retained until expiry", flush=True)
+                    return
+                answer = self.dhcp_payload(payload, 5, 4)
+                if self.dhcp_requests == 1:
+                    # The ACK must retain the address selected by the offer.
+                    answer = answer[:16] + HTTP_IP + answer[20:]
+                    print("DHCP contradictory ACK sent", flush=True)
+                elif self.dhcp_requests == 2:
+                    print("DHCP valid ACK after retry sent", flush=True)
+                else:
+                    print("DHCP renewal ACK sent", flush=True)
+            else:
+                return
+            reply_unicast = message == 3 and self.dhcp_requests == 3
+            destination = GUEST_IP if reply_unicast else BROADCAST_IP
+            datagram = udp(GATEWAY_IP, destination, 67, 68, answer)
+            self.send_ipv4(GUEST_MAC if reply_unicast else BROADCAST_MAC,
+                           GATEWAY_IP, destination, 17, datagram)
+            return
         if self.mode == "dhcp-nak" and message == 3:
             answer_type = 6
         elif message == 1:
@@ -294,6 +360,60 @@ class Fixture:
             return
         name, question_end = parsed
         identifier = payload[:2]
+        if self.mode == "dns-truncated":
+            question = payload[12:question_end]
+            address = (b"\xc0\x0c\x00\x01\x00\x01\x00\x00\x00\x3c"
+                       b"\x00\x04" + HTTP_IP)
+            reply_source = DNS_IP
+            reply_source_port = 53
+            reply_destination_port = source_port
+            if name == b"timeout.test":
+                print("DNS control timeout.test", flush=True)
+                return
+            if name == b"mismatch.test":
+                identifier = struct.pack(
+                    "!H", (int.from_bytes(identifier, "big") + 1) & 0xFFFF)
+                answer = identifier + struct.pack("!HHHHH", 0x8180, 1, 1, 0, 0)
+                answer += question + address
+            elif name == b"poison.test":
+                answer = identifier + struct.pack("!HHHHH", 0x8180, 1, 0, 0, 1)
+                answer += question + address
+            elif name == b"compression.test":
+                owner_offset = question_end
+                answer = identifier + struct.pack("!HHHHH", 0x8180, 1, 1, 0, 0)
+                answer += question + bytes((0xC0, owner_offset)) + address[2:]
+            elif name == b"unrelated.test":
+                wrong = dns_wire_name(b"openrfs.test") + b"\x00\x01\x00\x01"
+                answer = identifier + struct.pack("!HHHHH", 0x8180, 1, 1, 0, 0)
+                answer += wrong + address
+            elif name == b"wrong-source.test":
+                reply_source = GATEWAY_IP
+                answer = identifier + struct.pack("!HHHHH", 0x8180, 1, 1, 0, 0)
+                answer += question + address
+            elif name == b"wrong-source-port.test":
+                reply_source_port = 54
+                answer = identifier + struct.pack("!HHHHH", 0x8180, 1, 1, 0, 0)
+                answer += question + address
+            elif name == b"wrong-destination-port.test":
+                reply_destination_port = source_port + 1
+                answer = identifier + struct.pack("!HHHHH", 0x8180, 1, 1, 0, 0)
+                answer += question + address
+            elif name == b"wrong-type.test":
+                wrong = question[:-4] + b"\x00\x1c\x00\x01"
+                answer = identifier + struct.pack("!HHHHH", 0x8180, 1, 1, 0, 0)
+                answer += wrong + address
+            elif name == b"wrong-class.test":
+                wrong = question[:-4] + b"\x00\x01\x00\x03"
+                answer = identifier + struct.pack("!HHHHH", 0x8180, 1, 1, 0, 0)
+                answer += wrong + address
+            else:
+                answer = identifier + struct.pack("!HHHHH", 0x8380, 1, 0, 0, 0)
+                answer += question
+            print(f"DNS control {name.decode('ascii')}", flush=True)
+            datagram = udp(reply_source, source_ip, reply_source_port,
+                           reply_destination_port, answer)
+            self.send_ipv4(GUEST_MAC, reply_source, source_ip, 17, datagram)
+            return
         flags = 0x8180
         answers = 1
         suffix = b"\xc0\x0c\x00\x01\x00\x01\x00\x00\x00\x3c\x00\x04" + HTTP_IP
@@ -368,9 +488,7 @@ class Fixture:
                      payload: bytes) -> None:
         if self.mode not in ("tcp-listen", "tcp-refused"):
             return
-        if len(payload) != 6 or payload[:4] != KNOCK_MAGIC:
-            return
-        if self.session is not None and not self.session.finished:
+        if len(payload) not in (6, 7) or payload[:4] != KNOCK_MAGIC:
             return
         target = struct.unpack_from("!H", payload, 4)[0]
         if target == 0:
@@ -378,8 +496,9 @@ class Fixture:
         # A fresh local port per announcement, so a late segment from the
         # previous connection can never be mistaken for this one.
         self.knock = (source_ip, source_port)
+        behavior = payload[6] if len(payload) == 7 else 0
         self.session = ClientSession(CLIENT_PORT + self.session_count, target,
-                                     CLIENT_ISN)
+                                     CLIENT_ISN, behavior=behavior)
         self.session_count += 1
         self.send_client(self.session, 0x02)
 
@@ -405,9 +524,23 @@ class Fixture:
         if not session.established:
             if flags & 0x12 != 0x12 or acknowledgement != session.send_next:
                 return
+            if session.behavior == 1:
+                return
             session.receive_next = (sequence + 1) & 0xFFFFFFFF
             session.established = True
             self.send_client(session, 0x10)
+            if session.behavior == 2:
+                return
+            if session.behavior == 3:
+                duplicate_sequence = session.send_next
+                self.send_client(session, 0x10)
+                session.send_next = duplicate_sequence
+                self.send_client(session, 0x11)
+                session.send_next = duplicate_sequence
+                self.send_client(session, 0x11)
+                self.send_client(session, 0x14)
+                session.finished = True
+                return
             self.send_client(session, 0x18, LISTEN_REQUEST)
             return
         if payload:
@@ -485,15 +618,20 @@ class Fixture:
                 return
             body = payload[8:length]
             if source_port == 68 and destination_port == 67:
-                self.handle_dhcp(source_ip, body)
+                self.handle_dhcp(source_ip, destination_ip, body)
             elif destination_port == 53 and destination_ip == DNS_IP:
                 self.handle_dns(source_ip, source_port, body)
             elif destination_port == KNOCK_PORT:
                 self.handle_knock(source_ip, source_port, body)
             elif destination_port == 4242 and destination_ip == HTTP_IP and \
                     self.mode != "silent":
-                answer = udp(HTTP_IP, source_ip, 4242, source_port, body)
-                self.send_ipv4(GUEST_MAC, HTTP_IP, source_ip, 17, answer)
+                replies = (f"flood{index}".encode("ascii") for index in range(5)) \
+                    if self.mode == "udp-queue" and body == b"flood" else (body,)
+                for reply in replies:
+                    answer = udp(HTTP_IP, source_ip, 4242, source_port, reply)
+                    self.send_ipv4(GUEST_MAC, HTTP_IP, source_ip, 17, answer)
+                if self.mode == "udp-queue" and body == b"flood":
+                    print("UDP five-reply queue control sent", flush=True)
         elif protocol == 6:
             self.handle_tcp(source_ip, destination_ip, payload)
 
@@ -564,9 +702,11 @@ def main() -> int:
     parser.add_argument("--peer-port", type=int, default=PORT + 1)
     parser.add_argument("--unicast", action="store_true")
     parser.add_argument("--mode", default="normal", choices=(
-        "normal", "silent", "dhcp-timeout", "dhcp-nak", "dns-timeout",
+        "normal", "silent", "dhcp-timeout", "dhcp-adversarial",
+        "dhcp-nak", "dns-timeout",
         "dns-nxdomain", "dns-truncated", "dns-cname", "udp-zero-checksum",
-        "ipv4-bad-checksum", "arp-conflict", "tcp-reset", "tcp-retransmit",
+        "ipv4-bad-checksum", "arp-conflict", "udp-queue", "tcp-reset",
+        "tcp-retransmit",
         "http-chunked", "http-redirect",
         "http-truncated", "http-malformed", "http-redirect-loop",
         "malformed-flood", "tcp-listen", "tcp-refused"))

@@ -34,6 +34,14 @@
 #define NETWORK_TCP_RETRANSMISSION_LIMIT 4U
 #define NETWORK_TCP_MAX_BACKLOG 4U
 #define NETWORK_PING_MAX_COUNT 8U
+#define NETWORK_OWNER_GENERATION_MAX UINT64_C(0x000FFFFFFFFFFFFF)
+#define NETWORK_OWNER_NATIVE_PREFIX UINT64_C(0x1000000000000000)
+#define NETWORK_OWNER_PRIVATE_PREFIX UINT64_C(0x2000000000000000)
+#define NETWORK_OWNER_SHELL UINT64_C(0x3000000000000001)
+#define NETWORK_OWNER_NATIVE(generation) \
+    (NETWORK_OWNER_NATIVE_PREFIX | (generation))
+#define NETWORK_OWNER_PRIVATE(generation, slot) \
+    (NETWORK_OWNER_PRIVATE_PREFIX | ((generation) << 8U) | (slot))
 
 typedef uint64_t network_handle;
 
@@ -162,6 +170,7 @@ struct network_state {
     struct network_statistics statistics;
     size_t arp_entries;
     size_t dns_entries;
+    size_t dns_requests;
     size_t udp_sockets;
     size_t tcp_connections;
     size_t tcp_listeners;
@@ -180,6 +189,7 @@ enum network_status network_configure_static(
 );
 enum network_status network_start_dhcp(uint64_t timeout_ns);
 enum network_status network_resolve(
+    uint64_t owner,
     const char *hostname,
     uint32_t *address,
     uint64_t timeout_ns

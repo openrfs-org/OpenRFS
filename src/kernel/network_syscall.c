@@ -302,7 +302,7 @@ static enum network_syscall_status dispatch_operation(
                     sizeof(context->primary_text))) {
                 return NETWORK_SYSCALL_STATUS_BAD_POINTER;
             }
-            status = network_resolve(context->primary_text,
+            status = network_resolve(context->owner, context->primary_text,
                 &response->ipv4_address, request->timeout_ns);
             break;
         case NETWORK_SYSCALL_STREAM_OPEN:
@@ -328,6 +328,9 @@ static enum network_syscall_status dispatch_operation(
                 return NETWORK_SYSCALL_STATUS_BAD_POINTER;
             }
             response->value = (uint32_t)completed;
+            if (completed != 0U) {
+                status = NETWORK_STATUS_OK;
+            }
             break;
         }
         case NETWORK_SYSCALL_STREAM_WRITE: {
@@ -342,6 +345,9 @@ static enum network_syscall_status dispatch_operation(
                 context->transfer, request->primary_length, &completed,
                 request->timeout_ns);
             response->value = (uint32_t)completed;
+            if (completed != 0U) {
+                status = NETWORK_STATUS_OK;
+            }
             break;
         }
         case NETWORK_SYSCALL_STREAM_SHUTDOWN:
@@ -437,7 +443,8 @@ enum network_syscall_status network_syscall_register(
 )
 {
     if (address_space == NULL || authenticator == NULL ||
-        process_generation == 0U || process_generation > (UINT64_MAX >> 8U)) {
+        process_generation == 0U ||
+        process_generation > NETWORK_OWNER_GENERATION_MAX) {
         return NETWORK_SYSCALL_STATUS_NULL_ARGUMENT;
     }
     for (size_t index = 0U; index < NETWORK_SYSCALL_MAX_CONTEXTS; ++index) {
@@ -452,7 +459,8 @@ enum network_syscall_status network_syscall_register(
                 next_generation >= (UINT64_C(1) << 40U)) {
                 next_generation = 1U;
             }
-            context->owner = (process_generation << 8U) | (index + 1U);
+            context->owner = NETWORK_OWNER_PRIVATE(process_generation,
+                index + 1U);
             context->active = true;
             authenticator->token = make_token(index, context->generation);
             authenticator->process_generation = process_generation;

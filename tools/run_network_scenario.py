@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 import socket
@@ -45,6 +46,8 @@ FIXTURE_MODE = {
     "native-https": "https",
     "native-openrfs": "packages-lifecycle",
     "network-dhcp-timeout": "dhcp-timeout",
+    "network-dhcp": "dhcp-adversarial",
+    "network-udp": "udp-queue",
     "network-icmp-timeout": "silent",
     "network-dns-cname": "dns-cname",
     "network-dns-malformed": "dns-truncated",
@@ -52,6 +55,8 @@ FIXTURE_MODE = {
     "network-tcp-reset": "tcp-reset",
     "network-tcp-listen": "tcp-listen",
     "network-tcp-refused": "tcp-refused",
+    "network-link-down": "tcp-listen",
+    "network-nic-reset": "tcp-listen",
     "network-http-chunked": "http-chunked",
     "network-http-redirect": "http-redirect",
     "network-http-malformed": "http-malformed",
@@ -91,6 +96,18 @@ def wait_ready(path: Path, process: subprocess.Popen[bytes]) -> None:
             raise RuntimeError("network fixture exited before becoming ready")
         time.sleep(0.02)
     raise RuntimeError("network fixture readiness timed out")
+
+
+def wait_serial_marker(path: Path, marker: bytes,
+                       process: subprocess.Popen[bytes], timeout: float) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if path.is_file() and marker in path.read_bytes():
+            return
+        if process.poll() is not None:
+            raise RuntimeError("QEMU exited before its lifecycle marker")
+        time.sleep(0.02)
+    raise RuntimeError("QEMU lifecycle marker timed out")
 
 
 def qmp_command(endpoint: Path | tuple[str, int], execute: str,
@@ -255,12 +272,24 @@ def run(args: argparse.Namespace) -> int:
             fixture_command, stdout=fixture_stream, stderr=subprocess.STDOUT
         )
         wait_ready(ready, fixture)
+        nic_device = (
+            "virtio-net-pci,id=virtio-net0,netdev=openrfsnet,"
+            "mac=52:54:00:12:34:56,disable-legacy=on,mrg_rxbuf=off"
+        )
+        if args.scenario == "network-nic-reset":
+            qemu.extend([
+                "-global",
+                "ICH9-LPC.acpi-pci-hotplug-with-bridge-support=off",
+                "-device", "pcie-root-port,id=openrfs-net-root,"
+                "chassis=1,slot=1",
+            ])
+            nic_device += ",bus=openrfs-net-root"
         qemu.extend([
             "-netdev", "dgram,id=openrfsnet,local.type=inet,local.host=127.0.0.1,local.port="
             f"{guest_port},remote.type=inet,remote.host=127.0.0.1,remote.port={peer_port}",
-            "-device", "virtio-net-pci,id=virtio-net0,netdev=openrfsnet,mac=52:54:00:12:34:56,disable-legacy=on,mrg_rxbuf=off",
+            "-device", nic_device,
         ])
-    if args.scenario == "network-link-down":
+    if args.scenario in ("network-link-down", "network-nic-reset"):
         if hasattr(socket, "AF_UNIX"):
             qemu.extend(["-qmp", f"unix:{qmp},server=on,wait=off"])
         else:
@@ -280,11 +309,24 @@ def run(args: argparse.Namespace) -> int:
                                        stdout=serial_stream,
                                        stderr=subprocess.STDOUT)
             if args.scenario == "network-link-down":
+                wait_serial_marker(
+                    serial, b"ST NETWORK link-down operation ready\n",
+                    machine, 30.0,
+                )
                 qmp_command(qmp_endpoint, "set_link",
                             {"name": "virtio-net0", "up": False})
+            elif args.scenario == "network-nic-reset":
+                wait_serial_marker(
+                    serial, b"ST NETWORK removal operation ready\n",
+                    machine, 45.0,
+                )
+                qmp_command(qmp_endpoint, "device_del",
+                            {"id": "virtio-net0"})
+            timed_out = False
             try:
                 result = machine.wait(timeout=args.timeout)
             except subprocess.TimeoutExpired:
+                timed_out = True
                 machine.kill()
                 machine.wait(timeout=5.0)
                 result = 124
@@ -301,6 +343,12 @@ def run(args: argparse.Namespace) -> int:
                passed == 1 and "ST FAIL" not in transcript and
                "OpenRFS PANIC" not in transcript and
                "ST NETWORK production path bounded and recoverable" in transcript)
+    if (args.scenario.startswith("network-") or args.scenario in
+            ("native-https", "native-openrfs")) and healthy:
+        teardown_receipts = (3 if args.scenario == "native-openrfs" else
+                             2 if args.scenario == "network-persistence" else 1)
+        healthy = transcript.count(
+            "ST NETWORK resource and teardown census clean\n") == teardown_receipts
     if args.scenario == "network-native" and healthy:
         healthy = (
             transcript.count(
@@ -312,6 +360,51 @@ def run(args: argparse.Namespace) -> int:
                 "cancellation passed\n"
             ) == 1
         )
+    if args.scenario == "network-dhcp" and healthy:
+        required = (
+            "ST DHCP retry and renewal passed\n",
+            "ST DHCP lease expiry cleared routes\n",
+        )
+        fixture_text = fixture_log.read_text(encoding="utf-8", errors="replace")
+        fixture_required = (
+            "DHCP malformed offer sent\n",
+            "DHCP valid offer after retry sent\n",
+            "DHCP contradictory ACK sent\n",
+            "DHCP valid ACK after retry sent\n",
+            "DHCP renewal ACK sent\n",
+            "DHCP renewal refusal retained until expiry\n",
+            "DHCP rebinding broadcast observed\n",
+        )
+        healthy = (all(transcript.count(marker) == 1 for marker in required)
+                   and all(fixture_text.count(marker) >= 1
+                           for marker in fixture_required))
+    if args.scenario == "network-dns-malformed" and healthy:
+        fixture_text = fixture_log.read_text(encoding="utf-8", errors="replace")
+        healthy = (
+            transcript.count(
+                "ST DNS malformed mismatch poison compression timeout "
+                "refused\n"
+            ) == 1
+            and all(f"DNS control {name}" in fixture_text for name in (
+                "openrfs.test", "mismatch.test", "poison.test",
+                "compression.test", "unrelated.test", "wrong-source.test",
+                "wrong-source-port.test", "wrong-destination-port.test",
+                "wrong-type.test", "wrong-class.test", "timeout.test"
+            ))
+        )
+    if args.scenario == "network-udp" and healthy:
+        fixture_text = fixture_log.read_text(encoding="utf-8", errors="replace")
+        healthy = (
+            transcript.count("ST UDP queue exhaustion and close passed\n") == 1
+            and fixture_text.count("UDP five-reply queue control sent\n") == 1
+        )
+    if args.scenario == "network-socket-isolation" and healthy:
+        healthy = transcript.count(
+            "ST NETWORK process exit released sockets\n") == 1
+    if args.scenario == "network-tcp-listen" and healthy:
+        healthy = transcript.count(
+            "ST TCP passive expiry backlog duplicates process-exit passed\n"
+        ) == 1
     if args.scenario == "native-https" and healthy:
         required = (
             "OPENRFS HTTPSAPP PHASE start\n",
@@ -379,6 +472,27 @@ def run(args: argparse.Namespace) -> int:
             "--json", str(audit),
         ], check=False)
         healthy = audited.returncode == 0
+    serial_bytes = serial.read_bytes()
+    scenario_result = {
+        "scenario": args.scenario,
+        "expected_exit": args.expected,
+        "observed_exit": result,
+        "timed_out": timed_out,
+        "expected_begin_receipts": expected_begins,
+        "observed_begin_receipts": begin,
+        "success_receipts": passed,
+        "teardown_receipts": transcript.count(
+            "ST NETWORK resource and teardown census clean\n"
+        ),
+        "serial_bytes": len(serial_bytes),
+        "serial_sha256": hashlib.sha256(serial_bytes).hexdigest(),
+        "packet_audit_present": audit.is_file() and audit.stat().st_size > 0,
+        "healthy": healthy,
+    }
+    (output / "scenario-result.json").write_text(
+        json.dumps(scenario_result, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     if not healthy:
         print(f"QEMU scenario {args.scenario} failed: status={result} "
               f"expected={args.expected} begin={begin}/{expected_begins} pass={passed}",
