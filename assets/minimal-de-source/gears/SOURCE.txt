@@ -1,0 +1,43 @@
+The root window is glxgears, and the geometry is Brian Paul's.
+
+Nothing is vendored here.  tools/make-gears.py carries the numbers out
+of Mesa's own demo and projects them into the outlines the shell fills;
+src/trait_gears_art.h is the result, and src/gears.c draws it.
+
+Source of the numbers:
+
+    glxgears.c, Mesa demos, src/xdemos/glxgears.c
+    https://gitlab.freedesktop.org/mesa/demos/-/blob/main/src/xdemos/glxgears.c
+    Copyright (C) 1999-2001 Brian Paul.  All Rights Reserved.
+    Permission is hereby granted, free of charge, to any person
+    obtaining a copy of this software and associated documentation
+    files (the "Software"), to deal in the Software without
+    restriction ... (MIT/X11 terms, in full at the head of that file).
+
+What was taken, and it is the arithmetic rather than any code:
+
+    gear(inner, outer, width, teeth, tooth_depth) builds a gear whose
+    root radius is outer - tooth_depth/2 and whose tip radius is
+    outer + tooth_depth/2, with da = 2*pi/teeth/4 and a tooth that runs
+    r1 -> r2 -> r2 -> r1 across angle, +da, +2da, +3da.
+
+    gear1 = gear(1.0, 4.0, 1.0, 20, 0.7)   red     at (-3.0, -2.0)
+    gear2 = gear(0.5, 2.0, 2.0, 10, 0.7)   green   at ( 3.1, -2.0)
+    gear3 = gear(1.3, 2.0, 0.5, 10, 0.7)   blue    at (-3.1,  4.2)
+
+    view_rotx 20, view_roty 30, view_rotz 0, and the two small gears
+    turned -9 and -25 degrees so the teeth mesh.
+
+Two things are deliberately not carried over.
+
+The projection is orthographic where glxgears' is perspective.  The
+scene is about thirteen units across seen from forty away, so the two
+differ by a few percent; what the change buys is that a flat extrusion
+projects to one outline swept along one vector, which is a scanline fill
+rather than a mesh, and this desktop has no floating point to do a mesh
+with.
+
+The lighting is gone.  glxgears lights every face from (5, 5, 10) and
+gets a continuous range of shades; there are sixteen colours here.  Each
+gear is two of them - the face the light reaches and the sides it does
+not - which is what flat shading leaves when the shades run out.

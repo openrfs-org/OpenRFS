@@ -1,0 +1,41 @@
+The icons in this folder are Johan Hanson's, drawn in 1998 for the
+gentoo file manager.  Nothing here was drawn by this project and nothing
+was redrawn: each file is the byte-for-byte original.
+
+    Package:   gentoo 0.20.7-4, Debian
+               https://deb.debian.org/debian/pool/main/g/gentoo/
+    Upstream:  https://sourceforge.net/projects/gentoo/
+               Emil Brink <emil@obsession.se>
+    Path:      usr/share/gentoo/icons/
+    Copyright: icons/*  1998 Johan Hanson <johan@tiq.com>
+    Licence:   GPL-2 or later, per the package's own copyright file,
+               which is compatible with this project's GPL-3.
+
+What is here, and what the desktop asks for it by:
+
+    Directory.xpm    folder, and the Desktop place
+    Directory2.xpm   user-home
+    Harddrive.xpm    drive-harddisk
+    txt.xpm          text-x-generic
+    Image.xpm        image-x-generic
+    Speaker.xpm      audio-x-generic
+    Executable.xpm   application-x-executable
+
+    5c27b6c96031086f3028afb30c3a88c4def022a8f4b6c43b2e7a01f2a493c59b  Directory.xpm
+    722bced83f5140afd3f95c736a06a82baf99db1b8dfe2ad12742df37c4e00629  Directory2.xpm
+    c1586243660916bc3b5cbeec8754ba70dbc9a77cf70c60f46d0490c2e6a290c9  Executable.xpm
+
+They are 16 by 15 and there is no larger version, because in 1998 there
+was no larger version: a file manager drew a list and the icon was the
+height of a row.  tools/make-icons.py pads the cell to 16 by 16 with a
+transparent row and changes nothing else.
+
+TWO THINGS THIS SET DOES NOT HAVE, and neither was invented:
+
+  A trash can.  gentoo has none because a 1998 X file manager deleted
+  with unlink and that was that.  The Trash place and the Trash icon on
+  the root went with it - they were labels over nothing, since nothing
+  here moves a file to a trash or brings it back.
+
+  A terminal.  The launcher that wanted one was on the panel, and the
+  panel is gone.

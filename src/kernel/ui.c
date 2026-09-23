@@ -18,6 +18,7 @@
 #include <openrfs/de/window.h>
 #include <openrfs/framebuffer.h>
 #include <openrfs/heap.h>
+#include <openrfs/minimal_de.h>
 #include <openrfs/pointer.h>
 #include <openrfs/screen.h>
 #include <openrfs/surface.h>
@@ -56,6 +57,7 @@ static const char *self_test_failure = "OpenRFS desktop self-test has not run";
 static const char *installed_failure = "OpenRFS desktop proof has not run";
 static struct native_window_record native_windows[UI_NATIVE_WINDOW_COUNT];
 static int32_t native_focus = -1;
+static bool minimal_desktop_selected;
 
 static void zero_bytes(void *pointer, size_t bytes)
 {
@@ -402,6 +404,11 @@ static void sync_state(void)
     if (native_focus >= 0 && native_windows[native_focus].open) {
         state.active_panel = (enum ui_panel_id)(UI_PANEL_NATIVE_0 +
             (uint32_t)native_focus);
+    } else if (minimal_desktop_selected) {
+        struct ui_rect terminal;
+
+        state.active_panel = minimal_de_terminal_client(&terminal) ?
+            UI_PANEL_TERMINAL : UI_PANEL_NONE;
     } else {
         const uint32_t focused = openrfs_shell_focused();
 
@@ -467,19 +474,27 @@ static enum ui_status render_desktop(void)
 {
     const struct openrfs_rect whole = { 0U, 0U, desktop.width, desktop.height };
 
-    if (openrfs_wallpaper_decode(0U, desktop.pixels,
-            (size_t)desktop.width * desktop.height, desktop.width,
-            desktop.height, 16U, 8U, 0U) != WALLPAPER_STATUS_OK) {
-        openrfs_surface_fill(&desktop, whole, whole, 0x70757AU);
-    }
-    openrfs_shell_draw_desktop();
-    openrfs_shell_draw();
-    sync_panel_tasks();
-    if (openrfs_panel_draw(whole) != OPENRFS_PANEL_STATUS_OK) {
-        return UI_STATUS_SURFACE_FAILURE;
+    if (minimal_desktop_selected) {
+        minimal_de_draw();
+    } else {
+        if (openrfs_wallpaper_decode(0U, desktop.pixels,
+                (size_t)desktop.width * desktop.height, desktop.width,
+                desktop.height, 16U, 8U, 0U) != WALLPAPER_STATUS_OK) {
+            openrfs_surface_fill(&desktop, whole, whole, 0x70757AU);
+        }
+        openrfs_shell_draw_desktop();
+        openrfs_shell_draw();
+        sync_panel_tasks();
+        if (openrfs_panel_draw(whole) != OPENRFS_PANEL_STATUS_OK) {
+            return UI_STATUS_SURFACE_FAILURE;
+        }
     }
     draw_native_windows();
-    openrfs_shell_draw_overlays();
+    if (minimal_desktop_selected) {
+        minimal_de_draw_overlays();
+    } else {
+        openrfs_shell_draw_overlays();
+    }
     draw_cursor();
     for (uint32_t y = 0U; y < desktop.height; ++y) {
         for (uint32_t x = 0U; x < desktop.width; ++x) {
@@ -494,14 +509,23 @@ static enum ui_status render_desktop(void)
         }
     }
     if (state.active_panel == UI_PANEL_TERMINAL) {
-        const uint32_t focused = openrfs_shell_focused();
-        const struct openrfs_window *window = openrfs_shell_window(focused);
+        if (minimal_desktop_selected) {
+            struct ui_rect client;
 
-        if (window != NULL) {
-            const struct openrfs_rect client = openrfs_window_client(window);
+            if (minimal_de_terminal_client(&client)) {
+                (void)screen_set_viewport((struct surface_rect){ client.x,
+                    client.y, client.width, client.height }, true);
+            }
+        } else {
+            const uint32_t focused = openrfs_shell_focused();
+            const struct openrfs_window *window = openrfs_shell_window(focused);
 
-            (void)screen_set_viewport((struct surface_rect){ client.x,
-                client.y, client.width, client.height }, true);
+            if (window != NULL) {
+                const struct openrfs_rect client = openrfs_window_client(window);
+
+                (void)screen_set_viewport((struct surface_rect){ client.x,
+                    client.y, client.width, client.height }, true);
+            }
         }
     } else {
         (void)screen_set_visible(false);
@@ -564,37 +588,44 @@ enum ui_status ui_construct(bool pointer_present)
     }
     desktop = (struct openrfs_surface){ desktop_pixels,
         canvas->width, canvas->height };
-    if (openrfs_panel_attach(&desktop) != OPENRFS_PANEL_STATUS_OK) {
-        (void)heap_free(desktop_pixels);
-        desktop_pixels = NULL;
-        desktop = (struct openrfs_surface){ NULL, 0U, 0U };
-        return UI_STATUS_SURFACE_FAILURE;
+    if (minimal_desktop_selected) {
+        if (!minimal_de_construct(desktop_pixels, desktop.width,
+                desktop.height)) {
+            (void)heap_free(desktop_pixels);
+            desktop_pixels = NULL;
+            desktop = (struct openrfs_surface){ NULL, 0U, 0U };
+            return UI_STATUS_SURFACE_FAILURE;
+        }
+    } else {
+        if (openrfs_panel_attach(&desktop) != OPENRFS_PANEL_STATUS_OK ||
+                openrfs_panel_initialize() != OPENRFS_PANEL_STATUS_OK) {
+            (void)heap_free(desktop_pixels);
+            desktop_pixels = NULL;
+            desktop = (struct openrfs_surface){ NULL, 0U, 0U };
+            return UI_STATUS_SURFACE_FAILURE;
+        }
+        openrfs_shell_reset(&desktop);
+        openrfs_shell_set_screen((struct openrfs_rect){ 0U, 0U,
+            desktop.width, desktop.height });
+        openrfs_shell_set_desktop_folder(populate_files());
+        populate_menu();
+        populate_packages();
+        populate_settings();
+        populate_taskmgr();
+        openrfs_terminal_reset();
+        (void)openrfs_panel_set_clock("09:41");
+        (void)openrfs_panel_set_volume(65U, false);
+        (void)openrfs_panel_set_desktop(0U, 2U);
+        (void)openrfs_panel_push_cpu(8U);
+        (void)openrfs_panel_push_cpu(14U);
+        (void)openrfs_panel_push_cpu(9U);
+        (void)openrfs_shell_open(OPENRFS_APP_FILES,
+            default_window(OPENRFS_APP_FILES));
     }
-    if (openrfs_panel_initialize() != OPENRFS_PANEL_STATUS_OK) {
-        (void)heap_free(desktop_pixels);
-        desktop_pixels = NULL;
-        desktop = (struct openrfs_surface){ NULL, 0U, 0U };
-        return UI_STATUS_SURFACE_FAILURE;
-    }
-    openrfs_shell_reset(&desktop);
-    openrfs_shell_set_screen((struct openrfs_rect){ 0U, 0U,
-        desktop.width, desktop.height });
-    openrfs_shell_set_desktop_folder(populate_files());
-    populate_menu();
-    populate_packages();
-    populate_settings();
-    populate_taskmgr();
-    openrfs_terminal_reset();
-    (void)openrfs_panel_set_clock("09:41");
-    (void)openrfs_panel_set_volume(65U, false);
-    (void)openrfs_panel_set_desktop(0U, 2U);
-    (void)openrfs_panel_push_cpu(8U);
-    (void)openrfs_panel_push_cpu(14U);
-    (void)openrfs_panel_push_cpu(9U);
-    (void)openrfs_shell_open(OPENRFS_APP_FILES, default_window(OPENRFS_APP_FILES));
     state.initialized = true;
     state.pointer_present = pointer_present;
-    state.focus = UI_ELEMENT_DOCK_FILES;
+    state.focus = minimal_desktop_selected ? UI_ELEMENT_NONE :
+        UI_ELEMENT_DOCK_FILES;
     state.hover = UI_ELEMENT_NONE;
     state.pressed = UI_ELEMENT_NONE;
     pointer = pointer_get_state();
@@ -604,6 +635,15 @@ enum ui_status ui_construct(bool pointer_present)
     (void)screen_set_deferred_present(true);
     redraw_pending = true;
     return UI_STATUS_OK;
+}
+
+bool ui_select_minimal_desktop(void)
+{
+    if (state.initialized || state.active) {
+        return false;
+    }
+    minimal_desktop_selected = true;
+    return true;
 }
 
 enum ui_status ui_activate(void)
@@ -637,6 +677,13 @@ enum ui_status ui_terminal_draw_logo(void)
 bool ui_is_active(void)
 {
     return state.active;
+}
+
+void ui_request_redraw(void)
+{
+    if (state.active) {
+        redraw_pending = true;
+    }
 }
 
 void ui_animation_attach(void)
@@ -802,6 +849,48 @@ static bool process_one(const struct ui_event *event)
 {
     struct openrfs_event translated;
 
+    if (minimal_desktop_selected) {
+        bool changed;
+        bool overlay_dispatched = false;
+
+        if (event->type == UI_EVENT_POINTER_MOVEMENT ||
+                event->type == UI_EVENT_POINTER_BUTTON_PRESS ||
+                event->type == UI_EVENT_POINTER_BUTTON_RELEASE) {
+            const struct ui_point old = state.pointer;
+
+            state.pointer = event->point;
+            if (event->type == UI_EVENT_POINTER_MOVEMENT &&
+                    (old.x != state.pointer.x || old.y != state.pointer.y)) {
+                ++state.renders.cursor_moves;
+            }
+            if (minimal_de_overlay_open()) {
+                overlay_dispatched = true;
+                if (minimal_de_event(event)) {
+                    sync_state();
+                    return true;
+                }
+            }
+            if (dispatch_native_pointer(event)) {
+                return true;
+            }
+            if (event->type == UI_EVENT_POINTER_BUTTON_PRESS) {
+                native_focus = -1;
+            }
+        }
+        if (event->type == UI_EVENT_PANEL_CLOSE && native_focus >= 0 &&
+                native_windows[native_focus].open) {
+            (void)ui_native_window_close((uint32_t)native_focus);
+            sync_state();
+            return true;
+        }
+        if (overlay_dispatched) {
+            sync_state();
+            return true;
+        }
+        changed = minimal_de_event(event);
+        sync_state();
+        return changed || event->type == UI_EVENT_POINTER_MOVEMENT;
+    }
     if (event->type == UI_EVENT_KEYBOARD_FOCUS_NEXT ||
             event->type == UI_EVENT_KEYBOARD_FOCUS_PREVIOUS) {
         size_t current = state.focus >= UI_ELEMENT_DOCK_FILES &&
@@ -1049,6 +1138,10 @@ bool ui_self_test(void)
                 (int32_t)layout.dock_items[0].bounds.y }, &hit) !=
                 UI_STATUS_OK || hit != UI_ELEMENT_DOCK_FILES) {
         self_test_failure = "OpenRFS desktop layout self-test failed";
+        return false;
+    }
+    if (!minimal_de_self_test()) {
+        self_test_failure = "minimal desktop source self-test failed";
         return false;
     }
     if (!openrfs_menu_self_test()) {

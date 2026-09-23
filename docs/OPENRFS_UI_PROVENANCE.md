@@ -1,5 +1,45 @@
 # OpenRFS desktop source provenance
 
+## Minimal `starty` desktop
+
+The authenticated `starty` session imports the owner's `Trait-UI` repository
+at commit `ff921751b4ba20624d3abac0260641df7c7b65aa`, tree
+`5bf6e2ee69b385e615e43a1ea3b2b8508e61c874` (GPL-3.0-only).
+Its `include/trait/*.h` headers and `src/*.c` plus generated `src/trait_*.h`
+assets are copied without namespace changes into `include/trait/` and the
+flat `src/kernel/trait_*` build inputs. `src/kernel/minimal_de.c` is the
+OpenRFS-owned bridge to the existing framebuffer, input, and session path.
+The upstream image, icon, and font source receipts are retained under
+`assets/minimal-de-source/`, with the generator scripts under
+`tools/minimal-de-source/`, so the embedded tables are auditable even if the
+private source repository is unavailable to a downstream builder.
+The imported `trait_shell.c` has production-path corrections: pointer motion
+without an active drag no longer moves the first window; reopening the one
+real console terminal focuses its existing viewport instead of creating an
+unbacked second terminal; and the launcher lists only supported applications.
+The bridge's host test checks these boundaries before exercising close and
+root-menu relaunch.
+`opengatcommandline` is the console source; it references this separate
+desktop repository rather than containing the desktop implementation itself.
+
+The minimal session uses the source's root weave, fvwm-style frames, bitmap
+fonts, root menu, and terminal. The terminal viewport is connected to the
+real kernel console, so `gfetch` and other shell commands use the ordinary
+OpenRFS command path. The imported source's file, package, and process models
+are not yet connected to the production VFS, package service, or process
+registry. They are not exposed in the supported root menu or launcher, so
+their in-memory controls cannot masquerade as installed-system operations.
+The preexisting desktop remains in the repository
+for its historical boot proof and native-window integration until those
+boundaries are migrated and validated. The v2.4.0 tag is unchanged.
+
+`tools/minimal-de-host-test.c` exercises the imported shell through the same
+bridge used by `starty`; `tools/capture-openrfs-proof.py` drives login,
+`starty`, `gfetch`, and a second shell command through QEMU and verifies exact
+guest framebuffer pixels against `assets/openrfs/proof*.png`.
+
+## Historical desktop
+
 The desktop implementation under `include/openrfs/de/` and
 `src/kernel/de_*.c` began as the project owner's UI repository at commit
 `eb6d32f8bee63025508af992656a7815fa3285c1`, tree

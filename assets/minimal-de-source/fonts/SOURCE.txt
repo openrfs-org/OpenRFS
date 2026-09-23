@@ -1,0 +1,36 @@
+The text on this desktop is Misc-Fixed, the bitmap family X has shipped
+since R6.  Nothing is vendored here: tools/make-font.py reads the PCF
+files off the build machine and writes the glyph tables into src/, so
+what the repository carries is the generated header, and this file
+records where those bitmaps came from and on what terms.
+
+    face        source file                             package
+    6x13        /usr/share/fonts/X11/cyrillic/koi6x13.pcf.gz   xfonts-cyrillic
+    7x14        /usr/share/fonts/X11/cyrillic/koi7x14.pcf.gz   xfonts-cyrillic
+    9x18        /usr/share/fonts/X11/cyrillic/koi9x18.pcf.gz   xfonts-cyrillic
+    mono 8x16   /usr/share/fonts/X11/cyrillic/koi8x16.pcf.gz   xfonts-cyrillic
+
+These are the KOI8-R encodings of the Misc-Fixed faces.  Only ASCII 32
+to 126 is read, and in that range the bitmaps are the same ones as the
+ISO-8859-1 builds; the Cyrillic halves are the reason these particular
+files are the ones Debian still ships.
+
+Terms, quoted from /usr/share/doc/xfonts-cyrillic/copyright:
+
+  koi5x8.bdf, koi6x13b.bdf, koi6x9.bdf, koi7x14b.bdf, koi7x14.bdf,
+  koi8x13.bdf, koi9x15b.bdf, koi9x15.bdf, koi9x18b.bdf and koi9x18.bdf:
+  "Public domain font.  Share and enjoy."
+
+  koi12x24b.bdf, koi8x16b.bdf and koi8x16.bdf:
+  May be distributed and modified without restrictions.
+
+  koi12x24.bdf and koi6x13.bdf:
+  Changes 1999-2000 by Serge Winitzki.
+  This software may be used, modified, copied, distributed, and sold,
+  in both source and binary form provided that the copyright
+  and these terms are retained. Under no circumstances is the author
+  responsible for the proper functioning of this software, nor does
+  the author assume any responsibility for damages incurred with its use.
+
+The upstream tarballs are font-misc-cyrillic and font-screen-cyrillic
+from https://xorg.freedesktop.org/releases/individual/font/

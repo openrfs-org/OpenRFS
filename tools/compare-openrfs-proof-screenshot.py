@@ -20,9 +20,9 @@ VARIABLE_REGIONS = {
     "terminal": (),
 }
 STABLE_REGIONS = {
-    "clean": ((0, 0, WIDTH, HEIGHT, "clean desktop"),),
-    "focus": ((0, 0, WIDTH, HEIGHT, "focused and hovered dock"),),
-    "terminal": ((0, 0, WIDTH, HEIGHT, "terminal ledger result"),),
+    "clean": ((0, 0, WIDTH, HEIGHT, "minimal starty desktop"),),
+    "focus": ((0, 0, WIDTH, HEIGHT, "gfetch terminal"),),
+    "terminal": ((0, 0, WIDTH, HEIGHT, "production shell result"),),
 }
 
 

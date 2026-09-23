@@ -204,14 +204,14 @@ def main() -> int:
     support = load_capture_support()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    data = output / "openrfs-v2.1.0-network-data.raw"
-    serial = output / "openrfs-v2.1.0-networking-serial.log"
-    capture = output / "openrfs-v2.1.0-networking.pcap"
-    audit = output / "openrfs-v2.1.0-network-packet-audit.json"
-    fixture_log = output / "openrfs-v2.1.0-network-fixture.log"
-    screenshot = output / "OpenRFS-v2.1.0-networking.png"
-    video = output / "OpenRFS-v2.1.0-networking-22s.mp4"
-    report_path = output / "openrfs-v2.1.0-network-fat32-report.json"
+    data = output / "openrfs-network-data.raw"
+    serial = output / "openrfs-networking-serial.log"
+    capture = output / "openrfs-networking.pcap"
+    audit = output / "openrfs-network-packet-audit.json"
+    fixture_log = output / "openrfs-network-fixture.log"
+    screenshot = output / "OpenRFS-networking.png"
+    video = output / "OpenRFS-networking-22s.mp4"
+    report_path = output / "openrfs-network-fat32-report.json"
     ready = output / ".fixture-ready"
     for path in (serial, capture, audit, fixture_log, screenshot, video,
                  report_path, ready):
@@ -318,18 +318,16 @@ def main() -> int:
                 b"31 bytes synchronized", b"ipv4-checksum-fail 0",
             ), timeout=20.0)
             # The boot CLI is the primary interface. After its networking
-            # transcript is complete, exercise the authenticated `starty`
-            # transition and open Terminal once to capture that same guest
-            # transcript inside the desktop.
+            # transcript is complete, exercise authenticated `starty`, whose
+            # minimal desktop opens a real shell terminal by default.
             support.start_authenticated_desktop(qmp, serial)
             time.sleep(0.35)
-            support.press(qmp, "esc", 0.25)
-            support.press(qmp, "tab", 0.15)
-            support.press(qmp, "ret", 0.40)
-            support.capture(
-                qmp, output, "OpenRFS-v2.1.0-networking-terminal-open"
-            )
-            support.capture(qmp, output, "OpenRFS-v2.1.0-networking")
+            support.capture(qmp, output, "OpenRFS-networking-terminal-open")
+            support.send_text(qmp, "gfetch")
+            support.press(qmp, "ret", 0.30)
+            support.wait_serial_after(serial, support.DESKTOP_STARTED,
+                                      b"kernel      OpenRFS 2.4.0 / x86_64")
+            support.capture(qmp, output, "OpenRFS-networking")
             encode(args.ffmpeg, frames, capture_times, args.fps,
                    args.seconds, video)
     finally:

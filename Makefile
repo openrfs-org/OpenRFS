@@ -1612,7 +1612,24 @@ $(INSTALLER_PORT_TEST): tools/installer-port-test.c \
 installer-port-test: $(INSTALLER_PORT_TEST)
 	$(INSTALLER_PORT_TEST)
 
-verify: toolchain lint installer-port-test
+MINIMAL_DE_HOST_TEST := $(BUILD_DIR)/tools/minimal-de-host-test
+
+$(MINIMAL_DE_HOST_TEST): tools/minimal-de-host-test.c \
+		src/kernel/minimal_de.c include/openrfs/minimal_de.h \
+		$(wildcard src/kernel/trait_*.c) \
+		$(wildcard src/kernel/trait_*.h) \
+		$(wildcard include/trait/*.h)
+	mkdir -p $(dir $@)
+	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
+		tools/minimal-de-host-test.c src/kernel/minimal_de.c \
+		$(wildcard src/kernel/trait_*.c) -o $@
+
+.PHONY: minimal-de-host-test
+minimal-de-host-test: $(MINIMAL_DE_HOST_TEST)
+	$(MINIMAL_DE_HOST_TEST)
+
+verify: toolchain lint installer-port-test minimal-de-host-test
 ifneq ($(VERIFY_CLEAN),0)
 	$(MAKE) clean
 endif
@@ -2359,7 +2376,7 @@ capture-openrfs-proof: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 
 capture-openrfs: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 	rm -rf $(OPENRFS_CAPTURE_DIR)
-	$(PYTHON) tools/capture-openrfs.py --iso $(ISO) \
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
 		--system $(FAT32_SYSTEM_IMAGE) --data $(FAT32_DATA_IMAGE) \
 		--output $(OPENRFS_CAPTURE_DIR)
 
