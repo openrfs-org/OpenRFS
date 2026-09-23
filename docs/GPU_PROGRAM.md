@@ -117,9 +117,11 @@ that configuration. Diagnostic status must reflect the selected output, not
 merely a command count. No external telemetry is added.
 
 No UI lock may be held across device wait. The Stage 1 driver uses polling on
-the desktop thread with a monotonic deadline; it does not register an IRQ, so
-there is no interrupt ownership to tear down. This trades throughput for a
-smaller checkable lifecycle. Memory barriers surround descriptor publish and
+the desktop thread with a monotonic deadline. It suppresses queue interrupts,
+masks PCI INTx through its device claim, and refuses a function with MSI or
+MSI-X already enabled; it registers no IRQ vector. The claim release restores
+the original PCI command register. This trades throughput for a smaller
+checkable lifecycle. Memory barriers surround descriptor publish and
 completion. On x86/QEMU the DMA pages are coherent write-back memory; a
 noncoherent physical target requires explicit cache maintenance before reuse.
 One device and one scanout are a documented Stage 1 limit, not a public ABI

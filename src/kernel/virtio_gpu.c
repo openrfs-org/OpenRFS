@@ -174,6 +174,26 @@ static bool config8(const struct pci_function *function, uint16_t offset,
     return true;
 }
 
+static bool message_interrupts_disabled(const struct pci_function *function)
+{
+    for (size_t index = 0U; index < function->capability_count; ++index) {
+        const struct pci_capability *cap = &function->capabilities[index];
+        uint8_t control;
+        if (cap->identifier != PCI_CAPABILITY_MSI &&
+            cap->identifier != PCI_CAPABILITY_MSI_X) {
+            continue;
+        }
+        if (!config8(function, (uint16_t)(cap->offset +
+                (cap->identifier == PCI_CAPABILITY_MSI ? 2U : 3U)),
+                &control) ||
+            (control & (cap->identifier == PCI_CAPABILITY_MSI ?
+                UINT8_C(0x01) : UINT8_C(0x80))) != 0U) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool collect_regions(const struct pci_function *function)
 {
     for (size_t index = 0U; index < function->capability_count; ++index) {
@@ -595,6 +615,7 @@ void virtio_gpu_output_start(uint32_t width, uint32_t height)
     struct pci_bus_master_request master = { 0 };
     struct framebuffer_state framebuffer;
     uint32_t identity;
+    uint32_t command_register;
     uint32_t scanouts;
     uint8_t generation;
     bool interrupts;
@@ -631,7 +652,13 @@ void virtio_gpu_output_start(uint32_t width, uint32_t height)
     }
     const bool claimed = pci_claim_device(function, &gpu.claim) ==
         PCI_RESOURCE_STATUS_OK;
-    const bool mapped = claimed && collect_regions(function) &&
+    const bool mapped = claimed &&
+        pci_claim_update_command(&gpu.claim, PCI_COMMAND_INTX_DISABLE,
+            PCI_COMMAND_INTX_DISABLE) == PCI_RESOURCE_STATUS_OK &&
+        config32(function, PCI_REGISTER_COMMAND, &command_register) &&
+        (command_register & PCI_COMMAND_INTX_DISABLE) != 0U &&
+        message_interrupts_disabled(function) &&
+        collect_regions(function) &&
         map_region(&gpu.common) && map_region(&gpu.notify) &&
         map_region(&gpu.device);
     if (interrupts) {
