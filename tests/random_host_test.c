@@ -109,6 +109,22 @@ int main(void)
         fprintf(stderr, "repetition test missed a stuck source\n");
         return 1;
     }
+    wipe(&health, sizeof(health));
+    if (!health_sample(1U)) {
+        fprintf(stderr, "adaptive proportion test refused early\n");
+        return 1;
+    }
+    for (uint32_t index = 0U; index < HEALTH_APT_CUTOFF - 2U;
+            ++index) {
+        if (!health_sample(100U + index) || !health_sample(1U)) {
+            fprintf(stderr, "adaptive proportion test refused early\n");
+            return 1;
+        }
+    }
+    if (!health_sample(200U) || health_sample(1U)) {
+        fprintf(stderr, "adaptive proportion test missed biased source\n");
+        return 1;
+    }
     reset_for_test();
     fake_available = true;
     test_source = sample;
@@ -150,6 +166,6 @@ int main(void)
         fprintf(stderr, "failed boot source was accepted\n");
         return 1;
     }
-    puts("random vectors, no entropy, failed source, and lockout passed");
+    puts("random vectors, RCT/APT, no entropy, failed source, and lockout passed");
     return 0;
 }
