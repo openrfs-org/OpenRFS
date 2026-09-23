@@ -103,9 +103,20 @@ bool ipxe_host_config_write(void *handle, unsigned int offset,
 bool ipxe_host_publish(void *glue_device, void *handle,
     const char *driver_name, const char *description,
     const char *source_path, char *instance, size_t instance_capacity);
+/*
+ * Record a USB host controller bound by iPXE's USB stack ("ipxe-usb0"). Its
+ * network functions are published separately, with a NULL handle: they have
+ * no PCI function of their own.
+ */
+bool ipxe_host_record_usb_host(void *handle, const char *driver_name,
+    const char *description, const char *source_path, char *instance,
+    size_t instance_capacity);
 
 /* Glue-side services, implemented in ports/ipxe/ipxe_glue.c. */
-/* Every compiled driver: the PCI ones, then the ISA ones. */
+/*
+ * Every compiled driver: the PCI network drivers, the ISA ones, the USB host
+ * controller drivers and the USB function drivers.
+ */
 size_t ipxe_glue_driver_count(void);
 const char *ipxe_glue_driver_name(size_t index);
 const char *ipxe_glue_driver_path(size_t index);
@@ -116,6 +127,17 @@ bool ipxe_glue_try_bind(size_t index,
 size_t ipxe_glue_isa_driver_count(void);
 const char *ipxe_glue_isa_driver_name(size_t isa_index);
 bool ipxe_glue_try_bind_isa(size_t isa_index);
+/*
+ * USB host controllers, with iPXE's USB stack (only when named): true if a
+ * selected host controller driver bound function index.
+ */
+bool ipxe_glue_try_bind_usb_host(size_t index,
+    const struct ipxe_host_pci_info *info);
+/*
+ * After the USB host controllers are bound: run iPXE's scheduler for the
+ * given time, then publish the network functions enumeration found.
+ */
+void ipxe_glue_usb_settle(unsigned long milliseconds);
 enum ipxe_glue_result ipxe_glue_service(void *glue_device);
 enum ipxe_glue_result ipxe_glue_transmit(void *glue_device,
     const uint8_t *frame, size_t length);

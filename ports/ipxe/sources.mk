@@ -25,3 +25,25 @@ IPXE_VENDOR_SOURCES := \
 IPXE_GLUE_SOURCES := \
 	ports/ipxe/ipxe_glue.c \
 	ports/ipxe/libc.c
+
+# iPXE's USB stack: the USB core, three host controller drivers, the hub
+# driver and two network function drivers, with the scheduler and table
+# machinery they rely on. They link, with ports/ipxe/usb_glue.c, into one
+# object (see ports/ipxe/usb-layer.ld) whose only global symbols are listed
+# in ports/ipxe/usb-exports.txt.
+IPXE_USB_VENDOR_SOURCES := \
+	vendor/ipxe/src/core/process.c \
+	vendor/ipxe/src/core/base16.c \
+	vendor/ipxe/src/drivers/bus/usb.c \
+	vendor/ipxe/src/drivers/bus/cdc.c \
+	vendor/ipxe/src/drivers/usb/xhci.c \
+	vendor/ipxe/src/drivers/usb/ehci.c \
+	vendor/ipxe/src/drivers/usb/uhci.c \
+	vendor/ipxe/src/drivers/usb/usbhub.c \
+	vendor/ipxe/src/drivers/usb/usbnet.c \
+	vendor/ipxe/src/drivers/net/ecm.c \
+	vendor/ipxe/src/drivers/net/acm.c \
+	vendor/ipxe/src/net/rndis.c
+
+IPXE_USB_GLUE_SOURCES := \
+	ports/ipxe/usb_glue.c

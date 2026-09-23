@@ -5,6 +5,9 @@
 
 #include_next <stddef.h>
 
+/* The signed size type iPXE defines in its bits/stdint.h. */
+typedef long ssize_t;
+
 #define container_of(ptr, type, field) ({ \
         typeof(ptr) __ptr = (ptr); \
         (type *)((void *)__ptr - offsetof(type, field)); })

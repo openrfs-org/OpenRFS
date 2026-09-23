@@ -11,6 +11,12 @@
 #define BUS_TYPE_EISA 3
 #define BUS_TYPE_MCA 4
 #define BUS_TYPE_ISA 5
+#define BUS_TYPE_TAP 6
+#define BUS_TYPE_EFI 7
+#define BUS_TYPE_XEN 8
+#define BUS_TYPE_HV 9
+#define BUS_TYPE_USB 10
+#define BUS_TYPE_DT 11
 
 struct device_description {
     unsigned int bus_type;

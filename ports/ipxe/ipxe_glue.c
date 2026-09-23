@@ -35,6 +35,8 @@
 
 #include <openrfs/ipxe_host.h>
 
+#include "usb_glue.h"
+
 #define IPXE_GLUE_MAX_DEVICES 8U
 #define IPXE_GLUE_RX_QUEUE_LIMIT 64U
 #define IPXE_GLUE_MINIMUM_ALIGNMENT 16U
@@ -62,6 +64,17 @@ struct openrfs_ipxe_pci {
     /* A legacy ISA card has no PCI function; this describes it instead. */
     struct isa_device isa;
     bool on_isa;
+    /* A USB host controller: its probe registers a bus, not a net_device. */
+    bool usb_host;
+    /*
+     * A network function on a USB bus: the controller it was enumerated on
+     * and the function driver that registered it. It has no claim of its
+     * own; the controller's covers the bus.
+     */
+    struct openrfs_ipxe_pci *usb_controller;
+    const char *usb_driver_name;
+    const char *usb_driver_path;
+    char usb_description[80];
     const struct glue_driver *entry;
     void *handle;
     struct net_device *netdev;
@@ -116,6 +129,18 @@ static const struct glue_isa_driver glue_isa_drivers[] = {
 static struct openrfs_ipxe_pci devices[IPXE_GLUE_MAX_DEVICES];
 /* The device whose driver is running; ioremap() and register_netdev() use it. */
 static struct openrfs_ipxe_pci *current_device;
+
+/* A slot no bound device, claim or pending USB function occupies. */
+static struct openrfs_ipxe_pci *free_slot(void)
+{
+    for (size_t slot = 0U; slot < IPXE_GLUE_MAX_DEVICES; ++slot) {
+        if (!devices[slot].bound && devices[slot].handle == NULL &&
+            devices[slot].usb_controller == NULL) {
+            return &devices[slot];
+        }
+    }
+    return NULL;
+}
 
 struct net_device_operations null_netdev_operations;
 
@@ -547,6 +572,45 @@ void pci_reset(struct pci_device *pci, unsigned int exp)
     mdelay(PCI_EXP_FLR_DELAY_MS);
 }
 
+/*
+ * Describe another function from the kernel's enumeration, without claiming
+ * or touching it. Its BARs stay unread and it has no claim, so every
+ * configuration access through the result fails.
+ */
+int pci_read_config(struct pci_device *pci)
+{
+    const unsigned int busdevfn = pci->busdevfn;
+
+    for (size_t index = 0U; index < ipxe_host_pci_count(); ++index) {
+        struct ipxe_host_pci_info info;
+
+        if (!ipxe_host_pci_info(index, &info) ||
+            (unsigned int)PCI_BUSDEVFN(info.segment, info.bus, info.device,
+                info.function) != busdevfn) {
+            continue;
+        }
+        memset(pci, 0, sizeof(*pci));
+        pci->busdevfn = busdevfn;
+        pci->vendor = info.vendor_id;
+        pci->device = info.device_id;
+        pci->class = PCI_CLASS(info.class_code, info.subclass, info.prog_if);
+        pci->hdrtype = info.header_type;
+        pci->irq = info.interrupt_line;
+        snprintf(pci->dev.name, sizeof(pci->dev.name), PCI_FMT,
+            PCI_ARGS(pci));
+        pci->dev.desc.bus_type = BUS_TYPE_PCI;
+        pci->dev.desc.location = busdevfn;
+        pci->dev.desc.vendor = pci->vendor;
+        pci->dev.desc.device = pci->device;
+        pci->dev.desc.class = pci->class;
+        pci->dev.desc.irq = pci->irq;
+        INIT_LIST_HEAD(&pci->dev.siblings);
+        INIT_LIST_HEAD(&pci->dev.children);
+        return 0;
+    }
+    return -ENODEV;
+}
+
 /* Ethernet. */
 
 uint8_t eth_broadcast[ETH_ALEN] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
@@ -708,11 +772,46 @@ static void record_stat(struct net_device_stats *stats, int rc)
     }
 }
 
+/*
+ * A USB function driver registering its net_device gets a slot of its own,
+ * attached to the bound controller whose bus the function is on. It is
+ * published when that controller's bind, or the layer's settling pass,
+ * finishes enumerating.
+ */
+static struct openrfs_ipxe_pci *usb_function_slot(struct net_device *netdev)
+{
+    struct openrfs_ipxe_pci *function = free_slot();
+    struct device *bus_device = NULL;
+
+    if (function == NULL) {
+        return NULL;
+    }
+    memset(function, 0, sizeof(*function));
+    if (!ipxe_usb_describe_netdev(netdev, &bus_device,
+            &function->usb_driver_name, &function->usb_driver_path,
+            function->usb_description, sizeof(function->usb_description))) {
+        return NULL;
+    }
+    for (size_t slot = 0U; slot < IPXE_GLUE_MAX_DEVICES; ++slot) {
+        if (devices[slot].usb_host && &devices[slot].pci.dev == bus_device) {
+            function->usb_controller = &devices[slot];
+            return function;
+        }
+    }
+    return NULL;
+}
+
 int register_netdev(struct net_device *netdev)
 {
     struct openrfs_ipxe_pci *owner = current_device;
     bool zero = true;
 
+    if (netdev->dev != NULL && netdev->dev->desc.bus_type == BUS_TYPE_USB) {
+        owner = usb_function_slot(netdev);
+        if (owner == NULL) {
+            return -ENOBUFS;
+        }
+    }
     if (owner == NULL || owner->netdev != NULL) {
         return -EBUSY;
     }
@@ -734,6 +833,13 @@ void unregister_netdev(struct net_device *netdev)
     netdev_close(netdev);
     if (owner != NULL) {
         owner->netdev = NULL;
+        /*
+         * A USB function that was never published frees its slot. A
+         * published one keeps it, and the kernel's calls fail from now on.
+         */
+        if (owner->usb_controller != NULL && !owner->bound) {
+            memset(owner, 0, sizeof(*owner));
+        }
     }
     netdev->openrfs_owner = NULL;
 }
@@ -934,10 +1040,14 @@ static void rx_flush(struct net_device *netdev)
 
 /* Binding. */
 
-/* PCI drivers first, then the ISA ones. */
+/*
+ * PCI network drivers first, then the ISA ones, then the USB host controller
+ * drivers and the USB function drivers.
+ */
 size_t ipxe_glue_driver_count(void)
 {
-    return GLUE_DRIVER_COUNT + GLUE_ISA_DRIVER_COUNT;
+    return GLUE_DRIVER_COUNT + GLUE_ISA_DRIVER_COUNT +
+        ipxe_usb_host_count() + ipxe_usb_function_count();
 }
 
 const char *ipxe_glue_driver_name(size_t index)
@@ -946,8 +1056,14 @@ const char *ipxe_glue_driver_name(size_t index)
         return glue_drivers[index].name;
     }
     index -= GLUE_DRIVER_COUNT;
-    return index < GLUE_ISA_DRIVER_COUNT ? glue_isa_drivers[index].name :
-        NULL;
+    if (index < GLUE_ISA_DRIVER_COUNT) {
+        return glue_isa_drivers[index].name;
+    }
+    index -= GLUE_ISA_DRIVER_COUNT;
+    if (index < ipxe_usb_host_count()) {
+        return ipxe_usb_host_name(index);
+    }
+    return ipxe_usb_function_name(index - ipxe_usb_host_count());
 }
 
 const char *ipxe_glue_driver_path(size_t index)
@@ -956,8 +1072,14 @@ const char *ipxe_glue_driver_path(size_t index)
         return glue_drivers[index].path;
     }
     index -= GLUE_DRIVER_COUNT;
-    return index < GLUE_ISA_DRIVER_COUNT ? glue_isa_drivers[index].path :
-        NULL;
+    if (index < GLUE_ISA_DRIVER_COUNT) {
+        return glue_isa_drivers[index].path;
+    }
+    index -= GLUE_ISA_DRIVER_COUNT;
+    if (index < ipxe_usb_host_count()) {
+        return ipxe_usb_host_path(index);
+    }
+    return ipxe_usb_function_path(index - ipxe_usb_host_count());
 }
 
 static struct pci_device_id *match_driver(struct pci_driver *driver,
@@ -995,6 +1117,7 @@ static void describe_pci(struct openrfs_ipxe_pci *device,
     pci->busdevfn = PCI_BUSDEVFN(info->segment, info->bus, info->device,
         info->function);
     pci->dma.openrfs_arena = NULL;
+    snprintf(pci->dev.name, sizeof(pci->dev.name), PCI_FMT, PCI_ARGS(pci));
     pci->dev.desc.bus_type = BUS_TYPE_PCI;
     pci->dev.desc.location = pci->busdevfn;
     pci->dev.desc.vendor = info->vendor_id;
@@ -1026,14 +1149,8 @@ static void describe_pci(struct openrfs_ipxe_pci *device,
 
 bool ipxe_glue_try_bind(size_t index, const struct ipxe_host_pci_info *info)
 {
-    struct openrfs_ipxe_pci *device = NULL;
+    struct openrfs_ipxe_pci *device = free_slot();
 
-    for (size_t slot = 0U; slot < IPXE_GLUE_MAX_DEVICES; ++slot) {
-        if (!devices[slot].bound && devices[slot].handle == NULL) {
-            device = &devices[slot];
-            break;
-        }
-    }
     if (device == NULL || info == NULL) {
         return false;
     }
@@ -1116,12 +1233,7 @@ bool ipxe_glue_try_bind_isa(size_t isa_index)
         return false;
     }
     entry = &glue_isa_drivers[isa_index];
-    for (size_t slot = 0U; slot < IPXE_GLUE_MAX_DEVICES; ++slot) {
-        if (!devices[slot].bound && devices[slot].handle == NULL) {
-            device = &devices[slot];
-            break;
-        }
-    }
+    device = free_slot();
     if (device == NULL) {
         return false;
     }
@@ -1180,6 +1292,141 @@ bool ipxe_glue_try_bind_isa(size_t isa_index)
     return false;
 }
 
+/*
+ * Open and publish every network function enumeration has registered and
+ * nothing has published yet. A function whose open fails is still
+ * published, as a PCI adapter is, and reset() retries the open.
+ */
+static void publish_usb_functions(void)
+{
+    for (size_t slot = 0U; slot < IPXE_GLUE_MAX_DEVICES; ++slot) {
+        struct openrfs_ipxe_pci *function = &devices[slot];
+        int rc;
+
+        if (function->usb_controller == NULL || function->bound ||
+            function->netdev == NULL) {
+            continue;
+        }
+        current_device = function->usb_controller;
+        rc = netdev_open(function->netdev);
+        current_device = NULL;
+        if (rc != 0) {
+            printf("OpenRFS: iPXE %s open failed: %s\n",
+                function->usb_driver_name, strerror(rc));
+        }
+        if (!ipxe_host_publish(function, NULL, function->usb_driver_name,
+                function->usb_description, function->usb_driver_path,
+                function->instance, sizeof(function->instance))) {
+            /* Registered with iPXE but unused: it stays closed. */
+            netdev_close(function->netdev);
+            continue;
+        }
+        memcpy(function->netdev->name, function->instance,
+            sizeof(function->netdev->name) < sizeof(function->instance) ?
+            sizeof(function->netdev->name) : sizeof(function->instance));
+        function->netdev->name[sizeof(function->netdev->name) - 1U] = '\0';
+        function->bound = true;
+    }
+}
+
+/*
+ * Bind a USB host controller with iPXE's driver for it. The probe registers
+ * the controller's bus, which enumerates every device already attached and
+ * probes the selected function drivers; the network functions among them
+ * are published when it returns.
+ */
+bool ipxe_glue_try_bind_usb_host(size_t index,
+    const struct ipxe_host_pci_info *info)
+{
+    struct openrfs_ipxe_pci *device = free_slot();
+
+    if (device == NULL || info == NULL) {
+        return false;
+    }
+    for (size_t host = 0U; host < ipxe_usb_host_count(); ++host) {
+        struct pci_driver *driver = ipxe_usb_host_driver(host);
+        struct pci_device_id *id;
+        char description[64];
+        int rc;
+
+        if (!ipxe_host_driver_enabled(ipxe_usb_host_name(host))) {
+            continue;
+        }
+        id = match_driver(driver, info);
+        if (id == NULL) {
+            continue;
+        }
+        memset(device, 0, sizeof(*device));
+        device->handle = ipxe_host_claim(index);
+        if (device->handle == NULL) {
+            return false;
+        }
+        device->usb_host = true;
+        device->function_index = index;
+        describe_pci(device, info);
+        device->pci.driver = driver;
+        device->pci.id = id;
+        ipxe_usb_start(ipxe_host_driver_enabled);
+        current_device = device;
+        rc = driver->probe(&device->pci);
+        current_device = NULL;
+        if (rc != 0) {
+            printf("OpenRFS: iPXE %s probe failed: %s\n",
+                ipxe_usb_host_name(host), strerror(rc));
+            ipxe_host_release(device->handle);
+            memset(device, 0, sizeof(*device));
+            return false;
+        }
+        snprintf(description, sizeof(description), "%s %s",
+            ipxe_usb_host_label(host), id->name);
+        if (!ipxe_host_record_usb_host(device->handle,
+                ipxe_usb_host_name(host), description,
+                ipxe_usb_host_path(host), device->instance,
+                sizeof(device->instance))) {
+            current_device = device;
+            driver->remove(&device->pci);
+            current_device = NULL;
+            ipxe_host_release(device->handle);
+            memset(device, 0, sizeof(*device));
+            return false;
+        }
+        device->bound = true;
+        publish_usb_functions();
+        return true;
+    }
+    return false;
+}
+
+/*
+ * Run iPXE's scheduler for a while after the controllers are bound, as
+ * iPXE's own main loop would, then publish what it found. This is when a
+ * full- or low-speed device an EHCI controller hands to its companion UHCI
+ * controller is enumerated: the companion defers its ports until the EHCI
+ * controller has registered its bus.
+ */
+void ipxe_glue_usb_settle(unsigned long milliseconds)
+{
+    const unsigned long start = ipxe_host_ticks_ms();
+    struct openrfs_ipxe_pci *controller = NULL;
+
+    for (size_t slot = 0U; slot < IPXE_GLUE_MAX_DEVICES; ++slot) {
+        if (devices[slot].usb_host && devices[slot].bound) {
+            controller = &devices[slot];
+            break;
+        }
+    }
+    if (controller == NULL) {
+        return;
+    }
+    while (ipxe_host_ticks_ms() - start < milliseconds) {
+        current_device = controller;
+        ipxe_usb_step();
+        current_device = NULL;
+        mdelay(1);
+    }
+    publish_usb_functions();
+}
+
 size_t ipxe_glue_isa_driver_count(void)
 {
     return GLUE_ISA_DRIVER_COUNT;
@@ -1200,6 +1447,20 @@ enum ipxe_glue_result ipxe_glue_service(void *glue_device)
 
     if (device == NULL || !device->bound || device->netdev == NULL) {
         return IPXE_GLUE_FAILED;
+    }
+    if (device->usb_controller != NULL) {
+        /*
+         * One pass of iPXE's scheduler, as iPXE's own main loop runs one
+         * between network polls: it polls every USB bus, resets halted
+         * endpoints and handles hot-plug. A device unplugged meanwhile has
+         * unregistered its net_device.
+         */
+        current_device = device->usb_controller;
+        ipxe_usb_step();
+        current_device = NULL;
+        if (device->netdev == NULL) {
+            return IPXE_GLUE_FAILED;
+        }
     }
     netdev = device->netdev;
     current_device = device;

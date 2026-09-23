@@ -27,6 +27,30 @@ Vendored paths (byte-for-byte upstream; SOURCE-MANIFEST.sha256):
     spi,spi_bit,threewire}.h, src/include/mii.h
                                           GPL2_OR_LATER(_OR_UBDL)
 
+  USB stack (all GPL2_OR_LATER_OR_UBDL; Michael Brown, 2014-2015):
+  src/drivers/bus/usb.c, cdc.c            USB core, CDC descriptors
+  src/drivers/usb/xhci.c                  xHCI host controller
+  src/drivers/usb/ehci.c, ehci.h          EHCI host controller
+  src/drivers/usb/uhci.c, uhci.h          UHCI host controller
+  src/drivers/usb/usbhub.c, usbhub.h      USB hub
+  src/drivers/usb/usbnet.c                USB network device helper
+  src/drivers/net/ecm.c, ecm.h            CDC-ECM network adapters
+  src/drivers/net/acm.c, acm.h            RNDIS adapters (CDC-ACM and
+                                          wireless-controller classes)
+  src/net/rndis.c                         RNDIS protocol
+  src/core/process.c                      process scheduler (step())
+  src/core/base16.c                       hex decoding (ECM MAC strings)
+  src/include/ipxe/{usb,xhci,usbnet,cdc,rndis,process,init,tables,base16,
+    acpimac}.h
+
+  The USB files are those of iPXE v2.0.0 (2026-03-06) plus the hardening
+  fixes made since: usb.c, cdc.c and ecm.c guard against invalid descriptor
+  lengths (6215a88), xhci.c removes undefined left shifts (d2df712) and
+  allows residual byte counts above 64 kB (da52150), and uhci.c adds a
+  missing little-endian conversion (3b06e41) and corrects the descriptor
+  count of zero-length stream transfers (3812a69). No other commit since
+  v2.0.0 touches a vendored USB file.
+
 Deliberately excluded: every GPL2_ONLY file (for example sky2, skge,
 myri10ge, cs89x0, tg3, bnxt and the vxge core), because GPL-2.0-only code
 cannot be combined with OpenRFS's GPL-3.0-only licence; iPXE's network stack,

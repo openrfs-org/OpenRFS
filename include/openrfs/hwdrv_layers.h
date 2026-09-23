@@ -23,7 +23,7 @@ struct hwdrv_layer {
 size_t hwdrv_layer_count(void);
 const struct hwdrv_layer *hwdrv_layer_at(size_t index);
 
-/* iPXE network drivers: ports/ipxe, vendor/ipxe. */
+/* iPXE network drivers and USB stack: ports/ipxe, vendor/ipxe. */
 enum hwdrv_status ipxe_layer_bind_all(void);
 size_t ipxe_layer_driver_count(void);
 const char *ipxe_layer_driver_name(size_t index);

@@ -50,6 +50,10 @@ SUITE_EXIT_VALUE = 0x88
 SUITE_EXIT_STATUS = ((SUITE_EXIT_VALUE << 1) | 1) & 0xFF
 DEFAULT_PAYLOAD_BYTES = 262144
 GUEST_MAC = "52:54:00:12:34:56"
+# QEMU's usb-net reports its address to CDC-ECM hosts, in the iMACAddress
+# string, with the first octet replaced by 0x40 (hw/usb/dev-network.c,
+# usb_net_realize); its RNDIS OID answers carry GUEST_MAC unchanged.
+USB_ECM_MAC = "40" + GUEST_MAC[2:]
 UNIT_BYTES = 512
 DISK_UNITS = 32768          # 16 MiB
 WRITE_UNITS = 48            # must match DRIVER_TEST_WRITE_UNITS
@@ -111,11 +115,16 @@ class Scenario:
     # device whose screen the runner captures.
     mode: str = ""
     screen: str = ""
+    # Network: devices the NIC attaches to (a USB host controller, a hub),
+    # which QEMU must create before the NIC itself.
+    nic_bus: list[str] = field(default_factory=list)
 
 
 def network_scenario(model: str, driver: str, description: str,
                      machine: str = "pc", expected_failure: str = "",
-                     drivers_option: str = "auto") -> Scenario:
+                     drivers_option: str = "auto",
+                     nic_bus: tuple[str, ...] = (),
+                     mac: str = GUEST_MAC) -> Scenario:
     return Scenario(
         plan="net",
         description=description,
@@ -124,9 +133,10 @@ def network_scenario(model: str, driver: str, description: str,
         machine=machine,
         expected_failure=expected_failure,
         drivers_option=drivers_option,
+        nic_bus=list(nic_bus),
         markers=[
             rf"^ST DRV net0 driver {re.escape(driver)} mac "
-            rf"{re.escape(GUEST_MAC)} link up$",
+            rf"{re.escape(mac)} link up$",
             r"^ST DRV dhcp address 10\.0\.2\.15 gateway 10\.0\.2\.2$",
             r"^ST DRV ping sent 3 received [1-3]$",
             rf"^ST DRV http bytes {DEFAULT_PAYLOAD_BYTES} verified$",
@@ -343,6 +353,68 @@ SCENARIOS: dict[str, Scenario] = {
         "tulip", "tulip", "DEC 21143 Tulip"),
     "net-vmxnet3": network_scenario(
         "vmxnet3", "vmxnet3", "VMware VMXNET3", machine="q35"),
+    # iPXE's USB stack, named on the command line so that the SeaBIOS USB
+    # drivers leave the controller alone. QEMU's usb-net offers a CDC-ECM
+    # and an RNDIS configuration; the USB core chooses between them by the
+    # scores of the function drivers selected, so naming one picks it.
+    "net-usb-ecm-xhci": network_scenario(
+        "usb-net,bus=xhci.0", "cdc-ecm",
+        "USB CDC-ECM adapter on a QEMU xHCI controller",
+        drivers_option="ipxe-xhci,cdc-ecm",
+        mac=USB_ECM_MAC,
+        nic_bus=("-device", "qemu-xhci,id=xhci")),
+    "net-usb-ecm-nec-xhci": network_scenario(
+        "usb-net,bus=xhci.0", "cdc-ecm",
+        "USB CDC-ECM adapter on a NEC uPD720200 xHCI controller",
+        drivers_option="ipxe-xhci,cdc-ecm",
+        mac=USB_ECM_MAC,
+        nic_bus=("-device", "nec-usb-xhci,id=xhci")),
+    # QEMU 8.2's usb-net stalls an RNDIS query whose (empty) information
+    # buffer starts at the end of the message: rndis_query_response()
+    # rejects InformationBufferOffset + 8 >= MessageLength
+    # (hw/usb/dev-network.c). iPXE's rndis.c sends every query that way
+    # (offset 20, length 0, 28 bytes); Linux's rndis_host passes the check
+    # only because its MAC query carries a 48-byte input buffer. The
+    # initialise message before it completes, so the driver does reach the
+    # model; the query for the permanent address is refused.
+    "net-usb-rndis-xhci": network_scenario(
+        "usb-net,bus=xhci.0", "rndis",
+        "USB RNDIS adapter on a QEMU xHCI controller",
+        drivers_option="ipxe-xhci,rndis",
+        nic_bus=("-device", "qemu-xhci,id=xhci"),
+        expected_failure="QEMU 8.2 usb-net refuses RNDIS queries with an "
+                         "empty information buffer at the message end"),
+    "net-usb-ecm-hub": network_scenario(
+        "usb-net,bus=xhci.0,port=1.2", "cdc-ecm",
+        "USB CDC-ECM adapter behind a USB hub on xHCI",
+        drivers_option="ipxe-xhci,ipxe-usbhub,cdc-ecm",
+        mac=USB_ECM_MAC,
+        nic_bus=("-device", "qemu-xhci,id=xhci",
+                 "-device", "usb-hub,bus=xhci.0,port=1")),
+    "net-usb-ecm-uhci": network_scenario(
+        "usb-net,bus=uhci.0", "cdc-ecm",
+        "USB CDC-ECM adapter on an Intel PIIX3 UHCI controller",
+        drivers_option="ipxe-uhci,cdc-ecm",
+        mac=USB_ECM_MAC,
+        nic_bus=("-device", "piix3-usb-uhci,id=uhci")),
+    # The Intel ICH9 arrangement: an EHCI controller at 00:1d.7 with three
+    # UHCI companions on the same device. usb-net is a full-speed device, so
+    # iPXE's EHCI driver resets its port, finds no high-speed device and
+    # hands the port to the companion, whose driver enumerates it. QEMU has
+    # no high-speed network device, so no traffic crosses the EHCI schedule.
+    "net-usb-ecm-ehci-companion": network_scenario(
+        "usb-net,bus=ehci.0", "cdc-ecm",
+        "USB CDC-ECM adapter on ICH9 EHCI, handed to its UHCI companion",
+        machine="q35", drivers_option="ipxe-ehci,ipxe-uhci,cdc-ecm",
+        mac=USB_ECM_MAC,
+        nic_bus=("-device",
+                 "ich9-usb-ehci1,id=ehci,addr=1d.7,multifunction=on",
+                 "-device", "ich9-usb-uhci1,masterbus=ehci.0,firstport=0,"
+                            "addr=1d.0,multifunction=on",
+                 "-device", "ich9-usb-uhci2,masterbus=ehci.0,firstport=2,"
+                            "addr=1d.1",
+                 "-device", "ich9-usb-uhci3,masterbus=ehci.0,firstport=4,"
+                            "addr=1d.2")),
     "blk-ahci": storage_scenario(
         "ahci", "Intel ICH9 AHCI SATA disk",
         ["-drive", DISK, "-device", "ide-hd,drive=drvdisk,bus=ide.4"],
@@ -621,6 +693,7 @@ def run_scenario(name: str, scenario: Scenario, args: argparse.Namespace
                     f"openrfs.drvbytes={DEFAULT_PAYLOAD_BYTES}"]
         qemu += ["-nic", "none",
                  "-netdev", "user,id=drvnet,restrict=off",
+                 *scenario.nic_bus,
                  "-device", f"{scenario.nic_model},netdev=drvnet,"
                             f"mac={GUEST_MAC}",
                  "-object", f"filter-dump,id=drvdump,netdev=drvnet,"

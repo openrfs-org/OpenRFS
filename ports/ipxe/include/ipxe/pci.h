@@ -90,6 +90,10 @@
 #define PCI_CLASS_BRIDGE 0x06
 #define PCI_CLASS_SERIAL 0x0c
 #define PCI_CLASS_SERIAL_USB 0x03
+#define PCI_CLASS_SERIAL_USB_UHCI 0x00
+#define PCI_CLASS_SERIAL_USB_OHCI 0x10
+#define PCI_CLASS_SERIAL_USB_EHCI 0x20
+#define PCI_CLASS_SERIAL_USB_XHCI 0x30
 #define PCI_CLASS(base, sub, progif) \
     ((((base) & 0xff) << 16) | (((sub) & 0xff) << 8) | (((progif) & 0xff) << 0))
 #define PCI_EXP_FLR_DELAY_MS 100
@@ -101,6 +105,8 @@
 #define PCI_FUNC(busdevfn) (((busdevfn) >> 0) & 0x07)
 #define PCI_BUSDEVFN(segment, bus, slot, func) \
     (((segment) << 16) | ((bus) << 8) | ((slot) << 3) | ((func) << 0))
+#define PCI_FIRST_FUNC(busdevfn) ((busdevfn) & ~0x07)
+#define PCI_LAST_FUNC(busdevfn) ((busdevfn) | 0x07)
 #define PCI_BASE_CLASS(class) ((class) >> 16)
 #define PCI_SUB_CLASS(class) (((class) >> 8) & 0xff)
 #define PCI_PROG_INTF(class) ((class) & 0xff)
@@ -198,6 +204,19 @@ int pci_write_config_word(struct pci_device *pci, unsigned int where,
     uint16_t value);
 int pci_write_config_dword(struct pci_device *pci, unsigned int where,
     uint32_t value);
+
+/*
+ * Describe another function without claiming it (EHCI and UHCI look for
+ * their companion controllers this way). Only the identity is filled in:
+ * vendor, device, class, header type, interrupt line and the generic device
+ * description. -ENODEV if the kernel enumerated no function there.
+ */
+int pci_read_config(struct pci_device *pci);
+
+static inline void pci_init(struct pci_device *pci, unsigned int busdevfn)
+{
+    pci->busdevfn = busdevfn;
+}
 
 static inline void pci_set_drvdata(struct pci_device *pci, void *priv)
 {

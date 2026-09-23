@@ -14,6 +14,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ipxe/string.h>
+#include <ipxe/vsprintf.h>
 
 #include <openrfs/ipxe_host.h>
 
@@ -125,6 +127,24 @@ char *strcat(char *destination, const char *source)
 {
     strcpy(destination + strlen(destination), source);
     return destination;
+}
+
+/*
+ * The value of one digit in any base up to 36, as upstream's core/string.c
+ * computes it; anything that is not a digit yields a value of 36 or more.
+ */
+unsigned int digit_value(unsigned int character)
+{
+    if (character >= 'a') {
+        return character - ('a' - 10);
+    }
+    if (character >= 'A') {
+        return character - ('A' - 10);
+    }
+    if (character <= '9') {
+        return character - '0';
+    }
+    return character;
 }
 
 unsigned long strtoul(const char *text, char **end, int base)
@@ -383,6 +403,26 @@ int snprintf(char *buffer, size_t size, const char *format, ...)
 
     va_start(args, format);
     length = vsnprintf(buffer, size, format, args);
+    va_end(args);
+    return length;
+}
+
+/* As upstream's core/vsprintf.c: a negative size means no buffer. */
+int vssnprintf(char *buffer, ssize_t size, const char *format, va_list args)
+{
+    if (size < 0) {
+        size = 0;
+    }
+    return vsnprintf(buffer, (size_t)size, format, args);
+}
+
+int ssnprintf(char *buffer, ssize_t size, const char *format, ...)
+{
+    va_list args;
+    int length;
+
+    va_start(args, format);
+    length = vssnprintf(buffer, size, format, args);
     va_end(args);
     return length;
 }

@@ -48,11 +48,31 @@ static const struct hwdrv_origin ipxe_origins[] = {
     { "iPXE", "744cdb451ef28bc894df72b6b40fdf1fda04acfc",
         "src/drivers/net/ns8390.c", "BSD-2-Clause" },
     { "iPXE", "744cdb451ef28bc894df72b6b40fdf1fda04acfc",
-        "src/drivers/net/ne2k_isa.c", "BSD-2-Clause" }
+        "src/drivers/net/ne2k_isa.c", "BSD-2-Clause" },
+    { "iPXE", "744cdb451ef28bc894df72b6b40fdf1fda04acfc",
+        "src/drivers/usb/xhci.c", "GPL-2.0-or-later OR UBDL-1.0" },
+    { "iPXE", "744cdb451ef28bc894df72b6b40fdf1fda04acfc",
+        "src/drivers/usb/ehci.c", "GPL-2.0-or-later OR UBDL-1.0" },
+    { "iPXE", "744cdb451ef28bc894df72b6b40fdf1fda04acfc",
+        "src/drivers/usb/uhci.c", "GPL-2.0-or-later OR UBDL-1.0" },
+    { "iPXE", "744cdb451ef28bc894df72b6b40fdf1fda04acfc",
+        "src/drivers/usb/usbhub.c", "GPL-2.0-or-later OR UBDL-1.0" },
+    { "iPXE", "744cdb451ef28bc894df72b6b40fdf1fda04acfc",
+        "src/drivers/net/ecm.c", "GPL-2.0-or-later OR UBDL-1.0" },
+    { "iPXE", "744cdb451ef28bc894df72b6b40fdf1fda04acfc",
+        "src/drivers/net/acm.c", "GPL-2.0-or-later OR UBDL-1.0" }
 };
+
+/*
+ * How long iPXE's scheduler runs after the USB host controllers are bound,
+ * so that devices handed from an EHCI controller to its companion are
+ * enumerated before the layer publishes what it found.
+ */
+#define IPXE_USB_SETTLE_MS 1500UL
 
 static struct dma_arena ipxe_arena;
 static struct ipxe_host_claim claims[IPXE_HOST_MAX_CLAIMS];
+static uint32_t usb_host_count;
 
 static bool text_equal(const char *left, const char *right)
 {
@@ -425,6 +445,41 @@ bool ipxe_host_publish(void *glue_device, void *handle,
     return true;
 }
 
+bool ipxe_host_record_usb_host(void *handle, const char *driver_name,
+    const char *description, const char *source_path, char *instance,
+    size_t instance_capacity)
+{
+    static const char prefix[] = "ipxe-usb";
+    struct ipxe_host_claim *claim = handle;
+    const struct hwdrv_origin *origin = origin_for(source_path);
+    size_t length = sizeof(prefix) - 1U;
+
+    if (claim == NULL || !claim->active || origin == NULL ||
+        driver_name == NULL || description == NULL || instance == NULL ||
+        instance_capacity < HWDRV_INSTANCE_CAPACITY || usb_host_count > 9U) {
+        return false;
+    }
+    for (size_t index = 0U; index < length; ++index) {
+        instance[index] = prefix[index];
+    }
+    instance[length++] = (char)('0' + (char)usb_host_count);
+    instance[length] = '\0';
+    if (hwdrv_record_binding(driver_name, instance, description, origin,
+            HWDRV_CLASS_USB_HOST, claim->device.function) !=
+        HWDRV_STATUS_OK) {
+        return false;
+    }
+    ++usb_host_count;
+    console_write("OpenRFS: ");
+    console_write(instance);
+    console_write(" bound by iPXE ");
+    console_write(driver_name);
+    console_write(": ");
+    console_write(description);
+    console_putc('\n');
+    return true;
+}
+
 size_t ipxe_layer_driver_count(void)
 {
     return ipxe_glue_driver_count();
@@ -455,6 +510,29 @@ enum hwdrv_status ipxe_layer_bind_all(void)
             hwdrv_driver_enabled(ipxe_glue_isa_driver_name(index)) &&
             ipxe_glue_try_bind_isa(index)) {
             ++bound;
+        }
+    }
+    /*
+     * USB host controllers only when named: under auto the SeaBIOS layer
+     * drives them, and two USB stacks must never share a controller.
+     */
+    if (hwdrv_get_mode() == HWDRV_MODE_SELECTED) {
+        size_t hosts = 0U;
+
+        for (size_t index = 0U; index < pci_function_count(); ++index) {
+            struct ipxe_host_pci_info info;
+
+            if (!ipxe_host_pci_available(index) ||
+                !ipxe_host_pci_info(index, &info)) {
+                continue;
+            }
+            if (ipxe_glue_try_bind_usb_host(index, &info)) {
+                ++hosts;
+            }
+        }
+        if (hosts != 0U) {
+            ipxe_glue_usb_settle(IPXE_USB_SETTLE_MS);
+            bound += hosts;
         }
     }
     return bound != 0U ? HWDRV_STATUS_OK : HWDRV_STATUS_ABSENT;

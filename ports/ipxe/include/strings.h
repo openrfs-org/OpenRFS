@@ -9,6 +9,13 @@ static inline int ffs(int value)
     return __builtin_ffs(value);
 }
 
+static inline int ffsll(long long value)
+{
+    return __builtin_ffsll(value);
+}
+
+#define ffsl(value) ffsll((long long)(value))
+
 static inline int openrfs_ipxe_fls(unsigned long long value)
 {
     return value == 0U ? 0 : 64 - __builtin_clzll(value);

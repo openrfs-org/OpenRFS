@@ -82,11 +82,25 @@ static inline void openrfs_ipxe_debug_dump_discard(const void *data,
             openrfs_ipxe_debug_dump_discard((data), (length)); } \
     } while (0)
 
+/*
+ * A build with IPXE_DEBUG=1 (-DOPENRFS_IPXE_DEBUG_OUTPUT) prints the drivers'
+ * level-1 messages, DBG() and DBGC(), to the serial console, as an iPXE build
+ * with DEBUG= set for those files would; the other levels stay silent. The
+ * declaration carries no format attribute: iPXE's own uint64_t is unsigned
+ * long long, so its "%llx" strings are right for iPXE and would be flagged
+ * against the compiler's stdint.h.
+ */
+#ifdef OPENRFS_IPXE_DEBUG_OUTPUT
+int printf(const char *format, ...);
+#define DBG(...) do { printf(__VA_ARGS__); } while (0)
+#define DBGC(object, ...) do { (void)(object); printf(__VA_ARGS__); } while (0)
+#else
 #define DBG(...) OPENRFS_IPXE_DEBUG(__VA_ARGS__)
+#define DBGC(object, ...) OPENRFS_IPXE_DEBUG_OBJECT(object, __VA_ARGS__)
+#endif
 #define DBG2(...) OPENRFS_IPXE_DEBUG(__VA_ARGS__)
 #define DBGP(...) OPENRFS_IPXE_DEBUG(__VA_ARGS__)
 #define DBGIO(...) OPENRFS_IPXE_DEBUG(__VA_ARGS__)
-#define DBGC(object, ...) OPENRFS_IPXE_DEBUG_OBJECT(object, __VA_ARGS__)
 #define DBGC2(object, ...) OPENRFS_IPXE_DEBUG_OBJECT(object, __VA_ARGS__)
 #define DBGCP(object, ...) OPENRFS_IPXE_DEBUG_OBJECT(object, __VA_ARGS__)
 #define DBGCIO(object, ...) OPENRFS_IPXE_DEBUG_OBJECT(object, __VA_ARGS__)

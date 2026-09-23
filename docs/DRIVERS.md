@@ -7,6 +7,11 @@ Realtek, AMD, and Cirrus Logic, plus the Bochs Display Interface. Each driver
 matches the device, establishes a known state, checks its identity against the
 hardware specification, and releases its resources.
 
+Drivers that move data - network adapters, storage, USB, display, audio
+and TPM - come from iPXE, SeaBIOS and MINIX 3, unmodified; see
+[`UPSTREAM_DRIVERS.md`](UPSTREAM_DRIVERS.md) for all of them and what each
+has been shown to do.
+
 ## Common behavior
 
 Every driver here:

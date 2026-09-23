@@ -52,6 +52,22 @@
 #define ENOTRECOVERABLE 131
 #define EUNIQ_01 0
 
+/*
+ * iPXE's error-information tuples (include/errno.h), for drivers that
+ * derive their own error codes from a base error. A tuple is (platform,
+ * posix, uniq, description); only the POSIX number survives here, so a
+ * derived code equals its base error, as every other iPXE error here does.
+ * The vendored drivers never compare against a derived code.
+ */
+#define __einfo(platform, posix, uniq, desc) (platform, posix, uniq, desc)
+#define __einfo_extract_posix(platform, posix, uniq, desc) posix
+#define __einfo_posix(einfo) __einfo_extract_posix einfo
+#define __einfo_uniqify(einfo_base, uniq, desc) einfo_base
+#define __einfo_error(einfo) __einfo_posix(einfo)
+#define EUNIQ(einfo_base, uniq, ...) __einfo_error(einfo_base)
+#define EINFO_EIO __einfo(0, EIO, 0, "Input/output error")
+#define EINFO_EPROTO __einfo(0, EPROTO, 0, "Protocol error")
+
 extern int errno;
 const char *strerror(int error);
 

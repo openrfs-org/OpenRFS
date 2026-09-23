@@ -380,12 +380,22 @@ GCC_FREESTANDING_INCLUDE := $(shell $(CC) -print-file-name=include)
 IPXE_OBJECT_DIR := $(BUILD_DIR)/ipxe
 IPXE_OBJECTS := $(patsubst %.c,$(IPXE_OBJECT_DIR)/%.o,\
 	$(IPXE_VENDOR_SOURCES) $(IPXE_GLUE_SOURCES))
+# iPXE's USB stack registers its drivers and processes through linker
+# tables, so its objects are partially linked with ports/ipxe/usb-layer.ld,
+# which keeps the table sections in order, and every symbol except the
+# entry points in ports/ipxe/usb-exports.txt is made local.
+IPXE_USB_OBJECTS := $(patsubst %.c,$(IPXE_OBJECT_DIR)/%.o,\
+	$(IPXE_USB_VENDOR_SOURCES) $(IPXE_USB_GLUE_SOURCES))
+IPXE_USB_LAYER_OBJECT := $(IPXE_OBJECT_DIR)/ipxe-usb-layer.o
+IPXE_USB_EXPORTS := ports/ipxe/usb-exports.txt
+IPXE_USB_LINKER_SCRIPT := ports/ipxe/usb-layer.ld
 IPXE_BASE_CFLAGS := $(COMMON_FLAGS) -std=gnu11 -O2 -mno-red-zone -mno-mmx \
 	-mno-sse -mno-sse2 -msoft-float -fno-tree-vectorize -fno-builtin \
 	-fno-strict-aliasing -fno-asynchronous-unwind-tables -fno-unwind-tables \
 	-nostdinc -isystem $(GCC_FREESTANDING_INCLUDE) -Iports/ipxe/include \
 	-Ivendor/ipxe/src/include -Iinclude \
-	-include ports/ipxe/include/compiler.h
+	-include ports/ipxe/include/compiler.h \
+	$(if $(IPXE_DEBUG),-DOPENRFS_IPXE_DEBUG_OUTPUT)
 # Upstream code keeps upstream's warning profile: every warning iPXE's own
 # build treats as an error is an error here too.
 IPXE_VENDOR_CFLAGS := $(IPXE_BASE_CFLAGS) -Wall -Werror -Wno-address \
@@ -467,8 +477,9 @@ SEAVGA_OBJECTS := $(SEAVGA_LIBC_OBJECT) $(foreach variant,$(SEAVGA_VARIANTS),\
 		$(SEAVGA_$(variant)_LP64_FILES)))
 
 OBJECTS := $(ASM_OBJECTS) $(C_OBJECTS) $(MONOCYPHER_OBJECTS) \
-	$(IPXE_OBJECTS) $(SEABIOS_LAYER_OBJECT) $(SEAVGA_LAYER_OBJECTS) \
-	$(MINIX_LAYER_OBJECTS) $(PACKAGE_TRUST_ASSET_OBJECT)
+	$(IPXE_OBJECTS) $(IPXE_USB_LAYER_OBJECT) $(SEABIOS_LAYER_OBJECT) \
+	$(SEAVGA_LAYER_OBJECTS) $(MINIX_LAYER_OBJECTS) \
+	$(PACKAGE_TRUST_ASSET_OBJECT)
 
 MONOCYPHER_CFLAGS := $(COMMON_FLAGS) -std=c11 -O2 -mno-red-zone \
 	-mno-mmx -mno-sse -mno-sse2 -msoft-float -fno-tree-vectorize \
@@ -488,7 +499,8 @@ RUSTFLAGS := -C panic=abort -C relocation-model=static \
 	-C llvm-args=-max-store-memcpy=1024 \
 	-C llvm-args=-max-store-memset=1024
 DEPENDENCIES := $(C_OBJECTS:.o=.d) $(MONOCYPHER_OBJECTS:.o=.d) \
-	$(IPXE_OBJECTS:.o=.d) $(SEABIOS_OBJECTS:.o=.d) $(SEAVGA_OBJECTS:.o=.d) \
+	$(IPXE_OBJECTS:.o=.d) $(IPXE_USB_OBJECTS:.o=.d) \
+	$(SEABIOS_OBJECTS:.o=.d) $(SEAVGA_OBJECTS:.o=.d) \
 	$(MINIX_OBJECTS:.o=.d) \
 	$(PACKAGE_TRUST_ASSET_OBJECT:.o=.d) $(SDL2_OBJECTS:.o=.d)
 
@@ -1024,6 +1036,13 @@ $(IPXE_OBJECT_DIR)/vendor/%.o: vendor/%.c ports/ipxe/include/compiler.h
 $(IPXE_OBJECT_DIR)/ports/%.o: ports/%.c ports/ipxe/include/compiler.h
 	mkdir -p $(dir $@)
 	$(KERNEL_CC) $(IPXE_GLUE_CFLAGS) -MMD -MP -c $< -o $@
+
+$(IPXE_USB_LAYER_OBJECT): $(IPXE_USB_OBJECTS) $(IPXE_USB_EXPORTS) \
+		$(IPXE_USB_LINKER_SCRIPT)
+	$(KERNEL_LD) -r -T $(IPXE_USB_LINKER_SCRIPT) -o $@.partial \
+		$(IPXE_USB_OBJECTS)
+	$(OBJCOPY) --keep-global-symbols=$(IPXE_USB_EXPORTS) $@.partial $@
+	rm -f $@.partial
 
 $(SEABIOS_OBJECT_DIR)/vendor/%.o: vendor/%.c
 	mkdir -p $(dir $@)

@@ -300,6 +300,8 @@
 
 <p align="center"><samp><a href="docs/UPSTREAM_PORTS.md">Measured upstream ports</a></samp></p>
 
+<p align="center"><samp><a href="docs/UPSTREAM_DRIVERS.md">Upstream hardware drivers (iPXE, SeaBIOS, MINIX 3)</a></samp></p>
+
 <p align="center"><samp><a href="docs/THIRD_PARTY_CODE.md">Third-party code provenance</a></samp></p>
 
 <p align="center"><samp><a href="docs/THIRD_PARTY_ASSETS.md">Third-party asset provenance</a></samp></p>
