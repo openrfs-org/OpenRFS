@@ -11,11 +11,22 @@
 
 #define PCI_BAR_COUNT 6U
 #define PCI_CLAIM_MAPPING_CAPACITY PCI_BAR_COUNT
-#define PCI_ACTIVE_CLAIM_CAPACITY 16U
+/*
+ * Thirty-two simultaneous claims: the upstream driver framework can hold a
+ * network, a storage, a USB and a display function at once alongside the
+ * controllers OpenRFS already drives, and each keeps its claim for as long as
+ * it is bound rather than for one bounded probe.
+ */
+#define PCI_ACTIVE_CLAIM_CAPACITY 32U
 #define PCI_BUS_MASTER_DMA_CAPACITY 8U
 
 #define PCI_DEVICE_MMIO_ARENA_BASE UINT64_C(0x0000000C00000000)
-#define PCI_DEVICE_MMIO_ARENA_SIZE (UINT64_C(64) * 1024U * 1024U)
+/*
+ * 256 MiB of device virtual space. A display adapter's linear framebuffer BAR
+ * is commonly 16 MiB or more on its own, and the framework maps it next to the
+ * register windows of every other bound function.
+ */
+#define PCI_DEVICE_MMIO_ARENA_SIZE (UINT64_C(256) * 1024U * 1024U)
 
 #define PCI_COMMAND_IO_SPACE UINT16_C(0x0001)
 #define PCI_COMMAND_MEMORY_SPACE UINT16_C(0x0002)
@@ -67,6 +78,7 @@ enum pci_resource_status {
     PCI_RESOURCE_STATUS_BUS_MASTER_DISABLED,
     PCI_RESOURCE_STATUS_DEVICE_PRESENT,
     PCI_RESOURCE_STATUS_CLAIM_INCONSISTENT,
+    PCI_RESOURCE_STATUS_NO_IO_BAR,
     PCI_RESOURCE_STATUS_COUNT
 };
 
@@ -106,6 +118,13 @@ struct pci_device_claim {
     struct pci_bar_description bars[PCI_BAR_COUNT];
     struct pci_mmio_region mappings[PCI_CLAIM_MAPPING_CAPACITY];
     bool memory_decode_enabled;
+    /*
+     * Whether the function decodes its I/O BARs. A device whose registers live
+     * only in port space - a UHCI controller, an AC'97 bus master, an NE2000 -
+     * has no MMIO mapping to prove it is prepared, so an enabled I/O decode is
+     * the alternative evidence bus mastering accepts.
+     */
+    bool io_decode_enabled;
     bool bus_master_enabled;
     bool active;
 };
@@ -151,6 +170,24 @@ const struct pci_bar_description *pci_claim_bar(
 struct pci_mmio_region *pci_claim_mapped_bar(
     struct pci_device_claim *claim,
     uint8_t bar_index
+);
+/*
+ * Enable I/O-space decode on a claimed function that implements at least one
+ * I/O BAR. Port ranges need no mapping, so this is the whole of their
+ * preparation; the claim still records it so release restores the original
+ * command register exactly.
+ */
+enum pci_resource_status pci_claim_enable_io(struct pci_device_claim *claim);
+/*
+ * Change command-register bits that carry no decode or bus-master authority:
+ * memory-write-and-invalidate, parity response, SERR# and INTx disable. A
+ * driver that asks for any other bit is refused rather than silently widened.
+ */
+#define PCI_COMMAND_UNPRIVILEGED_MASK UINT16_C(0x0550)
+enum pci_resource_status pci_claim_update_command(
+    struct pci_device_claim *claim,
+    uint16_t mask,
+    uint16_t value
 );
 enum pci_resource_status pci_claim_enable_bus_master(
     struct pci_device_claim *claim,

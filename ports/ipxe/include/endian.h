@@ -1,0 +1,12 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+#ifndef OPENRFS_IPXE_ENDIAN_H
+#define OPENRFS_IPXE_ENDIAN_H
+
+#define __LITTLE_ENDIAN 1234
+#define __BIG_ENDIAN 4321
+#define __BYTE_ORDER __LITTLE_ENDIAN
+#define LITTLE_ENDIAN __LITTLE_ENDIAN
+#define BIG_ENDIAN __BIG_ENDIAN
+#define BYTE_ORDER __BYTE_ORDER
+
+#endif

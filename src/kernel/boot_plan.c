@@ -38,6 +38,8 @@
 #include <openrfs/linux_uname.h>
 #include <openrfs/memory.h>
 #include <openrfs/msix.h>
+#include <openrfs/hwdrv.h>
+#include <openrfs/netdev.h>
 #include <openrfs/network.h>
 #include <openrfs/network_syscall.h>
 #include <openrfs/nvidia.h>
@@ -935,7 +937,16 @@ static void execute_network_foundation(
     console_write(" passed; entropy ");
     console_write(random_capability_string(random_get_state().capability));
     console_putc('\n');
-    if (status == NETWORK_STATUS_OK) {
+    if (netdev_active_kind() == NETDEV_KIND_REGISTERED &&
+        (status == NETWORK_STATUS_OK || status == NETWORK_STATUS_LINK_DOWN)) {
+        /* An upstream driver's interface; virtio-net keeps its own lines. */
+        console_write("OpenRFS: ");
+        console_write(netdev_active_name());
+        console_write(" (");
+        console_write(netdev_active_driver());
+        console_write(status == NETWORK_STATUS_OK ? ") initialized\n" :
+            ") initialized without carrier\n");
+    } else if (status == NETWORK_STATUS_OK) {
         console_write("OpenRFS: virtio-net0 initialized\n");
     } else if (status == NETWORK_STATUS_LINK_DOWN) {
         console_write("OpenRFS: virtio-net0 initialized without carrier\n");
@@ -2822,6 +2833,91 @@ static void execute_nvidia_probe(
         .execute = function \
     }
 
+/*
+ * The upstream driver framework's controls run on every boot: the command
+ * line grammar that decides what may bind, and the DMA arena allocator every
+ * compatibility layer carves device memory from. Configuration is read here,
+ * before anything that could bind a device.
+ */
+static void execute_driver_framework_foundation(
+    struct boot_context *context,
+    const struct boot_stage_descriptor *descriptor,
+    struct boot_stage_result *result
+)
+{
+    size_t completed = 0U;
+
+    hwdrv_configure(context->information.command_line,
+        context->information.command_line_length);
+    if (!hwdrv_self_test(&completed) ||
+        completed != HWDRV_SELF_TEST_CONTROLS) {
+        stage_failed(context, result,
+            "upstream driver framework controls failed");
+        return;
+    }
+    console_write("OpenRFS: upstream driver framework controls ");
+    console_write_u64(completed);
+    console_write(" passed; ");
+    console_write_u64(hwdrv_compiled_driver_count());
+    console_write(" upstream drivers compiled\n");
+    boot_stage_result_succeed(descriptor, result);
+}
+
+static const enum boot_capability driver_framework_bind_requirements[] = {
+    BOOT_CAPABILITY_PCI_ACCESS_AVAILABLE,
+    BOOT_CAPABILITY_PCI_RESOURCE_OWNERSHIP_AVAILABLE,
+    BOOT_CAPABILITY_DYNAMIC_VECTOR_FOUNDATION_AVAILABLE,
+    BOOT_CAPABILITY_DMA_FOUNDATION_AVAILABLE,
+    BOOT_CAPABILITY_TIMER_CALIBRATION_COMPLETE,
+    BOOT_CAPABILITY_HEAP_AVAILABLE,
+    BOOT_CAPABILITY_INTERRUPTS_ENABLED,
+    BOOT_CAPABILITY_BOOT_PROOFS_COMPLETE,
+    BOOT_CAPABILITY_DRIVER_FRAMEWORK_FOUNDATION_AVAILABLE
+};
+
+_Static_assert(sizeof(driver_framework_bind_requirements) /
+    sizeof(driver_framework_bind_requirements[0]) <=
+        BOOT_STAGE_CAPABILITY_CAPACITY,
+    "driver framework prerequisites exceed the descriptor bound");
+
+/*
+ * Bind the upstream drivers the command line enabled. A bound driver keeps
+ * its claim, its mappings and the layer's DMA arena, so - exactly like the
+ * network foundation's virtio-net binding - this stage waits for the closing
+ * proofs, which require a machine with no device ownership at all. The
+ * network foundation requires the binding decision this stage publishes on
+ * either outcome, so interfaces are registered before the stack chooses one.
+ * A boot that enables nothing skips this stage as a healthy decision, which
+ * is every pre-existing scenario's boot.
+ */
+static void execute_driver_framework_bind(
+    struct boot_context *context,
+    const struct boot_stage_descriptor *descriptor,
+    struct boot_stage_result *result
+)
+{
+    struct hwdrv_state state;
+    enum hwdrv_status status;
+
+    (void)context;
+    if (hwdrv_get_mode() == HWDRV_MODE_NONE) {
+        console_write("OpenRFS: upstream drivers disabled\n");
+        boot_stage_result_skip(descriptor, result);
+        return;
+    }
+    status = hwdrv_bind_all();
+    state = hwdrv_get_state();
+    console_write("OpenRFS: upstream drivers bound ");
+    console_write_u64(state.active_bindings);
+    console_write(" device(s); status ");
+    console_write(hwdrv_status_string(status));
+    console_putc('\n');
+    boot_stage_result_succeed(descriptor, result);
+    result->proof_counters[0] = state.active_bindings;
+    result->proof_counters[1] = state.probe_failures;
+    result->proof_counter_count = 2U;
+}
+
 static const struct boot_stage_descriptor installed_descriptors[] = {
     REQUIRED_STAGE(BOOT_STAGE_EARLY_SERIAL, "early serial",
         BOOT_PHASE_FOUNDATION, BOOT_IRREVERSIBLE_NONE, execute_early_serial),
@@ -2895,6 +2991,12 @@ static const struct boot_stage_descriptor installed_descriptors[] = {
     REQUIRED_STAGE(BOOT_STAGE_DMA_FOUNDATION, "DMA foundation",
         BOOT_PHASE_SERVICES, BOOT_IRREVERSIBLE_NONE,
         execute_dma_foundation),
+    REQUIRED_STAGE(BOOT_STAGE_DRIVER_FRAMEWORK_FOUNDATION,
+        "upstream driver framework foundation", BOOT_PHASE_SERVICES,
+        BOOT_IRREVERSIBLE_NONE, execute_driver_framework_foundation),
+    OPTIONAL_NEUTRAL_STAGE(BOOT_STAGE_DRIVER_FRAMEWORK_BIND,
+        "installed upstream driver binding", BOOT_PHASE_PROOFS,
+        BOOT_IRREVERSIBLE_NONE, execute_driver_framework_bind),
     REQUIRED_STAGE(BOOT_STAGE_NETWORK_FOUNDATION,
         "network and entropy foundation", BOOT_PHASE_PROOFS,
         BOOT_IRREVERSIBLE_NONE, execute_network_foundation),
@@ -3327,7 +3429,13 @@ static bool declare_dependencies(
             BOOT_CAPABILITY_INTERRUPTS_ENABLED;
         descriptor->required_capabilities[8] =
             BOOT_CAPABILITY_BOOT_PROOFS_COMPLETE;
-        descriptor->required_capability_count = 9U;
+        /*
+         * Upstream drivers register their interfaces before the stack picks
+         * one; the decision exists whether binding ran or was disabled.
+         */
+        descriptor->required_capabilities[9] =
+            BOOT_CAPABILITY_UPSTREAM_DRIVERS_DECIDED;
+        descriptor->required_capability_count = 10U;
         descriptor->provided_capabilities[0] =
             BOOT_CAPABILITY_NETWORK_FOUNDATION_AVAILABLE;
         descriptor->provided_capabilities[1] =
@@ -3843,6 +3951,37 @@ static bool declare_dependencies(
         descriptor->provided_capabilities[0] =
             BOOT_CAPABILITY_OPENRFS_INSTALLED_PROOF_COMPLETE;
         descriptor->provided_capability_count = 1U;
+        break;
+    case BOOT_STAGE_DRIVER_FRAMEWORK_FOUNDATION:
+        descriptor->required_capabilities[0] =
+            BOOT_CAPABILITY_PCI_ACCESS_AVAILABLE;
+        descriptor->required_capabilities[1] =
+            BOOT_CAPABILITY_HEAP_AVAILABLE;
+        descriptor->required_capability_count = 2U;
+        descriptor->provided_capabilities[0] =
+            BOOT_CAPABILITY_DRIVER_FRAMEWORK_FOUNDATION_AVAILABLE;
+        descriptor->provided_capability_count = 1U;
+        break;
+    case BOOT_STAGE_DRIVER_FRAMEWORK_BIND:
+        for (size_t index = 0U;
+             index < sizeof(driver_framework_bind_requirements) /
+                sizeof(driver_framework_bind_requirements[0]); ++index) {
+            descriptor->required_capabilities[index] =
+                driver_framework_bind_requirements[index];
+        }
+        descriptor->required_capability_count =
+            sizeof(driver_framework_bind_requirements) /
+                sizeof(driver_framework_bind_requirements[0]);
+        descriptor->provided_capabilities[0] =
+            BOOT_CAPABILITY_UPSTREAM_DRIVERS_BOUND;
+        descriptor->provided_capabilities[1] =
+            BOOT_CAPABILITY_UPSTREAM_DRIVERS_DECIDED;
+        descriptor->provided_capability_count = 2U;
+        descriptor->skipped_capabilities[0] =
+            BOOT_CAPABILITY_UPSTREAM_DRIVERS_DISABLED;
+        descriptor->skipped_capabilities[1] =
+            BOOT_CAPABILITY_UPSTREAM_DRIVERS_DECIDED;
+        descriptor->skipped_capability_count = 2U;
         break;
     case BOOT_STAGE_INVALID:
     case BOOT_STAGE_COUNT:

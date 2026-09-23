@@ -370,8 +370,31 @@ MONOCYPHER_HOST_OBJECTS := $(TEST_BUILD_DIR)/monocypher/monocypher.o \
 	$(TEST_BUILD_DIR)/monocypher/monocypher-ed25519.o
 ASM_SOURCES := $(wildcard src/arch/x86_64/*.S)
 ASM_OBJECTS := $(patsubst src/arch/x86_64/%.S,$(BUILD_DIR)/arch_%.o,$(ASM_SOURCES))
+# Upstream driver layers. Vendored sources are byte-for-byte upstream and are
+# compiled freestanding against their compatibility headers only: -nostdinc
+# keeps the host C library out, and the layer's compiler.h is force-included
+# exactly as the upstream build force-includes its own.
+include ports/ipxe/sources.mk
+GCC_FREESTANDING_INCLUDE := $(shell $(CC) -print-file-name=include)
+IPXE_OBJECT_DIR := $(BUILD_DIR)/ipxe
+IPXE_OBJECTS := $(patsubst %.c,$(IPXE_OBJECT_DIR)/%.o,\
+	$(IPXE_VENDOR_SOURCES) $(IPXE_GLUE_SOURCES))
+IPXE_BASE_CFLAGS := $(COMMON_FLAGS) -std=gnu11 -O2 -mno-red-zone -mno-mmx \
+	-mno-sse -mno-sse2 -msoft-float -fno-tree-vectorize -fno-builtin \
+	-fno-strict-aliasing -fno-asynchronous-unwind-tables -fno-unwind-tables \
+	-nostdinc -isystem $(GCC_FREESTANDING_INCLUDE) -Iports/ipxe/include \
+	-Ivendor/ipxe/src/include -Iinclude \
+	-include ports/ipxe/include/compiler.h
+# Upstream code keeps upstream's warning profile: every warning iPXE's own
+# build treats as an error is an error here too.
+IPXE_VENDOR_CFLAGS := $(IPXE_BASE_CFLAGS) -Wall -Werror -Wno-address \
+	-Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable \
+	-Wno-array-bounds -Wno-stringop-overflow -Wno-maybe-uninitialized
+IPXE_GLUE_CFLAGS := $(IPXE_BASE_CFLAGS) -Wall -Wextra -Werror -Wshadow \
+	-Wundef -Wstrict-prototypes -Wmissing-prototypes -Wno-unused-parameter
+
 OBJECTS := $(ASM_OBJECTS) $(C_OBJECTS) $(MONOCYPHER_OBJECTS) \
-	$(PACKAGE_TRUST_ASSET_OBJECT)
+	$(IPXE_OBJECTS) $(PACKAGE_TRUST_ASSET_OBJECT)
 
 MONOCYPHER_CFLAGS := $(COMMON_FLAGS) -std=c11 -O2 -mno-red-zone \
 	-mno-mmx -mno-sse -mno-sse2 -msoft-float -fno-tree-vectorize \
@@ -391,6 +414,7 @@ RUSTFLAGS := -C panic=abort -C relocation-model=static \
 	-C llvm-args=-max-store-memcpy=1024 \
 	-C llvm-args=-max-store-memset=1024
 DEPENDENCIES := $(C_OBJECTS:.o=.d) $(MONOCYPHER_OBJECTS:.o=.d) \
+	$(IPXE_OBJECTS:.o=.d) \
 	$(PACKAGE_TRUST_ASSET_OBJECT:.o=.d) $(SDL2_OBJECTS:.o=.d)
 
 # The qemu-test-% scenarios are deliberately absent from .PHONY. GNU Make skips
@@ -917,6 +941,14 @@ $(BUILD_DIR)/arch_%.o: src/arch/x86_64/%.S | $(BUILD_DIR)
 
 $(BUILD_DIR)/%.o: src/kernel/%.c | $(BUILD_DIR)
 	$(KERNEL_CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c $< -o $@
+
+$(IPXE_OBJECT_DIR)/vendor/%.o: vendor/%.c ports/ipxe/include/compiler.h
+	mkdir -p $(dir $@)
+	$(KERNEL_CC) $(IPXE_VENDOR_CFLAGS) -MMD -MP -c $< -o $@
+
+$(IPXE_OBJECT_DIR)/ports/%.o: ports/%.c ports/ipxe/include/compiler.h
+	mkdir -p $(dir $@)
+	$(KERNEL_CC) $(IPXE_GLUE_CFLAGS) -MMD -MP -c $< -o $@
 
 $(BUILD_DIR)/package_trust.o: CPPFLAGS += -Ivendor/monocypher/src \
 	-Ivendor/monocypher/src/optional
@@ -3405,6 +3437,43 @@ qemu-tests: $(TEST_TARGETS)
 
 smoke: qemu-test-normal
 	@echo "strict boot smoke test passed"
+
+# The upstream driver suite: one QEMU boot per device profile, outside the
+# 115-scenario matrix. See tools/run_driver_tests.py for what each requires.
+DRIVER_TEST_DIR := $(TEST_BUILD_DIR)/drivers
+.PHONY: qemu-test-drivers qemu-test-drivers-list run-drivers
+qemu-test-drivers: $(KERNEL)
+	$(PYTHON) tools/run_driver_tests.py --kernel '$(KERNEL)' \
+		--output '$(DRIVER_TEST_DIR)' --qemu qemu-system-x86_64 \
+		--grub-mkrescue '$(GRUB_MKRESCUE)' --accel '$(QEMU_ACCEL)' \
+		$(foreach scenario,$(DRIVER_SCENARIOS),--scenario $(scenario))
+
+qemu-test-drivers-list:
+	@$(PYTHON) tools/run_driver_tests.py --kernel '$(KERNEL)' \
+		--output '$(DRIVER_TEST_DIR)' --list
+
+# An interactive boot with every compiled upstream driver enabled.
+DRIVER_ISO := $(BUILD_DIR)/openrfs-drivers.iso
+$(DRIVER_ISO): $(KERNEL)
+	rm -rf $(BUILD_DIR)/iso-drivers
+	mkdir -p $(BUILD_DIR)/iso-drivers/boot/grub
+	cp $(KERNEL) $(BUILD_DIR)/iso-drivers/boot/openrfs.elf
+	printf '%s\n' 'set default=0' 'set timeout=0' '' \
+		'menuentry "OpenRFS (upstream drivers)" {' \
+		'    multiboot2 /boot/openrfs.elf openrfs.drivers=auto' \
+		'    boot' '}' >$(BUILD_DIR)/iso-drivers/boot/grub/grub.cfg
+	$(GRUB_MKRESCUE) $(GRUB_MKRESCUE_FLAGS) -o $@ $(BUILD_DIR)/iso-drivers
+
+run-drivers: $(DRIVER_ISO) $(DESKTOP_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
+	cp $(FAT32_DATA_IMAGE) $(FAT32_RUN_DATA_IMAGE)
+	qemu-system-x86_64 -m 256M -smp 1 -boot order=d -cdrom $(DRIVER_ISO) \
+		-blockdev driver=file,filename=$(DESKTOP_SYSTEM_IMAGE),node-name=system-file,read-only=on,auto-read-only=off \
+		-blockdev driver=raw,file=system-file,node-name=system-raw,read-only=on \
+		-device nvme,serial=openrfs-system-fat32,drive=system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
+		-blockdev driver=file,filename=$(FAT32_RUN_DATA_IMAGE),node-name=data-file,read-only=off,auto-read-only=off \
+		-blockdev driver=raw,file=data-file,node-name=data-raw,read-only=off \
+		-device nvme,serial=openrfs-data-fat32,drive=data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
+		-nic user,model=e1000 -serial stdio -no-reboot -no-shutdown
 
 run: iso $(DESKTOP_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 	cp $(FAT32_DATA_IMAGE) $(FAT32_RUN_DATA_IMAGE)

@@ -31,6 +31,7 @@
 #include <openrfs/audio.h>
 #include <openrfs/nvidia.h>
 #include <openrfs/driver.h>
+#include <openrfs/driver_tests.h>
 #include <openrfs/multiprocess.h>
 #include <openrfs/nvme.h>
 #include <openrfs/paging.h>
@@ -133,6 +134,8 @@ _Static_assert(
 
 volatile uint8_t kernel_test_double_fault_armed;
 static enum kernel_test_scenario active_scenario;
+static const char *test_command_line;
+static size_t test_command_line_length;
 static bool ext4_geometry_refusal_test;
 static bool ext4_admission_refusal_test;
 
@@ -610,6 +613,9 @@ static enum kernel_test_scenario scenario_from_value(
     if (token_equals(value, length, "ext4-recovery")) {
         return KERNEL_TEST_EXT4_RECOVERY;
     }
+    if (token_equals(value, length, "drivers")) {
+        return KERNEL_TEST_DRIVERS;
+    }
 
     return KERNEL_TEST_INVALID;
 }
@@ -801,6 +807,7 @@ static uint8_t scenario_exit_value(enum kernel_test_scenario scenario)
     case KERNEL_TEST_NATIVE_HTTPS: return UINT8_C(0x85);
     case KERNEL_TEST_EXT4_RECOVERY: return UINT8_C(0x86);
     case KERNEL_TEST_NATIVE_OPENRFS: return UINT8_C(0x87);
+    case KERNEL_TEST_DRIVERS: return UINT8_C(0x88);
     default:
         return QEMU_FAILURE_VALUE;
     }
@@ -1000,6 +1007,8 @@ enum kernel_test_scenario kernel_test_select(
     if (context == NULL || context->command_line == NULL) {
         return KERNEL_TEST_NONE;
     }
+    test_command_line = context->command_line;
+    test_command_line_length = context->command_line_length;
 
     while (offset < context->command_line_length) {
         size_t token_start;
@@ -4768,6 +4777,7 @@ void kernel_test_run(
     case KERNEL_TEST_NATIVE_HTTPS:
     case KERNEL_TEST_NATIVE_OPENRFS:
     case KERNEL_TEST_EXT4_RECOVERY:
+    case KERNEL_TEST_DRIVERS:
         /* Deferred until OpenRFS and the Boot Ledger are published. */
         return;
     case KERNEL_TEST_MULTIPROCESS_SLOTS:
@@ -10822,6 +10832,35 @@ _Noreturn void kernel_test_complete_driver_matrix(void)
     kernel_test_pass();
 }
 
+const char *kernel_test_command_line(size_t *length)
+{
+    if (length != NULL) {
+        *length = test_command_line_length;
+    }
+    return test_command_line;
+}
+
+/*
+ * The upstream driver suite runs its plan in src/kernel/driver_tests.c and
+ * reports one reason on failure; the pass and fail markers stay here with
+ * every other scenario's.
+ */
+_Noreturn void kernel_test_complete_drivers(void)
+{
+    const char *reason = NULL;
+
+    if (active_scenario != KERNEL_TEST_DRIVERS) {
+        kernel_test_fail("driver suite completion used outside its scenario");
+    }
+    /* Waits in the stack and in the plans sleep on timer interrupts. */
+    cpu_interrupt_enable();
+    if (!driver_tests_run(test_command_line, test_command_line_length,
+            &reason)) {
+        kernel_test_fail(reason != NULL ? reason : "driver suite failed");
+    }
+    kernel_test_pass();
+}
+
 _Noreturn void kernel_test_complete_audio(void)
 {
     const struct boot_ledger *ledger = boot_ledger_installed();
@@ -11506,6 +11545,8 @@ const char *kernel_test_scenario_name(enum kernel_test_scenario scenario)
         return "native-openrfs";
     case KERNEL_TEST_EXT4_RECOVERY:
         return "ext4-recovery";
+    case KERNEL_TEST_DRIVERS:
+        return "drivers";
     case KERNEL_TEST_INVALID:
         return "invalid";
     default:

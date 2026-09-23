@@ -7,6 +7,7 @@
 #include <openrfs/console.h>
 #include <openrfs/cpu.h>
 #include <openrfs/fat32_fs.h>
+#include <openrfs/netdev.h>
 #include <openrfs/network.h>
 #include <openrfs/random.h>
 #include <openrfs/timer.h>
@@ -670,7 +671,7 @@ static enum network_status ethernet_send(
     write_be16(transmit_frame + 12U, type);
     copy_bytes(transmit_frame + ETHERNET_HEADER_BYTES, payload,
         payload_length);
-    enum virtio_net_status status = virtio_net_transmit(transmit_frame,
+    enum virtio_net_status status = netdev_transmit(transmit_frame,
         ETHERNET_HEADER_BYTES + payload_length);
 
     if (status == VIRTIO_NET_STATUS_OK) {
@@ -1428,16 +1429,16 @@ static enum network_status network_service_pump(void)
 {
     enum virtio_net_status device_status;
 
-    device_status = virtio_net_service();
+    device_status = netdev_service();
     if (device_status == VIRTIO_NET_STATUS_RESET) {
-        enum virtio_net_status reset_status = virtio_net_reset();
+        enum virtio_net_status reset_status = netdev_reset();
         const enum network_status terminal =
             reset_status == VIRTIO_NET_STATUS_OK ||
             reset_status == VIRTIO_NET_STATUS_LINK_DOWN ?
             NETWORK_STATUS_RESET : NETWORK_STATUS_UNAVAILABLE;
 
         dns_complete(terminal, true);
-        runtime.public.device = virtio_net_get_state();
+        runtime.public.device = netdev_get_state();
         dhcp_discard_lease();
         ++runtime.public.statistics.resets;
         network_fail_endpoints(terminal);
@@ -1455,11 +1456,11 @@ static enum network_status network_service_pump(void)
         network_fail_endpoints(NETWORK_STATUS_UNAVAILABLE);
         return NETWORK_STATUS_UNAVAILABLE;
     }
-    runtime.public.device = virtio_net_get_state();
+    runtime.public.device = netdev_get_state();
     for (size_t count = 0U; count < VIRTIO_NET_RX_RESERVE; ++count) {
         size_t length = 0U;
 
-        device_status = virtio_net_receive(receive_frame,
+        device_status = netdev_receive(receive_frame,
             sizeof(receive_frame), &length);
         if (device_status == VIRTIO_NET_STATUS_RX_EMPTY) {
             break;
@@ -1522,11 +1523,11 @@ enum network_status network_initialize(void)
     if (restore_interrupts) {
         cpu_interrupt_disable();
     }
-    status = virtio_net_initialize();
+    status = netdev_initialize();
     if (restore_interrupts) {
         cpu_interrupt_enable();
     }
-    runtime.public.device = virtio_net_get_state();
+    runtime.public.device = netdev_get_state();
     if (status == VIRTIO_NET_STATUS_ABSENT) {
         return NETWORK_STATUS_UNAVAILABLE;
     }
@@ -1534,7 +1535,10 @@ enum network_status network_initialize(void)
         status != VIRTIO_NET_STATUS_LINK_DOWN) {
         runtime.teardown_pending =
             status == VIRTIO_NET_STATUS_TEARDOWN_FAILURE;
-        console_write("OpenRFS: virtio-net initialization failed: ");
+        console_write("OpenRFS: ");
+        console_write(netdev_failed_name() != NULL ? netdev_failed_name() :
+            "virtio-net");
+        console_write(" initialization failed: ");
         console_write(virtio_net_status_string(status));
         console_putc('\n');
         return NETWORK_STATUS_UNAVAILABLE;
@@ -4934,8 +4938,8 @@ enum network_status network_shutdown(void)
     runtime.timers = 0U;
     runtime.public.timers = 0U;
     ++runtime.public.statistics.resets;
-    status = virtio_net_shutdown();
-    runtime.public.device = virtio_net_get_state();
+    status = netdev_shutdown();
+    runtime.public.device = netdev_get_state();
     runtime.public.active = false;
     dhcp_discard_lease();
     runtime.teardown_pending = status != VIRTIO_NET_STATUS_OK &&

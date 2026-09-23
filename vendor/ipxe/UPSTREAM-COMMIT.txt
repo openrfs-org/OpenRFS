@@ -1,0 +1,32 @@
+iPXE (network boot firmware) driver sources
+Official repository: https://github.com/ipxe/ipxe
+Commit: 744cdb451ef28bc894df72b6b40fdf1fda04acfc
+Commit date: 2026-09-22 22:37:11 +0100
+Git tree: 0bbafb335224fb1dbfc28a8cbad3216a17c67aee
+Licence: per-file FILE_LICENCE declarations (COPYING, COPYING.GPLv2,
+COPYING.UBDL). Every vendored file declares GPL-2.0-or-later,
+GPL-2.0-or-later OR UBDL-1.0, GPL-any-version or BSD-2-Clause, each of which
+may be distributed under GPL-3.0 as part of OpenRFS.
+
+Vendored paths (byte-for-byte upstream; SOURCE-MANIFEST.sha256):
+  src/drivers/net/intel.c, intel.h        GPL2_OR_LATER_OR_UBDL
+  src/drivers/net/eepro100.c, eepro100.h  GPL2_OR_LATER
+  src/drivers/net/realtek.c, realtek.h    GPL2_OR_LATER_OR_UBDL
+  src/drivers/net/pcnet32.c, pcnet32.h    GPL2_OR_LATER
+  src/drivers/net/vmxnet3.c, vmxnet3.h    GPL2_OR_LATER_OR_UBDL
+  src/drivers/net/tulip.c                 GPL_ANY
+  src/drivers/net/ns8390.c, ns8390.h      BSD2
+  src/drivers/net/legacy.c                GPL2_OR_LATER_OR_UBDL
+  src/drivers/net/mii.c                   GPL2_OR_LATER_OR_UBDL
+  src/drivers/nvs/nvs.c, threewire.c      GPL2_OR_LATER_OR_UBDL
+  src/drivers/bitbash/bitbash.c, spi_bit.c GPL2_OR_LATER_OR_UBDL
+  src/core/iobuf.c, list.c                GPL2_OR_LATER_OR_UBDL
+  src/net/iobpad.c                        GPL2_OR_LATER_OR_UBDL
+  src/include/ipxe/{bitbash,ethernet,if_ether,iobuf,list,mii,nvs,spi,
+    spi_bit,threewire}.h, src/include/mii.h
+                                          GPL2_OR_LATER(_OR_UBDL)
+
+Deliberately excluded: every GPL2_ONLY file (for example sky2, skge,
+myri10ge, cs89x0, tg3, bnxt and the vxge core), because GPL-2.0-only code
+cannot be combined with OpenRFS's GPL-3.0-only licence; iPXE's network stack,
+settings tree, console, timers and build system, which OpenRFS replaces.
