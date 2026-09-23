@@ -2,7 +2,7 @@
 
 # Networking
 
-OpenRFS 2.2.0 has a bounded IPv4 networking foundation for one modern
+OpenRFS 2.4.0 has a bounded IPv4 networking foundation for one modern
 `virtio-net-pci` device under QEMU. Packets cross the normal PCI claim, mapped
 BAR, MSI-X, split virtqueue, DMA-ownership, protocol, syscall or Terminal, and
 FAT32/NVMe paths. The deterministic peer is a host-side Ethernet endpoint; it

@@ -9531,6 +9531,7 @@ static void network_tcp_connect_close(bool expect_reset)
 
 static const uint8_t network_listen_request[] = "OPENRFS LISTEN\n";
 static const uint8_t network_refusal_notice[] = "REFUSED";
+static const uint8_t network_sequence_notice[] = "SEQUENCE";
 
 static network_handle network_announce_port(
     uint32_t destination,
@@ -9606,6 +9607,8 @@ static void network_tcp_passive_lifecycle(void)
     network_handle accepted = 0U;
     uint32_t source = 0U;
     uint16_t port = 0U;
+    uint8_t notice[sizeof(network_sequence_notice)];
+    size_t notice_length = 0U;
 
     if (network_tcp_open(NETWORK_TEST_OWNER, &listener) != NETWORK_STATUS_OK ||
         network_tcp_listen(NETWORK_TEST_OWNER, listener,
@@ -9631,11 +9634,14 @@ static void network_tcp_passive_lifecycle(void)
 
     knock = network_announce_port_mode(
         NETWORK_TEST_LIFECYCLE_KNOCK_SOURCE + 2U, 3U);
-    for (size_t pass = 0U; pass < 50U; ++pass) {
-        if (network_service() != NETWORK_STATUS_OK) {
-            kernel_test_fail("duplicate passive sequence service failed");
-        }
-        (void)timer_sleep_ns(UINT64_C(10000000));
+    if (network_udp_receive(NETWORK_TEST_OWNER, knock, &source, &port,
+            notice, sizeof(notice), &notice_length,
+            UINT64_C(5000000000)) != NETWORK_STATUS_OK ||
+        source != NETWORK_TEST_HTTP || port != NETWORK_TEST_KNOCK_PORT ||
+        notice_length != sizeof(network_sequence_notice) - 1U ||
+        !network_bytes_equal(notice, network_sequence_notice,
+            notice_length)) {
+        kernel_test_fail("duplicate passive sequence never reached the peer");
     }
     network_wait_tcp_connections(1U, UINT64_C(5000000000));
     if (network_close(NETWORK_TEST_OWNER, knock) != NETWORK_STATUS_OK) {
