@@ -1,3 +1,4 @@
+# OpenRFS uses pinned, local Rust crate sources for reproducible offline builds.
 [source.crates-io]
 replace-with = "vendored-sources"
 
