@@ -26,4 +26,8 @@ enum hwdrv_status ipxe_layer_bind_all(void);
 size_t ipxe_layer_driver_count(void);
 const char *ipxe_layer_driver_name(size_t index);
 
+enum hwdrv_status seabios_layer_bind_all(void);
+size_t seabios_layer_driver_count(void);
+const char *seabios_layer_driver_name(size_t index);
+
 #endif

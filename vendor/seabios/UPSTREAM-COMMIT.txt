@@ -1,0 +1,38 @@
+SeaBIOS (x86 BIOS firmware) driver sources
+Official repository: https://review.coreboot.org/seabios.git
+Mirror used for the clone: https://github.com/coreboot/seabios
+Commit: 81ec9ec0bcf45df11fb7f98339ec9036b546fca0
+Commit date: 2026-07-31 09:09:21 -0400
+Git tree: d1d21e74648cccfa03f1702ecffa0a925d25bce0
+Licence: GNU LGPL version 3 (COPYING.LESSER, which incorporates COPYING).
+Files that carry a notice say "This file may be distributed under the terms
+of the GNU LGPLv3 license"; files without one are covered by the project
+licence. LGPL-3.0 code may be combined into, and conveyed as part of, a
+GPL-3.0-only work such as OpenRFS.
+
+Vendored paths (byte-for-byte upstream; SOURCE-MANIFEST.sha256):
+  src/hw/ahci.c, ahci.h              AHCI SATA disks and ATAPI drives
+  src/hw/ata.c, ata.h                parallel ATA / ATAPI (PIO)
+  src/hw/blockcmd.c, blockcmd.h      SCSI command layer shared by the HBAs
+  src/hw/virtio-blk.c, virtio-blk.h  virtio block (legacy and 1.0)
+  src/hw/virtio-scsi.c, virtio-scsi.h
+  src/hw/virtio-pci.c, virtio-pci.h, virtio-ring.c, virtio-ring.h,
+    virtio-mmio.c, virtio-mmio.h     virtio transport
+  src/hw/lsi-scsi.c, lsi-scsi.h      LSI 53C895A
+  src/hw/esp-scsi.c, esp-scsi.h      AMD Am53C974 (PCscsi, Tekram DC-390)
+  src/hw/megasas.c, megasas.h        LSI MegaRAID SAS / Dell PERC5
+  src/hw/mpt-scsi.c, mpt-scsi.h      LSI Fusion-MPT SAS1068 / 53C1030
+  src/hw/pvscsi.c, pvscsi.h          VMware PVSCSI
+  src/hw/sdcard.c                    SD Host Controller (SDHCI) and cards
+  src/hw/nvme.c, nvme.h, nvme-int.h  NVM Express
+  src/hw/floppy.c, dma.c             82077AA floppy controller, 8237 ISA DMA
+  src/hw/pci.h, pcidevice.h, pic.h, rtc.h
+  src/block.h, bregs.h, byteorder.h, list.h, std/bda.h, std/disk.h
+
+Deliberately not vendored: SeaBIOS's POST, int13/int15 handlers, boot
+menu, memory manager, threads, output engine and every header that describes
+the 16-bit or segmented environment (types.h, farptr.h, biosvar.h, x86.h,
+malloc.h, output.h, stacks.h, util.h, string.h, config.h and friends);
+ports/seabios/include replaces them. hw/pci_regs.h and hw/pci_ids.h are also
+replaced there with the PCI-specification constants the drivers use, because
+SeaBIOS's copies came from Linux without a licence notice of their own.

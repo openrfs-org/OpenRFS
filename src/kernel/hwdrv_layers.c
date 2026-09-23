@@ -4,6 +4,13 @@
 #include <openrfs/hwdrv_layers.h>
 
 static const struct hwdrv_layer layers[] = {
+    /*
+     * SeaBIOS first: its floppy driver needs a buffer below 16 MiB, and the
+     * frame allocator is first-fit, so the layer that needs low memory asks
+     * before any other arena exists.
+     */
+    { "seabios", seabios_layer_bind_all, seabios_layer_driver_count,
+        seabios_layer_driver_name },
     { "ipxe", ipxe_layer_bind_all, ipxe_layer_driver_count,
         ipxe_layer_driver_name }
 };

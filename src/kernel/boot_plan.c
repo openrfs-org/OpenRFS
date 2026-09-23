@@ -14,6 +14,7 @@
 #include <openrfs/apic.h>
 #include <openrfs/apic_timer.h>
 #include <openrfs/boot.h>
+#include <openrfs/blockdev.h>
 #include <openrfs/boot_ledger.h>
 #include <openrfs/boot_plan.h>
 #include <openrfs/boot_stages.h>
@@ -2846,6 +2847,7 @@ static void execute_driver_framework_foundation(
 )
 {
     size_t completed = 0U;
+    size_t block_completed = 0U;
 
     hwdrv_configure(context->information.command_line,
         context->information.command_line_length);
@@ -2855,8 +2857,15 @@ static void execute_driver_framework_foundation(
             "upstream driver framework controls failed");
         return;
     }
+    if (!blockdev_self_test(&block_completed) ||
+        block_completed != BLOCKDEV_SELF_TEST_CONTROLS) {
+        stage_failed(context, result, "block device layer controls failed");
+        return;
+    }
     console_write("OpenRFS: upstream driver framework controls ");
     console_write_u64(completed);
+    console_write(" passed; block layer controls ");
+    console_write_u64(block_completed);
     console_write(" passed; ");
     console_write_u64(hwdrv_compiled_driver_count());
     console_write(" upstream drivers compiled\n");

@@ -40,6 +40,7 @@ EXPECTED_SHELL_ASSERTION_COUNT := 459
 CC := gcc
 LD := ld
 NM := nm
+OBJCOPY := objcopy
 OBJDUMP := objdump
 RUSTC := rustc
 CARGO := cargo
@@ -392,9 +393,35 @@ IPXE_VENDOR_CFLAGS := $(IPXE_BASE_CFLAGS) -Wall -Werror -Wno-address \
 	-Wno-array-bounds -Wno-stringop-overflow -Wno-maybe-uninitialized
 IPXE_GLUE_CFLAGS := $(IPXE_BASE_CFLAGS) -Wall -Wextra -Werror -Wshadow \
 	-Wundef -Wstrict-prototypes -Wmissing-prototypes -Wno-unused-parameter
+# The SeaBIOS layer. Its vendored drivers are compiled as SeaBIOS compiles
+# them for 32-bit flat mode (-fno-delete-null-pointer-checks, no strict
+# aliasing, packed-member addresses allowed), plus the pointer/integer casts
+# of that 32-bit code, which OpenRFS makes exact by keeping everything they
+# hand a device below 4 GiB. The objects are partially linked into one and
+# every symbol except the exported glue entry points is made local, so the
+# layer's own malloc, printf and PCI helpers never meet the kernel's.
+include ports/seabios/sources.mk
+SEABIOS_OBJECT_DIR := $(BUILD_DIR)/seabios
+SEABIOS_OBJECTS := $(patsubst %.c,$(SEABIOS_OBJECT_DIR)/%.o,\
+	$(SEABIOS_VENDOR_SOURCES) $(SEABIOS_GLUE_SOURCES))
+SEABIOS_LAYER_OBJECT := $(SEABIOS_OBJECT_DIR)/seabios-layer.o
+# SeaBIOS's dprintf level; messages at or below it reach the serial console.
+SEABIOS_DEBUG_LEVEL ?= 1
+SEABIOS_BASE_CFLAGS := $(COMMON_FLAGS) -std=gnu11 -O2 -mno-red-zone -mno-mmx \
+	-mno-sse -mno-sse2 -msoft-float -fno-tree-vectorize -fno-strict-aliasing \
+	-fno-delete-null-pointer-checks -fno-common \
+	-fno-asynchronous-unwind-tables -fno-unwind-tables \
+	-nostdinc -isystem $(GCC_FREESTANDING_INCLUDE) -Iports/seabios/include \
+	-Ivendor/seabios/src -Iinclude -DCONFIG_DEBUG_LEVEL=$(SEABIOS_DEBUG_LEVEL)
+SEABIOS_VENDOR_CFLAGS := $(SEABIOS_BASE_CFLAGS) -Wall -Werror \
+	-Wno-address-of-packed-member -Wno-pointer-to-int-cast \
+	-Wno-int-to-pointer-cast -Wno-unused-function -Wno-array-bounds \
+	-Wno-stringop-overflow -Wno-maybe-uninitialized
+SEABIOS_GLUE_CFLAGS := $(SEABIOS_BASE_CFLAGS) -Wall -Wextra -Werror \
+	-Wno-unused-parameter -Wno-address-of-packed-member -Wno-sign-compare
 
 OBJECTS := $(ASM_OBJECTS) $(C_OBJECTS) $(MONOCYPHER_OBJECTS) \
-	$(IPXE_OBJECTS) $(PACKAGE_TRUST_ASSET_OBJECT)
+	$(IPXE_OBJECTS) $(SEABIOS_LAYER_OBJECT) $(PACKAGE_TRUST_ASSET_OBJECT)
 
 MONOCYPHER_CFLAGS := $(COMMON_FLAGS) -std=c11 -O2 -mno-red-zone \
 	-mno-mmx -mno-sse -mno-sse2 -msoft-float -fno-tree-vectorize \
@@ -414,7 +441,7 @@ RUSTFLAGS := -C panic=abort -C relocation-model=static \
 	-C llvm-args=-max-store-memcpy=1024 \
 	-C llvm-args=-max-store-memset=1024
 DEPENDENCIES := $(C_OBJECTS:.o=.d) $(MONOCYPHER_OBJECTS:.o=.d) \
-	$(IPXE_OBJECTS:.o=.d) \
+	$(IPXE_OBJECTS:.o=.d) $(SEABIOS_OBJECTS:.o=.d) \
 	$(PACKAGE_TRUST_ASSET_OBJECT:.o=.d) $(SDL2_OBJECTS:.o=.d)
 
 # The qemu-test-% scenarios are deliberately absent from .PHONY. GNU Make skips
@@ -949,6 +976,19 @@ $(IPXE_OBJECT_DIR)/vendor/%.o: vendor/%.c ports/ipxe/include/compiler.h
 $(IPXE_OBJECT_DIR)/ports/%.o: ports/%.c ports/ipxe/include/compiler.h
 	mkdir -p $(dir $@)
 	$(KERNEL_CC) $(IPXE_GLUE_CFLAGS) -MMD -MP -c $< -o $@
+
+$(SEABIOS_OBJECT_DIR)/vendor/%.o: vendor/%.c
+	mkdir -p $(dir $@)
+	$(KERNEL_CC) $(SEABIOS_VENDOR_CFLAGS) -MMD -MP -c $< -o $@
+
+$(SEABIOS_OBJECT_DIR)/ports/%.o: ports/%.c
+	mkdir -p $(dir $@)
+	$(KERNEL_CC) $(SEABIOS_GLUE_CFLAGS) -MMD -MP -c $< -o $@
+
+$(SEABIOS_LAYER_OBJECT): $(SEABIOS_OBJECTS) $(SEABIOS_EXPORTS)
+	$(KERNEL_LD) -r -o $@.partial $(SEABIOS_OBJECTS)
+	$(OBJCOPY) --keep-global-symbols=$(SEABIOS_EXPORTS) $@.partial $@
+	rm -f $@.partial
 
 $(BUILD_DIR)/package_trust.o: CPPFLAGS += -Ivendor/monocypher/src \
 	-Ivendor/monocypher/src/optional
@@ -3441,8 +3481,13 @@ smoke: qemu-test-normal
 # The upstream driver suite: one QEMU boot per device profile, outside the
 # 115-scenario matrix. See tools/run_driver_tests.py for what each requires.
 DRIVER_TEST_DIR := $(TEST_BUILD_DIR)/drivers
-.PHONY: qemu-test-drivers qemu-test-drivers-list run-drivers
-qemu-test-drivers: $(KERNEL)
+.PHONY: qemu-test-drivers qemu-test-drivers-list run-drivers driver-provenance
+# Every vendored upstream driver file still matches its pinned upstream bytes.
+driver-provenance:
+	cd vendor/ipxe && sha256sum --check --quiet SOURCE-MANIFEST.sha256
+	cd vendor/seabios && sha256sum --check --quiet SOURCE-MANIFEST.sha256
+
+qemu-test-drivers: $(KERNEL) driver-provenance
 	$(PYTHON) tools/run_driver_tests.py --kernel '$(KERNEL)' \
 		--output '$(DRIVER_TEST_DIR)' --qemu qemu-system-x86_64 \
 		--grub-mkrescue '$(GRUB_MKRESCUE)' --accel '$(QEMU_ACCEL)' \

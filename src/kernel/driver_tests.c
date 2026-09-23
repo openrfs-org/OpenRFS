@@ -12,6 +12,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <openrfs/blockdev.h>
 #include <openrfs/clock.h>
 #include <openrfs/console.h>
 #include <openrfs/driver_tests.h>
@@ -30,11 +31,19 @@
 /* QEMU user networking: the host, reachable as the gateway. */
 #define DRIVER_TEST_SLIRP_HOST UINT32_C(0x0A000202)
 
+/* The fixture every storage scenario's medium carries, in 512-byte units. */
+#define DRIVER_TEST_UNIT_BYTES 512U
+#define DRIVER_TEST_READ_RUN_BYTES (160U * 1024U)
+#define DRIVER_TEST_WRITE_UNITS 48U
+
 struct driver_test_options {
     char plan[DRIVER_TEST_MAX_TOKEN];
     char driver[DRIVER_TEST_MAX_TOKEN];
+    char kind[DRIVER_TEST_MAX_TOKEN];
     uint32_t port;
     uint32_t bytes;
+    uint32_t units;
+    uint32_t write;
 };
 
 static uint8_t download[DRIVER_TEST_DOWNLOAD_BYTES];
@@ -282,6 +291,232 @@ static bool network_plan(const struct driver_test_options *options,
     return true;
 }
 
+/*
+ * The storage fixture. Unit u (512 bytes at byte offset u * 512) holds an
+ * eight-byte signature, u as a little-endian 64-bit number, then byte k of
+ * the unit equal to (u + k) mod 256. tools/run_driver_tests.py writes the
+ * same image, and after a write test checks the rewritten units host-side.
+ */
+static uint8_t fixture_byte(uint64_t unit, uint32_t offset, bool written)
+{
+    static const char original[8] = { 'O', 'R', 'F', 'S', 'B', 'L', 'K', '1' };
+    static const char rewritten[8] = { 'O', 'R', 'F', 'S', 'W', 'R', 'T', '1' };
+
+    if (offset < 8U) {
+        return (uint8_t)(written ? rewritten[offset] : original[offset]);
+    }
+    if (offset < 16U) {
+        return (uint8_t)(unit >> ((offset - 8U) * 8U));
+    }
+    if (written) {
+        return (uint8_t)(unit * 3U + offset * 5U + 0x11U);
+    }
+    return (uint8_t)(unit + offset);
+}
+
+static void fill_units(uint8_t *buffer, uint64_t first_unit, uint32_t units,
+    bool written)
+{
+    for (uint32_t unit = 0U; unit < units; ++unit) {
+        for (uint32_t offset = 0U; offset < DRIVER_TEST_UNIT_BYTES; ++offset) {
+            buffer[unit * DRIVER_TEST_UNIT_BYTES + offset] =
+                fixture_byte(first_unit + unit, offset, written);
+        }
+    }
+}
+
+/* The first unit whose bytes differ from the fixture, or UINT64_MAX. */
+static uint64_t check_units(const uint8_t *buffer, uint64_t first_unit,
+    uint32_t units, bool written)
+{
+    for (uint32_t unit = 0U; unit < units; ++unit) {
+        for (uint32_t offset = 0U; offset < DRIVER_TEST_UNIT_BYTES; ++offset) {
+            if (buffer[unit * DRIVER_TEST_UNIT_BYTES + offset] !=
+                fixture_byte(first_unit + unit, offset, written)) {
+                return first_unit + unit;
+            }
+        }
+    }
+    return UINT64_MAX;
+}
+
+static bool kind_matches(const char *kind, enum blockdev_kind actual)
+{
+    return (text_equal(kind, "disk") && actual == BLOCKDEV_KIND_DISK) ||
+        (text_equal(kind, "cd") && actual == BLOCKDEV_KIND_OPTICAL) ||
+        (text_equal(kind, "fd") && actual == BLOCKDEV_KIND_FLOPPY) ||
+        (text_equal(kind, "sd") && actual == BLOCKDEV_KIND_FLASH);
+}
+
+/* Read blocks [lba, lba + count) and compare them with the fixture. */
+static bool read_and_check(size_t index, const struct blockdev_info *info,
+    uint64_t lba, uint32_t count, bool written, const char **reason)
+{
+    const uint32_t units_per_block =
+        info->geometry.block_size / DRIVER_TEST_UNIT_BYTES;
+    enum blockdev_status status = blockdev_read(index, lba, count, download,
+        sizeof(download));
+    uint64_t mismatch;
+
+    if (status != BLOCKDEV_STATUS_OK) {
+        console_write("ST DRV blk read lba ");
+        console_write_u64(lba);
+        console_write(" failed: ");
+        console_write(blockdev_status_string(status));
+        console_putc('\n');
+        *reason = "a block read through the upstream driver failed";
+        return false;
+    }
+    mismatch = check_units(download, lba * units_per_block,
+        count * units_per_block, written);
+    if (mismatch != UINT64_MAX) {
+        console_write("ST DRV blk read lba ");
+        console_write_u64(lba);
+        console_write(" mismatch at unit ");
+        console_write_u64(mismatch);
+        console_putc('\n');
+        *reason = "data read through the upstream driver is corrupt";
+        return false;
+    }
+    console_write("ST DRV blk read lba ");
+    console_write_u64(lba);
+    console_write(" count ");
+    console_write_u64(count);
+    console_write(written ? " verified rewritten\n" : " verified\n");
+    return true;
+}
+
+static bool storage_plan(const struct driver_test_options *options,
+    const char **reason)
+{
+    struct blockdev_info info;
+    size_t index = SIZE_MAX;
+    uint64_t blocks;
+    uint32_t run;
+    enum blockdev_status status;
+
+    for (size_t candidate = 0U; candidate < blockdev_count(); ++candidate) {
+        struct blockdev_info probe;
+
+        if (!blockdev_info(candidate, &probe)) {
+            continue;
+        }
+        console_write("ST DRV blk candidate ");
+        console_write(probe.name);
+        console_write(" driver ");
+        console_write(probe.driver);
+        console_write(" blocks ");
+        console_write_u64(probe.geometry.block_count);
+        console_write(" x ");
+        console_write_u64(probe.geometry.block_size);
+        console_putc('\n');
+        if (index == SIZE_MAX &&
+            (options->driver[0] == '\0' ||
+                text_equal(options->driver, probe.driver)) &&
+            kind_matches(options->kind, probe.geometry.kind) &&
+            probe.geometry.block_size % DRIVER_TEST_UNIT_BYTES == 0U &&
+            probe.geometry.block_count * (probe.geometry.block_size /
+                DRIVER_TEST_UNIT_BYTES) == options->units) {
+            index = candidate;
+        }
+    }
+    if (index == SIZE_MAX || !blockdev_info(index, &info)) {
+        *reason = "no block device matches the scenario's medium";
+        return false;
+    }
+    blocks = info.geometry.block_count;
+    console_write("ST DRV blk ");
+    console_write(info.name);
+    console_write(" driver ");
+    console_write(info.driver);
+    console_write(" kind ");
+    console_write(blockdev_kind_string(info.geometry.kind));
+    console_write(" block ");
+    console_write_u64(info.geometry.block_size);
+    console_write(" blocks ");
+    console_write_u64(blocks);
+    console_write(info.geometry.read_only ? " read-only" : " writable");
+    console_write(" desc ");
+    console_write(info.description);
+    console_putc('\n');
+
+    /* The first blocks, a run long enough to need several transfers, the
+     * last block. */
+    run = DRIVER_TEST_READ_RUN_BYTES / info.geometry.block_size;
+    if (run > blocks / 2U) {
+        run = (uint32_t)(blocks / 2U);
+    }
+    if (!read_and_check(index, &info, 0U, blocks < 8U ? (uint32_t)blocks : 8U,
+            false, reason) ||
+        (run != 0U && !read_and_check(index, &info, blocks / 2U, run, false,
+            reason)) ||
+        !read_and_check(index, &info, blocks - 1U, 1U, false, reason)) {
+        return false;
+    }
+    status = blockdev_read(index, blocks, 1U, download, sizeof(download));
+    if (status != BLOCKDEV_STATUS_RANGE) {
+        *reason = "a read past the end of the medium was not refused";
+        return false;
+    }
+    console_write("ST DRV blk range refused\n");
+
+    if (info.geometry.read_only) {
+        status = blockdev_write(index, 0U, 1U, download, sizeof(download));
+        if (status != BLOCKDEV_STATUS_READ_ONLY) {
+            *reason = "a write to read-only media was not refused";
+            return false;
+        }
+        console_write("ST DRV blk write refused read-only\n");
+    } else if (options->write != 0U) {
+        const uint32_t units_per_block =
+            info.geometry.block_size / DRIVER_TEST_UNIT_BYTES;
+        const uint32_t count = DRIVER_TEST_WRITE_UNITS / units_per_block;
+        const uint64_t lba = blocks - 2U * count;
+
+        fill_units(download, lba * units_per_block, count * units_per_block,
+            true);
+        status = blockdev_write(index, lba, count, download,
+            sizeof(download));
+        if (status != BLOCKDEV_STATUS_OK) {
+            console_write("ST DRV blk write failed: ");
+            console_write(blockdev_status_string(status));
+            console_putc('\n');
+            *reason = "a block write through the upstream driver failed";
+            return false;
+        }
+        for (size_t byte = 0U; byte < count * info.geometry.block_size;
+             ++byte) {
+            download[byte] = 0U;
+        }
+        if (!read_and_check(index, &info, lba, count, true, reason) ||
+            !read_and_check(index, &info, lba - 1U, 1U, false, reason) ||
+            !read_and_check(index, &info, lba + count, 1U, false, reason)) {
+            return false;
+        }
+        console_write("ST DRV blk write lba ");
+        console_write_u64(lba);
+        console_write(" count ");
+        console_write_u64(count);
+        console_write(" verified\n");
+    }
+    if (!blockdev_info(index, &info)) {
+        *reason = "the block device vanished";
+        return false;
+    }
+    console_write("ST DRV blk counters reads ");
+    console_write_u64(info.reads);
+    console_write(" writes ");
+    console_write_u64(info.writes);
+    console_write(" blocks-read ");
+    console_write_u64(info.blocks_read);
+    console_write(" blocks-written ");
+    console_write_u64(info.blocks_written);
+    console_write(" errors ");
+    console_write_u64(info.errors);
+    console_putc('\n');
+    return info.errors == 0U;
+}
+
 bool driver_tests_run(const char *command_line, size_t length,
     const char **reason)
 {
@@ -308,6 +543,18 @@ bool driver_tests_run(const char *command_line, size_t length,
     if (token_value(command_line, length, "openrfs.drvbytes=", number,
             sizeof(number)) && !parse_decimal(number, &options.bytes)) {
         *reason = "openrfs.drvbytes is not a number";
+        return false;
+    }
+    (void)token_value(command_line, length, "openrfs.drvkind=",
+        options.kind, sizeof(options.kind));
+    if (token_value(command_line, length, "openrfs.drvunits=", number,
+            sizeof(number)) && !parse_decimal(number, &options.units)) {
+        *reason = "openrfs.drvunits is not a number";
+        return false;
+    }
+    if (token_value(command_line, length, "openrfs.drvwrite=", number,
+            sizeof(number)) && !parse_decimal(number, &options.write)) {
+        *reason = "openrfs.drvwrite is not a number";
         return false;
     }
     console_write("ST DRV framework bindings ");
@@ -338,6 +585,15 @@ bool driver_tests_run(const char *command_line, size_t length,
     }
     if (text_equal(options.plan, "net")) {
         return network_plan(&options, reason);
+    }
+    if (text_equal(options.plan, "blk")) {
+        if (!storage_plan(&options, reason)) {
+            if (*reason == NULL) {
+                *reason = "the block device reported errors";
+            }
+            return false;
+        }
+        return true;
     }
     *reason = "unknown openrfs.drvtest plan";
     return false;
