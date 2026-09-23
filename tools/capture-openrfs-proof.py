@@ -179,7 +179,8 @@ def capture(qmp, directory, stem):
 
 def send_text(qmp, text, delay=0.04):
     for key in text:
-        qmp.hmp(f"sendkey {'spc' if key == ' ' else key}")
+        key_name = {" ": "spc", ".": "dot"}.get(key, key)
+        qmp.hmp(f"sendkey {key_name}")
         time.sleep(delay)
 
 def press(qmp, key, delay=0.30):
@@ -246,6 +247,8 @@ def main():
     parser.add_argument("--system")
     parser.add_argument("--data")
     parser.add_argument("--output", required=True)
+    parser.add_argument("--virtio-vga", action="store_true")
+    parser.add_argument("--native-sdl", action="store_true")
 
 
     args = parser.parse_args()
@@ -253,6 +256,8 @@ def main():
         parser.error("provide --userspace or the --system/--data pair")
     if (args.system is None) != (args.data is None):
         parser.error("--system and --data must be provided together")
+    if args.native_sdl and args.system is None:
+        parser.error("--native-sdl requires --system and --data")
 
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -264,10 +269,31 @@ def main():
     if serial.exists():
         serial.unlink()
     port = free_port()
+    trace_args = []
+    if args.virtio_vga:
+        events = output / "gpu-trace-events.txt"
+        events.write_text(
+            "virtio_gpu_cmd_res_create_2d\n"
+            "virtio_gpu_cmd_res_back_attach\n"
+            "virtio_gpu_cmd_res_back_detach\n"
+            "virtio_gpu_cmd_res_unref\n"
+            "virtio_gpu_cmd_set_scanout\n"
+            "virtio_gpu_cmd_res_xfer_toh_2d\n"
+            "virtio_gpu_cmd_res_flush\n"
+            "virtio_gpu_fence_ctrl\n",
+            encoding="ascii",
+        )
+        trace_args = ["-trace", f"events={events},file={output / 'gpu-commands.log'}"]
     command = [
         args.qemu, "-machine", "accel=tcg", "-m", "128M", "-smp", "1",
         "-boot", "order=d", "-cdrom", str(Path(args.iso).resolve()),
         "-display", "none",
+        *(["-vga", "none", "-device", "virtio-vga,disable-legacy=on"]
+          if args.virtio_vga else []),
+        *trace_args,
+        *(["-device", "ich9-intel-hda,id=hda", "-device",
+           "hda-duplex,bus=hda.0,audiodev=none0", "-audiodev", "none,id=none0"]
+          if args.native_sdl else []),
         *storage_arguments(args.userspace, args.system, durable_data),
         "-qmp", f"tcp:127.0.0.1:{port},server=on,wait=off",
         "-serial", f"file:{serial}", "-no-reboot"
@@ -300,6 +326,17 @@ def main():
         print(clean)
         print(focus)
         print(terminal)
+        if args.native_sdl:
+            send_text(qmp, "native sdlproof.man")
+            press(qmp, "ret", 0.10)
+            wait_serial(serial, b"OPENRFS SDL READY run=1", timeout=30.0)
+            native = capture(qmp, output, "openrfs-proof-native-sdl")
+            print(native)
+            press(qmp, "s", 0.05)
+            qmp.hmp("mouse_move -100 0")
+            qmp.hmp("mouse_button 1")
+            qmp.hmp("mouse_button 0")
+            wait_serial(serial, b"OPENRFS SDL PASS run=1", timeout=30.0)
     finally:
         if qmp is not None:
             try:
@@ -322,6 +359,13 @@ def main():
             RUNTIME_FAILURE in transcript):
         tail = transcript[-4096:].decode("utf-8", errors="replace")
         raise RuntimeError("proof capture omitted readiness evidence\n" + tail)
+    if args.virtio_vga and (
+            b"VirtIO GPU 2D scanout configured" not in transcript or
+            b"VirtIO GPU production frame completed commands" not in transcript):
+        raise RuntimeError("proof capture omitted VirtIO GPU presentation")
+    if args.native_sdl and (b"OPENRFS SDL READY run=1" not in transcript or
+                            b"OPENRFS SDL PASS run=1" not in transcript):
+        raise RuntimeError("proof capture omitted native SDL window lifecycle")
     if durable_data is not None:
         report = fat32_image.inspect_image(durable_data.read_bytes())
         login = [

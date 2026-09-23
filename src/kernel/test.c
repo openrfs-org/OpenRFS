@@ -59,6 +59,7 @@
 #include <openrfs/tsc.h>
 #include <openrfs/ui.h>
 #include <openrfs/ui_font.h>
+#include <openrfs/virtio_gpu.h>
 #include <openrfs/xhci.h>
 
 #define QEMU_EXIT_PORT UINT16_C(0x00F4)
@@ -7376,6 +7377,29 @@ _Noreturn void kernel_test_complete_native_sdl(void)
         read_bytes != sizeof(bytes) || openrfsfs_close(file) != OPENRFSFS_STATUS_OK ||
         bytes[0] != 2U || bytes[1] != 0U || bytes[2] != 0U || bytes[3] != 0U) {
         kernel_test_fail("SDL preference state did not survive process relaunch");
+    }
+    const struct virtio_gpu_output_state output =
+        virtio_gpu_output_get_state();
+    if (output.status == VIRTIO_GPU_OUTPUT_ACTIVE) {
+        const struct dma_state before = dma_get_state();
+        if (output.frames_presented < 2U || before.active_allocations < 3U ||
+            !virtio_gpu_output_stop() ||
+            dma_get_state().active_allocations !=
+                before.active_allocations - 3U) {
+            kernel_test_fail("VirtIO GPU resource teardown census failed");
+        }
+        const struct framebuffer_state mode = framebuffer_get_state();
+        virtio_gpu_output_start(mode.width, mode.height);
+        ui_request_redraw();
+        if (ui_flush() != UI_STATUS_OK ||
+            virtio_gpu_output_get_state().status !=
+                VIRTIO_GPU_OUTPUT_ACTIVE ||
+            virtio_gpu_output_get_state().frames_presented == 0U ||
+            dma_get_state().active_allocations !=
+                before.active_allocations) {
+            kernel_test_fail("VirtIO GPU reopen or redraw failed");
+        }
+        console_serial_write("OpenRFS: VirtIO GPU resource stop and reopen passed\n");
     }
     console_write(
         "OpenRFS: SDL 2 window, input, partial damage, PCM and persistence passed\n");

@@ -5,6 +5,7 @@
 
 #include <openrfs/boot_ledger.h>
 #include <openrfs/clock.h>
+#include <openrfs/console.h>
 #include <openrfs/de/files.h>
 #include <openrfs/de/menu.h>
 #include <openrfs/de/packages.h>
@@ -25,6 +26,7 @@
 #include <openrfs/surface.h>
 #include <openrfs/ui.h>
 #include <openrfs/ui_font.h>
+#include <openrfs/virtio_gpu.h>
 #include <openrfs/wallpaper.h>
 
 #define UI_MIN_WIDTH 800U
@@ -650,6 +652,7 @@ bool ui_select_minimal_desktop(void)
 enum ui_status ui_activate(void)
 {
     enum ui_status status;
+    uint64_t raster_start;
 
     if (!state.initialized) {
         return UI_STATUS_NOT_INITIALIZED;
@@ -657,8 +660,11 @@ enum ui_status ui_activate(void)
     if (state.active) {
         return UI_STATUS_ALREADY_INITIALIZED;
     }
+    virtio_gpu_output_start(canvas->width, canvas->height);
     state.active = true;
+    raster_start = clock_monotonic_ns();
     status = render_desktop();
+    virtio_gpu_output_note_raster(clock_monotonic_ns() - raster_start);
     if (status != UI_STATUS_OK) {
         state.active = false;
         return status;
@@ -666,6 +672,15 @@ enum ui_status ui_activate(void)
     if (surface_present(canvas) != SURFACE_STATUS_OK) {
         state.active = false;
         return UI_STATUS_SURFACE_FAILURE;
+    }
+    const struct virtio_gpu_output_state output =
+        virtio_gpu_output_get_state();
+    if (output.status == VIRTIO_GPU_OUTPUT_ACTIVE) {
+        console_serial_write("OpenRFS: VirtIO GPU production frame completed commands ");
+        console_serial_write_u64(output.completed_commands);
+        console_serial_write(" resource pages ");
+        console_serial_write_u64(output.resource_pages);
+        console_serial_write("\n");
     }
     return UI_STATUS_OK;
 }
@@ -1001,6 +1016,7 @@ enum ui_status ui_process_events(void)
 enum ui_status ui_flush(void)
 {
     enum ui_status status;
+    uint64_t raster_start;
 
     if (!state.active) {
         return UI_STATUS_NOT_ACTIVE;
@@ -1008,7 +1024,9 @@ enum ui_status ui_flush(void)
     if (!redraw_pending) {
         return UI_STATUS_OK;
     }
+    raster_start = clock_monotonic_ns();
     status = render_desktop();
+    virtio_gpu_output_note_raster(clock_monotonic_ns() - raster_start);
     if (status != UI_STATUS_OK) {
         return status;
     }

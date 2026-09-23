@@ -82,6 +82,7 @@ HOST_THREAD_FLAGS := $(if $(filter Windows_NT,$(OS)),,-pthread)
 # MAKEFLAGS for Cargo tests on Windows while retaining it on Linux CI.
 CARGO_TEST_ENV := $(if $(filter Windows_NT,$(OS)),MAKEFLAGS=,)
 QEMU_ACCEL ?= tcg
+GPU_TEST_HARDWARE ?=
 GRUB_MKRESCUE ?= grub-mkrescue
 GRUB_MODULE_DIR ?=
 GRUB_MKRESCUE_FLAGS := $(if $(GRUB_MODULE_DIR),-d $(GRUB_MODULE_DIR),)
@@ -3173,7 +3174,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 	fi; \
 	set +e; \
 	timeout "$${timeout_seconds}s" qemu-system-x86_64 \
-		-machine accel=$(QEMU_ACCEL) -m 128M -smp 1 $$hardware \
+		-machine accel=$(QEMU_ACCEL) -m 128M -smp 1 $$hardware $(GPU_TEST_HARDWARE) \
 		-cdrom '$<' -display none $$monitor_argument -serial stdio \
 		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
 		$$reboot_control >"$$log" 2>&1; result=$$?; \

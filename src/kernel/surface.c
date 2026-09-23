@@ -8,6 +8,7 @@
 #include <openrfs/heap.h>
 #include <openrfs/paging.h>
 #include <openrfs/surface.h>
+#include <openrfs/virtio_gpu.h>
 
 /*
  * A cached picture and the one rectangle that changed.
@@ -479,19 +480,27 @@ enum surface_status surface_present(struct surface *surface)
         return SURFACE_STATUS_OK;
     }
 
+    const bool gpu_was_active = virtio_gpu_output_get_state().status ==
+        VIRTIO_GPU_OUTPUT_ACTIVE;
+    if (virtio_gpu_output_present(surface, damage)) {
+        copied = (uint64_t)damage.width * damage.height;
+        surface->presents += 1U;
+        surface->last_present_pixels = copied;
+        surface->presented_pixels += copied;
+        clear_damage(surface);
+        return SURFACE_STATUS_OK;
+    }
+    if (gpu_was_active || virtio_gpu_output_get_state().output_refused) {
+        return SURFACE_STATUS_PRESENT_FAILURE;
+    }
+
     for (uint32_t y = 0U; y < damage.height; ++y) {
         const uint32_t *source = const_row_at(surface, damage.y + y);
         volatile uint32_t *destination =
             (volatile uint32_t *)(uintptr_t)(framebuffer.address +
                 (uint64_t)(damage.y + y) * framebuffer.pitch) + damage.x;
 
-        /*
-         * The rectangle was bounded against both matching geometries above,
-         * so repeating the framebuffer API's coordinate checks for every
-         * pixel would add a function call without adding another boundary.
-         * Volatile is still essential: this destination is device memory and
-         * the compiler cannot otherwise observe that these stores matter.
-         */
+        /* Loader framebuffer stores target device memory. */
         for (uint32_t x = 0U; x < damage.width; ++x) {
             destination[x] = source[damage.x + x];
             ++copied;
