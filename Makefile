@@ -3623,7 +3623,7 @@ entropy-qemu-test: $(TEST_BUILD_DIR)/normal/openrfs.iso
 	$(PYTHON) tools/test_entropy_qemu.py --iso '$<' \
 		--output '$(TEST_BUILD_DIR)/entropy'
 
-qemu-tests: $(TEST_TARGETS) entropy-qemu-test
+qemu-tests: $(TEST_TARGETS) entropy-qemu-test driver-entropy-qemu-test
 	@echo "all deterministic QEMU scenarios passed"
 
 smoke: qemu-test-normal
@@ -3632,17 +3632,23 @@ smoke: qemu-test-normal
 # The upstream driver suite: one QEMU boot per device profile, outside the
 # 115-scenario matrix. See tools/run_driver_tests.py for what each requires.
 DRIVER_TEST_DIR := $(TEST_BUILD_DIR)/drivers
-.PHONY: qemu-test-drivers qemu-test-drivers-list run-drivers driver-provenance
+DRIVER_CPU ?= max
+.PHONY: qemu-test-drivers qemu-test-drivers-list run-drivers driver-provenance driver-entropy-qemu-test
 # Every vendored upstream driver file still matches its pinned upstream bytes.
 driver-provenance:
 	cd vendor/ipxe && sha256sum --check --quiet SOURCE-MANIFEST.sha256
 	cd vendor/seabios && sha256sum --check --quiet SOURCE-MANIFEST.sha256
 	cd vendor/minix && sha256sum --check --quiet SOURCE-MANIFEST.sha256
 
+driver-entropy-qemu-test: $(KERNEL) driver-provenance
+	$(PYTHON) tools/test_driver_entropy_qemu.py --kernel '$(KERNEL)' \
+		--output '$(TEST_BUILD_DIR)/driver-entropy' \
+		--qemu qemu-system-x86_64 --grub-mkrescue '$(GRUB_MKRESCUE)'
 qemu-test-drivers: $(KERNEL) driver-provenance
 	$(PYTHON) tools/run_driver_tests.py --kernel '$(KERNEL)' \
 		--output '$(DRIVER_TEST_DIR)' --qemu qemu-system-x86_64 \
 		--grub-mkrescue '$(GRUB_MKRESCUE)' --accel '$(QEMU_ACCEL)' \
+		--cpu '$(DRIVER_CPU)' \
 		$(foreach scenario,$(DRIVER_SCENARIOS),--scenario $(scenario))
 
 qemu-test-drivers-list:
@@ -3663,7 +3669,7 @@ $(DRIVER_ISO): $(KERNEL)
 
 run-drivers: $(DRIVER_ISO) $(DESKTOP_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 	cp $(FAT32_DATA_IMAGE) $(FAT32_RUN_DATA_IMAGE)
-	qemu-system-x86_64 -m 256M -smp 1 -boot order=d -cdrom $(DRIVER_ISO) \
+	qemu-system-x86_64 -cpu max -m 256M -smp 1 -boot order=d -cdrom $(DRIVER_ISO) \
 		-blockdev driver=file,filename=$(DESKTOP_SYSTEM_IMAGE),node-name=system-file,read-only=on,auto-read-only=off \
 		-blockdev driver=raw,file=system-file,node-name=system-raw,read-only=on \
 		-device nvme,serial=openrfs-system-fat32,drive=system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \

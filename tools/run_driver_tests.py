@@ -681,7 +681,7 @@ def run_scenario(name: str, scenario: Scenario, args: argparse.Namespace
                f"openrfs.drvtest={scenario.plan}"]
     server = None
     qemu = [args.qemu, "-machine", f"{scenario.machine},accel={args.accel}",
-            "-m", "256M", "-smp", "1", "-display", "none",
+            "-cpu", args.cpu, "-m", "256M", "-smp", "1", "-display", "none",
             "-monitor", "none", "-serial", f"file:{log}",
             "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
             "-no-reboot"]
@@ -1115,6 +1115,7 @@ def main() -> int:
     parser.add_argument("--qemu", default="qemu-system-x86_64")
     parser.add_argument("--grub-mkrescue", default="grub-mkrescue")
     parser.add_argument("--accel", default="tcg")
+    parser.add_argument("--cpu", default="max")
     parser.add_argument("--scenario", action="append", default=[])
     parser.add_argument("--qemu-arg", action="append", default=[],
                         help="extra QEMU argument, e.g. for -trace")

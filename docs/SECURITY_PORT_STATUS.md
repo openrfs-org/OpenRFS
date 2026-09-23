@@ -23,6 +23,19 @@ current OpenRFS. No reference README or descriptive page was copied here.
 | TPM and rollback | Reference measurement model | No external freshness authority | **Not integrated** |
 | Process and package controls | Reference proposals | Current native and package paths | **Not audited to completion** |
 
+The branch now also contains OpenRFS's driver-layer merge at
+`f78d25d4ac43f05875bce17d80fbba738428d61e`. Its network device selector
+is reached only after the entropy capability check. The driver QEMU runner and
+interactive driver command select an entropy-capable CPU model. CI boots
+the e1000 path with both CPU RNG instructions disabled, requires the exact
+entropy refusal and guest failure exit, then boots it again with CPU entropy
+and requires the driver network pass. These are model tests, not
+DMA isolation evidence. OpenRFS has no enforced IOMMU boundary here: a
+malicious bus-mastering device can read or overwrite reachable physical memory,
+including kernel state and secrets, regardless of a driver's intended buffer
+ownership. Driver claimant, interrupt teardown, and hostile-device response
+audits remain open.
+
 The reference's own C and Rust sources identify as GPL-3.0-only. Its Monocypher
 copy is dual licensed BSD-2-Clause OR CC0-1.0; OpenRFS already has that release.
 The licence and provenance review must be repeated at the exact final head.

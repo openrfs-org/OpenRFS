@@ -38,6 +38,8 @@ jobs:
                   qemu-system-x86_64 -device nvme,help
             - name: Verify the kernel artifact
               run: make verify
+            - name: Exercise the driver NIC under the entropy policy
+              run: make driver-entropy-qemu-test
             - name: Capture the authenticated minimal desktop from QEMU
               run: |
                   make iso
