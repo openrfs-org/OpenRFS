@@ -149,6 +149,10 @@
 
 <p align="center"><samp>Password:</samp></p>
 
+<p align="center"><samp><strong>starty</strong> opens the minimal fvwm-style desktop with a real OpenRFS shell terminal. <strong>gfetch</strong> works inside that terminal as it does at the boot prompt. The imported Files, Packages, and Task Manager models are not yet production service views and are not exposed; see <a href="docs/OPENRFS.md">desktop limits</a>.</samp></p>
+
+<p align="center"><img src="assets/openrfs/proof-focus.png" width="768" alt="QEMU capture of the minimal OpenRFS desktop running gfetch in its real shell terminal"></p>
+
 <p align="center"><samp>The current account model supports one local user. It is a foundation for authentication work, not a complete multi-user security model.</samp></p>
 
 <p align="center"><samp><strong>openrfs$ gfetch</strong> prints the monochrome fish mark and a live system summary. <strong>fetch</strong> remains as a compatibility alias.</samp></p>

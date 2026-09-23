@@ -1,0 +1,17 @@
+Where the icons come from, and under what licence.
+
+gentoo/  -- the gentoo file manager's icon set, Johan Hanson 1998,
+   GPL-2 or later, copied byte for byte.  See gentoo/SOURCE.txt for the
+   package, the paths, the checksums and what each one is used as.
+
+That is the whole of it now.  Two sets that used to be here are gone:
+
+   nuoveXT2/ and lxpanel/ were Debian's, vendored while this desktop was
+   a copy of Debian's LXDE.  They went out with the panel: the launchers
+   and the tray were the only things drawing them, and a desktop with no
+   bar has no launcher bar to fill.
+
+   drawn/ was this project's own, nine icons laid out from geometry in
+   the sixteen colours.  They were flat and consistent and they looked
+   like a style rather than like icons.  Drawing a thing that already
+   exists, badly, is not the same as having it.

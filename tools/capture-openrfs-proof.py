@@ -24,6 +24,7 @@ import fat32_image
 PROOF_LINE = b"OpenRFS: BT11 Boot Ledger installed proof passed"
 TERMINAL_COMMAND = "echo openrfs"
 TERMINAL_RESULT = b"echo openrfs\nopenrfs\nopenrfs$ "
+GFETCH_RESULT = b"kernel      OpenRFS 2.4.0 / x86_64"
 PROMPT = b"openrfs$ "
 NEW_PASSWORD_PROMPT = b"New password (8-64 characters): "
 CONFIRM_PASSWORD_PROMPT = b"Confirm password: "
@@ -281,22 +282,16 @@ def main():
         if durable_data is not None:
             start_authenticated_desktop(qmp, serial)
         time.sleep(0.25)
-        # The first frame proves the imported desktop and its Files window
-        # reached the emulated display. Close it through the ordinary keyboard
-        # path, then move focus from Files to Terminal.
-        qmp.hmp("mouse_move -260 320")
-        time.sleep(0.12)
+        # starty opens the minimal desktop with its terminal attached to the
+        # production shell. Capture the initial guest frame, then exercise
+        # gfetch and a second command through the same PS/2 keyboard path.
         clean = capture(qmp, output, "openrfs-proof")
-        qmp.hmp("sendkey esc")
-        time.sleep(0.20)
-        qmp.hmp("sendkey tab")
+        send_text(qmp, "gfetch")
+        qmp.hmp("sendkey ret")
+        wait_serial_after(serial, DESKTOP_STARTED, GFETCH_RESULT)
         time.sleep(0.20)
         focus = capture(qmp, output, "openrfs-proof-focus")
 
-        # Enter opens the focused OpenRFS terminal. The deterministic command
-        # travels through the guest's PS/2 path and returns to its prompt.
-        qmp.hmp("sendkey ret")
-        time.sleep(0.30)
         send_text(qmp, TERMINAL_COMMAND)
         qmp.hmp("sendkey ret")
         wait_serial_after(serial, DESKTOP_STARTED, TERMINAL_RESULT)
@@ -321,7 +316,8 @@ def main():
 
     transcript = serial.read_bytes() if serial.exists() else b""
     if (PROOF_LINE not in transcript or ACCOUNT_CREATED not in transcript or
-            DESKTOP_STARTED not in transcript or TERMINAL_RESULT not in transcript or
+            DESKTOP_STARTED not in transcript or GFETCH_RESULT not in transcript or
+            TERMINAL_RESULT not in transcript or
             CAPTURE_PASSWORD.encode("ascii") in transcript or
             RUNTIME_FAILURE in transcript):
         tail = transcript[-4096:].decode("utf-8", errors="replace")

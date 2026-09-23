@@ -38,17 +38,25 @@ jobs:
                   qemu-system-x86_64 -device nvme,help
             - name: Verify the kernel artifact
               run: make verify
-            - name: Capture the functional OpenRFS desktop from QEMU
+            - name: Capture the authenticated minimal desktop from QEMU
               run: |
                   make iso
-                  python3 tools/capture-openrfs.py \
+                  python3 tools/capture-openrfs-proof.py \
                       --iso build/openrfs.iso \
                       --system build/userspace/openrfs-system-fat32.raw \
                       --data build/userspace/openrfs-data-fat32.raw \
-                      --output build/openrfs-captures \
-                      --ffmpeg ffmpeg
+                      --output build/openrfs-captures
+                  python3 tools/compare-openrfs-proof-screenshot.py --mode clean \
+                      assets/openrfs/proof.png \
+                      build/openrfs-captures/openrfs-proof.png
+                  python3 tools/compare-openrfs-proof-screenshot.py --mode focus \
+                      assets/openrfs/proof-focus.png \
+                      build/openrfs-captures/openrfs-proof-focus.png
+                  python3 tools/compare-openrfs-proof-screenshot.py --mode terminal \
+                      assets/openrfs/proof-terminal.png \
+                      build/openrfs-captures/openrfs-proof-terminal.png
                   python3 tools/fat32_image.py inspect \
-                      build/openrfs-captures/openrfs-data.raw \
+                      build/openrfs-captures/openrfs-proof-data.raw \
                       --report build/openrfs-captures/fat32-report.json
                   python3 - <<'PY'
                   import json
@@ -56,12 +64,9 @@ jobs:
 
                   captures = Path("build/openrfs-captures")
                   required = (
-                      "openrfs-desktop.png",
-                      "openrfs-files.png",
-                      "openrfs-terminal.png",
-                      "openrfs-task-manager.png",
-                      "openrfs-packages.png",
-                      "openrfs-settings.png",
+                      "openrfs-proof.png",
+                      "openrfs-proof-focus.png",
+                      "openrfs-proof-terminal.png",
                   )
                   for name in required:
                       if not (captures / name).is_file():

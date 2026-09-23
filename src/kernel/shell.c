@@ -1515,6 +1515,10 @@ static void command_starty(const char *arguments)
 
 static bool start_desktop(void)
 {
+    if (!ui_select_minimal_desktop()) {
+        console_write("starty: desktop mode cannot be changed now\n");
+        return false;
+    }
     const enum ui_status status = boot_plan_start_desktop();
 
     if (status != UI_STATUS_OK) {
@@ -2023,7 +2027,8 @@ void shell_process_keyboard_events(void)
             continue;
         }
         if (ui_keyboard_operational &&
-            (event.scancode == 0x0FU || event.scancode == 0x01U)) {
+            (event.scancode == 0x0FU || event.scancode == 0x01U ||
+                (event.scancode == 0x3EU && event.alt))) {
             if (ui_handle_keyboard(&event) != UI_STATUS_OK) {
                 ui_keyboard_operational = false;
             }
@@ -2033,6 +2038,9 @@ void shell_process_keyboard_events(void)
             (!ui_keyboard_operational ||
                 ui_get_state()->active_panel == UI_PANEL_TERMINAL)) {
             (void)shell_feed(event.character);
+            if (ui_keyboard_operational) {
+                ui_request_redraw();
+            }
         }
     }
 }
