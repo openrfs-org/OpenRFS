@@ -11,7 +11,8 @@
 enum random_capability {
     RANDOM_CAPABILITY_UNAVAILABLE = 0,
     RANDOM_CAPABILITY_DEGRADED,
-    RANDOM_CAPABILITY_INITIALIZED
+    RANDOM_CAPABILITY_INITIALIZED,
+    RANDOM_CAPABILITY_FAILED
 };
 
 enum random_status {
@@ -20,6 +21,8 @@ enum random_status {
     RANDOM_STATUS_TOO_LARGE,
     RANDOM_STATUS_NOT_INITIALIZED,
     RANDOM_STATUS_NOT_STRONG,
+    RANDOM_STATUS_SOURCE_FAILED,
+    RANDOM_STATUS_RESEED_REQUIRED,
     RANDOM_STATUS_COUNT
 };
 
@@ -34,8 +37,6 @@ struct random_state {
 void random_initialize(void);
 enum random_status random_bytes(void *destination, size_t length);
 enum random_status random_strong_bytes(void *destination, size_t length);
-uint16_t random_u16(void);
-uint32_t random_u32(void);
 struct random_state random_get_state(void);
 bool random_self_test(void);
 const char *random_capability_string(enum random_capability capability);

@@ -939,6 +939,11 @@ static void execute_network_foundation(
         console_write("OpenRFS: virtio-net0 initialized\n");
     } else if (status == NETWORK_STATUS_LINK_DOWN) {
         console_write("OpenRFS: virtio-net0 initialized without carrier\n");
+    } else if (random_get_state().capability !=
+            RANDOM_CAPABILITY_INITIALIZED) {
+        console_write("OpenRFS: networking refused: entropy ");
+        console_write(random_capability_string(random_get_state().capability));
+        console_putc('\n');
     } else {
         console_write("OpenRFS: virtio-net0 absent\n");
     }

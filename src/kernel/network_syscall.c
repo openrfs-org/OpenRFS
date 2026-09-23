@@ -288,8 +288,10 @@ static enum network_syscall_status dispatch_operation(
                 return NETWORK_SYSCALL_STATUS_BAD_POINTER;
             }
             if (random_bytes(context->transfer, request->primary_length) !=
-                    RANDOM_STATUS_OK ||
-                !copy_to_user(context, request->primary_address,
+                    RANDOM_STATUS_OK) {
+                return NETWORK_SYSCALL_STATUS_ENTROPY;
+            }
+            if (!copy_to_user(context, request->primary_address,
                     context->transfer, request->primary_length)) {
                 return NETWORK_SYSCALL_STATUS_BAD_POINTER;
             }
@@ -598,7 +600,8 @@ const char *network_syscall_status_string(enum network_syscall_status status)
     static const char *const messages[] = {
         "ok", "null argument", "bad context", "bad token", "bad version",
         "bad operation", "bad user pointer", "bad length", "bad timeout",
-        "network operation failed", "no syscall contexts"
+        "network operation failed", "no syscall contexts",
+        "entropy unavailable"
     };
 
     _Static_assert(sizeof(messages) / sizeof(messages[0]) ==

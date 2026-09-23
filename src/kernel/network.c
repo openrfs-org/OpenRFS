@@ -1514,8 +1514,15 @@ enum network_status network_initialize(void)
     zero_bytes(&runtime, sizeof(runtime));
     runtime.next_socket_generation = 1U;
     runtime.next_dns_generation = 1U;
-    runtime.next_ephemeral = (uint16_t)(TCP_EPHEMERAL_FIRST +
-        random_u16() % (TCP_EPHEMERAL_LAST - TCP_EPHEMERAL_FIRST + 1U));
+    {
+        uint16_t offset;
+
+        if (random_bytes(&offset, sizeof(offset)) != RANDOM_STATUS_OK) {
+            return NETWORK_STATUS_UNAVAILABLE;
+        }
+        runtime.next_ephemeral = (uint16_t)(TCP_EPHEMERAL_FIRST +
+            offset % (TCP_EPHEMERAL_LAST - TCP_EPHEMERAL_FIRST + 1U));
+    }
     runtime.public.configuration.generation = previous_generation + 1U;
     const bool restore_interrupts = cpu_interrupts_enabled();
 
@@ -1731,9 +1738,10 @@ static void dhcp_service_lease(void)
             return;
         }
         zero_bytes(&runtime.dhcp, sizeof(runtime.dhcp));
-        runtime.dhcp.transaction = random_u32();
-        if (runtime.dhcp.transaction == 0U) {
-            runtime.dhcp.transaction = UINT32_C(0x5341504F);
+        if (random_bytes(&runtime.dhcp.transaction,
+                sizeof(runtime.dhcp.transaction)) != RANDOM_STATUS_OK) {
+            zero_bytes(&runtime.dhcp, sizeof(runtime.dhcp));
+            return;
         }
         runtime.dhcp.offered_address = configuration->address;
         runtime.dhcp.server = configuration->dhcp_server;
@@ -1819,9 +1827,10 @@ enum network_status network_start_dhcp(uint64_t timeout_ns)
         return NETWORK_STATUS_NO_RESOURCES;
     }
     zero_bytes(&runtime.dhcp, sizeof(runtime.dhcp));
-    runtime.dhcp.transaction = random_u32();
-    if (runtime.dhcp.transaction == 0U) {
-        runtime.dhcp.transaction = UINT32_C(0x5341504F);
+    if (random_bytes(&runtime.dhcp.transaction,
+            sizeof(runtime.dhcp.transaction)) != RANDOM_STATUS_OK) {
+        timer_release();
+        return NETWORK_STATUS_UNAVAILABLE;
     }
     runtime.dhcp.waiting = true;
     deadline = clock_monotonic_ns() + timeout_ns;
@@ -2346,9 +2355,19 @@ enum network_status network_resolve(
         runtime.public.configuration.generation;
     runtime.dns_query.device_generation =
         runtime.public.device.device_generation;
-    runtime.dns_query.identifier = random_u16();
-    runtime.dns_query.local_port = (uint16_t)(TCP_EPHEMERAL_FIRST +
-        random_u16() % (TCP_EPHEMERAL_LAST - TCP_EPHEMERAL_FIRST + 1U));
+    {
+        uint16_t offset;
+
+        if (random_bytes(&runtime.dns_query.identifier,
+                sizeof(runtime.dns_query.identifier)) != RANDOM_STATUS_OK ||
+            random_bytes(&offset, sizeof(offset)) != RANDOM_STATUS_OK) {
+            dns_release();
+            timer_release();
+            return NETWORK_STATUS_UNAVAILABLE;
+        }
+        runtime.dns_query.local_port = (uint16_t)(TCP_EPHEMERAL_FIRST +
+            offset % (TCP_EPHEMERAL_LAST - TCP_EPHEMERAL_FIRST + 1U));
+    }
     string_copy(runtime.dns_query.question, hostname,
         string_length_bounded(hostname, NETWORK_MAX_HOSTNAME));
     runtime.dns_query.waiting = true;
@@ -2697,7 +2716,11 @@ static struct tcp_connection *tcp_open_child(
         connection->peer_window = peer_window;
         connection->peer_mss = TCP_MSS;
         connection->receive_next = sequence + 1U;
-        connection->send_unacknowledged = random_u32();
+        if (random_bytes(&connection->send_unacknowledged,
+                sizeof(connection->send_unacknowledged)) != RANDOM_STATUS_OK) {
+            zero_bytes(connection, sizeof(*connection));
+            return NULL;
+        }
         connection->send_next = connection->send_unacknowledged + 1U;
         connection->state = TCP_CONNECTION_SYN_RECEIVED;
         connection->listener = (uint8_t)tcp_index_of(listener);
@@ -3154,7 +3177,11 @@ enum network_status network_tcp_connect(
     }
     connection->remote_address = destination;
     connection->remote_port = port;
-    connection->send_unacknowledged = random_u32();
+    if (random_bytes(&connection->send_unacknowledged,
+            sizeof(connection->send_unacknowledged)) != RANDOM_STATUS_OK) {
+        tcp_abandon_connect(connection);
+        return NETWORK_STATUS_UNAVAILABLE;
+    }
     connection->send_next = connection->send_unacknowledged;
     connection->state = TCP_CONNECTION_SYN_SENT;
     if (!timer_acquire()) {
@@ -3655,7 +3682,11 @@ enum network_status network_ping(
     if (!timer_acquire()) {
         return NETWORK_STATUS_NO_RESOURCES;
     }
-    runtime.ping.identifier = random_u16();
+    if (random_bytes(&runtime.ping.identifier,
+            sizeof(runtime.ping.identifier)) != RANDOM_STATUS_OK) {
+        timer_release();
+        return NETWORK_STATUS_UNAVAILABLE;
+    }
     for (uint32_t index = 0U; index < count; ++index) {
         uint8_t packet[ICMP_HEADER_BYTES + 16U];
         uint64_t deadline;

@@ -397,7 +397,7 @@ DEPENDENCIES := $(C_OBJECTS:.o=.d) $(MONOCYPHER_OBJECTS:.o=.d) \
 # implicit and pattern rule search for a phony target, so declaring them phony
 # makes every scenario resolve to "nothing to be done" and pass without booting.
 # They never create a file of their own name, so they rerun regardless.
-.PHONY: all installer-port-test audio-wav-tests capture-boot-video capture-openrfs capture-openrfs-proof capture-networking clean contract-counts contract-scenarios dynamic-elf-tests ext4-images ext4-tests ext4-fsync-test ext4-sparse-truncate-test fat32-images force-package-trust hooks https-tests \
+.PHONY: all installer-port-test audio-wav-tests capture-boot-video capture-openrfs capture-openrfs-proof capture-networking clean contract-counts contract-scenarios dynamic-elf-tests ext4-images ext4-tests ext4-fsync-test ext4-sparse-truncate-test fat32-images force-package-trust hooks https-tests random-host-test entropy-qemu-test \
 	iso kernel lint native-apps native-audio-proof native-dynamic-proof native-https-proof native-openrfs-proof native-sdl-proof sdl-preference-tests port-tests qemu-port-tests reproducible-sdk run \
 	package-control-tests package-fetch-tests package-manager-tests package-repository-tests package-service-tests package-state-tests package-transaction-tests package-trust-asset-tests package-trust-tests package-upload-tests qemu-test-ext4-powercuts screenshot-proof sdk sdk-once smoke tls-tests toolchain verify wall-clock-tests zlib-tests
 
@@ -1629,7 +1629,20 @@ $(MINIMAL_DE_HOST_TEST): tools/minimal-de-host-test.c \
 minimal-de-host-test: $(MINIMAL_DE_HOST_TEST)
 	$(MINIMAL_DE_HOST_TEST)
 
-verify: toolchain lint installer-port-test minimal-de-host-test
+RANDOM_HOST_TEST := $(TEST_BUILD_DIR)/random-host-test$(HOST_EXEEXT)
+
+$(RANDOM_HOST_TEST): tests/random_host_test.c src/kernel/random.c \
+		src/kernel/package_state.c include/openrfs/random.h \
+		include/openrfs/package_state.h
+	mkdir -p $(dir $@)
+	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
+		tests/random_host_test.c src/kernel/package_state.c -o $@
+
+random-host-test: $(RANDOM_HOST_TEST)
+	$(RANDOM_HOST_TEST)
+
+verify: toolchain lint installer-port-test minimal-de-host-test random-host-test
 ifneq ($(VERIFY_CLEAN),0)
 	$(MAKE) clean
 endif
@@ -3400,7 +3413,11 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 		--output '$(TEST_BUILD_DIR)/$*/scenario-result.json'; \
 	echo 'QEMU scenario $* passed'
 
-qemu-tests: $(TEST_TARGETS)
+entropy-qemu-test: $(TEST_BUILD_DIR)/normal/openrfs.iso
+	$(PYTHON) tools/test_entropy_qemu.py --iso '$<' \
+		--output '$(TEST_BUILD_DIR)/entropy'
+
+qemu-tests: $(TEST_TARGETS) entropy-qemu-test
 	@echo "all deterministic QEMU scenarios passed"
 
 smoke: qemu-test-normal

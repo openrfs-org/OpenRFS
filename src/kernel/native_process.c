@@ -262,6 +262,16 @@ static void zero_bytes(void *pointer, size_t length)
     }
 }
 
+static void wipe_bytes(void *pointer, size_t length)
+{
+    volatile uint8_t *bytes = pointer;
+
+    while (length != 0U) {
+        *bytes++ = 0U;
+        --length;
+    }
+}
+
 static size_t bounded_length(const uint8_t *text, size_t capacity)
 {
     for (size_t index = 0U; index < capacity; ++index) {
@@ -4425,11 +4435,16 @@ static int64_t syscall_random(
             random_strong_bytes(process->transfer, chunk) :
             random_bytes(process->transfer, chunk);
 
-        if (status != RANDOM_STATUS_OK ||
-            !copy_to_user(process, address + completed, process->transfer,
-                chunk)) {
+        if (status != RANDOM_STATUS_OK) {
+            wipe_bytes(process->transfer, chunk);
             return completed == 0U ? -OPENRFS_EIO : (int64_t)completed;
         }
+        if (!copy_to_user(process, address + completed, process->transfer,
+                chunk)) {
+            wipe_bytes(process->transfer, chunk);
+            return completed == 0U ? -OPENRFS_EIO : (int64_t)completed;
+        }
+        wipe_bytes(process->transfer, chunk);
         completed += chunk;
     }
     return (int64_t)completed;
