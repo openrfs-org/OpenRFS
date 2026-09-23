@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import pathlib
 import subprocess
 import sys
@@ -25,6 +26,17 @@ def command(*arguments: str, accepted: bool) -> None:
     ):
         raise RuntimeError(
             f"expected explicit refusal: {result.stdout} {result.stderr}"
+        )
+
+
+def sign_payload(private: pathlib.Path, manifest: pathlib.Path,
+                 signature: pathlib.Path, payload: bytes) -> None:
+    manifest.write_bytes(payload)
+    with signature.open("wb") as output:
+        subprocess.run(
+            ["openssl", "pkeyutl", "-sign", "-rawin", "-inkey",
+             str(private), "-in", str(manifest)],
+            stdout=output, check=True,
         )
 
 
@@ -99,6 +111,31 @@ def main() -> None:
         )
         command(*verify, accepted=False)
         signature.write_bytes(original_signature[:-1])
+        command(*verify, accepted=False)
+        signature.write_bytes(original_signature)
+        command(*verify, accepted=True)
+        original_manifest = manifest.read_bytes()
+        prefix, encoded = original_manifest.split(b"\n", 1)
+        document = json.loads(encoded)
+        signed_invalid = [
+            original_manifest[:-1] + b' ',
+            original_manifest[:-2] + b',"format":1}\n',
+            prefix + b"\n" + json.dumps(
+                {**document, "format": 2}, sort_keys=True,
+                separators=(",", ":"),
+            ).encode("ascii") + b"\n",
+            prefix + b"\n" + json.dumps(
+                {**document, "unknown": 1}, sort_keys=True,
+                separators=(",", ":"),
+            ).encode("ascii") + b"\n",
+        ]
+        for payload in signed_invalid:
+            sign_payload(private, manifest, signature, payload)
+            command(*verify, accepted=False)
+        manifest.write_bytes(b"X" * 65537)
+        command(*verify, accepted=False)
+        manifest.write_bytes(original_manifest)
+        signature.write_bytes(b"X" * 65)
         command(*verify, accepted=False)
         signature.write_bytes(original_signature)
         command(*verify, accepted=True)

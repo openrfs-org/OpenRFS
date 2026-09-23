@@ -74,6 +74,14 @@ def digest_file(path: pathlib.Path) -> tuple[int, str]:
     return length, digest.hexdigest()
 
 
+def read_bounded(path: pathlib.Path, limit: int) -> bytes:
+    with path.open("rb") as source:
+        data = source.read(limit + 1)
+    if len(data) > limit:
+        raise Refusal(f"input exceeds {limit} bytes: {path}")
+    return data
+
+
 def canonical(document: dict[str, object]) -> bytes:
     return PREFIX + json.dumps(
         document, sort_keys=True, separators=(",", ":"), ensure_ascii=True
@@ -105,6 +113,12 @@ def write_atomic(path: pathlib.Path, data: bytes) -> None:
             temporary.unlink(missing_ok=True)
 
 
+def staged_file(directory: pathlib.Path, name: str, data: bytes) -> pathlib.Path:
+    path = directory / name
+    path.write_bytes(data)
+    return path
+
+
 def sign(args: argparse.Namespace) -> None:
     if args.generation < 1 or args.generation > 2**64 - 1:
         raise Refusal("generation must fit a positive uint64")
@@ -130,13 +144,15 @@ def sign(args: argparse.Namespace) -> None:
     payload = canonical(document)
     if len(payload) > MAX_MANIFEST:
         raise Refusal("manifest exceeds bound")
-    write_atomic(args.manifest, payload)
-    signature = openssl(
-        "pkeyutl", "-sign", "-rawin", "-inkey", str(args.private_key),
-        "-in", str(args.manifest),
-    )
+    with tempfile.TemporaryDirectory(prefix="openrfs-boot-sign-") as room:
+        captured = staged_file(pathlib.Path(room), "manifest", payload)
+        signature = openssl(
+            "pkeyutl", "-sign", "-rawin", "-inkey", str(args.private_key),
+            "-in", str(captured),
+        )
     if len(signature) != 64:
         raise Refusal("Ed25519 signature length is not 64 bytes")
+    write_atomic(args.manifest, payload)
     write_atomic(args.signature, signature)
     print(f"signed generation {args.generation}, {len(records)} artifacts")
 
@@ -154,24 +170,28 @@ def verify(args: argparse.Namespace) -> None:
     if args.min_generation < 1 or args.min_generation > 2**64 - 1:
         raise Refusal("external rollback floor must fit a positive uint64")
     selected = artifacts(args.artifact)
-    payload = args.manifest.read_bytes()
-    signature = args.signature.read_bytes()
+    payload = read_bounded(args.manifest, MAX_MANIFEST)
+    signature = read_bounded(args.signature, 64)
     if (len(payload) > MAX_MANIFEST or len(payload) <= len(PREFIX) or
             not payload.startswith(PREFIX) or len(signature) != 64):
         raise Refusal("manifest or signature has invalid framing")
     trusted_id = None
-    for public_key in args.public_key:
-        result = subprocess.run(
-            [
-                "openssl", "pkeyutl", "-verify", "-pubin",
-                "-inkey", str(public_key), "-rawin", "-in",
-                str(args.manifest), "-sigfile", str(args.signature),
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        if result.returncode == 0:
-            trusted_id = key_id(public_key)
-            break
+    with tempfile.TemporaryDirectory(prefix="openrfs-boot-verify-") as room:
+        directory = pathlib.Path(room)
+        captured_manifest = staged_file(directory, "manifest", payload)
+        captured_signature = staged_file(directory, "signature", signature)
+        for public_key in args.public_key:
+            result = subprocess.run(
+                [
+                    "openssl", "pkeyutl", "-verify", "-pubin",
+                    "-inkey", str(public_key), "-rawin", "-in",
+                    str(captured_manifest), "-sigfile", str(captured_signature),
+                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            if result.returncode == 0:
+                trusted_id = key_id(public_key)
+                break
     if trusted_id is None:
         raise Refusal("signature is not valid under an external trusted key")
     try:
