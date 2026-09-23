@@ -245,8 +245,18 @@ static enum account_status validate_record(uint8_t record[ACCOUNT_RECORD_BYTES])
         return ACCOUNT_STATUS_STORAGE_CORRUPT;
     }
     zero_bytes(checksum, sizeof(checksum));
-    return username_valid((const char *)(record + ACCOUNT_USERNAME_OFFSET), NULL) ?
-        ACCOUNT_STATUS_OK : ACCOUNT_STATUS_STORAGE_CORRUPT;
+    size_t actual_username_bytes = 0U;
+    if (!username_valid((const char *)(record + ACCOUNT_USERNAME_OFFSET),
+            &actual_username_bytes) || actual_username_bytes != username_bytes) {
+        return ACCOUNT_STATUS_STORAGE_CORRUPT;
+    }
+    for (size_t index = (size_t)username_bytes + 1U;
+         index < ACCOUNT_USERNAME_BYTES; ++index) {
+        if (record[ACCOUNT_USERNAME_OFFSET + index] != 0U) {
+            return ACCOUNT_STATUS_STORAGE_CORRUPT;
+        }
+    }
+    return ACCOUNT_STATUS_OK;
 }
 
 static enum account_status load_record(uint8_t record[ACCOUNT_RECORD_BYTES])
@@ -430,6 +440,7 @@ bool account_self_test(void)
     uint8_t first[ACCOUNT_DIGEST_BYTES];
     uint8_t repeat[ACCOUNT_DIGEST_BYTES];
     uint8_t second[ACCOUNT_DIGEST_BYTES];
+    uint8_t record[ACCOUNT_RECORD_BYTES] = {0};
     size_t username_bytes;
     bool passed = username_valid("alice_1", &username_bytes) &&
         username_bytes == 7U && !username_valid("-alice", NULL) &&
@@ -445,6 +456,30 @@ bool account_self_test(void)
         equal_bytes(first, repeat, sizeof(first)) &&
         !equal_bytes(first, second, sizeof(first));
 
+    copy_bytes(record, account_magic, sizeof(account_magic));
+    record[4] = 1U;
+    record[5] = 5U;
+    write_u32(record + 8U, ACCOUNT_KDF_ROUNDS);
+    copy_bytes(record + ACCOUNT_USERNAME_OFFSET, (const uint8_t *)"alice", 5U);
+    passed = passed &&
+        package_state_sha256(record, ACCOUNT_CHECKSUM_OFFSET,
+            record + ACCOUNT_CHECKSUM_OFFSET) == PACKAGE_STATE_STATUS_OK &&
+        validate_record(record) == ACCOUNT_STATUS_OK;
+
+    record[ACCOUNT_USERNAME_OFFSET + 2U] = 0U;
+    passed = passed &&
+        package_state_sha256(record, ACCOUNT_CHECKSUM_OFFSET,
+            record + ACCOUNT_CHECKSUM_OFFSET) == PACKAGE_STATE_STATUS_OK &&
+        validate_record(record) == ACCOUNT_STATUS_STORAGE_CORRUPT;
+
+    record[ACCOUNT_USERNAME_OFFSET + 2U] = (uint8_t)'i';
+    record[ACCOUNT_USERNAME_OFFSET + 6U] = (uint8_t)'x';
+    passed = passed &&
+        package_state_sha256(record, ACCOUNT_CHECKSUM_OFFSET,
+            record + ACCOUNT_CHECKSUM_OFFSET) == PACKAGE_STATE_STATUS_OK &&
+        validate_record(record) == ACCOUNT_STATUS_STORAGE_CORRUPT;
+
+    zero_bytes(record, sizeof(record));
     zero_bytes(first, sizeof(first));
     zero_bytes(repeat, sizeof(repeat));
     zero_bytes(second, sizeof(second));
