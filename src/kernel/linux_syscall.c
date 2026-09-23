@@ -176,7 +176,7 @@ static const uint64_t cat_allowlist[LINUX_CAT_SYSCALL_ALLOWLIST_COUNT] = {
 static const struct linux_utsname_record openrfs_uts_record = {
     .sysname = "Linux",
     .nodename = "openrfs",
-    .release = "2.2.0-openrfs",
+    .release = "2.4.0-openrfs",
     .version = "OpenRFS",
     .machine = "x86_64",
     .domainname = "(none)"
@@ -1621,7 +1621,7 @@ bool linux_syscall_uname_semantic_self_test(void)
 
     if (!uts_field_valid(openrfs_uts_record.sysname, "Linux", 5U) ||
         !uts_field_valid(openrfs_uts_record.nodename, "openrfs", 7U) ||
-        !uts_field_valid(openrfs_uts_record.release, "2.2.0-openrfs", 13U) ||
+        !uts_field_valid(openrfs_uts_record.release, "2.4.0-openrfs", 13U) ||
         !uts_field_valid(openrfs_uts_record.version, "OpenRFS", 7U) ||
         !uts_field_valid(openrfs_uts_record.machine, "x86_64", 6U) ||
         !uts_field_valid(openrfs_uts_record.domainname, "(none)", 6U) ||

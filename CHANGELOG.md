@@ -4,13 +4,30 @@
 
 ## Unreleased
 
+## 2.4.0
+
 - Renamed the operating system, public interfaces, SDK, tools, packages,
   workflows, and documentation to OpenRFS.
-- Changed normal boot to clear the display and stop at the bare `openrfs$` command prompt.
+- Changed normal boot to clear the display and stop at the bare `openrfs$`
+  command prompt; added `gfetch`.
 - Added persistent first-user creation and authenticated `starty` desktop
   launch.
 - Replaced the visual identity with the supplied OpenRFS G mark, a restrained
   grey wallpaper, and a matching desktop palette.
+- Integrated bounded writable ext4/JBD2 support, including recovery,
+  durability, refusal, and teardown coverage.
+- Completed the supported virtio-net to Ethernet, ARP, IPv4, DHCP, DNS, UDP,
+  TCP, TLS 1.2, HTTPS, package-transfer, and native userspace path.
+- Added owned and cancellable DNS operations, passive TCP-child maintenance,
+  device-loss recovery, and exact-head packet and resource audits.
+- Validated 115 declared QEMU scenarios, including 36 network scenarios, with
+  additional consecutive network and native HTTPS sweeps on the integrated
+  source tree.
+
+OpenRFS remains experimental. Networking is limited to the documented IPv4,
+virtio-net, TLS 1.2, and bounded HTTP/1.1 profiles. This release does not claim
+IPv6, Wi-Fi, arbitrary physical NICs, general web browsing, or production
+security certification.
 
 ## 2.2.0
 
