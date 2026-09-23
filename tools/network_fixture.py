@@ -540,6 +540,7 @@ class Fixture:
                 self.send_client(session, 0x11)
                 self.send_client(session, 0x14)
                 session.finished = True
+                self.notify_knock(b"SEQUENCE")
                 return
             self.send_client(session, 0x18, LISTEN_REQUEST)
             return
