@@ -61,6 +61,9 @@
 #include <openrfs/ui.h>
 #include <openrfs/ui_font.h>
 #include <openrfs/xhci.h>
+#include <trait/files.h>
+#include <trait/menu.h>
+#include <trait/shell.h>
 
 #define QEMU_EXIT_PORT UINT16_C(0x00F4)
 #define QEMU_FAILURE_VALUE UINT8_C(0x7F)
@@ -8043,10 +8046,7 @@ _Noreturn void kernel_test_complete_openrfs_proof(void)
     const struct ui_render_counters initial_renders = ui->renders;
     struct ui_proof proof;
     enum ui_status proof_status;
-    struct keyboard_event keyboard = {
-        .scancode = 0x01U, .pressed = true, .shift = false,
-        .control = false, .alt = false, .character = '\0'
-    };
+    struct trait_rect menu;
 
     if (active_scenario != KERNEL_TEST_OPENRFS_PROOF) {
         kernel_test_fail("OpenRFS completion used outside its scenario");
@@ -8094,47 +8094,48 @@ _Noreturn void kernel_test_complete_openrfs_proof(void)
             ui_layout_validate(&ui->layout) != UI_STATUS_OK) {
         kernel_test_fail("OpenRFS installed desktop state is incomplete");
     }
-    if (openrfs_proof_pixel(512U, 250U) == 0U ||
-            openrfs_proof_pixel(512U, 767U) == 0U) {
-        kernel_test_fail("OpenRFS wallpaper or panel is not integrated");
+    if (ui->active_panel != UI_PANEL_TERMINAL ||
+            trait_shell_window_count() != 1U ||
+            trait_shell_app_of(trait_shell_focused()) != TRAIT_APP_TERMINAL ||
+            openrfs_proof_pixel(80U, 80U) ==
+                openrfs_proof_pixel(512U, 767U)) {
+        kernel_test_fail("WVRM terminal and pixel desktop are not installed");
     }
 
-    openrfs_proof_move_pointer(200U, 160U,
-        "OpenRFS cursor did not move over the new desktop");
+    openrfs_proof_move_pointer(720U, 480U,
+        "WVRM cursor did not move over the desktop root");
     if (ui_get_state()->renders.cursor_moves <= initial_renders.cursor_moves) {
-        kernel_test_fail("OpenRFS cursor movement was not recorded");
+        kernel_test_fail("WVRM cursor movement was not recorded");
     }
-
-    if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("OpenRFS focused window did not close");
+    if (trait_menu_row_count() != 4U ||
+            !token_equals(trait_menu_row_label(0U), 5U, "xterm") ||
+            !token_equals(trait_menu_row_label(1U), 5U, "Files") ||
+            !trait_menu_row_is_rule(2U) ||
+            !token_equals(trait_menu_row_label(3U), 6U, "Run...")) {
+        kernel_test_fail("WVRM root menu is not xterm, Files, Run");
     }
-    openrfs_proof_process_ui("OpenRFS close redraw failed");
-    keyboard.scancode = 0x0FU;
-    if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("OpenRFS keyboard focus-next failed");
+    openrfs_proof_inject_pointer(2U, 0, 0,
+        "WVRM root right-click injection failed");
+    if (!trait_shell_root_menu_open() ||
+            !trait_shell_root_menu_bounds(&menu)) {
+        kernel_test_fail("WVRM right-click did not open the root menu");
     }
-    openrfs_proof_process_ui("OpenRFS focus-next redraw failed");
-    if (ui_get_state()->focus != UI_ELEMENT_DOCK_TERMINAL) {
-        kernel_test_fail("OpenRFS keyboard focus-next chose wrong app");
+    openrfs_proof_inject_pointer(0U, 0, 0,
+        "WVRM root right-click release failed");
+    openrfs_proof_move_pointer(menu.x + 20U,
+        menu.y + TRAIT_MENU_TITLE_HEIGHT + 4U + 20U + 10U,
+        "WVRM cursor did not reach Files in root menu");
+    openrfs_proof_inject_pointer(1U, 0, 0,
+        "WVRM Files root-menu click failed");
+    openrfs_proof_inject_pointer(0U, 0, 0,
+        "WVRM Files root-menu release failed");
+    if (trait_shell_root_menu_open() ||
+            trait_shell_window_count() != 2U ||
+            trait_shell_app_of(trait_shell_focused()) != TRAIT_APP_FILES ||
+            trait_files_child_count(trait_files_root()) != 0U) {
+        kernel_test_fail("WVRM Files did not open safely from the root menu");
     }
-    keyboard.shift = true;
-    if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("OpenRFS keyboard focus-previous failed");
-    }
-    openrfs_proof_process_ui("OpenRFS focus-previous redraw failed");
-    if (ui_get_state()->focus != UI_ELEMENT_DOCK_FILES) {
-        kernel_test_fail("OpenRFS keyboard focus-previous chose wrong app");
-    }
-    keyboard.scancode = 0x1CU;
-    keyboard.shift = false;
-    if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("OpenRFS keyboard activation failed");
-    }
-    openrfs_proof_process_ui("OpenRFS application redraw failed");
-    if (ui_get_state()->active_panel != UI_PANEL_FILES) {
-        kernel_test_fail("OpenRFS Files window did not open");
-    }
-    console_serial_write("ST OPENRFS DE keyboard and pointer passed\n");
+    console_serial_write("ST WVRM terminal, right-click Files, and pre-login isolation passed\n");
 
     if (!boot_plan_pointer_absence_self_test()) {
         kernel_test_fail("OpenRFS pointer-absence synthetic plan failed");
@@ -8144,7 +8145,7 @@ _Noreturn void kernel_test_complete_openrfs_proof(void)
         kernel_test_fail(ui_installed_proof_failure());
     }
     if (proof.width != 1024U || proof.height != 768U ||
-            proof.dock_items != UI_DOCK_ITEM_COUNT ||
+            proof.root_menu_rows != 4U ||
             proof.ledger_fingerprint != ledger->fingerprint ||
             proof.render_hash == 0U || proof.events == 0U ||
             proof.panels == 0U || proof.cursor_moves == 0U ||
@@ -8156,8 +8157,8 @@ _Noreturn void kernel_test_complete_openrfs_proof(void)
     console_write_u64(proof.width);
     console_putc('x');
     console_write_u64(proof.height);
-    console_write(" apps ");
-    console_write_u64(proof.dock_items);
+    console_write(" menu-rows ");
+    console_write_u64(proof.root_menu_rows);
     console_write(" events ");
     console_write_u64(proof.events);
     console_write(" windows ");

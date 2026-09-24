@@ -29,6 +29,7 @@
 #include <openrfs/ui_font.h>
 #include <openrfs/wallpaper.h>
 #include <trait/files.h>
+#include <trait/menu.h>
 #include <trait/shell.h>
 
 #define UI_MIN_WIDTH 800U
@@ -62,7 +63,8 @@ static const char *self_test_failure = "OpenRFS desktop self-test has not run";
 static const char *installed_failure = "OpenRFS desktop proof has not run";
 static struct native_window_record native_windows[UI_NATIVE_WINDOW_COUNT];
 static int32_t native_focus = -1;
-static bool minimal_desktop_selected;
+/* Compile out the old desktop path: every entry point starts WVRM. */
+static const bool minimal_desktop_selected = true;
 static bool wvrm_files_session_known;
 static bool wvrm_files_authorized;
 static bool wvrm_last_click_valid;
@@ -776,7 +778,6 @@ bool ui_select_minimal_desktop(void)
     if (state.initialized || state.active) {
         return false;
     }
-    minimal_desktop_selected = true;
     return true;
 }
 
@@ -1352,10 +1353,11 @@ enum ui_status ui_verify_installed(struct ui_proof *proof)
     if (proof == NULL) {
         return UI_STATUS_NULL_ARGUMENT;
     }
-    if (!state.active || canvas == NULL || !openrfs_panel_is_initialized() ||
+    if (!state.active || canvas == NULL || !minimal_desktop_selected ||
             ui_layout_validate(&state.layout) != UI_STATUS_OK ||
-            openrfs_shell_window_count() == 0U || !ui_font_is_verified()) {
-        installed_failure = "OpenRFS installed desktop state is incomplete";
+            trait_shell_window_count() == 0U ||
+            trait_menu_row_count() != 4U || !ui_font_is_verified()) {
+        installed_failure = "WVRM installed desktop state is incomplete";
         return UI_STATUS_INSTALLED_PROOF_FAILURE;
     }
     redraw_pending = true;
@@ -1380,7 +1382,7 @@ enum ui_status ui_verify_installed(struct ui_proof *proof)
     *proof = (struct ui_proof){
         .width = canvas->width,
         .height = canvas->height,
-        .dock_items = UI_DOCK_ITEM_COUNT,
+        .root_menu_rows = trait_menu_row_count(),
         .events = state.events.drained,
         .panels = state.renders.panel_transitions,
         .cursor_moves = state.renders.cursor_moves,
@@ -1389,7 +1391,7 @@ enum ui_status ui_verify_installed(struct ui_proof *proof)
         .ledger_fingerprint = ledger == NULL ? 0U : ledger->fingerprint,
         .render_hash = second
     };
-    installed_failure = "OpenRFS installed desktop proof passed";
+    installed_failure = "WVRM installed desktop proof passed";
     return UI_STATUS_OK;
 }
 

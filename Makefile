@@ -3494,7 +3494,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 			grep -Fxq 'OpenRFS: BT11 Boot Ledger installed proof passed' "$$log" || \
 				diagnostics_ok=false ;; \
 		openrfs-proof) \
-		grep -Eq '^ST OPENRFS_PROOF geometry 1024x768 apps 5 events [1-9][0-9]* windows [1-9][0-9]* cursor [1-9][0-9]* damage [1-9][0-9]* fingerprint 0x[0-9A-F]{16}$$' "$$log" && \
+		grep -Eq '^ST OPENRFS_PROOF geometry 1024x768 menu-rows 4 events [1-9][0-9]* windows [1-9][0-9]* cursor [1-9][0-9]* damage [1-9][0-9]* fingerprint 0x[0-9A-F]{16}$$' "$$log" && \
 			grep -Fxq 'OpenRFS: installed proof passed' "$$log" || \
 				diagnostics_ok=false ;; \
 		device-substrate) \

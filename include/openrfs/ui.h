@@ -321,7 +321,7 @@ struct ui_state {
 struct ui_proof {
     uint32_t width;
     uint32_t height;
-    uint32_t dock_items;
+    uint32_t root_menu_rows;
     uint64_t events;
     uint64_t panels;
     uint64_t cursor_moves;
