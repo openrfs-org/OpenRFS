@@ -87,6 +87,7 @@ def ppm_to_png(source, destination):
     png += png_chunk(b"IDAT", zlib.compress(rows, 9))
     png += png_chunk(b"IEND", b"")
     Path(destination).write_bytes(png)
+    return width, height, pixels
 
 
 class Qmp:
@@ -171,15 +172,36 @@ def wait_serial_after(path, anchor, marker, timeout=35.0):
     )
 
 
-def capture(qmp, directory, stem):
+def capture(qmp, directory, stem, frame=None):
     ppm = directory / f"{stem}.ppm"
     png = directory / f"{stem}.png"
     qmp.execute("screendump", {
         "filename": ppm.resolve().as_posix(), "format": "ppm"
     })
-    ppm_to_png(ppm, png)
+    pixels = ppm_to_png(ppm, png)
+    if frame is not None:
+        frame.append(pixels)
     ppm.unlink()
     return png
+
+
+def verify_wvrm_files(root_frame, files_frame, data_frame):
+    if any(frame[:2] != (1024, 768) for frame in
+           (root_frame, files_frame, data_frame)):
+        raise RuntimeError("WVRM Files proof requires the measured 1024x768 display")
+    def rgb(frame, x, y):
+        at = (y * frame[0] + x) * 3
+        return frame[2][at:at + 3]
+    if rgb(root_frame, 400, 300) == rgb(files_frame, 400, 300) or (
+            rgb(files_frame, 400, 300) != b"\xff\xff\xff"):
+        raise RuntimeError("WVRM Files window did not replace the terminal pixels")
+    changed = 0
+    for y in range(226, 350):
+        for x in range(250, 600):
+            if rgb(files_frame, x, y) != rgb(data_frame, x, y):
+                changed += 1
+    if changed < 100 or rgb(data_frame, 400, 400) != b"\xff\xff\xff":
+        raise RuntimeError("WVRM Data directory did not show VFS entries")
 
 
 def send_text(qmp, text, delay=0.04):
@@ -370,6 +392,37 @@ def main():
         wait_serial_after(serial, DESKTOP_STARTED, TERMINAL_RESULT)
         time.sleep(0.20)
         terminal = capture(qmp, output, "openrfs-proof-terminal")
+        if durable_data is not None:
+            root_frame = []
+            files_frame = []
+            data_frame = []
+            capture(qmp, output, "openrfs-proof-wvrm-before", root_frame)
+            qmp.hmp("mouse_move 700 500")
+            qmp.hmp("mouse_button 4")
+            qmp.hmp("mouse_button 0")
+            time.sleep(0.40)
+            capture(qmp, output, "openrfs-proof-wvrm-menu")
+            qmp.hmp("mouse_move -140 -30")
+            time.sleep(0.25)
+            qmp.hmp("mouse_button 1")
+            time.sleep(0.10)
+            qmp.hmp("mouse_button 0")
+            time.sleep(0.60)
+            files = capture(qmp, output, "openrfs-proof-wvrm-files",
+                            files_frame)
+            qmp.hmp("mouse_move -610 -475")
+            time.sleep(0.25)
+            for _ in range(2):
+                qmp.hmp("mouse_button 1")
+                time.sleep(0.06)
+                qmp.hmp("mouse_button 0")
+                time.sleep(0.10)
+            time.sleep(0.50)
+            data_view = capture(qmp, output, "openrfs-proof-wvrm-data",
+                                data_frame)
+            verify_wvrm_files(root_frame[0], files_frame[0], data_frame[0])
+            print(files)
+            print(data_view)
         print(clean)
         print(focus)
         print(terminal)

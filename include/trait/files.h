@@ -29,10 +29,10 @@
  * drawn over a fixed list of names is a picture of a file manager.
  */
 
-#define TRAIT_FILES_MAX_NODES 64U
-#define TRAIT_FILES_MAX_CHILDREN 16U
-#define TRAIT_FILES_NAME_BYTES 32U
-#define TRAIT_FILES_PATH_BYTES 96U
+#define TRAIT_FILES_MAX_NODES 256U
+#define TRAIT_FILES_MAX_CHILDREN 64U
+#define TRAIT_FILES_NAME_BYTES 256U
+#define TRAIT_FILES_PATH_BYTES 1024U
 #define TRAIT_FILES_MAX_SELECTED 16U
 
 enum trait_files_view {
@@ -50,6 +50,11 @@ struct trait_files_node {
 };
 
 void trait_files_reset(void);
+/* A production directory loader runs only when entering an unloaded folder. */
+void trait_files_set_loader(bool (*load)(uint32_t folder));
+void trait_files_set_read_only(bool enabled);
+bool trait_files_read_only(void);
+uint32_t trait_files_free_slots(void);
 /* Returns the new node's index, or TRAIT_FILES_MAX_NODES if it would not
  * fit or the parent is not a folder. */
 uint32_t trait_files_add(uint32_t parent, const char *name, bool folder,

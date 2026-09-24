@@ -1,8 +1,9 @@
 # OpenRFS desktop source provenance
 
-## Minimal `starty` desktop
+## WVRM `starty` desktop
 
-The authenticated `starty` session imports the owner's `Trait-UI` repository
+The authenticated `starty` session runs WVRM. Its imported source came from
+the owner's desktop repository
 at commit `ff921751b4ba20624d3abac0260641df7c7b65aa`, tree
 `5bf6e2ee69b385e615e43a1ea3b2b8508e61c874` (GPL-3.0-only).
 Its `include/trait/*.h` headers and `src/*.c` plus generated `src/trait_*.h`
@@ -22,13 +23,14 @@ root-menu relaunch.
 `opengatcommandline` is the console source; it references this separate
 desktop repository rather than containing the desktop implementation itself.
 
-The minimal session uses the source's root weave, fvwm-style frames, bitmap
+WVRM uses the source's root weave, fvwm-style frames, bitmap
 fonts, root menu, and terminal. The terminal viewport is connected to the
 real kernel console, so `gfetch` and other shell commands use the ordinary
-OpenRFS command path. The imported source's file, package, and process models
-are not yet connected to the production VFS, package service, or process
-registry. They are not exposed in the supported root menu or launcher, so
-their in-memory controls cannot masquerade as installed-system operations.
+OpenRFS command path. WVRM Files uses the imported pixel artwork and reads
+mounted System and Data directories through the production VFS after login.
+The view is a bounded read-only snapshot, and its in-memory edit controls are
+disabled. The package and process models are not connected to the production
+services and remain unavailable from the supported root menu and launcher.
 The preexisting desktop remains in the repository
 for its historical boot proof and native-window integration until those
 boundaries are migrated and validated. The v2.4.0 tag is unchanged.

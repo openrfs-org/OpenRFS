@@ -232,6 +232,7 @@ struct ui_event {
     enum ui_pointer_button button;
     char character;
     bool control;
+    bool double_click;
 };
 
 struct ui_theme {

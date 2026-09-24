@@ -27,7 +27,7 @@ bool minimal_de_construct(uint32_t *pixels, uint32_t width, uint32_t height)
     trait_terminal_reset();
     trait_menu_reset();
     if (!trait_menu_add("xterm", false, false) ||
-            !trait_menu_add("glxgears", false, false) ||
+            !trait_menu_add("Files", false, false) ||
             !trait_menu_add("", false, true) ||
             !trait_menu_add("Run...", false, false)) {
         return false;
@@ -93,6 +93,7 @@ bool minimal_de_event(const struct ui_event *event)
     translated.modifiers = event->control ? TRAIT_MOD_CTRL : 0U;
     translated.key = event->character;
     translated.secondary = event->button == UI_POINTER_BUTTON_RIGHT;
+    translated.double_click = event->double_click;
     switch (event->type) {
     case UI_EVENT_POINTER_MOVEMENT:
         translated.kind = TRAIT_EVENT_POINTER_MOVE;

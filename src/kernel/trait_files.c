@@ -44,6 +44,9 @@ static struct trait_files_node nodes[TRAIT_FILES_MAX_NODES];
 static uint32_t node_count;
 static uint32_t children[TRAIT_FILES_MAX_NODES][TRAIT_FILES_MAX_CHILDREN];
 static uint32_t child_counts[TRAIT_FILES_MAX_NODES];
+static bool loaded[TRAIT_FILES_MAX_NODES];
+static bool (*directory_loader)(uint32_t folder);
+static bool read_only;
 
 static uint32_t here;
 static uint32_t history[16];
@@ -282,9 +285,12 @@ void trait_files_reset(void)
 
     clip_count = 0U;
     clip_cut = false;
+    directory_loader = NULL;
+    read_only = false;
     node_count = 0U;
     for (at = 0U; at < TRAIT_FILES_MAX_NODES; ++at) {
         child_counts[at] = 0U;
+        loaded[at] = false;
     }
     selected_count = 0U;
     history_depth = 0U;
@@ -294,6 +300,31 @@ void trait_files_reset(void)
     nodes[0].parent = TRAIT_FILES_MAX_NODES;
     node_count = 1U;
     here = 0U;
+    loaded[0] = true;
+}
+
+void trait_files_set_loader(bool (*load)(uint32_t folder))
+{
+    directory_loader = load;
+}
+
+void trait_files_set_read_only(bool enabled)
+{
+    read_only = enabled;
+    if (enabled) {
+        clip_count = 0U;
+        clip_cut = false;
+    }
+}
+
+bool trait_files_read_only(void)
+{
+    return read_only;
+}
+
+uint32_t trait_files_free_slots(void)
+{
+    return TRAIT_FILES_MAX_NODES - node_count;
 }
 
 uint32_t trait_files_root(void)
@@ -362,9 +393,11 @@ uint32_t trait_files_folder_bytes(uint32_t folder)
 
 void trait_files_path(uint32_t node, char *out, uint32_t capacity)
 {
-    uint32_t chain[12];
+    uint32_t chain[32];
     uint32_t depth = 0U;
     uint32_t walk = node;
+    uint32_t needed = 1U;
+    uint32_t at;
 
     if (out == NULL || capacity == 0U) {
         return;
@@ -373,13 +406,28 @@ void trait_files_path(uint32_t node, char *out, uint32_t capacity)
     if (node >= node_count) {
         return;
     }
-    while (walk != 0U && depth < 12U) {
+    while (walk != 0U && depth < 32U) {
         chain[depth++] = walk;
         walk = nodes[walk].parent;
+    }
+    if (walk != 0U) {
+        return;
     }
     if (depth == 0U) {
         append(out, "/", capacity);
         return;
+    }
+    for (at = 0U; at < depth; ++at) {
+        const char *name = nodes[chain[at]].name;
+        uint32_t length = 0U;
+
+        while (name[length] != '\0') {
+            ++length;
+        }
+        if (needed + length + 1U > capacity) {
+            return;
+        }
+        needed += length + 1U;
     }
     while (depth != 0U) {
         append(out, "/", capacity);
@@ -391,6 +439,12 @@ bool trait_files_open(uint32_t folder)
 {
     if (folder >= node_count || !nodes[folder].folder) {
         return false;
+    }
+    if (!loaded[folder] && directory_loader != NULL) {
+        if (!directory_loader(folder)) {
+            return false;
+        }
+        loaded[folder] = true;
     }
     if (history_depth < 16U) {
         history[history_depth++] = here;
@@ -527,7 +581,7 @@ bool trait_files_copy_selection(bool cut)
 {
     uint32_t at;
 
-    if (selected_count == 0U) {
+    if (read_only || selected_count == 0U) {
         return false;
     }
     for (at = 0U; at < selected_count; ++at) {
@@ -637,7 +691,7 @@ uint32_t trait_files_paste_into(uint32_t folder)
     uint32_t done = 0U;
     uint32_t at;
 
-    if (clip_count == 0U || folder >= node_count ||
+    if (read_only || clip_count == 0U || folder >= node_count ||
             !nodes[folder].folder) {
         return 0U;
     }
@@ -677,7 +731,7 @@ uint32_t trait_files_paste_into(uint32_t folder)
 
 bool trait_files_rename(uint32_t node, const char *name)
 {
-    if (node == 0U || node >= node_count) {
+    if (read_only || node == 0U || node >= node_count) {
         return false;
     }
     /* Renaming to what it is already called is not a failure and not a
@@ -731,7 +785,7 @@ bool trait_files_remove(uint32_t node)
 {
     uint32_t parent;
 
-    if (node == 0U || node >= node_count) {
+    if (read_only || node == 0U || node >= node_count) {
         return false;
     }
     /* Not the folder you are looking at, and not one you are inside:
@@ -771,7 +825,7 @@ bool trait_files_move(uint32_t node, uint32_t into)
     uint32_t from;
     uint32_t at;
 
-    if (node >= node_count || into >= node_count || node == 0U) {
+    if (read_only || node >= node_count || into >= node_count || node == 0U) {
         return false;
     }
     if (!nodes[into].folder) {
@@ -993,12 +1047,16 @@ static void draw_status(struct trait_surface *surface,
 
         append(left, "\"", sizeof(left));
         append(left, nodes[selected[0]].name, sizeof(left));
-        append(left, "\" (", sizeof(left));
-        human(size, nodes[selected[0]].folder ?
-              trait_files_folder_bytes(selected[0]) :
-              nodes[selected[0]].bytes, sizeof(size));
-        append(left, size, sizeof(left));
-        append(left, ") selected", sizeof(left));
+        if (read_only && nodes[selected[0]].folder) {
+            append(left, "\" selected", sizeof(left));
+        } else {
+            append(left, "\" (", sizeof(left));
+            human(size, nodes[selected[0]].folder ?
+                  trait_files_folder_bytes(selected[0]) :
+                  nodes[selected[0]].bytes, sizeof(size));
+            append(left, size, sizeof(left));
+            append(left, ") selected", sizeof(left));
+        }
     } else {
         (void)number(left, child_counts[here], sizeof(left));
         append(left, child_counts[here] == 1U ? " item" : " items",
@@ -1015,7 +1073,11 @@ static void draw_status(struct trait_surface *surface,
      * one that leaves the field out.
      */
     right[0] = '\0';
-    human(right, trait_files_folder_bytes(here), sizeof(right));
+    if (read_only) {
+        copy(right, "Read only", sizeof(right));
+    } else {
+        human(right, trait_files_folder_bytes(here), sizeof(right));
+    }
     width = trait_font_width(right);
     if (strip.width > width + FILES_PAD) {
         trait_font_draw(surface, strip,
