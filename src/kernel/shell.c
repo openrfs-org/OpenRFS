@@ -56,6 +56,12 @@ static bool is_separator(char character)
 }
 
 static struct shell_state state;
+static bool shell_authorization_enabled;
+
+void shell_authorization_enable(void)
+{
+    shell_authorization_enabled = true;
+}
 static char line[SHELL_LINE_LIMIT + 1U];
 static bool linux_prompt_evidence_pending;
 static bool ui_keyboard_operational;
@@ -1754,6 +1760,26 @@ enum shell_status shell_execute(const char *text)
     /* An empty line is not a mistake and is not a command. */
     if (text[0] == '\0') {
         return SHELL_STATUS_OK;
+    }
+
+    /* The shell exists before the desktop login prompt. A configured account
+     * must guard its Data and native entry points there too; otherwise a user
+     * can read or change Data with shell commands before running starty. */
+    if (shell_authorization_enabled &&
+            !matches(text, "help") && !matches(text, "useradd") &&
+            !matches(text, "passwd") && !matches(text, "starty") &&
+            !matches(text, "reboot") && !matches(text, "clear") &&
+            !matches(text, "mount") && !matches(text, "drives")) {
+        bool configured = false;
+        const enum account_status status = account_configured(&configured);
+        if (status != ACCOUNT_STATUS_OK) {
+            authentication_error(status);
+            return SHELL_STATUS_OK;
+        }
+        if (configured && !account_session_active()) {
+            console_write("account: login required; run 'starty'\n");
+            return SHELL_STATUS_OK;
+        }
     }
 
     if (matches(text, "help")) {

@@ -39,6 +39,11 @@ static struct account_throttle login_throttle;
 static uint8_t active_data_key[ACCOUNT_V2_KEY_BYTES];
 static bool active_data_key_present;
 
+bool account_session_active(void)
+{
+    return active_data_key_present;
+}
+
 bool account_data_key(uint8_t out[ACCOUNT_V2_KEY_BYTES])
 {
     if (out == NULL || !active_data_key_present) {

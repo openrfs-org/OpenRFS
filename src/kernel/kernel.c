@@ -169,6 +169,10 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
         console_panic("invalid ext4 power-cut configuration");
     }
     openrfsfs_initialize();
+    if (installed_context.test_scenario == KERNEL_TEST_NONE ||
+            installed_context.test_scenario == KERNEL_TEST_NORMAL) {
+        shell_authorization_enable();
+    }
     if (installed_context.test_scenario == KERNEL_TEST_NORMAL) {
         recover_package_state();
         initialize_package_uploads();

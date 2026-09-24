@@ -45,6 +45,8 @@ enum account_status account_change_password(
     size_t old_password_bytes, const uint8_t *new_password,
     size_t new_password_bytes);
 bool account_data_key(uint8_t out[32]);
+/* True only after successful credential authentication in this boot. */
+bool account_session_active(void);
 void account_data_key_forget(void);
 bool account_self_test(void);
 const char *account_status_string(enum account_status status);
