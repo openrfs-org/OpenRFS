@@ -41,6 +41,17 @@ enum data_aead_status data_aead_rewrite_shadow(
     const struct data_aead_rewrite_io *io, uint8_t *workspace,
     size_t workspace_bytes, uint64_t *new_physical_bytes);
 
+/* A move or rename authenticates the old canonical path and seals a fresh
+ * revision for the new canonical path. Publication still belongs to the
+ * caller's filesystem transaction. */
+enum data_aead_status data_aead_rewrite_shadow_paths(
+    const uint8_t key[DATA_AEAD_KEY_BYTES], const char *old_path,
+    const char *new_path, uint64_t old_physical_bytes,
+    uint64_t new_plaintext_bytes, uint64_t patch_offset,
+    const uint8_t *patch, size_t patch_bytes,
+    const struct data_aead_rewrite_io *io, uint8_t *workspace,
+    size_t workspace_bytes, uint64_t *new_physical_bytes);
+
 /* Reopen and authenticate a complete candidate after its storage barrier and
  * before publication. The callback must read exactly the requested span or
  * refuse. This verifies the bytes read back, not their future persistence or
@@ -51,5 +62,16 @@ enum data_aead_status data_aead_verify_shadow(
     bool (*read_shadow)(void *context, uint64_t offset, uint8_t *to,
         size_t bytes), void *context, uint8_t *workspace,
     size_t workspace_bytes, uint64_t *plaintext_bytes);
+
+/* Authenticate and copy a logical range from a held encrypted file. A failed
+ * later chunk wipes bytes copied during this call and reports zero bytes.
+ * The caller must keep the object identity stable across callback reads.
+ * Destination, key, path, output and workspace must not overlap. */
+enum data_aead_status data_aead_read_range(
+    const uint8_t key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
+    uint64_t physical_bytes, uint64_t offset, uint8_t *destination,
+    size_t capacity, bool (*read_file)(void *context, uint64_t offset,
+        uint8_t *to, size_t bytes), void *context, uint8_t *workspace,
+    size_t workspace_bytes, size_t *read_bytes);
 
 #endif

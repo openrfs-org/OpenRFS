@@ -56,8 +56,9 @@ static enum data_aead_status open_old_chunk(
         &opened);
 }
 
-enum data_aead_status data_aead_rewrite_shadow(
-    const uint8_t key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
+enum data_aead_status data_aead_rewrite_shadow_paths(
+    const uint8_t key[DATA_AEAD_KEY_BYTES], const char *old_path,
+    const char *new_path,
     uint64_t old_physical_bytes, uint64_t new_plaintext_bytes,
     uint64_t patch_offset, const uint8_t *patch, size_t patch_bytes,
     const struct data_aead_rewrite_io *io, uint8_t *workspace,
@@ -74,7 +75,7 @@ enum data_aead_status data_aead_rewrite_shadow(
     uint8_t *plain;
 
     if (new_physical_bytes != NULL) *new_physical_bytes = 0U;
-    if (key == NULL || canonical_path == NULL || io == NULL ||
+    if (key == NULL || old_path == NULL || new_path == NULL || io == NULL ||
             io->begin_shadow == NULL || io->read_old == NULL ||
             io->write_shadow == NULL ||
             io->random == NULL || workspace == NULL ||
@@ -107,7 +108,7 @@ enum data_aead_status data_aead_rewrite_shadow(
             result = DATA_AEAD_IO;
             goto done;
         }
-        result = data_aead_check_header(key, canonical_path, old_header,
+        result = data_aead_check_header(key, old_path, old_header,
             old_physical_bytes, &old_plaintext_bytes);
         if (result != DATA_AEAD_OK) goto done;
     }
@@ -120,7 +121,7 @@ enum data_aead_status data_aead_rewrite_shadow(
         result = DATA_AEAD_ENTROPY;
         goto done;
     }
-    result = data_aead_make_header(key, canonical_path, new_plaintext_bytes,
+    result = data_aead_make_header(key, new_path, new_plaintext_bytes,
         id, new_header);
     if (result != DATA_AEAD_OK) goto done;
     if (!io->begin_shadow(io->context, output_size)) {
@@ -181,6 +182,19 @@ done:
     return result;
 }
 
+enum data_aead_status data_aead_rewrite_shadow(
+    const uint8_t key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
+    uint64_t old_physical_bytes, uint64_t new_plaintext_bytes,
+    uint64_t patch_offset, const uint8_t *patch, size_t patch_bytes,
+    const struct data_aead_rewrite_io *io, uint8_t *workspace,
+    size_t workspace_bytes, uint64_t *new_physical_bytes)
+{
+    return data_aead_rewrite_shadow_paths(key, canonical_path,
+        canonical_path, old_physical_bytes, new_plaintext_bytes,
+        patch_offset, patch, patch_bytes, io, workspace, workspace_bytes,
+        new_physical_bytes);
+}
+
 enum data_aead_status data_aead_verify_shadow(
     const uint8_t key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
     uint64_t physical_bytes,
@@ -238,6 +252,81 @@ enum data_aead_status data_aead_verify_shadow(
     }
     *plaintext_bytes = length;
 done:
+    crypto_wipe(workspace, DATA_AEAD_REWRITE_WORKSPACE_BYTES);
+    return result;
+}
+
+enum data_aead_status data_aead_read_range(
+    const uint8_t key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
+    uint64_t physical_bytes, uint64_t offset, uint8_t *destination,
+    size_t capacity, bool (*read_file)(void *context, uint64_t offset,
+        uint8_t *to, size_t bytes), void *context, uint8_t *workspace,
+    size_t workspace_bytes, size_t *read_bytes)
+{
+    enum data_aead_status result = DATA_AEAD_OK;
+    uint64_t length = 0U;
+    size_t produced = 0U;
+    uint8_t *header;
+    uint8_t *sealed;
+    uint8_t *plain;
+
+    if (read_bytes != NULL) *read_bytes = 0U;
+    if (key == NULL || canonical_path == NULL || read_file == NULL ||
+            workspace == NULL ||
+            workspace_bytes < DATA_AEAD_REWRITE_WORKSPACE_BYTES ||
+            read_bytes == NULL || (capacity != 0U && destination == NULL)) {
+        if (workspace != NULL) crypto_wipe(workspace,
+            workspace_bytes < DATA_AEAD_REWRITE_WORKSPACE_BYTES ?
+                workspace_bytes : DATA_AEAD_REWRITE_WORKSPACE_BYTES);
+        return DATA_AEAD_ARGUMENT;
+    }
+    if (physical_bytes < DATA_AEAD_HEADER_BYTES ||
+            physical_bytes > DATA_AEAD_PHYSICAL_MAX) {
+        crypto_wipe(workspace, DATA_AEAD_REWRITE_WORKSPACE_BYTES);
+        return DATA_AEAD_RANGE;
+    }
+    header = workspace;
+    sealed = header + DATA_AEAD_HEADER_BYTES;
+    plain = sealed + DATA_AEAD_SEALED_CHUNK_BYTES;
+    zero_bytes(workspace, DATA_AEAD_REWRITE_WORKSPACE_BYTES);
+    if (!read_file(context, 0U, header, DATA_AEAD_HEADER_BYTES)) {
+        result = DATA_AEAD_IO;
+        goto done;
+    }
+    result = data_aead_check_header(key, canonical_path, header,
+        physical_bytes, &length);
+    if (result != DATA_AEAD_OK || offset >= length || capacity == 0U)
+        goto done;
+    const uint64_t available = length - offset;
+    const size_t wanted = available < capacity ? (size_t)available : capacity;
+    while (produced < wanted) {
+        const uint64_t position = offset + produced;
+        const uint64_t index = position / DATA_AEAD_CHUNK_BYTES;
+        const size_t start = (size_t)(position % DATA_AEAD_CHUNK_BYTES);
+        const uint64_t physical_offset = DATA_AEAD_HEADER_BYTES +
+            index * DATA_AEAD_SEALED_CHUNK_BYTES;
+        size_t opened = 0U;
+        if (!read_file(context, physical_offset, sealed,
+                DATA_AEAD_SEALED_CHUNK_BYTES)) {
+            result = DATA_AEAD_IO;
+            goto done;
+        }
+        result = data_aead_open_chunk(key, header, index, sealed, plain,
+            &opened);
+        if (result != DATA_AEAD_OK) goto done;
+        if (start >= opened) {
+            result = DATA_AEAD_FORMAT;
+            goto done;
+        }
+        const size_t span = wanted - produced < opened - start ?
+            wanted - produced : opened - start;
+        copy_bytes(destination + produced, plain + start, span);
+        produced += span;
+    }
+    *read_bytes = produced;
+done:
+    if (result != DATA_AEAD_OK && produced != 0U)
+        crypto_wipe(destination, produced);
     crypto_wipe(workspace, DATA_AEAD_REWRITE_WORKSPACE_BYTES);
     return result;
 }

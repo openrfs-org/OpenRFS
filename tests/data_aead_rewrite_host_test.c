@@ -166,12 +166,42 @@ int main(void)
         read_shadow, &io, workspace, sizeof(workspace), &verified) ==
         DATA_AEAD_OK && verified == 5000U);
     expect_wiped();
+    uint8_t range[16];
+    size_t range_bytes = 0U;
+    memset(range, 0xa5, sizeof(range));
+    CHECK(data_aead_read_range(key, "HOME/NOTE.TXT", produced, 4092U,
+        range, sizeof(range), read_shadow, &io, workspace,
+        sizeof(workspace), &range_bytes) == DATA_AEAD_OK &&
+        range_bytes == sizeof(range) &&
+        memcmp(range, expected + 4092U, sizeof(range)) == 0);
+    CHECK(data_aead_read_range(key, "HOME/NOTE.TXT", produced, 4998U,
+        range, sizeof(range), read_shadow, &io, workspace,
+        sizeof(workspace), &range_bytes) == DATA_AEAD_OK &&
+        range_bytes == 2U && memcmp(range, expected + 4998U, 2U) == 0);
+    CHECK(data_aead_read_range(key, "HOME/NOTE.TXT", produced, 5000U,
+        range, sizeof(range), read_shadow, &io, workspace,
+        sizeof(workspace), &range_bytes) == DATA_AEAD_OK &&
+        range_bytes == 0U);
+    CHECK(data_aead_read_range(key, "HOME/WRONG.TXT", produced, 0U,
+        range, sizeof(range), read_shadow, &io, workspace,
+        sizeof(workspace), &range_bytes) == DATA_AEAD_AUTHENTICATION &&
+        range_bytes == 0U);
     shadow_file.bytes[DATA_AEAD_HEADER_BYTES + DATA_AEAD_NONCE_BYTES] ^= 1U;
     CHECK(data_aead_verify_shadow(key, "HOME/NOTE.TXT", produced,
         read_shadow, &io, workspace, sizeof(workspace), &verified) ==
         DATA_AEAD_AUTHENTICATION && verified == 0U);
     expect_wiped();
     shadow_file.bytes[DATA_AEAD_HEADER_BYTES + DATA_AEAD_NONCE_BYTES] ^= 1U;
+    const size_t second_chunk = DATA_AEAD_HEADER_BYTES +
+        DATA_AEAD_SEALED_CHUNK_BYTES + DATA_AEAD_NONCE_BYTES;
+    shadow_file.bytes[second_chunk] ^= 1U;
+    memset(range, 0xa5, sizeof(range));
+    CHECK(data_aead_read_range(key, "HOME/NOTE.TXT", produced, 4092U,
+        range, sizeof(range), read_shadow, &io, workspace,
+        sizeof(workspace), &range_bytes) == DATA_AEAD_AUTHENTICATION &&
+        range_bytes == 0U);
+    for (size_t index = 0U; index < 4U; ++index) CHECK(range[index] == 0U);
+    shadow_file.bytes[second_chunk] ^= 1U;
     CHECK(data_aead_verify_shadow(wrong_key, "HOME/NOTE.TXT", produced,
         read_shadow, &io, workspace, sizeof(workspace), &verified) ==
         DATA_AEAD_AUTHENTICATION && verified == 0U);
@@ -273,6 +303,24 @@ int main(void)
         sizeof(workspace), &produced) == DATA_AEAD_RANGE);
     expect_wiped();
 
-    puts("Data AEAD shadow rewrite/readback partial/sparse/truncate, tamper, disk-full and entropy controls passed");
+    /* A rename verifies the source's path binding and produces a distinct
+     * revision that authenticates only at the destination path. */
+    CHECK(data_aead_rewrite_shadow_paths(key, "HOME/NOTE.TXT",
+        "HOME/MOVED.TXT", old_file.length, sizeof(expected), 0U, NULL,
+        0U, &callbacks, workspace, sizeof(workspace), &produced) ==
+        DATA_AEAD_OK);
+    CHECK(data_aead_verify_shadow(key, "HOME/MOVED.TXT", produced,
+        read_shadow, &io, workspace, sizeof(workspace), &verified) ==
+        DATA_AEAD_OK && verified == sizeof(expected));
+    CHECK(data_aead_verify_shadow(key, "HOME/NOTE.TXT", produced,
+        read_shadow, &io, workspace, sizeof(workspace), &verified) ==
+        DATA_AEAD_AUTHENTICATION && verified == 0U);
+    CHECK(data_aead_rewrite_shadow_paths(key, "HOME/WRONG.TXT",
+        "HOME/MOVED.TXT", old_file.length, sizeof(expected), 0U, NULL,
+        0U, &callbacks, workspace, sizeof(workspace), &produced) ==
+        DATA_AEAD_AUTHENTICATION && produced == 0U);
+    expect_wiped();
+
+    puts("Data AEAD shadow rewrite/readback/range/rename, partial/sparse/truncate, tamper, disk-full and entropy controls passed");
     return 0;
 }

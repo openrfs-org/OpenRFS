@@ -56,6 +56,13 @@ durability or freshness. The helper does not publish or recover the shadow,
 preserve filesystem metadata, migrate
 plaintext, or intercept the production VFS. Those remain required before
 the Data namespace is encrypted.
+For a rename it can authenticate the old path and seal a fresh revision bound
+to the destination path. The caller still has to handle directory descendants,
+open descriptions, metadata and interrupted namespace replacement.
+The bounded logical range reader authenticates the header and each requested
+chunk before copying plaintext; an error in a later chunk wipes the prefix it
+copied during that call. It requires a stable held backend object across reads
+and does not yet replace production `openrfsfs_read` or `pread`.
 
 **Do not wire in-place encrypted writes.** A torn header or chunk can make a
 valid old file unreadable. For partial and sparse writes, truncate, metadata
