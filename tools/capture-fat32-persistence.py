@@ -18,6 +18,8 @@ from pathlib import Path
 
 
 PROOF = b"OpenRFS: BT11 Boot Ledger installed proof passed"
+EVIDENCE_USER = "evidence"
+EVIDENCE_PASSWORD = "evidence-only-2026"
 
 
 class Qmp:
@@ -116,6 +118,32 @@ def send_line(qmp, serial, text):
     qmp.hmp("sendkey ret")
 
 
+def send_hidden_line(qmp, text):
+    """Type into a password prompt, which deliberately has no serial echo."""
+    for character in text:
+        qmp.hmp(f"sendkey {key_name(character)}")
+    qmp.hmp("sendkey ret")
+
+
+def authenticate(qmp, serial, create):
+    if create:
+        send_line(qmp, serial, f"useradd {EVIDENCE_USER}")
+        wait_count(serial, b"New password (8-64 characters): ", 1, 15.0)
+        send_hidden_line(qmp, EVIDENCE_PASSWORD)
+        wait_count(serial, b"Confirm password: ", 1, 15.0)
+        send_hidden_line(qmp, EVIDENCE_PASSWORD)
+        wait_count(serial, b"OpenRFS user created", 1, 45.0)
+    send_line(qmp, serial, "starty")
+    wait_count(serial, b"Username: ", 1, 15.0)
+    send_line(qmp, serial, EVIDENCE_USER)
+    wait_count(serial, b"Password: ", 1, 15.0)
+    send_hidden_line(qmp, EVIDENCE_PASSWORD)
+    wait_count(serial, b"OpenRFS: authenticated desktop started", 1, 45.0)
+    prompt_count = serial.read_bytes().count(b"openrfs$ ")
+    open_terminal(qmp)
+    wait_count(serial, b"openrfs$ ", prompt_count + 1, 15.0)
+
+
 def open_terminal(qmp):
     """Open Terminal through ordinary OpenRFS keyboard focus."""
     qmp.hmp("sendkey tab")
@@ -206,7 +234,8 @@ def storage_arguments(system, data):
 
 def guest_command(args, system, data, serial, port):
     return [
-        args.qemu, "-machine", "accel=tcg", "-m", "128M", "-smp", "1",
+        args.qemu, "-machine", "accel=tcg", "-cpu", "max",
+        "-m", "128M", "-smp", "1",
         "-boot", "order=d", "-cdrom", str(Path(args.iso).resolve()),
         *storage_arguments(system, data),
         "-display", "none",
@@ -269,6 +298,7 @@ def main():
             prompt_count = serial.read_bytes().count(b"openrfs$ ")
             open_terminal(qmp)
             wait_count(serial, b"openrfs$ ", prompt_count + 1, 15.0)
+            authenticate(qmp, serial, create=True)
             started = time.monotonic()
             actions = [
                 (0.5, "drives"),
@@ -313,6 +343,20 @@ def main():
                             b"openrfs$ ")
                         send_line(qmp, second_serial,
                             "read projects/notes.txt")
+                        wait_count(second_serial,
+                            b"account: login required; run 'starty'", 1,
+                            15.0)
+                        if (b"first cut" in second_serial.read_bytes() or
+                                b"second line" in second_serial.read_bytes()):
+                            raise RuntimeError(
+                                "persisted Data escaped before authentication")
+                        wait_count(second_serial, b"openrfs$ ",
+                            prompt_count + 1, 15.0)
+                        authenticate(qmp, second_serial, create=False)
+                        prompt_count = second_serial.read_bytes().count(
+                            b"openrfs$ ")
+                        send_line(qmp, second_serial,
+                            "read projects/notes.txt")
                         wait_count(second_serial, b"first cut", 1, 15.0)
                         wait_count(second_serial, b"second line", 1, 15.0)
                         wait_count(second_serial, b"openrfs$ ",
@@ -337,6 +381,8 @@ def main():
             raise RuntimeError("capture omitted the clean second boot")
         after_second_boot = serial_bytes.split(PROOF, 2)[2]
         required = (
+            b"account: login required; run 'starty'",
+            b"OpenRFS: authenticated desktop started",
             b"read projects/notes.txt", b"first cut", b"second line"
         )
         if any(marker not in after_second_boot for marker in required):
