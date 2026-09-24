@@ -275,7 +275,7 @@ receipt before guest exit or reboot.
 
 `.github/workflows/networking-milestone.yml` builds exact-head evidence for
 the complete supported path. It records the PR head, base commit and tree,
-source and synthetic-merge trees, tool versions, all 115 scenario results, all
+source and synthetic-merge trees, tool versions, all 116 scenario results, all
 36 network results, two additional fresh 36-network-plus-native-HTTPS sweeps,
 serial hashes, exact exits and receipts, timeout and resource reports, packet
 audits and PCAP hashes, TLS/HTTPS summaries, source and artifact manifests, and

@@ -32,10 +32,10 @@ TEST_SCENARIOS := normal breakpoint invalid-opcode page-fault ist pit unexpected
 	nvidia nvidia-builtin native native-lua native-sqlite \
 	native-rust native-crash native-elf-refusal native-digest-refusal \
 	native-abi-refusal native-relaunch native-audio native-sdl native-dynamic \
-	native-https native-openrfs
+	native-https native-openrfs account-kdf
 TEST_TARGETS := $(addprefix qemu-test-,$(TEST_SCENARIOS))
-EXPECTED_TEST_SCENARIO_COUNT := 115
-EXPECTED_SHELL_ASSERTION_COUNT := 459
+EXPECTED_TEST_SCENARIO_COUNT := 116
+EXPECTED_SHELL_ASSERTION_COUNT := 460
 
 CC := gcc
 LD := ld
@@ -508,7 +508,7 @@ DEPENDENCIES := $(C_OBJECTS:.o=.d) $(MONOCYPHER_OBJECTS:.o=.d) \
 # implicit and pattern rule search for a phony target, so declaring them phony
 # makes every scenario resolve to "nothing to be done" and pass without booting.
 # They never create a file of their own name, so they rerun regardless.
-.PHONY: all installer-port-test audio-wav-tests capture-boot-video capture-openrfs capture-openrfs-proof capture-networking clean contract-counts contract-scenarios dynamic-elf-tests ext4-images ext4-tests ext4-fsync-test ext4-sparse-truncate-test fat32-images force-package-trust hooks https-tests account-host-test random-host-test entropy-qemu-test boot-artifact-signature-test \
+.PHONY: all installer-port-test audio-wav-tests capture-boot-video capture-openrfs capture-openrfs-proof capture-networking clean contract-counts contract-scenarios dynamic-elf-tests ext4-images ext4-tests ext4-fsync-test ext4-sparse-truncate-test fat32-images force-package-trust hooks https-tests account-host-test account-kdf-host-test random-host-test entropy-qemu-test boot-artifact-signature-test \
 	iso kernel lint native-apps native-audio-proof native-dynamic-proof native-https-proof native-openrfs-proof native-sdl-proof sdl-preference-tests port-tests qemu-port-tests reproducible-sdk run \
 	package-control-tests package-fetch-tests package-manager-tests package-repository-tests package-service-tests package-state-tests package-transaction-tests package-trust-asset-tests package-trust-tests package-upload-tests qemu-test-ext4-powercuts screenshot-proof sdk sdk-once smoke tls-tests toolchain verify wall-clock-tests zlib-tests
 
@@ -1858,11 +1858,28 @@ $(ACCOUNT_HOST_TEST): tests/account_host_test.c src/kernel/account.c \
 account-host-test: $(ACCOUNT_HOST_TEST)
 	$(ACCOUNT_HOST_TEST)
 
+ACCOUNT_KDF_HOST_TEST := $(TEST_BUILD_DIR)/account-kdf-host-test$(HOST_EXEEXT)
+
+$(ACCOUNT_KDF_HOST_TEST): tests/account_kdf_host_test.c \
+		src/kernel/account_kdf.c include/openrfs/account_kdf.h \
+		vendor/monocypher/src/monocypher.c \
+		vendor/monocypher/src/monocypher.h
+	mkdir -p $(dir $@)
+	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
+		tests/account_kdf_host_test.c src/kernel/account_kdf.c \
+		vendor/monocypher/src/monocypher.c -o $@
+
+account-kdf-host-test: $(ACCOUNT_KDF_HOST_TEST)
+	$(ACCOUNT_KDF_HOST_TEST)
+	$(ACCOUNT_KDF_HOST_TEST) --partial-map
+
 boot-artifact-signature-test:
 	$(PYTHON) tools/test_boot_artifact_signature.py
 
 verify: toolchain lint installer-port-test minimal-de-host-test \
-		random-host-test account-host-test boot-artifact-signature-test
+		random-host-test account-host-test account-kdf-host-test \
+		boot-artifact-signature-test
 ifneq ($(VERIFY_CLEAN),0)
 	$(MAKE) clean
 endif
@@ -2988,6 +3005,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 		filesystem) expected=103 ;; \
 		process) expected=105 ;; \
 		linux-abi) expected=109 ;; \
+		account-kdf) expected=107 ;; \
 		linux-abi-uname) expected=111 ;; \
 		openrfs-proof-userland) expected=113 ;; \
 		openrfs-proof-userland-absent) expected=115 ;; \
@@ -3177,6 +3195,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 		native-sdl) timeout_seconds=240 ;; \
 		native-dynamic) timeout_seconds=120 ;; \
 		native-rust|native-*-refusal) timeout_seconds=120 ;; \
+		account-kdf) timeout_seconds=120 ;; \
 	esac; \
 	if test '$*' = fat32-persistence -o '$*' = native-sqlite; then reboot_control=''; fi; \
 	monitor_argument='-monitor none'; injector=''; injection_result=0; \
@@ -3545,6 +3564,9 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 				--report '$(EXT4_RECOVERY_FIXTURE).after.json' && \
 			$(PYTHON) tools/ext4_kernel_read.py '$(EXT4_RECOVERY_FIXTURE)' \
 				'$(TEST_BUILD_DIR)/ext4-recovery/linux-kernel' || diagnostics_ok=false ;; \
+		account-kdf) \
+			grep -Fxq 'ST ACCOUNT_KDF Argon2id 64MiB t3 p4 independent output and arena cleanup exact' "$$log" || \
+				diagnostics_ok=false ;; \
 		thread-guard) \
 			grep -Fq 'ST THREAD guard 0x0000000800005000' "$$log" && \
 			grep -Fq '  vector=14 name=page fault' "$$log" && \
@@ -3644,7 +3666,7 @@ smoke: qemu-test-normal
 	@echo "strict boot smoke test passed"
 
 # The upstream driver suite: one QEMU boot per device profile, outside the
-# 115-scenario matrix. See tools/run_driver_tests.py for what each requires.
+# 116-scenario matrix. See tools/run_driver_tests.py for what each requires.
 DRIVER_TEST_DIR := $(TEST_BUILD_DIR)/drivers
 DRIVER_CPU ?= max
 .PHONY: qemu-test-drivers qemu-test-drivers-list run-drivers driver-provenance driver-entropy-qemu-test

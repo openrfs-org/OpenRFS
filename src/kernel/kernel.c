@@ -187,6 +187,10 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
         kernel_test_complete_normal();
     }
 
+    if (installed_context.test_scenario == KERNEL_TEST_ACCOUNT_KDF) {
+        kernel_test_complete_account_kdf();
+    }
+
     if (installed_context.test_scenario == KERNEL_TEST_BOOT_LEDGER) {
         kernel_test_complete_boot_ledger(&installed_context);
     }

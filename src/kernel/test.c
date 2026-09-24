@@ -5,6 +5,7 @@
 
 #include <openrfs/acpi.h>
 #include <openrfs/acpi_util.h>
+#include <openrfs/account_kdf.h>
 #include <openrfs/abi/base.h>
 #include <openrfs/apic.h>
 #include <openrfs/apic_timer.h>
@@ -616,6 +617,9 @@ static enum kernel_test_scenario scenario_from_value(
     if (token_equals(value, length, "drivers")) {
         return KERNEL_TEST_DRIVERS;
     }
+    if (token_equals(value, length, "account-kdf")) {
+        return KERNEL_TEST_ACCOUNT_KDF;
+    }
 
     return KERNEL_TEST_INVALID;
 }
@@ -808,6 +812,7 @@ static uint8_t scenario_exit_value(enum kernel_test_scenario scenario)
     case KERNEL_TEST_EXT4_RECOVERY: return UINT8_C(0x86);
     case KERNEL_TEST_NATIVE_OPENRFS: return UINT8_C(0x87);
     case KERNEL_TEST_DRIVERS: return UINT8_C(0x88);
+    case KERNEL_TEST_ACCOUNT_KDF: return UINT8_C(0x35);
     default:
         return QEMU_FAILURE_VALUE;
     }
@@ -4777,6 +4782,7 @@ void kernel_test_run(
     case KERNEL_TEST_NATIVE_HTTPS:
     case KERNEL_TEST_NATIVE_OPENRFS:
     case KERNEL_TEST_EXT4_RECOVERY:
+    case KERNEL_TEST_ACCOUNT_KDF:
     case KERNEL_TEST_DRIVERS:
         /* Deferred until OpenRFS and the Boot Ledger are published. */
         return;
@@ -4801,6 +4807,51 @@ _Noreturn void kernel_test_complete_normal(void)
         kernel_test_fail("normal completion used outside the normal scenario");
     }
 
+    kernel_test_pass();
+}
+
+_Noreturn void kernel_test_complete_account_kdf(void)
+{
+    static const uint8_t password[] = "correct horse battery staple";
+    static const uint8_t salt[ACCOUNT_KDF_V2_SALT_BYTES] = {
+        0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U,
+        8U, 9U, 10U, 11U, 12U, 13U, 14U, 15U
+    };
+    static const uint8_t expected[ACCOUNT_KDF_V2_OUTPUT_BYTES] = {
+        0x85U, 0x3bU, 0x27U, 0x2aU, 0x44U, 0xdbU, 0x14U, 0x21U,
+        0xc0U, 0x29U, 0x62U, 0x66U, 0x9aU, 0x55U, 0xebU, 0x09U,
+        0x94U, 0xf3U, 0xcaU, 0xb3U, 0x85U, 0xedU, 0x1cU, 0x4cU,
+        0x79U, 0x25U, 0x3eU, 0xeeU, 0x19U, 0xbaU, 0xb4U, 0x9eU
+    };
+    uint8_t output[ACCOUNT_KDF_V2_OUTPUT_BYTES];
+    struct paging_translation guard;
+    const struct frame_allocator_stats before = frame_allocator_get_stats();
+    const bool preemption_before = thread_preemption_enabled();
+
+    /* The shell's input loop returns from STI/HLT with IF set before it
+     * dispatches account operations. Recreate that caller state here. */
+    cpu_interrupt_enable();
+    if (active_scenario != KERNEL_TEST_ACCOUNT_KDF ||
+        !cpu_interrupts_enabled()) {
+        kernel_test_fail("account KDF guest preconditions missing");
+    }
+    if (account_kdf_v2_derive(salt, password, sizeof(password) - 1U,
+            output) != ACCOUNT_KDF_STATUS_OK) {
+        kernel_test_fail("account KDF refused its 64 MiB guest profile");
+    }
+    for (size_t index = 0U; index < sizeof(output); ++index) {
+        if (output[index] != expected[index]) {
+            kernel_test_fail("account KDF guest result differs from independent Argon2id");
+        }
+    }
+    if (frame_allocator_get_stats().free_frames != before.free_frames ||
+        !cpu_interrupts_enabled() ||
+        thread_preemption_enabled() != preemption_before ||
+        paging_translate(UINT64_C(0x0000000402000000), &guard) !=
+            PAGING_STATUS_NOT_MAPPED) {
+        kernel_test_fail("account KDF guest arena resources not released");
+    }
+    console_write("ST ACCOUNT_KDF Argon2id 64MiB t3 p4 independent output and arena cleanup exact\n");
     kernel_test_pass();
 }
 
@@ -11545,6 +11596,8 @@ const char *kernel_test_scenario_name(enum kernel_test_scenario scenario)
         return "native-openrfs";
     case KERNEL_TEST_EXT4_RECOVERY:
         return "ext4-recovery";
+    case KERNEL_TEST_ACCOUNT_KDF:
+        return "account-kdf";
     case KERNEL_TEST_DRIVERS:
         return "drivers";
     case KERNEL_TEST_INVALID:

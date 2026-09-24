@@ -44,6 +44,32 @@ unavailable. Do not silently lower the recorded parameters to fit a QEMU
 fixture. The present 128 MiB networking VM profile is not proof that the
 account/desktop profile has spare physical memory.
 
+### Bounded KDF dependency stage
+
+`account_kdf_v2_derive` now fixes the only supported tuple to Argon2id v1.3,
+64 MiB, three passes, four lanes, a 16-byte salt and a 32-byte output. It
+reuses the vendored Monocypher implementation. Its single-owner supervisor
+arena maps one 64 MiB contiguous frame allocation below 1 GiB at a separate
+virtual address, with unmapped guard pages and 16 MiB of frames left in
+reserve. It holds scheduler preemption while the mapping exists so a process
+address space cannot be built with a transient supervisor mapping, and it
+requires the live kernel address space on entry, while hardware interrupts
+remain enabled during the KDF. It wipes the entire work
+area before unmapping and refuses output if allocation, mapping, or cleanup
+fails. A partial map rollback or arena unmap failure is fail-stop so scheduling
+cannot copy a live supervisor mapping into a process address space. A
+frame-release failure keeps
+ownership rather than recycling reachable frames. Physical fragmentation or
+low memory causes an explicit refusal.
+
+The host test checks the published RFC 9106 Argon2id vector, compares the
+64 MiB profile with independent `libargon2`, and exercises parameter and
+resource refusal. The counted `account-kdf` QEMU scenario calls the real KDF in
+the 128 MiB guest, checks the independently derived output, and verifies arena
+cleanup. No credential record uses it yet; production v1 remains active.
+An active QEMU login path and crash tests are required before calling this
+credential v2.
+
 Derive independent verifier and key-encryption material from the Argon2id
 result with distinct, versioned labels. Do not persist the raw result or use
 the stored verifier itself as a Data key. A new random Data encryption key is
