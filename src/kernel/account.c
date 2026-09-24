@@ -29,6 +29,7 @@
 #define ACCOUNT_BACKOFF_MAX_NS UINT64_C(60000000000)
 #define ACCOUNT_BACKOFF_FIRST_FAILURE 3U
 #define ACCOUNT_BACKOFF_SATURATED_FAILURES 9U
+#define ACCOUNT_DELETE_MAX_ENTRIES 1024U
 
 struct account_throttle {
     uint32_t failures;
@@ -133,6 +134,19 @@ static size_t text_length(const char *text, size_t capacity)
         ++length;
     }
     return length;
+}
+
+static bool text_equal(const char *left, const char *right)
+{
+    size_t at = 0U;
+
+    while (left[at] != '\0' && right[at] != '\0') {
+        if (left[at] != right[at]) {
+            return false;
+        }
+        ++at;
+    }
+    return left[at] == right[at];
 }
 
 static bool username_valid(const char *username, size_t *length_out)
@@ -569,6 +583,128 @@ static enum account_status retire_previous_slot(const char *active_slot)
     return ACCOUNT_STATUS_OK;
 }
 
+/* Until VFS encryption and migration are installed, deletion is only safe
+ * for a volume with no noncredential files. Bound depth and total work;
+ * ambiguous names, I/O errors and oversized trees refuse deletion. */
+static enum account_status deletion_data_census(void)
+{
+    char paths[OPENRFSFS_MAX_DEPTH][OPENRFSFS_MAX_PATH] = {{0}};
+    openrfsfs_directory_handle handles[OPENRFSFS_MAX_DEPTH] = {0};
+    struct openrfsfs_list_entry entry;
+    size_t depth = 0U;
+    size_t visited = 0U;
+    enum account_status result = ACCOUNT_STATUS_OK;
+
+    paths[0][0] = '.';
+    if (openrfsfs_directory_open(OPENRFSFS_VOLUME_DATA, paths[0],
+            &handles[0]) != OPENRFSFS_STATUS_OK) {
+        return ACCOUNT_STATUS_IO;
+    }
+    for (;;) {
+        bool present = false;
+        enum openrfsfs_status status = openrfsfs_directory_read(
+            handles[depth], &entry, &present);
+        if (status != OPENRFSFS_STATUS_OK) {
+            result = ACCOUNT_STATUS_IO;
+            break;
+        }
+        if (!present) {
+            if (openrfsfs_directory_close(handles[depth]) !=
+                    OPENRFSFS_STATUS_OK) {
+                result = ACCOUNT_STATUS_IO;
+                handles[depth] = 0U;
+                break;
+            }
+            handles[depth] = 0U;
+            if (depth == 0U) {
+                break;
+            }
+            --depth;
+            continue;
+        }
+        if (++visited > ACCOUNT_DELETE_MAX_ENTRIES) {
+            result = ACCOUNT_STATUS_UNENCRYPTED_DATA;
+            break;
+        }
+        const size_t name_bytes = text_length(entry.name,
+            OPENRFSFS_MAX_COMPONENT_BYTES - 1U);
+        if (name_bytes == 0U || name_bytes >= OPENRFSFS_MAX_COMPONENT_BYTES ||
+                (entry.name[0] == '.' &&
+                    (entry.name[1] == '\0' ||
+                     (entry.name[1] == '.' && entry.name[2] == '\0')))) {
+            result = ACCOUNT_STATUS_STORAGE_CORRUPT;
+            break;
+        }
+        for (size_t at = 0U; at < name_bytes; ++at) {
+            if (entry.name[at] == '/' || entry.name[at] == '\\' ||
+                    (uint8_t)entry.name[at] < 0x20U) {
+                result = ACCOUNT_STATUS_STORAGE_CORRUPT;
+                break;
+            }
+        }
+        if (result != ACCOUNT_STATUS_OK) {
+            break;
+        }
+        const size_t parent_bytes = paths[depth][0] == '.' &&
+            paths[depth][1] == '\0' ? 0U : text_length(paths[depth],
+                OPENRFSFS_MAX_PATH - 1U);
+        const size_t child_bytes = parent_bytes +
+            (parent_bytes != 0U ? 1U : 0U) + name_bytes;
+        if (child_bytes >= OPENRFSFS_MAX_PATH) {
+            result = ACCOUNT_STATUS_UNENCRYPTED_DATA;
+            break;
+        }
+        char child[OPENRFSFS_MAX_PATH] = {0};
+        if (parent_bytes != 0U) {
+            copy_bytes((uint8_t *)child, (const uint8_t *)paths[depth],
+                parent_bytes);
+            child[parent_bytes] = '/';
+        }
+        copy_bytes((uint8_t *)child + parent_bytes +
+            (parent_bytes != 0U ? 1U : 0U),
+            (const uint8_t *)entry.name, name_bytes);
+        if (!entry.directory) {
+            if (!text_equal(child, ACCOUNT_PATH) &&
+                    !text_equal(child, ACCOUNT_TEMP_PATH) &&
+                    !text_equal(child, ACCOUNT_V2_A_PATH) &&
+                    !text_equal(child, ACCOUNT_V2_B_PATH)) {
+                result = ACCOUNT_STATUS_UNENCRYPTED_DATA;
+                break;
+            }
+            continue;
+        }
+        if (depth + 1U >= OPENRFSFS_MAX_DEPTH) {
+            result = ACCOUNT_STATUS_UNENCRYPTED_DATA;
+            break;
+        }
+        ++depth;
+        copy_bytes((uint8_t *)paths[depth], (const uint8_t *)child,
+            child_bytes + 1U);
+        status = openrfsfs_directory_open(OPENRFSFS_VOLUME_DATA,
+            paths[depth], &handles[depth]);
+        if (status != OPENRFSFS_STATUS_OK) {
+            result = ACCOUNT_STATUS_IO;
+            --depth;
+            break;
+        }
+    }
+    while (handles[depth] != 0U || depth != 0U) {
+        if (handles[depth] != 0U &&
+                openrfsfs_directory_close(handles[depth]) !=
+                    OPENRFSFS_STATUS_OK) {
+            result = ACCOUNT_STATUS_IO;
+        }
+        handles[depth] = 0U;
+        if (depth == 0U) {
+            break;
+        }
+        --depth;
+    }
+    zero_bytes(&entry, sizeof(entry));
+    zero_bytes(paths, sizeof(paths));
+    return result;
+}
+
 enum account_status account_configured(bool *configured)
 {
     uint8_t record[ACCOUNT_RECORD_BYTES];
@@ -638,10 +774,10 @@ enum account_status account_authenticate(const char *username,
     uint64_t now;
     enum account_status status;
 
+    account_data_key_forget();
     if (username == NULL || password == NULL) {
         return ACCOUNT_STATUS_NULL_ARGUMENT;
     }
-    account_data_key_forget();
     if (!clock_is_started()) {
         return ACCOUNT_STATUS_CLOCK_UNAVAILABLE;
     }
@@ -734,9 +870,11 @@ enum account_status account_change_password(const char *username,
     enum account_status result;
 
     if (username == NULL || old_password == NULL || new_password == NULL) {
+        account_data_key_forget();
         return ACCOUNT_STATUS_NULL_ARGUMENT;
     }
     if (!password_valid(new_password, new_password_bytes)) {
+        account_data_key_forget();
         return ACCOUNT_STATUS_INVALID_PASSWORD;
     }
     result = account_authenticate(username, old_password, old_password_bytes);
@@ -819,6 +957,7 @@ enum account_status account_delete(const char *username,
     enum account_status result;
 
     if (username == NULL || password == NULL) {
+        account_data_key_forget();
         return ACCOUNT_STATUS_NULL_ARGUMENT;
     }
     /* Authentication also retires any legacy or previous v2 slot before the
@@ -827,10 +966,23 @@ enum account_status account_delete(const char *username,
     if (result != ACCOUNT_STATUS_OK) {
         return result;
     }
+    result = deletion_data_census();
+    if (result != ACCOUNT_STATUS_OK) {
+        goto done;
+    }
     result = load_active_v2(record, &active_slot);
     if (result != ACCOUNT_STATUS_OK || !active_data_key_present ||
             active_slot == NULL) {
         result = ACCOUNT_STATUS_STORAGE_CORRUPT;
+        goto done;
+    }
+    const enum openrfsfs_status removed_temp = openrfsfs_unlink(
+        OPENRFSFS_VOLUME_DATA, ACCOUNT_TEMP_PATH);
+    if ((removed_temp != OPENRFSFS_STATUS_OK &&
+            removed_temp != OPENRFSFS_STATUS_NOT_FOUND) ||
+            (removed_temp == OPENRFSFS_STATUS_OK &&
+             openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK)) {
+        result = ACCOUNT_STATUS_IO;
         goto done;
     }
     if (openrfsfs_unlink(OPENRFSFS_VOLUME_DATA, active_slot) !=
@@ -949,7 +1101,8 @@ const char *account_status_string(enum account_status status)
         "monotonic clock is unavailable for account login",
         "account login is temporarily rate limited",
         "the bounded account KDF is unavailable",
-        "password changed, but old credential cleanup is pending; use the new password"
+        "password changed, but old credential cleanup is pending; use the new password",
+        "Data still contains unencrypted files; account deletion refused"
     };
 
     _Static_assert(sizeof(messages) / sizeof(messages[0]) ==

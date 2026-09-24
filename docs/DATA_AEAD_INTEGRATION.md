@@ -72,6 +72,9 @@ and storage snapshots can retain plaintext; a filesystem cannot promise
 secure erase. Account deletion must refuse while any data remains unencrypted
 or a transaction is pending. Once encrypted, deletion can destroy the wraps,
 but physical rollback of old wraps remains possible without external state.
+The current `userdel` allows removal only after a bounded scan finds no
+noncredential files. It does not quiesce concurrent native writes, erase
+freed plaintext, or authorize deletion of an encrypted but nonempty Data tree.
 
 ## Required proof before activation
 

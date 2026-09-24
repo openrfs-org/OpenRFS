@@ -145,6 +145,7 @@ HTTPS_HOST_TEST := $(TEST_BUILD_DIR)/https-client-host-test$(HOST_EXEEXT)
 HTTPS_HOST_OBJECT := $(TEST_BUILD_DIR)/https-client-host.o
 ZLIB_HOST_TEST := $(TEST_BUILD_DIR)/zlib-host-test$(HOST_EXEEXT)
 EXT4_FIXTURE := $(TEST_BUILD_DIR)/ext4/openrfs-ext4.raw
+EXT4_EMPTY_FIXTURE := $(TEST_BUILD_DIR)/ext4/openrfs-empty-ext4.raw
 EXT4_RECOVERY_FIXTURE := $(TEST_BUILD_DIR)/ext4-recovery/data.raw
 RUST_SOURCES := $(wildcard src/rust/*.rs)
 RUST_MANIFEST := src/rust/Cargo.toml
@@ -510,7 +511,7 @@ DEPENDENCIES := $(C_OBJECTS:.o=.d) $(MONOCYPHER_OBJECTS:.o=.d) \
 # implicit and pattern rule search for a phony target, so declaring them phony
 # makes every scenario resolve to "nothing to be done" and pass without booting.
 # They never create a file of their own name, so they rerun regardless.
-.PHONY: all installer-port-test audio-wav-tests capture-boot-video capture-openrfs capture-openrfs-proof capture-networking clean contract-counts contract-scenarios dynamic-elf-tests ext4-images ext4-tests ext4-fsync-test ext4-sparse-truncate-test fat32-images force-package-trust hooks https-tests account-host-test account-kdf-host-test account-v2-host-test account-delete-qemu-test random-host-test entropy-qemu-test boot-artifact-signature-test \
+.PHONY: all installer-port-test audio-wav-tests capture-boot-video capture-openrfs capture-openrfs-proof capture-networking clean contract-counts contract-scenarios dynamic-elf-tests ext4-images ext4-tests ext4-fsync-test ext4-sparse-truncate-test fat32-images force-package-trust hooks https-tests account-host-test account-kdf-host-test account-v2-host-test account-delete-qemu-test account-delete-refusal-qemu-test random-host-test entropy-qemu-test boot-artifact-signature-test \
 	iso kernel lint native-apps native-audio-proof native-dynamic-proof native-https-proof native-openrfs-proof native-sdl-proof sdl-preference-tests port-tests qemu-port-tests reproducible-sdk run \
 	package-control-tests package-fetch-tests package-manager-tests package-repository-tests package-service-tests package-state-tests package-transaction-tests package-trust-asset-tests package-trust-tests package-upload-tests qemu-test-ext4-powercuts screenshot-proof sdk sdk-once smoke tls-tests toolchain verify wall-clock-tests zlib-tests
 
@@ -1816,6 +1817,10 @@ $(EXT4_FIXTURE): tools/ext4_image.py
 	mkdir -p $(dir $@)
 	$(PYTHON) tools/ext4_image.py build $@ --report $@.json
 
+$(EXT4_EMPTY_FIXTURE): tools/ext4_image.py
+	mkdir -p $(dir $@)
+	$(PYTHON) tools/ext4_image.py build-empty $@ --report $@.json
+
 ext4-images: $(EXT4_FIXTURE)
 
 INSTALLER_PORT_TEST := $(BUILD_DIR)/tools/installer-port-test
@@ -2666,6 +2671,7 @@ endif
 		src/kernel/boot_plan.c
 	$(MAKE) screenshot-proof
 	$(MAKE) account-delete-qemu-test
+	$(MAKE) account-delete-refusal-qemu-test
 
 screenshot-proof:
 	$(PYTHON) tools/compare-openrfs-proof-screenshot.py --mode clean \
@@ -2695,11 +2701,17 @@ capture-openrfs: iso $(FAT32_SYSTEM_IMAGE) $(EXT4_FIXTURE)
 		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_FIXTURE) \
 		--data-filesystem ext4 --output $(OPENRFS_CAPTURE_DIR)
 
-account-delete-qemu-test: iso $(FAT32_SYSTEM_IMAGE) $(EXT4_FIXTURE)
+account-delete-qemu-test: iso $(FAT32_SYSTEM_IMAGE) $(EXT4_EMPTY_FIXTURE)
 	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
-		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_FIXTURE) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_EMPTY_FIXTURE) \
 		--data-filesystem ext4 --delete-account \
 		--output $(TEST_BUILD_DIR)/account-delete-qemu
+
+account-delete-refusal-qemu-test: iso $(FAT32_SYSTEM_IMAGE) $(EXT4_FIXTURE)
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_FIXTURE) \
+		--data-filesystem ext4 --refuse-delete-account \
+		--output $(TEST_BUILD_DIR)/account-delete-refusal-qemu
 
 capture-networking: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 	rm -rf $(NETWORK_CAPTURE_DIR)

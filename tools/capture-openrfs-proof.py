@@ -351,7 +351,9 @@ def main():
     parser.add_argument("--data-filesystem", choices=("fat32", "ext4"), default="fat32")
     parser.add_argument("--output", required=True)
     parser.add_argument("--rotate-password", action="store_true")
-    parser.add_argument("--delete-account", action="store_true")
+    deletion = parser.add_mutually_exclusive_group()
+    deletion.add_argument("--delete-account", action="store_true")
+    deletion.add_argument("--refuse-delete-account", action="store_true")
 
 
     args = parser.parse_args()
@@ -361,8 +363,9 @@ def main():
         parser.error("--system and --data must be provided together")
     if args.rotate_password and args.data is None:
         parser.error("--rotate-password requires --system and --data")
-    if args.delete_account and (args.data is None or args.data_filesystem != "ext4"):
-        parser.error("--delete-account requires ext4 --system and --data")
+    if (args.delete_account or args.refuse_delete_account) and (
+            args.data is None or args.data_filesystem != "ext4"):
+        parser.error("account deletion gates require ext4 --system and --data")
 
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -390,7 +393,7 @@ def main():
         qmp = Qmp(port)
         wait_serial(serial, PROOF_LINE, timeout=90.0)
         wait_serial_after(serial, PROOF_LINE, PROMPT, timeout=90.0)
-        if args.delete_account:
+        if args.delete_account or args.refuse_delete_account:
             send_text(qmp, "ls")
             press(qmp, "ret", 0.10)
             wait_serial_after(serial, PROOF_LINE,
@@ -428,13 +431,20 @@ def main():
             time.sleep(0.40)
             capture(qmp, output, "openrfs-proof-wvrm-menu")
             qmp.hmp("mouse_move -140 -30")
-            time.sleep(0.25)
-            qmp.hmp("mouse_button 1")
-            time.sleep(0.10)
-            qmp.hmp("mouse_button 0")
-            time.sleep(0.60)
-            files = capture(qmp, output, "openrfs-proof-wvrm-files",
-                            files_frame)
+            time.sleep(0.50)
+            for attempt in range(3):
+                qmp.hmp("mouse_button 1")
+                time.sleep(0.10)
+                qmp.hmp("mouse_button 0")
+                time.sleep(0.60)
+                files_frame.clear()
+                files = capture(qmp, output, "openrfs-proof-wvrm-files",
+                                files_frame)
+                at = (300 * files_frame[0][0] + 400) * 3
+                if files_frame[0][2][at:at + 3] == b"\xff\xff\xff":
+                    break
+            else:
+                raise RuntimeError("WVRM Files did not open from the root menu")
             qmp.hmp("mouse_move -610 -475")
             time.sleep(0.25)
             for _ in range(2):
@@ -448,7 +458,7 @@ def main():
             verify_wvrm_files(root_frame[0], files_frame[0], data_frame[0])
             print(files)
             print(data_view)
-            if args.delete_account:
+            if args.delete_account or args.refuse_delete_account:
                 # The previous relative move landed on Data at about 273,251.
                 # Focus the exposed terminal client at 120,120.
                 qmp.hmp("mouse_move -153 -131")
@@ -467,12 +477,16 @@ def main():
                 send_text(qmp, ROTATED_PASSWORD if args.rotate_password
                           else CAPTURE_PASSWORD)
                 press(qmp, "ret", 0.10)
-                removed = b"OpenRFS account removed; existing Data files remain."
-                wait_serial_after(serial, TERMINAL_RESULT, removed)
+                outcome = (b"OpenRFS account removed; Data directories remain."
+                           if args.delete_account else
+                           b"account: Data still contains unencrypted files; account deletion refused")
+                wait_serial_after(serial, TERMINAL_RESULT, outcome)
                 send_text(qmp, "ls")
                 press(qmp, "ret", 0.10)
-                wait_serial_after(serial, removed,
-                                  b"account: create a user first with 'useradd NAME'")
+                denied = (b"account: create a user first with 'useradd NAME'"
+                          if args.delete_account else
+                          b"account: login required; run 'starty'")
+                wait_serial_after(serial, outcome, denied)
                 time.sleep(0.40)
                 revoked_frame = []
                 revoked = capture(qmp, output,

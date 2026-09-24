@@ -210,7 +210,7 @@ static void command_help(void)
     console_write("  help      this list\n");
     console_write("  install   open the installer configuration preview\n");
     console_write("  useradd NAME  create the first local user\n");
-    console_write("  userdel    remove the local account (Data files remain)\n");
+    console_write("  userdel    remove the account if Data has no files\n");
     console_write("  passwd    change the local account password\n");
     console_write("  starty    authenticate and start the OpenRFS desktop\n");
     console_write("  echo      print the rest of the line\n");
@@ -1706,7 +1706,7 @@ static bool authentication_feed(char character)
 
         authentication_reset();
         if (status == ACCOUNT_STATUS_OK) {
-            console_write("OpenRFS account removed; existing Data files remain.\n");
+            console_write("OpenRFS account removed; Data directories remain.\n");
         } else {
             authentication_error(status);
         }

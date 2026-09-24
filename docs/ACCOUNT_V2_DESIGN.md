@@ -34,8 +34,17 @@ retirement is pending, revokes the in-memory Data session. A later successful
 login must finish cleanup before the key is exposed again. The host fault
 cases assert this policy so a reported error never leaves an unlocked session.
 The shell and desktop capture exercised production v2 creation, password
-change and login in QEMU. Deletion is not
-exposed while Data files remain plaintext and the key is not used by VFS.
+change and login in QEMU. `userdel` now authenticates the account, scans the
+Data tree with bounded depth and entry count, and refuses deletion if any
+noncredential file remains. On an empty file tree it removes a leftover
+credential staging file and the sole active v2 record, syncs Data, then wipes
+the in-memory key. Any error revokes the session. Host tests cover a wrong
+password, an unencrypted file, failed unlink and successful deletion. QEMU
+tests exercise refusal on the nonempty ext4 fixture and successful deletion
+on an empty ext4 image, including post-deletion Data refusal and `e2fsck`.
+The census is not an atomic barrier against concurrent native writes and does
+not find plaintext in deleted blocks or snapshots. It is a narrow guard until
+encrypted Data migration and a quiescent deletion protocol exist.
 
 This is not crash-safe re-encryption of Data. Password change rewraps the same
 Data key; old wraps can remain in filesystem or media history. Whole-volume

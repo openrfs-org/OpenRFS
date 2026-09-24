@@ -45,6 +45,12 @@ static bool fail_unlink_v1_once;
 static bool fail_unlink_v2_once;
 static const uint8_t *read_source;
 static size_t read_source_bytes;
+static bool ordinary_file_present;
+static struct {
+    char path[OPENRFSFS_MAX_PATH];
+    unsigned int cursor;
+    bool used;
+} directory_slots[OPENRFSFS_MAX_DEPTH];
 
 static bool check(bool condition, const char *message)
 {
@@ -123,6 +129,72 @@ enum openrfsfs_status openrfsfs_stat_path(enum openrfsfs_volume volume,
         return OPENRFSFS_STATUS_OK;
     }
     return OPENRFSFS_STATUS_NOT_FOUND;
+}
+
+enum openrfsfs_status openrfsfs_directory_open(
+    enum openrfsfs_volume volume, const char *path,
+    openrfsfs_directory_handle *handle)
+{
+    if (volume != OPENRFSFS_VOLUME_DATA || handle == NULL ||
+            (strcmp(path, ".") != 0 && strcmp(path, "OPENRFS") != 0 &&
+             strcmp(path, "data") != 0)) {
+        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    }
+    for (size_t at = 0U; at < OPENRFSFS_MAX_DEPTH; ++at) {
+        if (!directory_slots[at].used) {
+            directory_slots[at].used = true;
+            directory_slots[at].cursor = 0U;
+            strcpy(directory_slots[at].path, path);
+            *handle = at + 1U;
+            return OPENRFSFS_STATUS_OK;
+        }
+    }
+    return OPENRFSFS_STATUS_NO_HANDLES;
+}
+
+enum openrfsfs_status openrfsfs_directory_read(
+    openrfsfs_directory_handle handle, struct openrfsfs_list_entry *entry,
+    bool *present)
+{
+    if (handle == 0U || handle > OPENRFSFS_MAX_DEPTH || entry == NULL ||
+            present == NULL || !directory_slots[handle - 1U].used) {
+        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    }
+    const size_t slot = (size_t)handle - 1U;
+    const unsigned int cursor = directory_slots[slot].cursor++;
+    const char *name = NULL;
+
+    memset(entry, 0, sizeof(*entry));
+    *present = false;
+    if (strcmp(directory_slots[slot].path, ".") == 0) {
+        if (cursor == 0U) name = "OPENRFS";
+        if (cursor == 1U && ordinary_file_present) name = "data";
+        entry->directory = true;
+    } else if (strcmp(directory_slots[slot].path, "OPENRFS") == 0) {
+        if (cursor == 0U && v2_a_present) name = "LOGIN.V2A";
+        if (cursor == 0U && v2_b_present) name = "LOGIN.V2B";
+        if (cursor == 0U && stored_present) name = "LOGIN.DAT";
+    } else if (strcmp(directory_slots[slot].path, "data") == 0 &&
+            cursor == 0U && ordinary_file_present) {
+        name = "note.txt";
+        entry->size = 5U;
+    }
+    if (name != NULL) {
+        strcpy(entry->name, name);
+        *present = true;
+    }
+    return OPENRFSFS_STATUS_OK;
+}
+
+enum openrfsfs_status openrfsfs_directory_close(
+    openrfsfs_directory_handle handle)
+{
+    if (handle == 0U || handle > OPENRFSFS_MAX_DEPTH ||
+            !directory_slots[handle - 1U].used) {
+        return OPENRFSFS_STATUS_STALE_HANDLE;
+    }
+    directory_slots[handle - 1U].used = false;
+    return OPENRFSFS_STATUS_OK;
 }
 
 enum openrfsfs_status openrfsfs_mkdir(enum openrfsfs_volume volume,
@@ -408,6 +480,17 @@ int main(void)
         return 1;
     }
     assert(account_data_key(key));
+    if (!check(account_change_password("alice", password,
+            sizeof(password) - 1U, new_password, 4U) ==
+                ACCOUNT_STATUS_INVALID_PASSWORD,
+            "invalid replacement password must fail") ||
+        !check(!account_session_active(),
+            "invalid replacement password must revoke the Data session") ||
+        !check(account_authenticate("alice", password,
+            sizeof(password) - 1U) == ACCOUNT_STATUS_OK,
+            "old password must still unlock after invalid change")) {
+        return 1;
+    }
     fail_sync_once = true;
     if (!check(account_change_password("alice", password,
             sizeof(password) - 1U, new_password,
@@ -558,12 +641,25 @@ int main(void)
             "failed deletion must retain record and revoke session")) {
         return 1;
     }
+    ordinary_file_present = true;
+    if (!check(account_delete("alice", password,
+            sizeof(password) - 1U) == ACCOUNT_STATUS_UNENCRYPTED_DATA,
+            "unencrypted Data file must prevent account deletion") ||
+        !check(v2_a_present && !account_session_active(),
+            "refused deletion must preserve credential and revoke session")) {
+        return 1;
+    }
+    ordinary_file_present = false;
+    memcpy(pending, v2_a, sizeof(v2_a));
+    pending_bytes = sizeof(v2_a);
+    pending_present = true;
     fail_unlink_v2_once = true;
     if (!check(account_delete("alice", password,
             sizeof(password) - 1U) == ACCOUNT_STATUS_IO,
             "failed unlink must refuse deletion") ||
-        !check(v2_a_present && !account_session_active(),
-            "failed unlink must preserve record and revoke session") ||
+        !check(v2_a_present && !pending_present &&
+                !account_session_active(),
+            "failed unlink must retire staging and revoke session") ||
         !check(account_delete("alice", password,
             sizeof(password) - 1U) == ACCOUNT_STATUS_OK,
             "correct password must delete the account") ||
