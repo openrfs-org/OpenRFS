@@ -288,6 +288,8 @@ def encode_manifest(spec: dict[str, Any], executable: bytes,
     app_id = identifier(spec.get("identifier"), "identifier")
     executable_path = short_path(spec.get("executable"), "executable", required=True)
     data_namespace = identifier(spec.get("data_namespace"), "data_namespace")
+    if data_namespace in {"OPENRFS", "PKGSTATE", "PKGSTAGE"}:
+        raise PackageError("data_namespace is reserved for kernel state")
     resource_directory = spec.get("resource_directory", "")
     if resource_directory:
         resource_directory = identifier(resource_directory, "resource_directory")

@@ -63,6 +63,15 @@ def main() -> int:
     assert report["arguments"] == [
         "PKGTEST.APP", "http://openrfs.test/welcome.txt"
     ]
+    for reserved_namespace in ("OPENRFS", "openrfs", "PKGSTATE", "pkgstage"):
+        reserved_spec = copy.deepcopy(spec)
+        reserved_spec["data_namespace"] = reserved_namespace
+        try:
+            PACKAGE.build_package(reserved_spec, executable)
+        except PACKAGE.PackageError as error:
+            assert "data_namespace is reserved" in str(error), str(error)
+        else:
+            raise AssertionError(f"reserved namespace {reserved_namespace} was built")
     audio_spec = copy.deepcopy(spec)
     audio_spec["capabilities"] = ["audio"]
     audio_package = PACKAGE.build_package(audio_spec, executable)

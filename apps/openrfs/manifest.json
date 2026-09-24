@@ -2,7 +2,7 @@
   "name": "OpenRFS Package Client",
   "identifier": "OPENRFS",
   "executable": "OPENRFS.APP",
-  "data_namespace": "OPENRFS",
+  "data_namespace": "RFSCLI",
   "memory_limit": 67108864,
   "max_handles": 24,
   "max_threads": 1,
