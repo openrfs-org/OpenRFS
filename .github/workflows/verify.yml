@@ -86,6 +86,42 @@ jobs:
                   name: openrfs-desktop-captures
                   path: build/openrfs-captures
                   if-no-files-found: error
+            - name: Capture the normal ext4plus Data desktop from QEMU
+              run: |
+                  make ext4-images
+                  python3 tools/capture-openrfs-proof.py \
+                      --iso build/openrfs.iso \
+                      --system build/userspace/openrfs-system-fat32.raw \
+                      --data build/tests/ext4/openrfs-ext4.raw \
+                      --data-filesystem ext4 \
+                      --output build/openrfs-ext4-captures
+                  python3 - <<'PY'
+                  import json
+                  from pathlib import Path
+
+                  captures = Path("build/openrfs-ext4-captures")
+                  report = json.loads((captures / "report.json").read_text())
+                  if (report["format"] != "ext4" or
+                          report["label"] != "OPENRFSEXT4" or
+                          report["account_path"] != "/OPENRFS/LOGIN.V2A" or
+                          report["account_size"] != 224 or
+                          not report["e2fsck_clean"]):
+                      raise SystemExit("ext4plus desktop Data audit failed")
+                  for name in ("openrfs-proof.png", "openrfs-proof-focus.png",
+                               "openrfs-proof-terminal.png", "capture-serial.log"):
+                      if not (captures / name).is_file():
+                          raise SystemExit(f"missing ext4plus desktop evidence: {name}")
+                  if b"filesystem  system fat32 ro / data ext4plus rw" not in (
+                          captures / "capture-serial.log").read_bytes():
+                      raise SystemExit("gfetch omitted the mounted ext4plus Data volume")
+                  PY
+            - name: Upload ext4plus desktop captures
+              if: always()
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: openrfs-ext4plus-desktop-captures
+                  path: build/openrfs-ext4-captures
+                  if-no-files-found: error
             - name: Refuse unauthenticated shell and altered v2 credentials in QEMU
               run: |
                   python3 tools/test_account_v2_qemu.py \

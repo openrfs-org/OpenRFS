@@ -535,12 +535,12 @@ static bool line_content(
 static void print_drive(const char *name, struct openrfsfs_drive_info drive)
 {
     console_write(name);
-    if (drive.volume == OPENRFSFS_VOLUME_DATA &&
-            openrfsfs_has_atomic_replace(OPENRFSFS_VOLUME_DATA)) {
-        console_write("  ext4   ");
-    } else {
-        console_write("  fat32  ");
-    }
+    if (drive.filesystem == OPENRFSFS_FILESYSTEM_EXT4PLUS)
+        console_write("  ext4plus  ");
+    else if (drive.filesystem == OPENRFSFS_FILESYSTEM_FAT32)
+        console_write("  fat32     ");
+    else
+        console_write("  unknown   ");
     if (!drive.present) {
         console_write("absent\n");
     } else if (!drive.healthy || !drive.mounted) {
@@ -1090,12 +1090,12 @@ static void print_fetch_drive(struct openrfsfs_drive_info drive)
     if (!drive.present || !drive.healthy || !drive.mounted) {
         console_write("unavailable");
     } else {
-        const bool ext4 = drive.volume == OPENRFSFS_VOLUME_DATA &&
-            openrfsfs_has_atomic_replace(OPENRFSFS_VOLUME_DATA);
-        if (ext4) {
-            console_write(drive.read_only ? "ext4 ro" : "ext4 rw");
-        } else {
+        if (drive.filesystem == OPENRFSFS_FILESYSTEM_EXT4PLUS) {
+            console_write(drive.read_only ? "ext4plus ro" : "ext4plus rw");
+        } else if (drive.filesystem == OPENRFSFS_FILESYSTEM_FAT32) {
             console_write(drive.read_only ? "fat32 ro" : "fat32 rw");
+        } else {
+            console_write("unknown");
         }
     }
 }

@@ -105,8 +105,8 @@ reference pixel. These temporary mutations are never committed.
 ## Visual captures
 
 ```sh
-make capture-openrfs
-make capture-openrfs-proof
+make capture-openrfs       # ext4plus writable Data, FAT32 read-only System
+make capture-openrfs-proof # historical FAT32 Data screenshot baseline
 make screenshot-proof
 make capture-boot-video
 python3 tools/capture-networking.py --iso build/openrfs.iso \

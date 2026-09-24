@@ -197,6 +197,7 @@ FAT32_SYSTEM_IMAGE := $(BUILD_DIR)/userspace/openrfs-system-fat32.raw
 DESKTOP_SYSTEM_IMAGE := $(BUILD_DIR)/userspace/openrfs-desktop-system-fat32.raw
 FAT32_DATA_IMAGE := $(BUILD_DIR)/userspace/openrfs-data-fat32.raw
 FAT32_RUN_DATA_IMAGE := $(BUILD_DIR)/run-data-fat32.raw
+EXT4_RUN_DATA_IMAGE := $(BUILD_DIR)/run-data-ext4.raw
 FAT32_FULL_IMAGE := $(BUILD_DIR)/userspace/openrfs-data-full-fat32.raw
 FAT32_CORRUPT_IMAGE := $(BUILD_DIR)/userspace/openrfs-data-corrupt-fat32.raw
 SDK_BUILD_DIR ?= $(BUILD_DIR)/sdk
@@ -2687,11 +2688,11 @@ capture-openrfs-proof: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 		$(OPENRFS_PROOF_TERMINAL_IMAGE) \
 		$(OPENRFS_PROOF_CAPTURE_DIR)/openrfs-proof-terminal.png
 
-capture-openrfs: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
+capture-openrfs: iso $(FAT32_SYSTEM_IMAGE) $(EXT4_FIXTURE)
 	rm -rf $(OPENRFS_CAPTURE_DIR)
 	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
-		--system $(FAT32_SYSTEM_IMAGE) --data $(FAT32_DATA_IMAGE) \
-		--output $(OPENRFS_CAPTURE_DIR)
+		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_FIXTURE) \
+		--data-filesystem ext4 --output $(OPENRFS_CAPTURE_DIR)
 
 capture-networking: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 	rm -rf $(NETWORK_CAPTURE_DIR)
@@ -3777,15 +3778,15 @@ run-drivers: $(DRIVER_ISO) $(DESKTOP_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 		-device nvme,serial=openrfs-data-fat32,drive=data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
 		-nic user,model=e1000 -serial stdio -no-reboot -no-shutdown
 
-run: iso $(DESKTOP_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
-	cp $(FAT32_DATA_IMAGE) $(FAT32_RUN_DATA_IMAGE)
+run: iso $(DESKTOP_SYSTEM_IMAGE) $(EXT4_FIXTURE)
+	cp $(EXT4_FIXTURE) $(EXT4_RUN_DATA_IMAGE)
 	qemu-system-x86_64 -cpu max -m 128M -smp 1 -boot order=d -cdrom $(ISO) \
 		-blockdev driver=file,filename=$(DESKTOP_SYSTEM_IMAGE),node-name=system-file,read-only=on,auto-read-only=off \
 		-blockdev driver=raw,file=system-file,node-name=system-raw,read-only=on \
 		-device nvme,serial=openrfs-system-fat32,drive=system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
-		-blockdev driver=file,filename=$(FAT32_RUN_DATA_IMAGE),node-name=data-file,read-only=off,auto-read-only=off \
+		-blockdev driver=file,filename=$(EXT4_RUN_DATA_IMAGE),node-name=data-file,read-only=off,auto-read-only=off \
 		-blockdev driver=raw,file=data-file,node-name=data-raw,read-only=off \
-		-device nvme,serial=openrfs-data-fat32,drive=data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
+		-device nvme,serial=openrfs-data-ext4plus,drive=data-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1 \
 		-serial stdio -no-reboot -no-shutdown
 
 hooks:

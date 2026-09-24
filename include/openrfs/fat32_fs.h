@@ -108,8 +108,15 @@ struct openrfsfs_list_entry {
     bool directory;
 };
 
+enum openrfsfs_filesystem {
+    OPENRFSFS_FILESYSTEM_UNKNOWN = 0,
+    OPENRFSFS_FILESYSTEM_FAT32,
+    OPENRFSFS_FILESYSTEM_EXT4PLUS
+};
+
 struct openrfsfs_drive_info {
     enum openrfsfs_volume volume;
+    enum openrfsfs_filesystem filesystem;
     uint32_t volume_id;
     uint64_t total_bytes;
     uint64_t free_bytes;

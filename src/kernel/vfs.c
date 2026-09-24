@@ -957,7 +957,11 @@ struct openrfsfs_drive_info openrfsfs_drive(enum openrfsfs_volume volume)
     vnode_metadata_release(restore_interrupts);
     // Backend operation tables have static lifetime; callbacks acquire their
     // own metadata protection and must run outside the VFS metadata lock.
-    return backend != NULL ? backend->drive(volume) : absent;
+    if (backend == NULL) return absent;
+    struct openrfsfs_drive_info drive = backend->drive(volume);
+    drive.filesystem = backend == &ext4_backend_ops ?
+        OPENRFSFS_FILESYSTEM_EXT4PLUS : OPENRFSFS_FILESYSTEM_FAT32;
+    return drive;
 }
 
 uint64_t openrfsfs_completion_count(enum openrfsfs_volume volume)

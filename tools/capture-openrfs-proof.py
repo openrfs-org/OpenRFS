@@ -8,6 +8,8 @@ the host. Only Python's standard library is required.
 """
 
 import argparse
+import hashlib
+import re
 import json
 import os
 import shutil
@@ -19,6 +21,7 @@ import zlib
 from pathlib import Path
 
 import fat32_image
+import ext4_image
 
 
 PROOF_LINE = b"OpenRFS: BT11 Boot Ledger installed proof passed"
@@ -235,7 +238,7 @@ def start_authenticated_desktop(qmp, serial, rotate_password=False):
     wait_serial(serial, DESKTOP_STARTED, timeout=90.0)
 
 
-def storage_arguments(userspace, system, data):
+def storage_arguments(userspace, system, data, data_filesystem="fat32"):
     arguments = []
     if system is not None and data is not None:
         arguments.extend([
@@ -250,7 +253,10 @@ def storage_arguments(userspace, system, data):
             "-blockdev",
             "driver=raw,file=data-file,node-name=data-raw,read-only=off",
             "-device",
-            "nvme,serial=openrfs-data-fat32,drive=data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1",
+            ("nvme,serial=openrfs-data-" + data_filesystem + ",drive=data-raw,"
+             "logical_block_size=" + ("4096" if data_filesystem == "ext4" else "512") +
+             ",physical_block_size=" + ("4096" if data_filesystem == "ext4" else "512") +
+             ",max_ioqpairs=1,msix_qsize=1"),
         ])
     if userspace is not None:
         arguments.extend([
@@ -264,6 +270,37 @@ def storage_arguments(userspace, system, data):
     return arguments
 
 
+def verify_ext4_account(image, output, rotated):
+    # The guest must have mounted the ext4plus backend and persisted its record.
+    report = ext4_image.parse_superblock(image.read_bytes())
+    fsck = subprocess.run(["e2fsck", "-fn", str(image)], capture_output=True,
+                          text=True, check=False)
+    if fsck.returncode != 0:
+        raise RuntimeError(f"captured ext4 Data failed e2fsck -fn: {fsck.returncode}\n"
+                           + fsck.stdout[-3000:] + fsck.stderr[-1000:])
+    expected = "/OPENRFS/LOGIN.V2B" if rotated else "/OPENRFS/LOGIN.V2A"
+    stale = ("/OPENRFS/LOGIN.DAT", "/OPENRFS/LOGIN.V2A" if rotated
+             else "/OPENRFS/LOGIN.V2B")
+    def stat(path):
+        result = subprocess.run(["debugfs", "-R", f"stat {path}", str(image)],
+                                capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            raise RuntimeError(f"debugfs could not inspect {path}")
+        return result.stdout
+    account = stat(expected)
+    if not re.search(r"\bSize:\s*224\b", account):
+        raise RuntimeError("captured ext4 account has the wrong record size")
+    if any("Inode:" in stat(path) for path in stale):
+        raise RuntimeError("captured ext4 Data retained a stale account record")
+    with image.open("rb") as source:
+        report["sha256"] = hashlib.file_digest(source, "sha256").hexdigest()
+    report["e2fsck_clean"] = True
+    report["account_path"] = expected
+    report["account_size"] = 224
+    (output / "report.json").write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--qemu", default="qemu-system-x86_64")
@@ -272,6 +309,7 @@ def main():
     parser.add_argument("--userspace")
     parser.add_argument("--system")
     parser.add_argument("--data")
+    parser.add_argument("--data-filesystem", choices=("fat32", "ext4"), default="fat32")
     parser.add_argument("--output", required=True)
     parser.add_argument("--rotate-password", action="store_true")
 
@@ -299,7 +337,7 @@ def main():
         "-m", "128M", "-smp", "1",
         "-boot", "order=d", "-cdrom", str(Path(args.iso).resolve()),
         "-display", "none",
-        *storage_arguments(args.userspace, args.system, durable_data),
+        *storage_arguments(args.userspace, args.system, durable_data, args.data_filesystem),
         "-qmp", f"tcp:127.0.0.1:{port},server=on,wait=off",
         "-serial", f"file:{serial}", "-no-reboot"
     ]
@@ -320,6 +358,10 @@ def main():
         send_text(qmp, "gfetch")
         qmp.hmp("sendkey ret")
         wait_serial_after(serial, DESKTOP_STARTED, GFETCH_RESULT)
+        if durable_data is not None:
+            expected = (b"filesystem  system fat32 ro / data " +
+                        (b"ext4plus rw" if args.data_filesystem == "ext4" else b"fat32 rw"))
+            wait_serial_after(serial, DESKTOP_STARTED, expected)
         time.sleep(0.20)
         focus = capture(qmp, output, "openrfs-proof-focus")
 
@@ -355,7 +397,9 @@ def main():
             RUNTIME_FAILURE in transcript):
         tail = transcript[-4096:].decode("utf-8", errors="replace")
         raise RuntimeError("proof capture omitted readiness evidence\n" + tail)
-    if durable_data is not None:
+    if durable_data is not None and args.data_filesystem == "ext4":
+        verify_ext4_account(durable_data, output, args.rotate_password)
+    if durable_data is not None and args.data_filesystem == "fat32":
         report = fat32_image.inspect_image(durable_data.read_bytes())
         login = [
             item for item in report["files"]
