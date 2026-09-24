@@ -8,7 +8,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/account.h>
 #include <openrfs/fat32_backend.h>
 #include <openrfs/fat32_fs.h>
 #include <openrfs/ext4_fs.h>
@@ -79,6 +78,7 @@ static bool vnode_metadata_owned;
 /* Enabled only after VFS initialization on ordinary boot. Never clear it
  * during a session or after a mount transition. */
 static bool data_login_lock_enabled;
+static bool (*data_session_active)(void);
 static uint16_t vnode_buckets[VFS_VNODE_BUCKETS];
 static uint64_t next_mount_generation = UINT64_C(1);
 static uint64_t next_vnode_generation = UINT64_C(1);
@@ -222,16 +222,22 @@ static bool text_equal(const char *left, const char *right)
     return false;
 }
 
-void openrfsfs_data_login_lock_enable(void)
+void openrfsfs_data_login_lock_enable(bool (*session_active)(void))
 {
-    __atomic_store_n(&data_login_lock_enabled, true, __ATOMIC_RELEASE);
+    /* The callback is installed by the boot path before publishing the gate.
+     * A missing callback keeps Data locked. Host VFS tests can link this
+     * module without pulling in credential persistence or a fake login. */
+    if (!__atomic_load_n(&data_login_lock_enabled, __ATOMIC_ACQUIRE)) {
+        data_session_active = session_active;
+        __atomic_store_n(&data_login_lock_enabled, true, __ATOMIC_RELEASE);
+    }
 }
 
 static bool data_login_locked(enum openrfsfs_volume volume)
 {
     return volume == OPENRFSFS_VOLUME_DATA &&
         __atomic_load_n(&data_login_lock_enabled, __ATOMIC_ACQUIRE) &&
-        !account_session_active();
+        (data_session_active == NULL || !data_session_active());
 }
 
 /* Credential files are the only raw Data content needed to authenticate.
