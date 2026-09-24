@@ -18,7 +18,9 @@
 #define CPUID_EXTENDED UINT32_C(7)
 #define CPUID_RDRAND (UINT32_C(1) << 30U)
 #define CPUID_RDSEED (UINT32_C(1) << 18U)
-#define HARDWARE_ATTEMPTS 16U
+#define RDRAND_ATTEMPTS 16U
+/* RDSEED may underflow under load; retry with PAUSE but keep refusal bounded. */
+#define RDSEED_ATTEMPTS 64U
 #define SEED_SAMPLES 64U
 #define SEED_RAW_BYTES (SEED_SAMPLES * 8U)
 #define SEED_MATERIAL_BYTES 48U
@@ -272,13 +274,15 @@ static bool health_sample(uint64_t word)
 static bool hardware_word(uint64_t *word)
 {
     unsigned char success = 0U;
+    const size_t attempts = state.rdseed ? RDSEED_ATTEMPTS :
+        RDRAND_ATTEMPTS;
 
 #ifdef OPENRFS_RANDOM_TEST_SOURCE
     if (test_source != NULL) {
         return test_source(word);
     }
 #endif
-    for (size_t attempt = 0U; attempt < HARDWARE_ATTEMPTS; ++attempt) {
+    for (size_t attempt = 0U; attempt < attempts; ++attempt) {
         if (state.rdseed) {
             __asm__ volatile ("rdseed %0; setc %1"
                 : "=r" (*word), "=qm" (success) : : "cc");
@@ -290,6 +294,9 @@ static bool hardware_word(uint64_t *word)
         }
         if (success != 0U) {
             return true;
+        }
+        if (attempt + 1U < attempts) {
+            __asm__ volatile ("pause" : : : "memory");
         }
     }
     return false;

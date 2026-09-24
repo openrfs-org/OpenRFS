@@ -21,7 +21,7 @@ def case(kernel: Path, output: Path, qemu: str, grub: str,
          "--grub-mkrescue", grub, "--scenario", "net-e1000",
          "--cpu", cpu],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, timeout=120, check=False,
+        text=True, timeout=180, check=False,
     )
     log = output / "net-e1000" / "serial.log"
     if not log.is_file() or log.stat().st_size > MAX_LOG_BYTES:
