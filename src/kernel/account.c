@@ -517,6 +517,15 @@ static enum account_status v2_authenticate(
     const enum account_v2_status status = account_v2_open(record, username,
         password, password_bytes, data_key);
 
+    /* The format can authenticate the future migration bit, but this kernel
+     * has no encrypted production VFS yet. Never expose a key or a raw Data
+     * path from a record claiming that migration has completed. */
+    if (status == ACCOUNT_V2_OK &&
+            (record[6] & ACCOUNT_V2_FLAG_DATA_ENCRYPTED) != 0U) {
+        zero_bytes(data_key, sizeof(data_key));
+        return ACCOUNT_STATUS_ENCRYPTED_DATA_UNAVAILABLE;
+    }
+
     if (status == ACCOUNT_V2_OK) {
         copy_bytes(active_data_key, data_key, sizeof(data_key));
         active_data_key_present = true;
@@ -1119,7 +1128,8 @@ const char *account_status_string(enum account_status status)
         "account login is temporarily rate limited",
         "the bounded account KDF is unavailable",
         "password changed, but old credential cleanup is pending; use the new password",
-        "Data still contains unencrypted files; account deletion refused"
+        "Data still contains unencrypted files; account deletion refused",
+        "encrypted Data account requires the protected VFS path"
     };
 
     _Static_assert(sizeof(messages) / sizeof(messages[0]) ==

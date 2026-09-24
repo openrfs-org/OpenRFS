@@ -489,6 +489,7 @@ int main(void)
         return 1;
     }
     assert(account_data_key(key));
+    memcpy(saved, v2_a, sizeof(saved));
     uint8_t migration_salt[16];
     uint8_t migration_nonce[ACCOUNT_V2_NONCE_BYTES];
     uint8_t record_flags = 0U;
@@ -501,11 +502,19 @@ int main(void)
             migration_salt, migration_nonce, key, v2_a) == ACCOUNT_V2_OK,
             "authenticated migration flag fixture") ||
         !check(account_authenticate("alice", password,
-            sizeof(password) - 1U) == ACCOUNT_STATUS_OK,
-            "migration flag record must authenticate")) {
+            sizeof(password) - 1U) ==
+            ACCOUNT_STATUS_ENCRYPTED_DATA_UNAVAILABLE,
+            "protected Data state must refuse without encrypted VFS") ||
+        !check(!account_session_active(),
+            "unsupported protected Data must not expose the key")) {
         return 1;
     }
-    memcpy(saved, v2_a, sizeof(saved));
+    memcpy(v2_a, saved, sizeof(v2_a));
+    if (!check(account_authenticate("alice", password,
+            sizeof(password) - 1U) == ACCOUNT_STATUS_OK,
+            "ordinary record must recover after protected-state refusal")) {
+        return 1;
+    }
     tamper_on_v2_a_read_open = v2_a_read_opens + 2U;
     if (!check(account_change_password("alice", password,
             sizeof(password) - 1U, new_password,
@@ -555,8 +564,8 @@ int main(void)
             "new generation must retire old slot") ||
         !check(account_v2_record_flags(v2_b, &record_flags) ==
             ACCOUNT_V2_OK &&
-            record_flags == ACCOUNT_V2_FLAG_DATA_ENCRYPTED,
-            "password change must preserve migration flag") ||
+            record_flags == 0U,
+            "password change must keep incomplete migration state") ||
         !check(account_authenticate("alice", password,
             sizeof(password) - 1U) == ACCOUNT_STATUS_AUTHENTICATION_FAILED,
             "old password must be refused online") ||

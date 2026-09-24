@@ -29,8 +29,9 @@ as the Data migration-complete state. New records keep it clear, and password
 change preserves its value. The parser rejects other bits before invoking
 Argon2id; the host test shows that clearing a set bit while recomputing the
 unkeyed checksum still fails verifier authentication. No production path sets
-the bit yet. The encrypted VFS and durable migration transaction must be
-complete before any account may set it. Whole-volume rollback can still
+the bit yet, and production login refuses a valid set bit while the encrypted
+VFS path is unavailable. The encrypted VFS and durable migration transaction
+must be complete before any account may set it. Whole-volume rollback can still
 restore an older record without an external freshness root.
 
 An additional host test injects a malformed or short inactive
