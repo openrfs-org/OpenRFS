@@ -63,10 +63,54 @@ static const char *installed_failure = "OpenRFS desktop proof has not run";
 static struct native_window_record native_windows[UI_NATIVE_WINDOW_COUNT];
 static int32_t native_focus = -1;
 static bool minimal_desktop_selected;
+static bool wvrm_files_session_known;
+static bool wvrm_files_authorized;
 static bool wvrm_last_click_valid;
 static uint64_t wvrm_last_click_ns;
 static struct ui_point wvrm_last_click_point;
 static struct openrfsfs_list_entry wvrm_directory_entries[OPENRFSFS_MAX_LIST_ENTRIES];
+static bool wvrm_files_load(uint32_t folder);
+static void zero_bytes(void *pointer, size_t bytes);
+
+/* Rebuild the Files snapshot when the account session changes. In particular,
+ * a failed reauthentication revokes any names already loaded into the view. */
+static bool wvrm_files_sync_session(void)
+{
+    const bool authorized = account_session_active();
+    const uint32_t root = trait_files_root();
+
+    if (wvrm_files_session_known && authorized == wvrm_files_authorized) {
+        return false;
+    }
+    for (uint32_t slot = 0U; slot < TRAIT_SHELL_MAX_WINDOWS; ++slot) {
+        if (trait_shell_app_of(slot) == TRAIT_APP_FILES) {
+            (void)trait_shell_close(slot);
+        }
+    }
+    trait_files_reset();
+    zero_bytes(wvrm_directory_entries, sizeof(wvrm_directory_entries));
+    trait_files_set_read_only(true);
+    trait_shell_set_desktop_folder(root);
+    wvrm_last_click_valid = false;
+    wvrm_files_session_known = true;
+    wvrm_files_authorized = false;
+    if (authorized) {
+        if ((openrfsfs_drive(OPENRFSFS_VOLUME_SYSTEM).mounted &&
+                trait_files_add(root, "System", true, 0U) >=
+                    TRAIT_FILES_MAX_NODES) ||
+                (openrfsfs_drive(OPENRFSFS_VOLUME_DATA).mounted &&
+                trait_files_add(root, "Data", true, 0U) >=
+                    TRAIT_FILES_MAX_NODES)) {
+            trait_files_reset();
+            trait_files_set_read_only(true);
+        } else {
+            trait_files_set_loader(wvrm_files_load);
+            wvrm_files_authorized = true;
+        }
+    }
+    redraw_pending = true;
+    return true;
+}
 
 /* WVRM Files is an authenticated, read-only snapshot of mounted volumes. */
 static bool wvrm_files_load(uint32_t folder)
@@ -561,6 +605,7 @@ static enum ui_status render_desktop(void)
     const struct openrfs_rect whole = { 0U, 0U, desktop.width, desktop.height };
 
     if (minimal_desktop_selected) {
+        (void)wvrm_files_sync_session();
         minimal_de_draw();
     } else {
         if (openrfs_wallpaper_decode(0U, desktop.pixels,
@@ -683,22 +728,8 @@ enum ui_status ui_construct(bool pointer_present)
             return UI_STATUS_SURFACE_FAILURE;
         }
         wvrm_last_click_valid = false;
-        if (account_session_active()) {
-            const uint32_t root = trait_files_root();
-
-            if (openrfsfs_drive(OPENRFSFS_VOLUME_SYSTEM).mounted &&
-                    trait_files_add(root, "System", true, 0U) >=
-                        TRAIT_FILES_MAX_NODES) {
-                return UI_STATUS_SURFACE_FAILURE;
-            }
-            if (openrfsfs_drive(OPENRFSFS_VOLUME_DATA).mounted &&
-                    trait_files_add(root, "Data", true, 0U) >=
-                        TRAIT_FILES_MAX_NODES) {
-                return UI_STATUS_SURFACE_FAILURE;
-            }
-            trait_files_set_loader(wvrm_files_load);
-        }
-        trait_files_set_read_only(true);
+        wvrm_files_session_known = false;
+        (void)wvrm_files_sync_session();
     } else {
         if (openrfs_panel_attach(&desktop) != OPENRFS_PANEL_STATUS_OK ||
                 openrfs_panel_initialize() != OPENRFS_PANEL_STATUS_OK) {
@@ -955,6 +986,7 @@ static bool process_one(const struct ui_event *event)
     if (minimal_desktop_selected) {
         struct ui_event wvrm_event = *event;
         const struct ui_event *delivered = &wvrm_event;
+        const bool session_changed = wvrm_files_sync_session();
         bool changed;
         bool overlay_dispatched = false;
 
@@ -1007,8 +1039,12 @@ static bool process_one(const struct ui_event *event)
             return true;
         }
         changed = minimal_de_event(delivered);
+        if (wvrm_files_sync_session()) {
+            changed = true;
+        }
         sync_state();
-        return changed || event->type == UI_EVENT_POINTER_MOVEMENT;
+        return changed || session_changed ||
+            event->type == UI_EVENT_POINTER_MOVEMENT;
     }
     if (event->type == UI_EVENT_KEYBOARD_FOCUS_NEXT ||
             event->type == UI_EVENT_KEYBOARD_FOCUS_PREVIOUS) {
@@ -1122,6 +1158,9 @@ enum ui_status ui_flush(void)
 
     if (!state.active) {
         return UI_STATUS_NOT_ACTIVE;
+    }
+    if (minimal_desktop_selected) {
+        (void)wvrm_files_sync_session();
     }
     if (!redraw_pending) {
         return UI_STATUS_OK;
@@ -1422,5 +1461,8 @@ const char *ui_element_name(enum ui_element_id element)
 bool ui_events_pending(void)
 {
     hwdrv_poll_input();
+    if (state.active && minimal_desktop_selected) {
+        (void)wvrm_files_sync_session();
+    }
     return state.active && redraw_pending;
 }

@@ -134,6 +134,16 @@ int main(void)
             }
         }
     }
+    /* Revoking an account session clears names even if Files was open. */
+    trait_files_reset();
+    trait_files_set_read_only(true);
+    if (trait_files_child_count(trait_files_root()) != 0U ||
+            trait_files_here() != trait_files_root() ||
+            trait_files_node_name(1U)[0] != '\0' ||
+            !trait_files_read_only()) {
+        fputs("WVRM Files retained an authenticated snapshot\n", stderr);
+        return 1;
+    }
     puts("minimal desktop host test passed");
     return 0;
 }

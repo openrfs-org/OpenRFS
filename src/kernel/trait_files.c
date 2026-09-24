@@ -283,6 +283,15 @@ void trait_files_reset(void)
     single_click = false;
     uint32_t at;
 
+    /* Directory names may be a snapshot of an authenticated Data session.
+     * Clear the backing nodes as well as the visible count on logout. */
+    for (at = 0U; at < TRAIT_FILES_MAX_NODES; ++at) {
+        volatile uint8_t *bytes = (volatile uint8_t *)&nodes[at];
+
+        for (uint32_t byte = 0U; byte < sizeof(nodes[at]); ++byte) {
+            bytes[byte] = 0U;
+        }
+    }
     clip_count = 0U;
     clip_cut = false;
     directory_loader = NULL;
