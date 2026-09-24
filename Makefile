@@ -3604,11 +3604,11 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 			grep -Fxq 'write: volume has no free cluster' "$$log" || diagnostics_ok=false ;; \
 		fat32-corrupt) \
 			grep -Fxq 'ST FAT32 CORRUPT refused session usable system executable valid' "$$log" && \
-			grep -Fxq 'data    fat32  unavailable' "$$log" && \
+			grep -Fxq 'data    fat32     unavailable' "$$log" && \
 			grep -Fqx 'OPENRFS' "$$log" || diagnostics_ok=false ;; \
 		fat32-missing) \
 			grep -Fxq 'ST FAT32 MISSING session usable system executable valid' "$$log" && \
-			grep -Fxq 'data    fat32  absent' "$$log" && \
+			grep -Fxq 'data    fat32     absent' "$$log" && \
 			grep -Fqx 'OPENRFS' "$$log" || diagnostics_ok=false ;; \
 		fat32-persistence) \
 			grep -Fxq 'ST FAT32 PERSISTENCE synchronized reboot phase' "$$log" && \
