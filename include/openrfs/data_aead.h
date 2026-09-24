@@ -20,7 +20,9 @@ enum data_aead_status {
     DATA_AEAD_ARGUMENT,
     DATA_AEAD_FORMAT,
     DATA_AEAD_RANGE,
-    DATA_AEAD_AUTHENTICATION
+    DATA_AEAD_AUTHENTICATION,
+    DATA_AEAD_IO,
+    DATA_AEAD_ENTROPY
 };
 
 /* The path must already be VFS-resolved and canonical. FAT32 callers must use

@@ -44,6 +44,15 @@ chunk from a prior revision and inserting it into a new one. A complete old
 file or old disk snapshot can still be rolled back. Names, directory layout,
 physical sizes, freed plaintext clusters, and SSD remanence remain visible.
 
+`data_aead_rewrite.c` can stream an authenticated old file into a distinct
+shadow with a partial write, sparse extension or truncate. It verifies every
+old chunk, including truncated-away chunks, allocates a new random file ID
+and nonces, and wipes its caller-owned bounded workspace. Host fault tests
+exercise tampering, wrong keys, entropy refusal, and disk-full writes. It
+does not publish or recover the shadow, preserve filesystem metadata, migrate
+plaintext, or intercept the production VFS. Those remain required before
+the Data namespace is encrypted.
+
 **Do not wire in-place encrypted writes.** A torn header or chunk can make a
 valid old file unreadable. For partial and sparse writes, truncate, metadata
 changes, and rename, build a bounded shadow file, seal and verify it, sync it,
