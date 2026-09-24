@@ -52,6 +52,16 @@ enum data_aead_status data_aead_rewrite_shadow_paths(
     const struct data_aead_rewrite_io *io, uint8_t *workspace,
     size_t workspace_bytes, uint64_t *new_physical_bytes);
 
+/* Convert one legacy plaintext file into a separate encrypted shadow. The
+ * caller must keep the source stable, sync and verify the shadow, publish it
+ * durably, then resume other files before setting migration-complete state.
+ * A torn operation may leave old plaintext blocks on the medium. */
+enum data_aead_status data_aead_migrate_plain_shadow(
+    const uint8_t key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
+    uint64_t old_plaintext_bytes, const struct data_aead_rewrite_io *io,
+    uint8_t *workspace, size_t workspace_bytes,
+    uint64_t *new_physical_bytes);
+
 /* Reopen and authenticate a complete candidate after its storage barrier and
  * before publication. The callback must read exactly the requested span or
  * refuse. This verifies the bytes read back, not their future persistence or

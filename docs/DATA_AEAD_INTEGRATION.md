@@ -63,6 +63,11 @@ The bounded logical range reader authenticates the header and each requested
 chunk before copying plaintext; an error in a later chunk wipes the prefix it
 copied during that call. It requires a stable held backend object across reads
 and does not yet replace production `openrfsfs_read` or `pread`.
+The plaintext conversion helper reads a stable legacy source into a distinct
+encrypted shadow with bounded workspace and refuses short reads, disk-full
+writes and entropy failure. It leaves the source untouched. The caller still
+owns the durable publish/recovery protocol and must not set the authenticated
+migration-complete record bit until every Data file is converted and verified.
 
 **Do not wire in-place encrypted writes.** A torn header or chunk can make a
 valid old file unreadable. For partial and sparse writes, truncate, metadata

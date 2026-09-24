@@ -321,6 +321,41 @@ int main(void)
         DATA_AEAD_AUTHENTICATION && produced == 0U);
     expect_wiped();
 
-    puts("Data AEAD shadow rewrite/readback/range/rename, partial/sparse/truncate, tamper, disk-full and entropy controls passed");
+    /* Legacy plaintext is read into a distinct sealed candidate. The source
+     * remains byte-for-byte intact until a higher layer durably publishes. */
+    memset(&old_file, 0, sizeof(old_file));
+    memcpy(old_file.bytes, expected, sizeof(expected));
+    old_file.length = sizeof(expected);
+    saved_file = old_file;
+    CHECK(data_aead_migrate_plain_shadow(key, "HOME/NOTE.TXT",
+        old_file.length, &callbacks, workspace, sizeof(workspace),
+        &produced) == DATA_AEAD_OK);
+    CHECK(memcmp(&old_file, &saved_file, sizeof(old_file)) == 0);
+    check_plaintext(key, &shadow_file, expected, sizeof(expected));
+    CHECK(data_aead_verify_shadow(key, "HOME/NOTE.TXT", produced,
+        read_shadow, &io, workspace, sizeof(workspace), &verified) ==
+        DATA_AEAD_OK && verified == sizeof(expected));
+    expect_wiped();
+    --old_file.length;
+    CHECK(data_aead_migrate_plain_shadow(key, "HOME/NOTE.TXT",
+        sizeof(expected), &callbacks, workspace, sizeof(workspace),
+        &produced) == DATA_AEAD_IO && produced == 0U);
+    old_file.length = sizeof(expected);
+    expect_wiped();
+    io.write_limit = DATA_AEAD_HEADER_BYTES + DATA_AEAD_SEALED_CHUNK_BYTES;
+    CHECK(data_aead_migrate_plain_shadow(key, "HOME/NOTE.TXT",
+        old_file.length, &callbacks, workspace, sizeof(workspace),
+        &produced) == DATA_AEAD_IO && produced == 0U);
+    io.write_limit = FILE_CAPACITY;
+    CHECK(memcmp(&old_file, &saved_file, sizeof(old_file)) == 0);
+    expect_wiped();
+    io.fail_random_at = io.random_calls + 1U;
+    CHECK(data_aead_migrate_plain_shadow(key, "HOME/NOTE.TXT",
+        old_file.length, &callbacks, workspace, sizeof(workspace),
+        &produced) == DATA_AEAD_ENTROPY && produced == 0U);
+    io.fail_random_at = 0U;
+    expect_wiped();
+
+    puts("Data AEAD shadow rewrite/readback/range/rename/plaintext migration, partial/sparse/truncate, tamper, disk-full and entropy controls passed");
     return 0;
 }

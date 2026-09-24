@@ -195,6 +195,85 @@ enum data_aead_status data_aead_rewrite_shadow(
         new_physical_bytes);
 }
 
+enum data_aead_status data_aead_migrate_plain_shadow(
+    const uint8_t key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
+    uint64_t old_plaintext_bytes, const struct data_aead_rewrite_io *io,
+    uint8_t *workspace, size_t workspace_bytes,
+    uint64_t *new_physical_bytes)
+{
+    enum data_aead_status result = DATA_AEAD_OK;
+    uint8_t id[DATA_AEAD_ID_BYTES] = {0};
+    uint8_t nonce[DATA_AEAD_NONCE_BYTES] = {0};
+    uint8_t *header;
+    uint8_t *sealed;
+    uint8_t *plain;
+    uint64_t output_size;
+
+    if (new_physical_bytes != NULL) *new_physical_bytes = 0U;
+    if (key == NULL || canonical_path == NULL || io == NULL ||
+            io->begin_shadow == NULL || io->read_old == NULL ||
+            io->write_shadow == NULL || io->random == NULL ||
+            workspace == NULL ||
+            workspace_bytes < DATA_AEAD_REWRITE_WORKSPACE_BYTES ||
+            new_physical_bytes == NULL) {
+        if (workspace != NULL) crypto_wipe(workspace,
+            workspace_bytes < DATA_AEAD_REWRITE_WORKSPACE_BYTES ?
+                workspace_bytes : DATA_AEAD_REWRITE_WORKSPACE_BYTES);
+        return DATA_AEAD_ARGUMENT;
+    }
+    output_size = data_aead_physical_size(old_plaintext_bytes);
+    if (output_size == 0U) {
+        crypto_wipe(workspace, DATA_AEAD_REWRITE_WORKSPACE_BYTES);
+        return DATA_AEAD_RANGE;
+    }
+    header = workspace;
+    sealed = header + DATA_AEAD_HEADER_BYTES;
+    plain = sealed + DATA_AEAD_SEALED_CHUNK_BYTES;
+    zero_bytes(workspace, DATA_AEAD_REWRITE_WORKSPACE_BYTES);
+    if (!io->random(io->context, id, sizeof(id))) {
+        result = DATA_AEAD_ENTROPY;
+        goto done;
+    }
+    result = data_aead_make_header(key, canonical_path, old_plaintext_bytes,
+        id, header);
+    if (result != DATA_AEAD_OK) goto done;
+    if (!io->begin_shadow(io->context, output_size) ||
+            !io->write_shadow(io->context, 0U, header,
+                DATA_AEAD_HEADER_BYTES)) {
+        result = DATA_AEAD_IO;
+        goto done;
+    }
+    for (uint64_t index = 0U; index < chunk_count(old_plaintext_bytes);
+            ++index) {
+        const size_t length = chunk_length(old_plaintext_bytes, index);
+        zero_bytes(plain, DATA_AEAD_CHUNK_BYTES);
+        if (!io->read_old(io->context, index * DATA_AEAD_CHUNK_BYTES,
+                plain, length)) {
+            result = DATA_AEAD_IO;
+            goto done;
+        }
+        if (!io->random(io->context, nonce, sizeof(nonce))) {
+            result = DATA_AEAD_ENTROPY;
+            goto done;
+        }
+        result = data_aead_seal_chunk(key, header, index, nonce, plain,
+            length, sealed);
+        if (result != DATA_AEAD_OK) goto done;
+        if (!io->write_shadow(io->context, DATA_AEAD_HEADER_BYTES +
+                index * DATA_AEAD_SEALED_CHUNK_BYTES, sealed,
+                DATA_AEAD_SEALED_CHUNK_BYTES)) {
+            result = DATA_AEAD_IO;
+            goto done;
+        }
+    }
+    *new_physical_bytes = output_size;
+done:
+    crypto_wipe(id, sizeof(id));
+    crypto_wipe(nonce, sizeof(nonce));
+    crypto_wipe(workspace, DATA_AEAD_REWRITE_WORKSPACE_BYTES);
+    return result;
+}
+
 enum data_aead_status data_aead_verify_shadow(
     const uint8_t key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
     uint64_t physical_bytes,
