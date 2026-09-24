@@ -413,6 +413,8 @@ int main(void)
             sizeof(password) - 1U, new_password,
             sizeof(new_password) - 1U) == ACCOUNT_STATUS_IO,
             "interrupted password change must refuse") ||
+        !check(!account_data_key(key),
+            "interrupted change must revoke the active Data session") ||
         !check(v2_a_present && !v2_b_present,
             "old generation must survive interrupted change") ||
         !check(account_authenticate("alice", password,
@@ -465,6 +467,8 @@ int main(void)
             sizeof(new_password) - 1U, password,
             sizeof(password) - 1U) == ACCOUNT_STATUS_CLEANUP_PENDING,
             "committed change must report pending retirement") ||
+        !check(!account_data_key(key),
+            "pending retirement must revoke the active Data session") ||
         !check(v2_a_present && v2_b_present,
             "both generations survive interrupted retirement")) {
         return 1;
@@ -473,6 +477,8 @@ int main(void)
     if (!check(account_authenticate("alice", password,
             sizeof(password) - 1U) == ACCOUNT_STATUS_IO,
             "login cleanup failure must report storage error") ||
+        !check(!account_data_key(key),
+            "login cleanup failure must not expose the Data key") ||
         !check(v2_a_present && v2_b_present,
             "both generations must remain for retry") ||
         !check(account_authenticate("alice", password,
@@ -545,6 +551,6 @@ int main(void)
         !check(account_data_key(key), "migrated login must unlock Data key")) {
         return 1;
     }
-    puts("account v2 creation, login, password rotation, backoff and interrupted v1 migration passed");
+    puts("account v2 creation, login, fail-closed password rotation, backoff and interrupted v1 migration passed");
     return 0;
 }

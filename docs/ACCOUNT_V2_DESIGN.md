@@ -29,6 +29,10 @@ slot alongside a valid slot; login authenticates the intact wrap and removes
 the damaged peer before exposing the Data key. An I/O error, two malformed
 slots, or a single malformed slot still fail closed. This does not simulate a
 power cut during FAT32's rename itself or establish an external rollback floor.
+Any failed password change, including a committed new wrap whose old-slot
+retirement is pending, revokes the in-memory Data session. A later successful
+login must finish cleanup before the key is exposed again. The host fault
+cases assert this policy so a reported error never leaves an unlocked session.
 The shell and desktop capture exercised production v2 creation, password
 change and login in QEMU. Deletion is not
 exposed while Data files remain plaintext and the key is not used by VFS.
