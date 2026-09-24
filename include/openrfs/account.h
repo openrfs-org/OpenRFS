@@ -44,6 +44,10 @@ enum account_status account_change_password(
     const char *username, const uint8_t *old_password,
     size_t old_password_bytes, const uint8_t *new_password,
     size_t new_password_bytes);
+/* Remove the only active credential after authenticating it. This revokes
+ * access but does not erase existing Data blocks or provide rollback defense. */
+enum account_status account_delete(const char *username,
+    const uint8_t *password, size_t password_bytes);
 bool account_data_key(uint8_t out[32]);
 /* True only after successful credential authentication in this boot. */
 bool account_session_active(void);

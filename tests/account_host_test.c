@@ -551,6 +551,41 @@ int main(void)
         !check(account_data_key(key), "migrated login must unlock Data key")) {
         return 1;
     }
-    puts("account v2 creation, login, fail-closed password rotation, backoff and interrupted v1 migration passed");
+    if (!check(account_delete("alice", wrong,
+            sizeof(wrong) - 1U) == ACCOUNT_STATUS_AUTHENTICATION_FAILED,
+            "wrong password must not delete the account") ||
+        !check(v2_a_present && !account_session_active(),
+            "failed deletion must retain record and revoke session")) {
+        return 1;
+    }
+    fail_unlink_v2_once = true;
+    if (!check(account_delete("alice", password,
+            sizeof(password) - 1U) == ACCOUNT_STATUS_IO,
+            "failed unlink must refuse deletion") ||
+        !check(v2_a_present && !account_session_active(),
+            "failed unlink must preserve record and revoke session") ||
+        !check(account_delete("alice", password,
+            sizeof(password) - 1U) == ACCOUNT_STATUS_OK,
+            "correct password must delete the account") ||
+        !check(!stored_present && !v2_a_present && !v2_b_present &&
+                !account_session_active(),
+            "deleted account must leave no active credential or session")) {
+        return 1;
+    }
+    configured = true;
+    if (!check(account_configured(&configured) == ACCOUNT_STATUS_OK &&
+            !configured, "deleted account must report unconfigured") ||
+        !check(account_create("alice", new_password,
+            sizeof(new_password) - 1U) == ACCOUNT_STATUS_OK,
+            "new account may be created after deletion") ||
+        !check(account_authenticate("alice", password,
+            sizeof(password) - 1U) == ACCOUNT_STATUS_AUTHENTICATION_FAILED,
+            "old password must not unlock the replacement account") ||
+        !check(account_authenticate("alice", new_password,
+            sizeof(new_password) - 1U) == ACCOUNT_STATUS_OK,
+            "replacement account must authenticate")) {
+        return 1;
+    }
+    puts("account v2 creation, login, password rotation/deletion, backoff and interrupted v1 migration passed");
     return 0;
 }

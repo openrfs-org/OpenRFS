@@ -204,6 +204,16 @@ def verify_wvrm_files(root_frame, files_frame, data_frame):
         raise RuntimeError("WVRM Data directory did not show VFS entries")
 
 
+def verify_wvrm_revoked(data_frame, revoked_frame):
+    if data_frame[:2] != revoked_frame[:2]:
+        raise RuntimeError("WVRM revocation capture changed display dimensions")
+    for x, y in ((400, 400), (500, 500)):
+        at = (y * data_frame[0] + x) * 3
+        if (data_frame[2][at:at + 3] != b"\xff\xff\xff" or
+                revoked_frame[2][at:at + 3] == b"\xff\xff\xff"):
+            raise RuntimeError("WVRM Files remained visible after account deletion")
+
+
 def send_text(qmp, text, delay=0.04):
     for key in text:
         qmp.hmp(f"sendkey {'spc' if key == ' ' else key}")
@@ -292,7 +302,7 @@ def storage_arguments(userspace, system, data, data_filesystem="fat32"):
     return arguments
 
 
-def verify_ext4_account(image, output, rotated):
+def verify_ext4_account(image, output, rotated, deleted=False):
     # The guest must have mounted the ext4plus backend and persisted its record.
     report = ext4_image.parse_superblock(image.read_bytes())
     fsck = subprocess.run(["e2fsck", "-fn", str(image)], capture_output=True,
@@ -309,16 +319,23 @@ def verify_ext4_account(image, output, rotated):
         if result.returncode != 0:
             raise RuntimeError(f"debugfs could not inspect {path}")
         return result.stdout
-    account = stat(expected)
-    if not re.search(r"\bSize:\s*224\b", account):
-        raise RuntimeError("captured ext4 account has the wrong record size")
-    if any("Inode:" in stat(path) for path in stale):
-        raise RuntimeError("captured ext4 Data retained a stale account record")
+    if deleted:
+        if any("Inode:" in stat(path) for path in
+               ("/OPENRFS/LOGIN.DAT", "/OPENRFS/LOGIN.V2A",
+                "/OPENRFS/LOGIN.V2B")):
+            raise RuntimeError("deleted ext4 account retained a live record")
+    else:
+        account = stat(expected)
+        if not re.search(r"\bSize:\s*224\b", account):
+            raise RuntimeError("captured ext4 account has the wrong record size")
+        if any("Inode:" in stat(path) for path in stale):
+            raise RuntimeError("captured ext4 Data retained a stale account record")
     with image.open("rb") as source:
         report["sha256"] = hashlib.file_digest(source, "sha256").hexdigest()
     report["e2fsck_clean"] = True
-    report["account_path"] = expected
-    report["account_size"] = 224
+    report["account_path"] = None if deleted else expected
+    report["account_size"] = 0 if deleted else 224
+    report["account_deleted"] = deleted
     (output / "report.json").write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
@@ -334,6 +351,7 @@ def main():
     parser.add_argument("--data-filesystem", choices=("fat32", "ext4"), default="fat32")
     parser.add_argument("--output", required=True)
     parser.add_argument("--rotate-password", action="store_true")
+    parser.add_argument("--delete-account", action="store_true")
 
 
     args = parser.parse_args()
@@ -343,6 +361,8 @@ def main():
         parser.error("--system and --data must be provided together")
     if args.rotate_password and args.data is None:
         parser.error("--rotate-password requires --system and --data")
+    if args.delete_account and (args.data is None or args.data_filesystem != "ext4"):
+        parser.error("--delete-account requires ext4 --system and --data")
 
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -370,6 +390,11 @@ def main():
         qmp = Qmp(port)
         wait_serial(serial, PROOF_LINE, timeout=90.0)
         wait_serial_after(serial, PROOF_LINE, PROMPT, timeout=90.0)
+        if args.delete_account:
+            send_text(qmp, "ls")
+            press(qmp, "ret", 0.10)
+            wait_serial_after(serial, PROOF_LINE,
+                              b"account: create a user first with 'useradd NAME'")
         if durable_data is not None:
             start_authenticated_desktop(qmp, serial, args.rotate_password)
         time.sleep(0.25)
@@ -423,6 +448,37 @@ def main():
             verify_wvrm_files(root_frame[0], files_frame[0], data_frame[0])
             print(files)
             print(data_view)
+            if args.delete_account:
+                # The previous relative move landed on Data at about 273,251.
+                # Focus the exposed terminal client at 120,120.
+                qmp.hmp("mouse_move -153 -131")
+                time.sleep(0.25)
+                qmp.hmp("mouse_button 1")
+                time.sleep(0.10)
+                qmp.hmp("mouse_button 0")
+                time.sleep(0.25)
+                capture(qmp, output, "openrfs-proof-wvrm-terminal-refocused")
+                send_text(qmp, "userdel")
+                press(qmp, "ret", 0.10)
+                wait_serial_after(serial, TERMINAL_RESULT, USERNAME_PROMPT)
+                send_text(qmp, CAPTURE_USERNAME)
+                press(qmp, "ret", 0.10)
+                wait_serial_after(serial, TERMINAL_RESULT, PASSWORD_PROMPT)
+                send_text(qmp, ROTATED_PASSWORD if args.rotate_password
+                          else CAPTURE_PASSWORD)
+                press(qmp, "ret", 0.10)
+                removed = b"OpenRFS account removed; existing Data files remain."
+                wait_serial_after(serial, TERMINAL_RESULT, removed)
+                send_text(qmp, "ls")
+                press(qmp, "ret", 0.10)
+                wait_serial_after(serial, removed,
+                                  b"account: create a user first with 'useradd NAME'")
+                time.sleep(0.40)
+                revoked_frame = []
+                revoked = capture(qmp, output,
+                                  "openrfs-proof-wvrm-revoked", revoked_frame)
+                verify_wvrm_revoked(data_frame[0], revoked_frame[0])
+                print(revoked)
         print(clean)
         print(focus)
         print(terminal)
@@ -451,7 +507,8 @@ def main():
         tail = transcript[-4096:].decode("utf-8", errors="replace")
         raise RuntimeError("proof capture omitted readiness evidence\n" + tail)
     if durable_data is not None and args.data_filesystem == "ext4":
-        verify_ext4_account(durable_data, output, args.rotate_password)
+        verify_ext4_account(durable_data, output, args.rotate_password,
+                            args.delete_account)
     if durable_data is not None and args.data_filesystem == "fat32":
         report = fat32_image.inspect_image(durable_data.read_bytes())
         login = [

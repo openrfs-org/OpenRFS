@@ -811,6 +811,41 @@ done:
     return result;
 }
 
+enum account_status account_delete(const char *username,
+    const uint8_t *password, size_t password_bytes)
+{
+    uint8_t record[ACCOUNT_V2_RECORD_BYTES];
+    const char *active_slot = NULL;
+    enum account_status result;
+
+    if (username == NULL || password == NULL) {
+        return ACCOUNT_STATUS_NULL_ARGUMENT;
+    }
+    /* Authentication also retires any legacy or previous v2 slot before the
+     * last credential is removed. Every failure leaves the session locked. */
+    result = account_authenticate(username, password, password_bytes);
+    if (result != ACCOUNT_STATUS_OK) {
+        return result;
+    }
+    result = load_active_v2(record, &active_slot);
+    if (result != ACCOUNT_STATUS_OK || !active_data_key_present ||
+            active_slot == NULL) {
+        result = ACCOUNT_STATUS_STORAGE_CORRUPT;
+        goto done;
+    }
+    if (openrfsfs_unlink(OPENRFSFS_VOLUME_DATA, active_slot) !=
+            OPENRFSFS_STATUS_OK ||
+            openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK) {
+        result = ACCOUNT_STATUS_IO;
+        goto done;
+    }
+    result = ACCOUNT_STATUS_OK;
+done:
+    zero_bytes(record, sizeof(record));
+    account_data_key_forget();
+    return result;
+}
+
 bool account_self_test(void)
 {
     static const uint8_t salt[ACCOUNT_SALT_BYTES] = {
