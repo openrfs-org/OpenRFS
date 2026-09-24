@@ -9,9 +9,15 @@
 iteration, and `sync` enter `src/kernel/vfs.c`. VFS delegates regular files to
 the FAT32 or ext4 backend. Shell file commands, native syscalls, package
 recovery, uploads, and the installed-package launcher share this path. The
-normal boot currently mounts Data and runs package recovery before anyone
-authenticates. A change confined to a shell command or an unused crypto module
-would leave production writes in plaintext.
+ordinary boot now enables a monotonic VFS Data login lock before the shell
+starts. It admits only the exact credential record paths and their parent
+metadata until `account_authenticate` succeeds. Directory enumeration is
+refused, and existing file descriptions are checked again for reads and
+writes. The normal QEMU test still runs its legacy package recovery before
+enabling the same lock; ordinary boot does not run that recovery. This is
+pre-login access control, not at-rest encryption or migration. A change
+confined to a shell command or an unused crypto module would leave production
+writes in plaintext.
 
 The v2 account record wraps a random 32-byte Data key. Only successful
 `account_authenticate` makes it available in RAM. The record is on the Data

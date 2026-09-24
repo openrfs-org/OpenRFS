@@ -121,6 +121,8 @@ struct openrfsfs_drive_info {
 
 bool openrfsfs_self_test(size_t *completed_tests);
 void openrfsfs_initialize(void);
+/* Monotonic ordinary-boot Data gate; credential records remain reachable. */
+void openrfsfs_data_login_lock_enable(void);
 /* Quiescent VFS census after all mounts have been cleanly released. */
 bool openrfsfs_resources_released(void);
 enum openrfsfs_status openrfsfs_mount(enum openrfsfs_volume volume);

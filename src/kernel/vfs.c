@@ -8,6 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <openrfs/account.h>
 #include <openrfs/fat32_backend.h>
 #include <openrfs/fat32_fs.h>
 #include <openrfs/ext4_fs.h>
@@ -75,6 +76,9 @@ static bool open_file_claims[VFS_MAX_OPEN_FILES];
 static struct vfs_directory_state directories[VFS_MAX_DIRECTORY_ITERATORS];
 static bool directory_claims[VFS_MAX_DIRECTORY_ITERATORS];
 static bool vnode_metadata_owned;
+/* Enabled only after VFS initialization on ordinary boot. Never clear it
+ * during a session or after a mount transition. */
+static bool data_login_lock_enabled;
 static uint16_t vnode_buckets[VFS_VNODE_BUCKETS];
 static uint64_t next_mount_generation = UINT64_C(1);
 static uint64_t next_vnode_generation = UINT64_C(1);
@@ -216,6 +220,35 @@ static bool text_equal(const char *left, const char *right)
         ++index;
     }
     return false;
+}
+
+void openrfsfs_data_login_lock_enable(void)
+{
+    __atomic_store_n(&data_login_lock_enabled, true, __ATOMIC_RELEASE);
+}
+
+static bool data_login_locked(enum openrfsfs_volume volume)
+{
+    return volume == OPENRFSFS_VOLUME_DATA &&
+        __atomic_load_n(&data_login_lock_enabled, __ATOMIC_ACQUIRE) &&
+        !account_session_active();
+}
+
+/* Credential files are the only raw Data content needed to authenticate.
+ * Permit their exact canonical paths, plus parent metadata needed to create
+ * and inspect the record directory. Directory enumeration is refused below. */
+static bool data_path_permitted(enum openrfsfs_volume volume,
+    const char *canonical)
+{
+    if (!data_login_locked(volume)) {
+        return true;
+    }
+    return text_equal(canonical, ".") ||
+        text_equal(canonical, "OPENRFS") ||
+        text_equal(canonical, "OPENRFS/LOGIN.DAT") ||
+        text_equal(canonical, "OPENRFS/LOGIN.NEW") ||
+        text_equal(canonical, "OPENRFS/LOGIN.V2A") ||
+        text_equal(canonical, "OPENRFS/LOGIN.V2B");
 }
 
 static uint64_t next_generation(uint64_t *counter, uint64_t maximum)
@@ -576,6 +609,10 @@ static enum openrfsfs_status resolve_path(
     if (status != OPENRFSFS_STATUS_OK) {
         goto finished;
     }
+    if (!data_path_permitted(volume, canonical)) {
+        status = OPENRFSFS_STATUS_ACCESS;
+        goto finished;
+    }
     if (backend->validates_mutation_paths ||
         (canonical[0] == '.' && canonical[1] == '\0')) {
         status = backend->stat_path(volume, canonical, &stat);
@@ -616,8 +653,11 @@ static enum openrfsfs_status resolve_metadata_path(enum openrfsfs_volume volume,
     const struct vfs_backend_ops *backend = mounts[volume].active && !mounts[volume].mounting &&
         !mounts[volume].unmounting ? mounts[volume].backend : NULL;
     vnode_metadata_release(restore_interrupts);
-    return backend != NULL ? canonicalize_path(path, backend->case_sensitive,
-        backend->validates_mutation_paths, canonical) : OPENRFSFS_STATUS_NOT_MOUNTED;
+    if (backend == NULL) return OPENRFSFS_STATUS_NOT_MOUNTED;
+    const enum openrfsfs_status status = canonicalize_path(path,
+        backend->case_sensitive, backend->validates_mutation_paths, canonical);
+    return status == OPENRFSFS_STATUS_OK &&
+        !data_path_permitted(volume, canonical) ? OPENRFSFS_STATUS_ACCESS : status;
 }
 
 static enum openrfsfs_status resolve_parent(
@@ -742,7 +782,9 @@ static enum openrfsfs_status file_snapshot_pin(openrfsfs_handle handle,
     enum openrfsfs_status status = checked_open_file_state(handle, &state);
     if (status == OPENRFSFS_STATUS_OK) {
         const struct vfs_vnode_state *vnode = &vnodes[state->vnode_index];
-        if (!mount_retain(vnode->volume)) status = OPENRFSFS_STATUS_BUSY;
+        if (!data_path_permitted(vnode->volume, vnode->path))
+            status = OPENRFSFS_STATUS_ACCESS;
+        else if (!mount_retain(vnode->volume)) status = OPENRFSFS_STATUS_BUSY;
         else {
             snapshot->file = *state;
             snapshot->vnode = *vnode;
@@ -1314,9 +1356,12 @@ enum openrfsfs_status openrfsfs_list(
     if (status != OPENRFSFS_STATUS_OK) {
         return status;
     }
-    if (!vnode_snapshot(vnode_index).stat.directory) {
+    if (data_login_locked(volume) ||
+            !vnode_snapshot(vnode_index).stat.directory) {
+        const enum openrfsfs_status refusal = data_login_locked(volume) ?
+            OPENRFSFS_STATUS_ACCESS : OPENRFSFS_STATUS_NOT_DIRECTORY;
         vnode_release(vnode_index, vnode_snapshot(vnode_index).generation);
-        return OPENRFSFS_STATUS_NOT_DIRECTORY;
+        return refusal;
     }
     status = mounts[volume].backend->list(volume, canonical, entries, capacity,
         entry_count);
@@ -1343,9 +1388,12 @@ static enum openrfsfs_status vfs_directory_open_pinned(
     if (status != OPENRFSFS_STATUS_OK) {
         return status;
     }
-    if (!vnode_snapshot(vnode_index).stat.directory) {
+    if (data_login_locked(volume) ||
+            !vnode_snapshot(vnode_index).stat.directory) {
+        const enum openrfsfs_status refusal = data_login_locked(volume) ?
+            OPENRFSFS_STATUS_ACCESS : OPENRFSFS_STATUS_NOT_DIRECTORY;
         vnode_release(vnode_index, vnode_snapshot(vnode_index).generation);
-        return OPENRFSFS_STATUS_NOT_DIRECTORY;
+        return refusal;
     }
     slot = openrfs_slot_claim(directory_claims, VFS_MAX_DIRECTORY_ITERATORS);
     if (slot == VFS_MAX_DIRECTORY_ITERATORS) {
@@ -1440,6 +1488,10 @@ enum openrfsfs_status openrfsfs_directory_read(
         !mounts[vnode->volume].active || vnode->mount_generation != mounts[vnode->volume].generation) {
         vnode_metadata_release(restore_interrupts);
         return OPENRFSFS_STATUS_STALE_HANDLE;
+    }
+    if (data_login_locked(vnode->volume)) {
+        vnode_metadata_release(restore_interrupts);
+        return OPENRFSFS_STATUS_ACCESS;
     }
     if (state->streaming) {
         const enum openrfsfs_volume volume = vnode->volume;

@@ -169,13 +169,16 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
         console_panic("invalid ext4 power-cut configuration");
     }
     openrfsfs_initialize();
-    if (installed_context.test_scenario == KERNEL_TEST_NONE ||
-            installed_context.test_scenario == KERNEL_TEST_NORMAL) {
-        shell_authorization_enable();
-    }
     if (installed_context.test_scenario == KERNEL_TEST_NORMAL) {
         recover_package_state();
         initialize_package_uploads();
+    }
+    if (installed_context.test_scenario == KERNEL_TEST_NONE ||
+            installed_context.test_scenario == KERNEL_TEST_NORMAL) {
+        /* Production does not run package recovery before login. The normal
+         * test runs its legacy recovery first, then exercises this same gate. */
+        openrfsfs_data_login_lock_enable();
+        shell_authorization_enable();
     }
     if (!native_process_self_test(&native_process_tests)) {
         console_panic("native userspace foundation self-test failed");
@@ -188,6 +191,20 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
     }
 
     if (installed_context.test_scenario == KERNEL_TEST_NORMAL) {
+        /* Direct VFS controls, independently of shell command dispatch. */
+        if (openrfsfs_drive(OPENRFSFS_VOLUME_DATA).mounted) {
+            struct openrfsfs_stat stat;
+            openrfsfs_handle handle;
+            if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, ".", &stat) !=
+                    OPENRFSFS_STATUS_OK ||
+                    openrfsfs_open(OPENRFSFS_VOLUME_DATA, "NOAUTH.TXT",
+                        OPENRFSFS_ACCESS_READ, &handle) !=
+                    OPENRFSFS_STATUS_ACCESS ||
+                    openrfsfs_list(OPENRFSFS_VOLUME_DATA, ".", NULL, 0U,
+                        NULL) != OPENRFSFS_STATUS_ACCESS) {
+                console_panic("pre-login Data VFS gate failed");
+            }
+        }
         kernel_test_complete_normal();
     }
 
