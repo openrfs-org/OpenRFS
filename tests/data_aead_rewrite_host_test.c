@@ -54,6 +54,17 @@ static bool read_old(void *context, uint64_t offset, uint8_t *to,
     return true;
 }
 
+static bool read_shadow(void *context, uint64_t offset, uint8_t *to,
+    size_t bytes)
+{
+    const struct memory_io *io = context;
+    if (offset > io->shadow->length ||
+            bytes > io->shadow->length - (size_t)offset)
+        return false;
+    memcpy(to, io->shadow->bytes + (size_t)offset, bytes);
+    return true;
+}
+
 static bool write_shadow(void *context, uint64_t offset,
     const uint8_t *from, size_t bytes)
 {
@@ -150,6 +161,29 @@ int main(void)
     CHECK(produced == shadow_file.length);
     memcpy(expected + 4094U, patch, sizeof(patch));
     check_plaintext(key, &shadow_file, expected, 5000U);
+    uint64_t verified = 0U;
+    CHECK(data_aead_verify_shadow(key, "HOME/NOTE.TXT", produced,
+        read_shadow, &io, workspace, sizeof(workspace), &verified) ==
+        DATA_AEAD_OK && verified == 5000U);
+    expect_wiped();
+    shadow_file.bytes[DATA_AEAD_HEADER_BYTES + DATA_AEAD_NONCE_BYTES] ^= 1U;
+    CHECK(data_aead_verify_shadow(key, "HOME/NOTE.TXT", produced,
+        read_shadow, &io, workspace, sizeof(workspace), &verified) ==
+        DATA_AEAD_AUTHENTICATION && verified == 0U);
+    expect_wiped();
+    shadow_file.bytes[DATA_AEAD_HEADER_BYTES + DATA_AEAD_NONCE_BYTES] ^= 1U;
+    CHECK(data_aead_verify_shadow(wrong_key, "HOME/NOTE.TXT", produced,
+        read_shadow, &io, workspace, sizeof(workspace), &verified) ==
+        DATA_AEAD_AUTHENTICATION && verified == 0U);
+    CHECK(data_aead_verify_shadow(key, "HOME/OTHER.TXT", produced,
+        read_shadow, &io, workspace, sizeof(workspace), &verified) ==
+        DATA_AEAD_AUTHENTICATION && verified == 0U);
+    --shadow_file.length;
+    CHECK(data_aead_verify_shadow(key, "HOME/NOTE.TXT", produced,
+        read_shadow, &io, workspace, sizeof(workspace), &verified) ==
+        DATA_AEAD_IO && verified == 0U);
+    ++shadow_file.length;
+    expect_wiped();
     memcpy(first_id, shadow_file.bytes + 20U, sizeof(first_id));
     expect_wiped();
     publish_shadow(&io);
@@ -239,6 +273,6 @@ int main(void)
         sizeof(workspace), &produced) == DATA_AEAD_RANGE);
     expect_wiped();
 
-    puts("Data AEAD shadow rewrite partial/sparse/truncate, tamper, disk-full and entropy controls passed");
+    puts("Data AEAD shadow rewrite/readback partial/sparse/truncate, tamper, disk-full and entropy controls passed");
     return 0;
 }

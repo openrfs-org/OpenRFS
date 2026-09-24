@@ -41,4 +41,15 @@ enum data_aead_status data_aead_rewrite_shadow(
     const struct data_aead_rewrite_io *io, uint8_t *workspace,
     size_t workspace_bytes, uint64_t *new_physical_bytes);
 
+/* Reopen and authenticate a complete candidate after its storage barrier and
+ * before publication. The callback must read exactly the requested span or
+ * refuse. This verifies the bytes read back, not their future persistence or
+ * whole-file freshness. Workspace must not overlap any input or output. */
+enum data_aead_status data_aead_verify_shadow(
+    const uint8_t key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
+    uint64_t physical_bytes,
+    bool (*read_shadow)(void *context, uint64_t offset, uint8_t *to,
+        size_t bytes), void *context, uint8_t *workspace,
+    size_t workspace_bytes, uint64_t *plaintext_bytes);
+
 #endif

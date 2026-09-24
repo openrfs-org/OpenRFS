@@ -180,3 +180,64 @@ done:
     crypto_wipe(workspace, DATA_AEAD_REWRITE_WORKSPACE_BYTES);
     return result;
 }
+
+enum data_aead_status data_aead_verify_shadow(
+    const uint8_t key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
+    uint64_t physical_bytes,
+    bool (*read_shadow)(void *context, uint64_t offset, uint8_t *to,
+        size_t bytes), void *context, uint8_t *workspace,
+    size_t workspace_bytes, uint64_t *plaintext_bytes)
+{
+    enum data_aead_status result = DATA_AEAD_OK;
+    uint64_t length = 0U;
+    uint8_t *header;
+    uint8_t *sealed;
+    uint8_t *plain;
+
+    if (plaintext_bytes != NULL) *plaintext_bytes = 0U;
+    if (key == NULL || canonical_path == NULL || read_shadow == NULL ||
+            workspace == NULL ||
+            workspace_bytes < DATA_AEAD_REWRITE_WORKSPACE_BYTES ||
+            plaintext_bytes == NULL) {
+        if (workspace != NULL) crypto_wipe(workspace,
+            workspace_bytes < DATA_AEAD_REWRITE_WORKSPACE_BYTES ?
+                workspace_bytes : DATA_AEAD_REWRITE_WORKSPACE_BYTES);
+        return DATA_AEAD_ARGUMENT;
+    }
+    if (physical_bytes < DATA_AEAD_HEADER_BYTES ||
+            physical_bytes > DATA_AEAD_PHYSICAL_MAX) {
+        crypto_wipe(workspace, DATA_AEAD_REWRITE_WORKSPACE_BYTES);
+        return DATA_AEAD_RANGE;
+    }
+    header = workspace;
+    sealed = header + DATA_AEAD_HEADER_BYTES;
+    plain = sealed + DATA_AEAD_SEALED_CHUNK_BYTES;
+    zero_bytes(workspace, DATA_AEAD_REWRITE_WORKSPACE_BYTES);
+    if (!read_shadow(context, 0U, header, DATA_AEAD_HEADER_BYTES)) {
+        result = DATA_AEAD_IO;
+        goto done;
+    }
+    result = data_aead_check_header(key, canonical_path, header,
+        physical_bytes, &length);
+    if (result != DATA_AEAD_OK) goto done;
+    for (uint64_t index = 0U; index < chunk_count(length); ++index) {
+        size_t opened = 0U;
+        const uint64_t offset = DATA_AEAD_HEADER_BYTES +
+            index * DATA_AEAD_SEALED_CHUNK_BYTES;
+        if (!read_shadow(context, offset, sealed,
+                DATA_AEAD_SEALED_CHUNK_BYTES)) {
+            result = DATA_AEAD_IO;
+            goto done;
+        }
+        result = data_aead_open_chunk(key, header, index, sealed, plain,
+            &opened);
+        if (result != DATA_AEAD_OK || opened != chunk_length(length, index)) {
+            if (result == DATA_AEAD_OK) result = DATA_AEAD_FORMAT;
+            goto done;
+        }
+    }
+    *plaintext_bytes = length;
+done:
+    crypto_wipe(workspace, DATA_AEAD_REWRITE_WORKSPACE_BYTES);
+    return result;
+}

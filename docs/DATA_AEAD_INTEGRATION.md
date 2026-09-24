@@ -49,7 +49,11 @@ shadow with a partial write, sparse extension or truncate. It verifies every
 old chunk, including truncated-away chunks, allocates a new random file ID
 and nonces, and wipes its caller-owned bounded workspace. Host fault tests
 exercise tampering, wrong keys, entropy refusal, and disk-full writes. It
-does not publish or recover the shadow, preserve filesystem metadata, migrate
+also offers a bounded full-shadow readback verifier for use after the caller's
+storage barrier and before publication; host negatives cover changed bytes,
+wrong keys, wrong paths, and short reads. Readback cannot establish future
+durability or freshness. The helper does not publish or recover the shadow,
+preserve filesystem metadata, migrate
 plaintext, or intercept the production VFS. Those remain required before
 the Data namespace is encrypted.
 
