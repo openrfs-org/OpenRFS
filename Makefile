@@ -3396,7 +3396,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 			grep -Fxq 'OpenRFS: installed proof passed' "$$log" || \
 				diagnostics_ok=false ;; \
 		device-substrate) \
-			grep -Fxq 'ST DEVICE_SUBSTRATE dma 64 msix 1 used 0->1 ownership CPU-DEVICE-CPU teardown clean negatives 14' "$$log" && \
+			grep -Fxq 'ST DEVICE_SUBSTRATE dma 64 msix 1 used 0->1 ownership CPU-DEVICE-CPU teardown clean negatives 15' "$$log" && \
 			grep -Fxq 'OpenRFS: device substrate teardown complete' "$$log" && \
 			grep -Eq '^OpenRFS: VirtIO RNG device DMA wrote 64 bytes; nonzero [1-9][0-9]*$$' "$$log" && \
 			grep -Fxq 'OpenRFS: MSI-X delivered 1 interrupt; used ring 0 -> 1' "$$log" || \

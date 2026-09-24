@@ -4,12 +4,14 @@
 #include <stdint.h>
 
 #include <openrfs/apic.h>
+#include <openrfs/clock.h>
 #include <openrfs/cpu.h>
 #include <openrfs/interrupt_vector.h>
 #include <openrfs/interrupts.h>
 #include <openrfs/msix.h>
 #include <openrfs/pci.h>
 #include <openrfs/pci_resource.h>
+#include <openrfs/thread.h>
 
 #define MSIX_CAPABILITY_LENGTH UINT16_C(12)
 #define MSIX_CONTROL_OFFSET UINT16_C(2)
@@ -24,8 +26,84 @@
 #define MSIX_VECTOR_MASK UINT32_C(0x00000001)
 #define MSIX_MESSAGE_ADDRESS_BASE UINT32_C(0xFEE00000)
 #define MSIX_MESSAGE_DESTINATION_SHIFT 12U
+#define MSIX_APIC_IRR_BASE UINT32_C(0x0200)
+#define MSIX_APIC_IRR_STRIDE UINT32_C(0x10)
+#define MSIX_QUIET_NS UINT64_C(1000000)
+#define MSIX_QUIET_SPINS 4096U
+#define MSIX_MAX_SPINS 1000000U
+#define MSIX_MAX_DRAINS 64U
 
 static struct msix_state state;
+
+static bool vector_pending(uint8_t vector)
+{
+    const uint32_t offset = MSIX_APIC_IRR_BASE +
+        ((uint32_t)vector / 32U) * MSIX_APIC_IRR_STRIDE;
+
+    return (apic_register_read(offset) &
+        (UINT32_C(1) << (vector % 32U))) != 0U;
+}
+
+static void drain_interrupt(struct interrupt_frame *frame, void *context)
+{
+    (void)frame;
+    (void)context;
+    ++state.drained_pending;
+}
+
+/* The live device handler is never entered after its device has stopped. */
+static bool install_drain_handler(struct msix_binding *binding)
+{
+    return !binding->handler_installed ||
+        interrupt_replace_handler(binding->vector.vector,
+            drain_interrupt, NULL) == INTERRUPT_STATUS_OK;
+}
+
+/* IF is clear on entry and return. A queued vector keeps its owner until EOI. */
+static bool synchronize_vector(struct msix_binding *binding)
+{
+    const bool restore_preemption = thread_preemption_enabled();
+    const bool timed = clock_is_started();
+    uint64_t quiet_start = clock_monotonic_ns();
+    unsigned quiet_spins = 0U;
+    unsigned drains = 0U;
+    bool quiet = false;
+
+    if (!binding->handler_installed || !binding->vector.active ||
+        !apic_is_online()) {
+        return !binding->handler_installed;
+    }
+    if (restore_preemption &&
+        thread_disable_preemption() != THREAD_STATUS_OK) {
+        return false;
+    }
+
+    for (unsigned spins = 0U; spins < MSIX_MAX_SPINS; ++spins) {
+        if (vector_pending(binding->vector.vector)) {
+            if (++drains > MSIX_MAX_DRAINS) {
+                break;
+            }
+            /* STI's one-instruction shadow permits the pending IRQ before CLI. */
+            __asm__ volatile ("sti; nop; cli" : : : "memory");
+            quiet_start = clock_monotonic_ns();
+            quiet_spins = 0U;
+            continue;
+        }
+        ++quiet_spins;
+        if ((timed && clock_monotonic_ns() - quiet_start >=
+                MSIX_QUIET_NS) ||
+            (!timed && quiet_spins >= MSIX_QUIET_SPINS)) {
+            quiet = true;
+            break;
+        }
+        __asm__ volatile ("pause" : : : "memory");
+    }
+    if (restore_preemption &&
+        thread_enable_preemption() != THREAD_STATUS_OK) {
+        return false;
+    }
+    return quiet && !vector_pending(binding->vector.vector);
+}
 
 static const struct pci_function *function_for_claim(
     const struct pci_device_claim *claim
@@ -144,12 +222,16 @@ static enum msix_status enable_masked(
 static enum msix_status rollback_binding(struct msix_binding *binding)
 {
     uint32_t restored_header = 0U;
+    const uint16_t masked_control = (uint16_t)(
+        binding->original_control | MSIX_CONTROL_FUNCTION_MASK);
     binding->teardown_started = true;
 
     if (binding->claim != NULL && binding->capability_offset != 0U) {
         if (write_control(binding->claim->device, binding->capability_offset,
-                (uint16_t)(binding->original_control |
-                    MSIX_CONTROL_FUNCTION_MASK)) != MSIX_STATUS_OK) {
+                masked_control) != MSIX_STATUS_OK ||
+            config_read(binding->claim->device, binding->capability_offset,
+                &restored_header) != MSIX_STATUS_OK ||
+            (uint16_t)(restored_header >> 16U) != masked_control) {
             return MSIX_STATUS_ROLLBACK_FAILURE;
         }
     }
@@ -159,13 +241,16 @@ static enum msix_status rollback_binding(struct msix_binding *binding)
         cpu_store_fence();
     }
 
-    if (binding->handler_installed) {
-        if (interrupt_unregister_handler(binding->vector.vector) !=
-                INTERRUPT_STATUS_OK) {
-            return MSIX_STATUS_ROLLBACK_FAILURE;
-        } else {
-            binding->handler_installed = false;
-        }
+    /* Stop new MSI-X messages before restoring the table or releasing its
+     * vector. The PCI readback also completes the control write.
+     */
+    if (binding->claim != NULL && binding->capability_offset != 0U &&
+        (write_control(binding->claim->device, binding->capability_offset,
+            binding->original_control) != MSIX_STATUS_OK ||
+         config_read(binding->claim->device, binding->capability_offset,
+            &restored_header) != MSIX_STATUS_OK ||
+         (uint16_t)(restored_header >> 16U) != binding->original_control)) {
+        return MSIX_STATUS_ROLLBACK_FAILURE;
     }
 
     if (binding->entry != NULL) {
@@ -181,6 +266,18 @@ static enum msix_status rollback_binding(struct msix_binding *binding)
         }
     }
 
+    if (!install_drain_handler(binding) ||
+        !synchronize_vector(binding)) {
+        return MSIX_STATUS_ROLLBACK_FAILURE;
+    }
+    if (binding->handler_installed) {
+        if (interrupt_unregister_handler(binding->vector.vector) !=
+                INTERRUPT_STATUS_OK) {
+            return MSIX_STATUS_ROLLBACK_FAILURE;
+        }
+        binding->handler_installed = false;
+    }
+
     /* Never recycle a vector while a handler may still be reachable. */
     if (binding->vector.active) {
         if (binding->handler_installed) {
@@ -189,17 +286,6 @@ static enum msix_status rollback_binding(struct msix_binding *binding)
                 INTERRUPT_VECTOR_STATUS_OK) {
             return MSIX_STATUS_ROLLBACK_FAILURE;
         }
-    }
-
-    // Restore and verify the disabled original control before releasing the
-    // table mapping. On failure the next unbind retains every remaining owner.
-    if (binding->claim != NULL && binding->capability_offset != 0U &&
-        (write_control(binding->claim->device, binding->capability_offset,
-            binding->original_control) != MSIX_STATUS_OK ||
-         config_read(binding->claim->device, binding->capability_offset,
-            &restored_header) != MSIX_STATUS_OK ||
-         (uint16_t)(restored_header >> 16U) != binding->original_control)) {
-        return MSIX_STATUS_ROLLBACK_FAILURE;
     }
 
     if (binding->pba_mapped_here && binding->pba_bar != binding->table_bar) {
@@ -510,6 +596,11 @@ enum msix_status msix_abandon_changed_device(struct msix_binding *binding)
     /* The original function is no longer at this BDF. Touching either its
      * capability or table would access absent hardware or a replacement.
      */
+    if (binding->handler_installed &&
+        (!install_drain_handler(binding) ||
+         !synchronize_vector(binding))) {
+        return MSIX_STATUS_ROLLBACK_FAILURE;
+    }
     if (binding->handler_installed) {
         if (interrupt_unregister_handler(binding->vector.vector) !=
                 INTERRUPT_STATUS_OK) {

@@ -57,6 +57,7 @@ struct msix_binding {
 struct msix_state {
     size_t active_bindings;
     size_t rollback_count;
+    size_t drained_pending;
     bool failure_injection_armed;
     bool unbind_failure_injection_armed;
 };

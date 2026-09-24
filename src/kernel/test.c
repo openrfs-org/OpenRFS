@@ -8095,7 +8095,7 @@ _Noreturn void kernel_test_complete_device_substrate(void)
         proof.nonzero_bytes == 0U ||
         !proof.dma_device_written || !proof.msix_delivered ||
         !proof.ownership_round_trip || !proof.teardown_complete ||
-        proof.negative_controls != 2U || negative_controls != 14U) {
+        proof.negative_controls != 3U || negative_controls != 15U) {
         kernel_test_fail("device-substrate installed proof is inconsistent");
     }
 
