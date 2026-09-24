@@ -508,7 +508,7 @@ DEPENDENCIES := $(C_OBJECTS:.o=.d) $(MONOCYPHER_OBJECTS:.o=.d) \
 # implicit and pattern rule search for a phony target, so declaring them phony
 # makes every scenario resolve to "nothing to be done" and pass without booting.
 # They never create a file of their own name, so they rerun regardless.
-.PHONY: all installer-port-test audio-wav-tests capture-boot-video capture-openrfs capture-openrfs-proof capture-networking clean contract-counts contract-scenarios dynamic-elf-tests ext4-images ext4-tests ext4-fsync-test ext4-sparse-truncate-test fat32-images force-package-trust hooks https-tests random-host-test entropy-qemu-test boot-artifact-signature-test \
+.PHONY: all installer-port-test audio-wav-tests capture-boot-video capture-openrfs capture-openrfs-proof capture-networking clean contract-counts contract-scenarios dynamic-elf-tests ext4-images ext4-tests ext4-fsync-test ext4-sparse-truncate-test fat32-images force-package-trust hooks https-tests account-host-test random-host-test entropy-qemu-test boot-artifact-signature-test \
 	iso kernel lint native-apps native-audio-proof native-dynamic-proof native-https-proof native-openrfs-proof native-sdl-proof sdl-preference-tests port-tests qemu-port-tests reproducible-sdk run \
 	package-control-tests package-fetch-tests package-manager-tests package-repository-tests package-service-tests package-state-tests package-transaction-tests package-trust-asset-tests package-trust-tests package-upload-tests qemu-test-ext4-powercuts screenshot-proof sdk sdk-once smoke tls-tests toolchain verify wall-clock-tests zlib-tests
 
@@ -1844,11 +1844,25 @@ $(RANDOM_HOST_TEST): tests/random_host_test.c src/kernel/random.c \
 random-host-test: $(RANDOM_HOST_TEST)
 	$(RANDOM_HOST_TEST)
 
+ACCOUNT_HOST_TEST := $(TEST_BUILD_DIR)/account-host-test$(HOST_EXEEXT)
+
+$(ACCOUNT_HOST_TEST): tests/account_host_test.c src/kernel/account.c \
+		src/kernel/package_state.c include/openrfs/account.h \
+		include/openrfs/clock.h include/openrfs/fat32_fs.h
+	mkdir -p $(dir $@)
+	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
+		tests/account_host_test.c src/kernel/account.c \
+		src/kernel/package_state.c -o $@
+
+account-host-test: $(ACCOUNT_HOST_TEST)
+	$(ACCOUNT_HOST_TEST)
+
 boot-artifact-signature-test:
 	$(PYTHON) tools/test_boot_artifact_signature.py
 
 verify: toolchain lint installer-port-test minimal-de-host-test \
-		random-host-test boot-artifact-signature-test
+		random-host-test account-host-test boot-artifact-signature-test
 ifneq ($(VERIFY_CLEAN),0)
 	$(MAKE) clean
 endif

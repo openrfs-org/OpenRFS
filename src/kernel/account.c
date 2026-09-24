@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include <openrfs/account.h>
+#include <openrfs/clock.h>
 #include <openrfs/fat32_fs.h>
 #include <openrfs/package_state.h>
 #include <openrfs/random.h>
@@ -19,6 +20,17 @@
 #define ACCOUNT_SALT_BYTES 16U
 #define ACCOUNT_DIGEST_BYTES 32U
 #define ACCOUNT_KDF_ROUNDS UINT32_C(32768)
+#define ACCOUNT_BACKOFF_INITIAL_NS UINT64_C(1000000000)
+#define ACCOUNT_BACKOFF_MAX_NS UINT64_C(60000000000)
+#define ACCOUNT_BACKOFF_FIRST_FAILURE 3U
+#define ACCOUNT_BACKOFF_SATURATED_FAILURES 9U
+
+struct account_throttle {
+    uint32_t failures;
+    uint64_t retry_after_ns;
+};
+
+static struct account_throttle login_throttle;
 
 static const uint8_t account_magic[4] = { 'O', 'G', 'A', '1' };
 static const uint8_t account_domain[] = "OpenRFS account password v1";
@@ -48,6 +60,37 @@ static bool equal_bytes(const uint8_t *left, const uint8_t *right, size_t length
         difference |= left[index] ^ right[index];
     }
     return difference == 0U;
+}
+
+static bool throttle_allows(const struct account_throttle *throttle,
+    uint64_t now)
+{
+    return now >= throttle->retry_after_ns;
+}
+
+static void throttle_failed(struct account_throttle *throttle, uint64_t now)
+{
+    uint64_t delay;
+
+    if (throttle->failures < ACCOUNT_BACKOFF_SATURATED_FAILURES) {
+        ++throttle->failures;
+    }
+    if (throttle->failures < ACCOUNT_BACKOFF_FIRST_FAILURE) {
+        return;
+    }
+    delay = ACCOUNT_BACKOFF_INITIAL_NS <<
+        (throttle->failures - ACCOUNT_BACKOFF_FIRST_FAILURE);
+    if (delay > ACCOUNT_BACKOFF_MAX_NS) {
+        delay = ACCOUNT_BACKOFF_MAX_NS;
+    }
+    throttle->retry_after_ns = UINT64_MAX - now < delay ? UINT64_MAX :
+        now + delay;
+}
+
+static void throttle_succeeded(struct account_throttle *throttle)
+{
+    throttle->failures = 0U;
+    throttle->retry_after_ns = 0U;
 }
 
 static size_t text_length(const char *text, size_t capacity)
@@ -399,13 +442,22 @@ enum account_status account_authenticate(const char *username,
     uint8_t record[ACCOUNT_RECORD_BYTES];
     uint8_t digest[ACCOUNT_DIGEST_BYTES];
     size_t supplied_username_bytes;
+    uint64_t now;
     enum account_status status;
 
     if (username == NULL || password == NULL) {
         return ACCOUNT_STATUS_NULL_ARGUMENT;
     }
+    if (!clock_is_started()) {
+        return ACCOUNT_STATUS_CLOCK_UNAVAILABLE;
+    }
+    now = clock_monotonic_ns();
+    if (!throttle_allows(&login_throttle, now)) {
+        return ACCOUNT_STATUS_RATE_LIMITED;
+    }
     if (!username_valid(username, &supplied_username_bytes) ||
             !password_valid(password, password_bytes)) {
+        throttle_failed(&login_throttle, now);
         return ACCOUNT_STATUS_AUTHENTICATION_FAILED;
     }
     status = load_record(record);
@@ -426,6 +478,11 @@ enum account_status account_authenticate(const char *username,
     }
     zero_bytes(digest, sizeof(digest));
     zero_bytes(record, sizeof(record));
+    if (status == ACCOUNT_STATUS_AUTHENTICATION_FAILED) {
+        throttle_failed(&login_throttle, clock_monotonic_ns());
+    } else if (status == ACCOUNT_STATUS_OK) {
+        throttle_succeeded(&login_throttle);
+    }
     return status;
 }
 
@@ -441,6 +498,7 @@ bool account_self_test(void)
     uint8_t repeat[ACCOUNT_DIGEST_BYTES];
     uint8_t second[ACCOUNT_DIGEST_BYTES];
     uint8_t record[ACCOUNT_RECORD_BYTES] = {0};
+    struct account_throttle throttle = {0};
     size_t username_bytes;
     bool passed = username_valid("alice_1", &username_bytes) &&
         username_bytes == 7U && !username_valid("-alice", NULL) &&
@@ -472,6 +530,34 @@ bool account_self_test(void)
             record + ACCOUNT_CHECKSUM_OFFSET) == PACKAGE_STATE_STATUS_OK &&
         validate_record(record) == ACCOUNT_STATUS_STORAGE_CORRUPT;
 
+    throttle_failed(&throttle, 0U);
+    throttle_failed(&throttle, 0U);
+    passed = passed && throttle_allows(&throttle, 0U);
+    throttle_failed(&throttle, 0U);
+    passed = passed && !throttle_allows(&throttle,
+        ACCOUNT_BACKOFF_INITIAL_NS - 1U) &&
+        throttle_allows(&throttle, ACCOUNT_BACKOFF_INITIAL_NS);
+    throttle_failed(&throttle, ACCOUNT_BACKOFF_INITIAL_NS);
+    passed = passed && throttle.retry_after_ns ==
+        3U * ACCOUNT_BACKOFF_INITIAL_NS;
+    for (size_t index = 0U; index < 5U; ++index) {
+        const uint64_t attempted_at = throttle.retry_after_ns;
+
+        throttle_failed(&throttle, attempted_at);
+        if (index == 4U) {
+            passed = passed && throttle.retry_after_ns - attempted_at ==
+                ACCOUNT_BACKOFF_MAX_NS;
+        }
+    }
+    passed = passed && throttle.failures ==
+        ACCOUNT_BACKOFF_SATURATED_FAILURES;
+    throttle_failed(&throttle, UINT64_MAX - 1U);
+    passed = passed && throttle.retry_after_ns == UINT64_MAX &&
+        !throttle_allows(&throttle, UINT64_MAX - 1U);
+    throttle_succeeded(&throttle);
+    passed = passed && throttle_allows(&throttle, 0U) &&
+        throttle.failures == 0U;
+
     record[ACCOUNT_USERNAME_OFFSET + 2U] = (uint8_t)'i';
     record[ACCOUNT_USERNAME_OFFSET + 6U] = (uint8_t)'x';
     passed = passed &&
@@ -499,7 +585,9 @@ const char *account_status_string(enum account_status status)
         "the OpenRFS account record is corrupt",
         "the account salt source is unavailable",
         "account storage failed",
-        "invalid username or password"
+        "invalid username or password",
+        "monotonic clock is unavailable for account login",
+        "account login is temporarily rate limited"
     };
 
     _Static_assert(sizeof(messages) / sizeof(messages[0]) ==
