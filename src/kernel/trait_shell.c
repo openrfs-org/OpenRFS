@@ -1139,12 +1139,6 @@ static bool shell_menu_pick(uint32_t row)
         return trait_shell_open(TRAIT_APP_PACKAGES, where) <
             TRAIT_SHELL_MAX_WINDOWS;
     }
-    if (label_is(label, "glxgears")) {
-        struct trait_rect square = { 300U, 220U, 320U, 320U };
-
-        return trait_shell_open(TRAIT_APP_GEARS, square) <
-            TRAIT_SHELL_MAX_WINDOWS;
-    }
     if (label_is(label, "Task Manager")) {
         return trait_shell_open(TRAIT_APP_TASKMGR, where) <
             TRAIT_SHELL_MAX_WINDOWS;
