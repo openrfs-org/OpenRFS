@@ -24,6 +24,8 @@ enum account_status {
     ACCOUNT_STATUS_AUTHENTICATION_FAILED,
     ACCOUNT_STATUS_CLOCK_UNAVAILABLE,
     ACCOUNT_STATUS_RATE_LIMITED,
+    ACCOUNT_STATUS_KDF_UNAVAILABLE,
+    ACCOUNT_STATUS_CLEANUP_PENDING,
     ACCOUNT_STATUS_COUNT
 };
 
@@ -38,6 +40,12 @@ enum account_status account_authenticate(
     const uint8_t *password,
     size_t password_bytes
 );
+enum account_status account_change_password(
+    const char *username, const uint8_t *old_password,
+    size_t old_password_bytes, const uint8_t *new_password,
+    size_t new_password_bytes);
+bool account_data_key(uint8_t out[32]);
+void account_data_key_forget(void);
 bool account_self_test(void);
 const char *account_status_string(enum account_status status);
 

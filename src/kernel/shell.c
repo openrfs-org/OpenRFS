@@ -67,7 +67,11 @@ enum authentication_prompt {
     AUTHENTICATION_CREATE_PASSWORD,
     AUTHENTICATION_CONFIRM_PASSWORD,
     AUTHENTICATION_STARTY_USERNAME,
-    AUTHENTICATION_STARTY_PASSWORD
+    AUTHENTICATION_STARTY_PASSWORD,
+    AUTHENTICATION_PASSWD_USERNAME,
+    AUTHENTICATION_PASSWD_OLD,
+    AUTHENTICATION_PASSWD_NEW,
+    AUTHENTICATION_PASSWD_CONFIRM
 };
 
 struct authentication_state {
@@ -75,6 +79,8 @@ struct authentication_state {
     char username[ACCOUNT_USERNAME_BYTES];
     uint8_t first_password[ACCOUNT_PASSWORD_MAX_BYTES];
     size_t first_password_bytes;
+    uint8_t old_password[ACCOUNT_PASSWORD_MAX_BYTES];
+    size_t old_password_bytes;
     uint8_t input[ACCOUNT_PASSWORD_MAX_BYTES + 1U];
     size_t input_bytes;
 };
@@ -196,6 +202,7 @@ static void command_help(void)
     console_write("  help      this list\n");
     console_write("  install   open the installer configuration preview\n");
     console_write("  useradd NAME  create the first local user\n");
+    console_write("  passwd    change the local account password\n");
     console_write("  starty    authenticate and start the OpenRFS desktop\n");
     console_write("  echo      print the rest of the line\n");
     console_write("  linux     run measured echo, uname, or bounded cat userspace\n");
@@ -1513,6 +1520,27 @@ static void command_starty(const char *arguments)
     console_write("Username: ");
 }
 
+static void command_passwd(const char *arguments)
+{
+    bool configured = false;
+    if (arguments[0] != '\0') {
+        console_write("passwd: this command takes no arguments\n");
+        return;
+    }
+    const enum account_status status = account_configured(&configured);
+    if (status != ACCOUNT_STATUS_OK) {
+        authentication_error(status);
+        return;
+    }
+    if (!configured) {
+        authentication_error(ACCOUNT_STATUS_NOT_CONFIGURED);
+        return;
+    }
+    authentication_reset();
+    authentication.prompt = AUTHENTICATION_PASSWD_USERNAME;
+    console_write("Username: ");
+}
+
 static bool start_desktop(void)
 {
     if (!ui_select_minimal_desktop()) {
@@ -1539,7 +1567,10 @@ static bool authentication_feed(char character)
     const bool password_prompt =
         authentication.prompt == AUTHENTICATION_CREATE_PASSWORD ||
         authentication.prompt == AUTHENTICATION_CONFIRM_PASSWORD ||
-        authentication.prompt == AUTHENTICATION_STARTY_PASSWORD;
+        authentication.prompt == AUTHENTICATION_STARTY_PASSWORD ||
+        authentication.prompt == AUTHENTICATION_PASSWD_OLD ||
+        authentication.prompt == AUTHENTICATION_PASSWD_NEW ||
+        authentication.prompt == AUTHENTICATION_PASSWD_CONFIRM;
 
     if (authentication.prompt == AUTHENTICATION_NONE) {
         return false;
@@ -1613,7 +1644,10 @@ static bool authentication_feed(char character)
         write_prompt_restored();
         return true;
     }
-    if (authentication.prompt == AUTHENTICATION_STARTY_USERNAME) {
+    if (authentication.prompt == AUTHENTICATION_STARTY_USERNAME ||
+            authentication.prompt == AUTHENTICATION_PASSWD_USERNAME) {
+        const bool changing_password =
+            authentication.prompt == AUTHENTICATION_PASSWD_USERNAME;
         size_t length = authentication.input_bytes;
 
         if (length >= ACCOUNT_USERNAME_BYTES) {
@@ -1623,8 +1657,60 @@ static bool authentication_feed(char character)
             length);
         authentication.username[length] = '\0';
         authentication_clear_input();
-        authentication.prompt = AUTHENTICATION_STARTY_PASSWORD;
-        console_write("Password: ");
+        authentication.prompt = changing_password ? AUTHENTICATION_PASSWD_OLD :
+            AUTHENTICATION_STARTY_PASSWORD;
+        console_write(changing_password ? "Current password: " : "Password: ");
+        return true;
+    }
+    if (authentication.prompt == AUTHENTICATION_PASSWD_OLD) {
+        copy_bytes(authentication.old_password, authentication.input,
+            authentication.input_bytes);
+        authentication.old_password_bytes = authentication.input_bytes;
+        authentication_clear_input();
+        authentication.prompt = AUTHENTICATION_PASSWD_NEW;
+        console_write("New password (8-64 characters): ");
+        return true;
+    }
+    if (authentication.prompt == AUTHENTICATION_PASSWD_NEW) {
+        if (authentication.input_bytes < ACCOUNT_PASSWORD_MIN_BYTES) {
+            authentication_clear_input();
+            console_write("Password must contain 8-64 printable characters.\n");
+            console_write("New password (8-64 characters): ");
+            return true;
+        }
+        copy_bytes(authentication.first_password, authentication.input,
+            authentication.input_bytes);
+        authentication.first_password_bytes = authentication.input_bytes;
+        authentication_clear_input();
+        authentication.prompt = AUTHENTICATION_PASSWD_CONFIRM;
+        console_write("Confirm new password: ");
+        return true;
+    }
+    if (authentication.prompt == AUTHENTICATION_PASSWD_CONFIRM) {
+        if (authentication.input_bytes != authentication.first_password_bytes ||
+                !authentication_equal(authentication.input,
+                    authentication.first_password,
+                    authentication.first_password_bytes)) {
+            secure_zero(authentication.first_password,
+                sizeof(authentication.first_password));
+            authentication.first_password_bytes = 0U;
+            authentication_clear_input();
+            authentication.prompt = AUTHENTICATION_PASSWD_NEW;
+            console_write("Passwords do not match.\n");
+            console_write("New password (8-64 characters): ");
+            return true;
+        }
+        const enum account_status status = account_change_password(
+            authentication.username, authentication.old_password,
+            authentication.old_password_bytes, authentication.input,
+            authentication.input_bytes);
+        authentication_reset();
+        if (status == ACCOUNT_STATUS_OK) {
+            console_write("OpenRFS password changed.\n");
+        } else {
+            authentication_error(status);
+        }
+        write_prompt_restored();
         return true;
     }
     if (authentication.prompt == AUTHENTICATION_STARTY_PASSWORD) {
@@ -1676,6 +1762,8 @@ enum shell_status shell_execute(const char *text)
         command_install(arguments_of(text));
     } else if (matches(text, "useradd")) {
         command_useradd(arguments_of(text));
+    } else if (matches(text, "passwd")) {
+        command_passwd(arguments_of(text));
     } else if (matches(text, "starty")) {
         command_starty(arguments_of(text));
     } else if (matches(text, "echo")) {

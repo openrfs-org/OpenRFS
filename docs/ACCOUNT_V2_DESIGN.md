@@ -1,7 +1,40 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # Account v2 boundary and migration design
 
-This is a design record, not a v2 implementation or a confidentiality claim.
+This records the implemented credential format and the remaining Data security
+work. The credential change alone makes no Data confidentiality claim.
+
+## Production v2 stage
+
+`account_create`, `account_authenticate`, and the shell's `useradd`/`starty`
+now use a 224-byte v2 record in `OPENRFS/LOGIN.V2A`. A `passwd` prompt calls
+`account_change_password`. The record encodes only the supported Argon2id
+v1.3, 64 MiB, three-pass, four-lane tuple. Parsing rejects malformed lengths,
+reserved fields, names and unsupported parameters before KDF work. A SHA-256
+checksum screens accidental corruption; it is explicitly not an attacker
+authenticator. Argon2id output is expanded under separate BLAKE2b labels for
+the verifier and the XChaCha20-Poly1305 Data-key wrap. The wrap authenticates
+the full header, verifier, nonce and generation. The random 32-byte Data key
+is held only after successful login and is wiped after a failed login.
+
+A successful v1 login stages and syncs v2 before unlinking v1. If staging
+fails, login refuses and v1 remains for retry. Password change writes the
+inactive v2 slot at a higher generation, syncs it, reopens and authenticates
+it, then retires the previous slot. A cut before the new slot's rename leaves
+the old password usable; a cut after selects the new generation. The host
+test injects a pre-rename sync failure and a post-commit unlink failure,
+checking that the old password survives the first and the new password works
+after the second. It does not simulate a power cut during the rename itself.
+The shell and desktop capture exercised production v2 creation, password
+change and login in QEMU. Deletion is not
+exposed while Data files remain plaintext and the key is not used by VFS.
+
+This is not crash-safe re-encryption of Data. Password change rewraps the same
+Data key; old wraps can remain in filesystem or media history. Whole-volume
+rollback can restore a retired password because no external generation floor
+is enforced. The record and names are plaintext metadata, and the current
+Data read/write path still stores content in plaintext. These limits must be
+closed before the milestone or a confidentiality claim.
 
 ## Production path and current stage
 
@@ -66,9 +99,9 @@ The host test checks the published RFC 9106 Argon2id vector, compares the
 64 MiB profile with independent `libargon2`, and exercises parameter and
 resource refusal. The counted `account-kdf` QEMU scenario calls the real KDF in
 the 128 MiB guest, checks the independently derived output, and verifies arena
-cleanup. No credential record uses it yet; production v1 remains active.
-An active QEMU login path and crash tests are required before calling this
-credential v2.
+cleanup. The production credential path now calls it. The desktop capture
+exercises v2 creation and login with the real KDF; host tests cover parser
+and sync-failure behavior. Power-cut media recovery remains open.
 
 Derive independent verifier and key-encryption material from the Argon2id
 result with distinct, versioned labels. Do not persist the raw result or use

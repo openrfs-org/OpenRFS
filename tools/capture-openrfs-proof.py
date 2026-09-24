@@ -34,6 +34,8 @@ ACCOUNT_CREATED = b"OpenRFS user created. Run 'starty' to enter the desktop."
 DESKTOP_STARTED = b"OpenRFS: authenticated desktop started"
 CAPTURE_USERNAME = "openrfs"
 CAPTURE_PASSWORD = "openrfspass"
+ROTATED_PASSWORD = "openrfsnewpass"
+PASSWORD_CHANGED = b"OpenRFS password changed."
 RUNTIME_FAILURE = b"runtime disabled"
 
 
@@ -187,7 +189,7 @@ def press(qmp, key, delay=0.30):
     time.sleep(delay)
 
 
-def start_authenticated_desktop(qmp, serial):
+def start_authenticated_desktop(qmp, serial, rotate_password=False):
     send_text(qmp, f"useradd {CAPTURE_USERNAME}")
     press(qmp, "ret", 0.10)
     wait_serial_after(serial, PROMPT, NEW_PASSWORD_PROMPT, timeout=30.0)
@@ -198,13 +200,37 @@ def start_authenticated_desktop(qmp, serial):
     press(qmp, "ret", 0.10)
     wait_serial(serial, ACCOUNT_CREATED, timeout=90.0)
     wait_serial_after(serial, ACCOUNT_CREATED, PROMPT, timeout=30.0)
+    if rotate_password:
+        send_text(qmp, "passwd")
+        press(qmp, "ret", 0.10)
+        wait_serial_after(serial, ACCOUNT_CREATED, USERNAME_PROMPT)
+        send_text(qmp, CAPTURE_USERNAME)
+        press(qmp, "ret", 0.10)
+        current_prompt = b"Current password: "
+        wait_serial_after(serial, ACCOUNT_CREATED, current_prompt)
+        send_text(qmp, CAPTURE_PASSWORD)
+        press(qmp, "ret", 0.10)
+        wait_serial_after(serial, current_prompt, NEW_PASSWORD_PROMPT,
+                          timeout=90.0)
+        send_text(qmp, ROTATED_PASSWORD)
+        press(qmp, "ret", 0.10)
+        wait_serial_after(serial, current_prompt, b"Confirm new password: ")
+        send_text(qmp, ROTATED_PASSWORD)
+        press(qmp, "ret", 0.10)
+        wait_serial_after(serial, current_prompt, PASSWORD_CHANGED,
+                          timeout=90.0)
+        wait_serial_after(serial, PASSWORD_CHANGED, PROMPT)
     send_text(qmp, "starty")
     press(qmp, "ret", 0.10)
-    wait_serial(serial, USERNAME_PROMPT, timeout=30.0)
+    if rotate_password:
+        wait_serial_after(serial, PASSWORD_CHANGED, USERNAME_PROMPT,
+                          timeout=30.0)
+    else:
+        wait_serial(serial, USERNAME_PROMPT, timeout=30.0)
     send_text(qmp, CAPTURE_USERNAME)
     press(qmp, "ret", 0.10)
     wait_serial(serial, PASSWORD_PROMPT, timeout=30.0)
-    send_text(qmp, CAPTURE_PASSWORD)
+    send_text(qmp, ROTATED_PASSWORD if rotate_password else CAPTURE_PASSWORD)
     press(qmp, "ret", 0.10)
     wait_serial(serial, DESKTOP_STARTED, timeout=90.0)
 
@@ -247,6 +273,7 @@ def main():
     parser.add_argument("--system")
     parser.add_argument("--data")
     parser.add_argument("--output", required=True)
+    parser.add_argument("--rotate-password", action="store_true")
 
 
     args = parser.parse_args()
@@ -254,6 +281,8 @@ def main():
         parser.error("provide --userspace or the --system/--data pair")
     if (args.system is None) != (args.data is None):
         parser.error("--system and --data must be provided together")
+    if args.rotate_password and args.data is None:
+        parser.error("--rotate-password requires --system and --data")
 
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -282,7 +311,7 @@ def main():
         wait_serial(serial, PROOF_LINE, timeout=90.0)
         wait_serial_after(serial, PROOF_LINE, PROMPT, timeout=90.0)
         if durable_data is not None:
-            start_authenticated_desktop(qmp, serial)
+            start_authenticated_desktop(qmp, serial, args.rotate_password)
         time.sleep(0.25)
         # starty opens the minimal desktop with its terminal attached to the
         # production shell. Capture the initial guest frame, then exercise
@@ -321,6 +350,8 @@ def main():
             DESKTOP_STARTED not in transcript or GFETCH_RESULT not in transcript or
             TERMINAL_RESULT not in transcript or
             CAPTURE_PASSWORD.encode("ascii") in transcript or
+            ROTATED_PASSWORD.encode("ascii") in transcript or
+            (args.rotate_password and PASSWORD_CHANGED not in transcript) or
             RUNTIME_FAILURE in transcript):
         tail = transcript[-4096:].decode("utf-8", errors="replace")
         raise RuntimeError("proof capture omitted readiness evidence\n" + tail)
@@ -328,12 +359,19 @@ def main():
         report = fat32_image.inspect_image(durable_data.read_bytes())
         login = [
             item for item in report["files"]
-            if item["path"] == "OPENRFS/LOGIN.DAT" and not item["directory"]
+            if item["path"] == ("OPENRFS/LOGIN.V2B" if args.rotate_password
+                                 else "OPENRFS/LOGIN.V2A") and not item["directory"]
+        ]
+        stale_login = [
+            item for item in report["files"]
+            if item["path"] in ("OPENRFS/LOGIN.DAT",
+                                "OPENRFS/LOGIN.V2A" if args.rotate_password
+                                else "OPENRFS/LOGIN.V2B")
         ]
         if (not bool(report["fat_copies_match"]) or int(report["cycles"]) != 0 or
                 int(report["cross_links"]) != 0 or
                 int(report["leaked_clusters"]) != 0 or len(login) != 1 or
-                int(login[0]["size"]) != 124):
+                stale_login or int(login[0]["size"]) != 224):
             raise RuntimeError("proof capture left an inconsistent account volume")
         (output / "report.json").write_text(
             json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"

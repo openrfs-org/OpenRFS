@@ -4,14 +4,19 @@
 #include <stdint.h>
 
 #include <openrfs/account.h>
+#include <openrfs/account_v2.h>
 #include <openrfs/clock.h>
 #include <openrfs/fat32_fs.h>
 #include <openrfs/package_state.h>
 #include <openrfs/random.h>
 
+#include "../../vendor/monocypher/src/monocypher.h"
+
 #define ACCOUNT_DIRECTORY "OPENRFS"
 #define ACCOUNT_PATH "OPENRFS/LOGIN.DAT"
 #define ACCOUNT_TEMP_PATH "OPENRFS/LOGIN.NEW"
+#define ACCOUNT_V2_A_PATH "OPENRFS/LOGIN.V2A"
+#define ACCOUNT_V2_B_PATH "OPENRFS/LOGIN.V2B"
 #define ACCOUNT_RECORD_BYTES 124U
 #define ACCOUNT_CHECKSUM_OFFSET 92U
 #define ACCOUNT_SALT_OFFSET 12U
@@ -31,6 +36,25 @@ struct account_throttle {
 };
 
 static struct account_throttle login_throttle;
+static uint8_t active_data_key[ACCOUNT_V2_KEY_BYTES];
+static bool active_data_key_present;
+
+bool account_data_key(uint8_t out[ACCOUNT_V2_KEY_BYTES])
+{
+    if (out == NULL || !active_data_key_present) {
+        return false;
+    }
+    for (size_t index = 0U; index < sizeof(active_data_key); ++index) {
+        out[index] = active_data_key[index];
+    }
+    return true;
+}
+
+void account_data_key_forget(void)
+{
+    crypto_wipe(active_data_key, sizeof(active_data_key));
+    active_data_key_present = false;
+}
 
 static const uint8_t account_magic[4] = { 'O', 'G', 'A', '1' };
 static const uint8_t account_domain[] = "OpenRFS account password v1";
@@ -227,14 +251,15 @@ static enum account_status derive_password(
     return status;
 }
 
-static enum account_status read_record(uint8_t record[ACCOUNT_RECORD_BYTES])
+static enum account_status read_record(const char *path, uint8_t *record,
+    size_t record_bytes)
 {
     uint8_t extra = 0U;
     size_t completed = 0U;
     size_t read_bytes = 0U;
     openrfsfs_handle handle;
     enum openrfsfs_status status = openrfsfs_open(OPENRFSFS_VOLUME_DATA,
-        ACCOUNT_PATH, OPENRFSFS_ACCESS_READ, &handle);
+        path, OPENRFSFS_ACCESS_READ, &handle);
 
     if (status == OPENRFSFS_STATUS_NOT_FOUND) {
         return ACCOUNT_STATUS_NOT_CONFIGURED;
@@ -244,15 +269,15 @@ static enum account_status read_record(uint8_t record[ACCOUNT_RECORD_BYTES])
             status == OPENRFSFS_STATUS_ABSENT ?
             ACCOUNT_STATUS_STORAGE_UNAVAILABLE : ACCOUNT_STATUS_IO;
     }
-    while (completed < ACCOUNT_RECORD_BYTES && status == OPENRFSFS_STATUS_OK) {
+    while (completed < record_bytes && status == OPENRFSFS_STATUS_OK) {
         status = openrfsfs_read(handle, record + completed,
-            ACCOUNT_RECORD_BYTES - completed, &read_bytes);
+            record_bytes - completed, &read_bytes);
         if (read_bytes == 0U) {
             break;
         }
         completed += read_bytes;
     }
-    if (status == OPENRFSFS_STATUS_OK && completed == ACCOUNT_RECORD_BYTES) {
+    if (status == OPENRFSFS_STATUS_OK && completed == record_bytes) {
         status = openrfsfs_read(handle, &extra, 1U, &read_bytes);
     }
     if (openrfsfs_close(handle) != OPENRFSFS_STATUS_OK &&
@@ -262,7 +287,7 @@ static enum account_status read_record(uint8_t record[ACCOUNT_RECORD_BYTES])
     if (status != OPENRFSFS_STATUS_OK) {
         return ACCOUNT_STATUS_IO;
     }
-    if (completed != ACCOUNT_RECORD_BYTES || read_bytes != 0U) {
+    if (completed != record_bytes || read_bytes != 0U) {
         return ACCOUNT_STATUS_STORAGE_CORRUPT;
     }
     return ACCOUNT_STATUS_OK;
@@ -304,12 +329,14 @@ static enum account_status validate_record(uint8_t record[ACCOUNT_RECORD_BYTES])
 
 static enum account_status load_record(uint8_t record[ACCOUNT_RECORD_BYTES])
 {
-    enum account_status status = read_record(record);
+    enum account_status status = read_record(ACCOUNT_PATH, record,
+        ACCOUNT_RECORD_BYTES);
 
     return status == ACCOUNT_STATUS_OK ? validate_record(record) : status;
 }
 
-static enum account_status persist_record(const uint8_t record[ACCOUNT_RECORD_BYTES])
+static enum account_status persist_record(const uint8_t *record,
+    size_t record_bytes, const char *destination)
 {
     struct openrfsfs_stat stat;
     openrfsfs_handle handle;
@@ -340,25 +367,187 @@ static enum account_status persist_record(const uint8_t record[ACCOUNT_RECORD_BY
         opened = status == OPENRFSFS_STATUS_OK;
     }
     if (status == OPENRFSFS_STATUS_OK) {
-        status = openrfsfs_write(handle, record, ACCOUNT_RECORD_BYTES, &written);
+        status = openrfsfs_write(handle, record, record_bytes, &written);
     }
     if (opened && openrfsfs_close(handle) != OPENRFSFS_STATUS_OK &&
             status == OPENRFSFS_STATUS_OK) {
         status = OPENRFSFS_STATUS_STALE_HANDLE;
     }
-    if (status == OPENRFSFS_STATUS_OK && written == ACCOUNT_RECORD_BYTES) {
+    if (status == OPENRFSFS_STATUS_OK && written == record_bytes) {
         status = openrfsfs_sync(OPENRFSFS_VOLUME_DATA);
     }
     if (status == OPENRFSFS_STATUS_OK) {
         status = openrfsfs_rename(OPENRFSFS_VOLUME_DATA, ACCOUNT_TEMP_PATH,
-            ACCOUNT_PATH);
+            destination);
     }
     if (status == OPENRFSFS_STATUS_OK) {
         status = openrfsfs_sync(OPENRFSFS_VOLUME_DATA);
     }
-    if (status != OPENRFSFS_STATUS_OK || written != ACCOUNT_RECORD_BYTES) {
+    if (status != OPENRFSFS_STATUS_OK || written != record_bytes) {
         (void)openrfsfs_unlink(OPENRFSFS_VOLUME_DATA, ACCOUNT_TEMP_PATH);
         return ACCOUNT_STATUS_IO;
+    }
+    return ACCOUNT_STATUS_OK;
+}
+
+static enum account_status load_v2_slot(const char *path,
+    uint8_t record[ACCOUNT_V2_RECORD_BYTES])
+{
+    enum account_status status = read_record(path, record,
+        ACCOUNT_V2_RECORD_BYTES);
+
+    if (status == ACCOUNT_STATUS_OK &&
+            account_v2_validate(record) != ACCOUNT_V2_OK) {
+        status = ACCOUNT_STATUS_STORAGE_CORRUPT;
+    }
+    return status;
+}
+
+static enum account_status load_active_v2(
+    uint8_t record[ACCOUNT_V2_RECORD_BYTES], const char **slot)
+{
+    uint8_t second[ACCOUNT_V2_RECORD_BYTES];
+    enum account_status first_status = load_v2_slot(ACCOUNT_V2_A_PATH, record);
+    enum account_status second_status = load_v2_slot(ACCOUNT_V2_B_PATH,
+        second);
+
+    if (first_status != ACCOUNT_STATUS_OK &&
+            first_status != ACCOUNT_STATUS_NOT_CONFIGURED) {
+        zero_bytes(second, sizeof(second));
+        return first_status;
+    }
+    if (second_status != ACCOUNT_STATUS_OK &&
+            second_status != ACCOUNT_STATUS_NOT_CONFIGURED) {
+        zero_bytes(second, sizeof(second));
+        return second_status;
+    }
+    if (first_status == ACCOUNT_STATUS_NOT_CONFIGURED &&
+            second_status == ACCOUNT_STATUS_NOT_CONFIGURED) {
+        zero_bytes(second, sizeof(second));
+        return ACCOUNT_STATUS_NOT_CONFIGURED;
+    }
+    if (second_status == ACCOUNT_STATUS_OK &&
+            (first_status == ACCOUNT_STATUS_NOT_CONFIGURED ||
+             account_v2_generation(second) > account_v2_generation(record))) {
+        copy_bytes(record, second, sizeof(second));
+        if (slot != NULL) {
+            *slot = ACCOUNT_V2_B_PATH;
+        }
+    } else if (first_status == ACCOUNT_STATUS_OK) {
+        if (second_status == ACCOUNT_STATUS_OK &&
+                account_v2_generation(second) ==
+                    account_v2_generation(record)) {
+            zero_bytes(second, sizeof(second));
+            return ACCOUNT_STATUS_STORAGE_CORRUPT;
+        }
+        if (slot != NULL) {
+            *slot = ACCOUNT_V2_A_PATH;
+        }
+    }
+    zero_bytes(second, sizeof(second));
+    return ACCOUNT_STATUS_OK;
+}
+
+static enum account_status v2_create(const char *username,
+    const uint8_t *password, size_t password_bytes)
+{
+    uint8_t salt[16];
+    uint8_t nonce[ACCOUNT_V2_NONCE_BYTES];
+    uint8_t data_key[ACCOUNT_V2_KEY_BYTES];
+    uint8_t record[ACCOUNT_V2_RECORD_BYTES];
+    enum account_status result = ACCOUNT_STATUS_RANDOM_UNAVAILABLE;
+
+    if (random_bytes(salt, sizeof(salt)) != RANDOM_STATUS_OK ||
+            random_bytes(nonce, sizeof(nonce)) != RANDOM_STATUS_OK ||
+            random_bytes(data_key, sizeof(data_key)) != RANDOM_STATUS_OK) {
+        goto done;
+    }
+    const enum account_v2_status status = account_v2_seal(username,
+        password, password_bytes, 1U, salt, nonce, data_key, record);
+    if (status == ACCOUNT_V2_OK) {
+        result = persist_record(record, sizeof(record), ACCOUNT_V2_A_PATH);
+    } else {
+        result = status == ACCOUNT_V2_KDF_UNAVAILABLE ?
+            ACCOUNT_STATUS_KDF_UNAVAILABLE : ACCOUNT_STATUS_IO;
+    }
+done:
+    zero_bytes(salt, sizeof(salt));
+    zero_bytes(nonce, sizeof(nonce));
+    zero_bytes(data_key, sizeof(data_key));
+    zero_bytes(record, sizeof(record));
+    return result;
+}
+
+static enum account_status v2_authenticate(
+    const uint8_t record[ACCOUNT_V2_RECORD_BYTES], const char *username,
+    const uint8_t *password, size_t password_bytes)
+{
+    uint8_t data_key[ACCOUNT_V2_KEY_BYTES];
+    const enum account_v2_status status = account_v2_open(record, username,
+        password, password_bytes, data_key);
+
+    if (status == ACCOUNT_V2_OK) {
+        copy_bytes(active_data_key, data_key, sizeof(data_key));
+        active_data_key_present = true;
+    }
+    zero_bytes(data_key, sizeof(data_key));
+    if (status == ACCOUNT_V2_OK) {
+        return ACCOUNT_STATUS_OK;
+    }
+    if (status == ACCOUNT_V2_AUTHENTICATION_FAILED) {
+        return ACCOUNT_STATUS_AUTHENTICATION_FAILED;
+    }
+    return status == ACCOUNT_V2_KDF_UNAVAILABLE ?
+        ACCOUNT_STATUS_KDF_UNAVAILABLE : ACCOUNT_STATUS_STORAGE_CORRUPT;
+}
+
+static enum account_status retire_legacy_record(void)
+{
+    struct openrfsfs_stat stat;
+    const enum openrfsfs_status present = openrfsfs_stat_path(
+        OPENRFSFS_VOLUME_DATA, ACCOUNT_PATH, &stat);
+    if (present == OPENRFSFS_STATUS_NOT_FOUND) {
+        return ACCOUNT_STATUS_OK;
+    }
+    if (present != OPENRFSFS_STATUS_OK || stat.directory) {
+        return ACCOUNT_STATUS_STORAGE_CORRUPT;
+    }
+    const enum openrfsfs_status removed = openrfsfs_unlink(
+        OPENRFSFS_VOLUME_DATA, ACCOUNT_PATH);
+
+    if (removed == OPENRFSFS_STATUS_NOT_FOUND) {
+        return ACCOUNT_STATUS_OK;
+    }
+    if (removed != OPENRFSFS_STATUS_OK ||
+            openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK) {
+        return ACCOUNT_STATUS_IO;
+    }
+    return ACCOUNT_STATUS_OK;
+}
+
+static enum account_status retire_previous_slot(const char *active_slot)
+{
+    struct openrfsfs_stat stat;
+    const char *previous =
+        active_slot[sizeof(ACCOUNT_V2_A_PATH) - 2U] == 'A' ?
+        ACCOUNT_V2_B_PATH : ACCOUNT_V2_A_PATH;
+    const enum openrfsfs_status present = openrfsfs_stat_path(
+        OPENRFSFS_VOLUME_DATA, previous, &stat);
+
+    if (present == OPENRFSFS_STATUS_NOT_FOUND) {
+        return ACCOUNT_STATUS_OK;
+    }
+    if (present != OPENRFSFS_STATUS_OK || stat.directory) {
+        return ACCOUNT_STATUS_STORAGE_CORRUPT;
+    }
+    const enum openrfsfs_status removed = openrfsfs_unlink(
+        OPENRFSFS_VOLUME_DATA, previous);
+    if (removed == OPENRFSFS_STATUS_NOT_FOUND) {
+        return ACCOUNT_STATUS_OK;
+    }
+    if (removed != OPENRFSFS_STATUS_OK ||
+            openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK) {
+        return ACCOUNT_STATUS_CLEANUP_PENDING;
     }
     return ACCOUNT_STATUS_OK;
 }
@@ -366,10 +555,21 @@ static enum account_status persist_record(const uint8_t record[ACCOUNT_RECORD_BY
 enum account_status account_configured(bool *configured)
 {
     uint8_t record[ACCOUNT_RECORD_BYTES];
+    uint8_t v2_record[ACCOUNT_V2_RECORD_BYTES];
     enum account_status status;
 
     if (configured == NULL) {
         return ACCOUNT_STATUS_NULL_ARGUMENT;
+    }
+    status = load_active_v2(v2_record, NULL);
+    zero_bytes(v2_record, sizeof(v2_record));
+    if (status == ACCOUNT_STATUS_OK) {
+        *configured = true;
+        return ACCOUNT_STATUS_OK;
+    }
+    if (status != ACCOUNT_STATUS_NOT_CONFIGURED) {
+        *configured = false;
+        return status;
     }
     status = load_record(record);
     zero_bytes(record, sizeof(record));
@@ -388,58 +588,34 @@ enum account_status account_configured(bool *configured)
 enum account_status account_create(const char *username,
     const uint8_t *password, size_t password_bytes)
 {
-    uint8_t record[ACCOUNT_RECORD_BYTES] = { 0 };
-    uint8_t existing[ACCOUNT_RECORD_BYTES];
-    size_t username_bytes;
+    bool configured = false;
     enum account_status status;
 
     if (username == NULL || password == NULL) {
         return ACCOUNT_STATUS_NULL_ARGUMENT;
     }
-    if (!username_valid(username, &username_bytes)) {
+    if (!username_valid(username, NULL)) {
         return ACCOUNT_STATUS_INVALID_USERNAME;
     }
     if (!password_valid(password, password_bytes)) {
         return ACCOUNT_STATUS_INVALID_PASSWORD;
     }
-    status = load_record(existing);
-    zero_bytes(existing, sizeof(existing));
-    if (status == ACCOUNT_STATUS_OK) {
-        return ACCOUNT_STATUS_ALREADY_CONFIGURED;
-    }
-    if (status != ACCOUNT_STATUS_NOT_CONFIGURED) {
+    status = account_configured(&configured);
+    if (status != ACCOUNT_STATUS_OK) {
         return status;
     }
-    copy_bytes(record, account_magic, sizeof(account_magic));
-    record[4] = 1U;
-    record[5] = (uint8_t)username_bytes;
-    write_u32(record + 8U, ACCOUNT_KDF_ROUNDS);
-    if (random_bytes(record + ACCOUNT_SALT_OFFSET, ACCOUNT_SALT_BYTES) !=
-            RANDOM_STATUS_OK) {
-        zero_bytes(record, sizeof(record));
-        return ACCOUNT_STATUS_RANDOM_UNAVAILABLE;
+    if (configured) {
+        return ACCOUNT_STATUS_ALREADY_CONFIGURED;
     }
-    copy_bytes(record + ACCOUNT_USERNAME_OFFSET, (const uint8_t *)username,
-        username_bytes);
-    status = derive_password(record + ACCOUNT_SALT_OFFSET,
-        record + ACCOUNT_USERNAME_OFFSET, username_bytes, password,
-        password_bytes, record + ACCOUNT_DIGEST_OFFSET);
-    if (status == ACCOUNT_STATUS_OK &&
-            package_state_sha256(record, ACCOUNT_CHECKSUM_OFFSET,
-                record + ACCOUNT_CHECKSUM_OFFSET) != PACKAGE_STATE_STATUS_OK) {
-        status = ACCOUNT_STATUS_IO;
-    }
-    if (status == ACCOUNT_STATUS_OK) {
-        status = persist_record(record);
-    }
-    zero_bytes(record, sizeof(record));
-    return status;
+    return v2_create(username, password, password_bytes);
 }
 
 enum account_status account_authenticate(const char *username,
     const uint8_t *password, size_t password_bytes)
 {
     uint8_t record[ACCOUNT_RECORD_BYTES];
+    uint8_t v2_record[ACCOUNT_V2_RECORD_BYTES];
+    const char *active_slot = NULL;
     uint8_t digest[ACCOUNT_DIGEST_BYTES];
     size_t supplied_username_bytes;
     uint64_t now;
@@ -448,6 +624,7 @@ enum account_status account_authenticate(const char *username,
     if (username == NULL || password == NULL) {
         return ACCOUNT_STATUS_NULL_ARGUMENT;
     }
+    account_data_key_forget();
     if (!clock_is_started()) {
         return ACCOUNT_STATUS_CLOCK_UNAVAILABLE;
     }
@@ -459,6 +636,29 @@ enum account_status account_authenticate(const char *username,
             !password_valid(password, password_bytes)) {
         throttle_failed(&login_throttle, now);
         return ACCOUNT_STATUS_AUTHENTICATION_FAILED;
+    }
+    status = load_active_v2(v2_record, &active_slot);
+    if (status == ACCOUNT_STATUS_OK) {
+        status = v2_authenticate(v2_record, username, password,
+            password_bytes);
+        if (status == ACCOUNT_STATUS_OK) {
+            status = retire_legacy_record();
+            if (status == ACCOUNT_STATUS_OK) {
+                status = retire_previous_slot(active_slot);
+                if (status == ACCOUNT_STATUS_CLEANUP_PENDING) {
+                    status = ACCOUNT_STATUS_IO;
+                }
+            }
+            if (status != ACCOUNT_STATUS_OK) {
+                account_data_key_forget();
+            }
+        }
+        zero_bytes(v2_record, sizeof(v2_record));
+        goto finish;
+    }
+    zero_bytes(v2_record, sizeof(v2_record));
+    if (status != ACCOUNT_STATUS_NOT_CONFIGURED) {
+        return status;
     }
     status = load_record(record);
     if (status != ACCOUNT_STATUS_OK) {
@@ -476,14 +676,122 @@ enum account_status account_authenticate(const char *username,
                 sizeof(digest)))) {
         status = ACCOUNT_STATUS_AUTHENTICATION_FAILED;
     }
+    if (status == ACCOUNT_STATUS_OK) {
+        status = v2_create(username, password, password_bytes);
+        if (status == ACCOUNT_STATUS_OK) {
+            status = load_active_v2(v2_record, NULL);
+            if (status == ACCOUNT_STATUS_OK) {
+                status = v2_authenticate(v2_record, username, password,
+                    password_bytes);
+            }
+            zero_bytes(v2_record, sizeof(v2_record));
+        }
+        if (status == ACCOUNT_STATUS_OK) {
+            status = retire_legacy_record();
+            if (status != ACCOUNT_STATUS_OK) {
+                account_data_key_forget();
+            }
+        }
+    }
     zero_bytes(digest, sizeof(digest));
     zero_bytes(record, sizeof(record));
+finish:
     if (status == ACCOUNT_STATUS_AUTHENTICATION_FAILED) {
         throttle_failed(&login_throttle, clock_monotonic_ns());
     } else if (status == ACCOUNT_STATUS_OK) {
         throttle_succeeded(&login_throttle);
     }
     return status;
+}
+
+enum account_status account_change_password(const char *username,
+    const uint8_t *old_password, size_t old_password_bytes,
+    const uint8_t *new_password, size_t new_password_bytes)
+{
+    uint8_t current[ACCOUNT_V2_RECORD_BYTES];
+    uint8_t replacement[ACCOUNT_V2_RECORD_BYTES];
+    uint8_t salt[16];
+    uint8_t nonce[ACCOUNT_V2_NONCE_BYTES];
+    const char *active_slot = NULL;
+    const char *inactive_slot;
+    enum account_status result;
+
+    if (username == NULL || old_password == NULL || new_password == NULL) {
+        return ACCOUNT_STATUS_NULL_ARGUMENT;
+    }
+    if (!password_valid(new_password, new_password_bytes)) {
+        return ACCOUNT_STATUS_INVALID_PASSWORD;
+    }
+    result = account_authenticate(username, old_password, old_password_bytes);
+    if (result != ACCOUNT_STATUS_OK) {
+        return result;
+    }
+    result = load_active_v2(current, &active_slot);
+    if (result != ACCOUNT_STATUS_OK || !active_data_key_present ||
+            account_v2_generation(current) == UINT64_MAX) {
+        result = ACCOUNT_STATUS_STORAGE_CORRUPT;
+        goto done;
+    }
+    inactive_slot = active_slot[sizeof(ACCOUNT_V2_A_PATH) - 2U] == 'A' ?
+        ACCOUNT_V2_B_PATH : ACCOUNT_V2_A_PATH;
+    if (random_bytes(salt, sizeof(salt)) != RANDOM_STATUS_OK ||
+            random_bytes(nonce, sizeof(nonce)) != RANDOM_STATUS_OK) {
+        result = ACCOUNT_STATUS_RANDOM_UNAVAILABLE;
+        goto done;
+    }
+    const enum account_v2_status sealed = account_v2_seal(username,
+        new_password, new_password_bytes, account_v2_generation(current) + 1U,
+        salt, nonce, active_data_key, replacement);
+    if (sealed != ACCOUNT_V2_OK) {
+        result = sealed == ACCOUNT_V2_KDF_UNAVAILABLE ?
+            ACCOUNT_STATUS_KDF_UNAVAILABLE : ACCOUNT_STATUS_IO;
+        goto done;
+    }
+    /* The selected slot remains intact through every operation on the
+     * inactive slot. A cut before its rename keeps the old password valid;
+     * a cut after it selects the new generation. */
+    const enum openrfsfs_status removed = openrfsfs_unlink(
+        OPENRFSFS_VOLUME_DATA, inactive_slot);
+    if (removed != OPENRFSFS_STATUS_OK &&
+            removed != OPENRFSFS_STATUS_NOT_FOUND) {
+        result = ACCOUNT_STATUS_IO;
+        goto done;
+    }
+    if (removed == OPENRFSFS_STATUS_OK &&
+            openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK) {
+        result = ACCOUNT_STATUS_IO;
+        goto done;
+    }
+    result = persist_record(replacement, sizeof(replacement), inactive_slot);
+    if (result != ACCOUNT_STATUS_OK) {
+        goto done;
+    }
+    result = load_active_v2(current, NULL);
+    if (result != ACCOUNT_STATUS_OK ||
+            account_v2_generation(current) !=
+                account_v2_generation(replacement)) {
+        result = ACCOUNT_STATUS_STORAGE_CORRUPT;
+        goto done;
+    }
+    result = v2_authenticate(current, username, new_password,
+        new_password_bytes);
+    if (result != ACCOUNT_STATUS_OK) {
+        goto done;
+    }
+    if (openrfsfs_unlink(OPENRFSFS_VOLUME_DATA, active_slot) !=
+            OPENRFSFS_STATUS_OK ||
+            openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK) {
+        result = ACCOUNT_STATUS_CLEANUP_PENDING;
+    }
+done:
+    zero_bytes(current, sizeof(current));
+    zero_bytes(replacement, sizeof(replacement));
+    zero_bytes(salt, sizeof(salt));
+    zero_bytes(nonce, sizeof(nonce));
+    if (result != ACCOUNT_STATUS_OK) {
+        account_data_key_forget();
+    }
+    return result;
 }
 
 bool account_self_test(void)
@@ -587,7 +895,9 @@ const char *account_status_string(enum account_status status)
         "account storage failed",
         "invalid username or password",
         "monotonic clock is unavailable for account login",
-        "account login is temporarily rate limited"
+        "account login is temporarily rate limited",
+        "the bounded account KDF is unavailable",
+        "password changed, but old credential cleanup is pending; use the new password"
     };
 
     _Static_assert(sizeof(messages) / sizeof(messages[0]) ==
