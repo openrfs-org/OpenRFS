@@ -132,9 +132,13 @@ def main() -> None:
         for payload in signed_invalid:
             sign_payload(private, manifest, signature, payload)
             command(*verify, accepted=False)
+        manifest.write_bytes(original_manifest)
+        signature.write_bytes(original_signature)
+        command(*verify, accepted=True)
         manifest.write_bytes(b"X" * 65537)
         command(*verify, accepted=False)
         manifest.write_bytes(original_manifest)
+        command(*verify, accepted=True)
         signature.write_bytes(b"X" * 65)
         command(*verify, accepted=False)
         signature.write_bytes(original_signature)

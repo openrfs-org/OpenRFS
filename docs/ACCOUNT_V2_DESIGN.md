@@ -40,29 +40,26 @@ is enforced. The record and names are plaintext metadata, and the current
 Data read/write path still stores content in plaintext. These limits must be
 closed before the milestone or a confidentiality claim.
 
-## Production path and current stage
+## Online rate limit
 
-The shell's `useradd` and `starty` prompts own bounded password buffers and
-call `account_create` and `account_authenticate`. Those functions read and
-write `OPENRFS/LOGIN.DAT` on the writable Data volume through `openrfsfs_*`.
-Creation obtains its salt from `random_bytes`; persistence writes
-`OPENRFS/LOGIN.NEW`, syncs, renames and syncs again. The record, username,
-password input, filesystem bytes and interrupted writes are attacker-controlled
-at this boundary. The v1 checksum detects accidents but is not an
-authentication key. The shell is the only present login caller.
+The production `useradd`, `starty`, and `passwd` prompts own bounded password
+buffers. The shell calls `account_create`, `account_authenticate`, and
+`account_change_password`; the v2 slots and any legacy v1 record live on the
+writable Data volume. Names, password input, filesystem bytes, and interrupted
+writes are attacker-controlled at this boundary. Legacy v1's checksum detects
+accidents but does not authenticate the record.
 
-The first bounded change adds an online throttle at `account_authenticate`:
+`account_authenticate` applies an online throttle:
 after the third invalid attempt, delays grow from one second to at most 60
 seconds. It uses the monotonic clock and fails closed when that clock is not
 running. A successful login clears the count. The throttle spans username
 guesses, remains in kernel memory only, and resets on reboot. It cannot resist
-offline guessing of a stolen v1 record or an attacker who can reboot at will.
-It must remain in the production login path as v2 replaces v1.
+offline guessing of a stolen record or an attacker who can reboot at will.
 
 ## v2 verifier and resource gate
 
-Use the already vendored, unmodified Monocypher 4.0.3 `crypto_argon2` with
-Argon2id. The sources are recorded as byte-for-byte upstream in
+Production v2 uses the already vendored, unmodified Monocypher 4.0.3
+`crypto_argon2` with Argon2id. The sources are recorded as byte-for-byte upstream in
 `vendor/monocypher/OPENRFS-PORT.md` and are dual BSD-2-Clause/CC0 licensed in
 `vendor/monocypher/LICENCE.md`. The RFC 9106 memory-constrained profile is
 64 MiB, three passes, four lanes, a 16-byte salt and a 32-byte output:
@@ -72,14 +69,10 @@ supported parameter tuple; reject zero, noncanonical, overflowed and
 excessive values before any allocation or KDF work. Use published Argon2id
 vectors and an independent implementation for differential checks.
 
-The current general-purpose heap is only 16 MiB (`HEAP_SIZE`), so it cannot
-honestly host that 64 MiB work area. A dedicated, guarded, single-owner arena
-or a carefully audited heap expansion must precede v2 activation. The arena
-must account for physical frames and CPU time, prevent concurrent KDFs from
-overcommitting, wipe the work area, and refuse login if the promised memory is
-unavailable. Do not silently lower the recorded parameters to fit a QEMU
-fixture. The present 128 MiB networking VM profile is not proof that the
-account/desktop profile has spare physical memory.
+The general-purpose heap is only 16 MiB (`HEAP_SIZE`), so production v2 uses
+the dedicated, guarded, single-owner arena described below. It refuses login
+when the promised 64 MiB allocation is unavailable; the parameters are not
+lowered for a QEMU fixture.
 
 ### Bounded KDF dependency stage
 
