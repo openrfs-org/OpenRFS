@@ -7554,6 +7554,15 @@ static bool native_openrfs_authority_is_canonical(
         manifest.owner_index == 0U && manifest.length == UINT64_C(1024);
 }
 
+static bool native_openrfs_link_probe(void)
+{
+    struct native_process_result probe = {0};
+
+    return native_process_launch("RFSPROBE.MAN", &probe) == NATIVE_PROCESS_OK &&
+        probe.exited && !probe.faulted && probe.exit_status == 0 &&
+        probe.resources_released && native_process_resources_released();
+}
+
 _Noreturn void kernel_test_complete_native_openrfs(void)
 {
     static const uint8_t expected[] = "SDL chess release-2.32.10\n";
@@ -7596,6 +7605,9 @@ _Noreturn void kernel_test_complete_native_openrfs(void)
     authority_status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA,
         PACKAGE_SERVICE_AUTHORITY_PATH, &authority);
     if (authority_status == OPENRFSFS_STATUS_NOT_FOUND) {
+        if (!native_openrfs_link_probe()) {
+            kernel_test_fail("native openrfs namespace link probe failed");
+        }
         launch_status = native_process_launch("OPENRFS.MAN", &proof);
         if (launch_status != NATIVE_PROCESS_OK ||
             !proof.exited || proof.faulted || proof.exit_status != 0 ||
@@ -7661,6 +7673,9 @@ _Noreturn void kernel_test_complete_native_openrfs(void)
         kernel_test_fail("native openrfs reboot authority is not canonical");
     }
     if (service.generation == 1U) {
+        if (!native_openrfs_link_probe()) {
+            kernel_test_fail("native openrfs update namespace link probe failed");
+        }
         if (native_process_launch("OPENRFS.MAN", &proof) != NATIVE_PROCESS_OK ||
             !proof.exited || proof.faulted || proof.exit_status != 0 ||
             !proof.resources_released || proof.peak_handles < 3U ||
@@ -7678,6 +7693,9 @@ _Noreturn void kernel_test_complete_native_openrfs(void)
             "OpenRFS: signed HTTPS package update synchronized reboot phase\n");
         cpu_out8(UINT16_C(0x0064), UINT8_C(0xFE));
         kernel_test_fail("platform reset did not restart QEMU");
+    }
+    if (!native_openrfs_link_probe()) {
+        kernel_test_fail("native openrfs rollback namespace link probe failed");
     }
     if (service.generation != 2U ||
         native_process_launch("OPENRFS.MAN", &proof) != NATIVE_PROCESS_OK ||
@@ -7698,6 +7716,9 @@ _Noreturn void kernel_test_complete_native_openrfs(void)
     }
     console_write(
         "OpenRFS: damaged package generation quarantined before repair passed\n");
+    if (!native_openrfs_link_probe()) {
+        kernel_test_fail("native openrfs repair namespace link probe failed");
+    }
     if (native_process_launch("OPENRFSR.MAN", &proof) != NATIVE_PROCESS_OK ||
         !proof.exited || proof.faulted || proof.exit_status != 0 ||
         !proof.resources_released || proof.peak_handles < 3U ||

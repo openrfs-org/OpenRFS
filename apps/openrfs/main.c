@@ -238,10 +238,45 @@ static int remove_package(const char *identifier)
     return 0;
 }
 
+static int test_link_refusal(void)
+{
+    struct openrfs_path_metadata link_metadata;
+    char link_target[16];
+    long escaped;
+
+    if (openrfs_path_symlink(OPENRFS_VOLUME_DATA, "ESCAPE2",
+            "../system") != -OPENRFS_EACCES) {
+        return 3;
+    }
+    escaped = openrfs_file_open(OPENRFS_VOLUME_DATA,
+        "ESCAPE/README.TXT", OPENRFS_OPEN_READ);
+    if (escaped != -OPENRFS_EINVAL) {
+        if (escaped >= 0) {
+            (void)openrfs_handle_close((openrfs_handle_t)escaped);
+        }
+        return 4;
+    }
+    if (openrfs_path_readlink(OPENRFS_VOLUME_DATA, "ESCAPE", link_target,
+            sizeof(link_target)) != 9 ||
+        memcmp(link_target, "../system", 9U) != 0 ||
+        openrfs_path_metadata(OPENRFS_VOLUME_DATA, "ESCAPE",
+            OPENRFS_METADATA_NOFOLLOW, &link_metadata) != 0 ||
+        (link_metadata.mode & 0170000U) != 0120000U ||
+        openrfs_path_metadata(OPENRFS_VOLUME_DATA, "ESCAPE", 0U,
+            &link_metadata) != -OPENRFS_EINVAL) {
+        return 5;
+    }
+    puts("OPENRFS PACKAGE PHASE namespace-link-refusal PASS");
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     const bool repair = argc == 2 && strcmp(argv[1], "repair") == 0;
 
+    if (argc == 2 && strcmp(argv[1], "--test-link-refusal") == 0) {
+        return test_link_refusal();
+    }
     if (!repair && (argc != 3 || (strcmp(argv[1], "install") != 0 &&
             strcmp(argv[1], "remove") != 0))) {
         puts("usage: openrfs install|remove IDENTIFIER | openrfs repair");

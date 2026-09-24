@@ -446,6 +446,7 @@ def run(args: argparse.Namespace) -> int:
         healthy = healthy and all(
             transcript.count(marker) == count for marker, count in (
                 ("OPENRFS PACKAGE PHASE start\n", 4),
+                ("OPENRFS PACKAGE PHASE namespace-link-refusal PASS\n", 4),
                 ("OPENRFS PACKAGE PHASE signed-plan PASS\n", 2),
                 ("OPENRFS PACKAGE PHASE payloads-authenticated PASS\n", 3),
                 ("OPENRFS PACKAGE PASS https trust plan payload transaction "

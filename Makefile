@@ -299,6 +299,7 @@ OPENRFSAPP_DIR := $(BUILD_DIR)/native-openrfs
 OPENRFSAPP_APP := $(OPENRFSAPP_DIR)/OPENRFS.APP
 OPENRFSAPP_PACKAGE := $(OPENRFSAPP_DIR)/OPENRFS.SPK
 OPENRFSAPP_REPAIR_PACKAGE := $(OPENRFSAPP_DIR)/OPENRFSREP.SPK
+OPENRFSAPP_PROBE_PACKAGE := $(OPENRFSAPP_DIR)/RFSPROBE.SPK
 OPENRFSAPP_SYSTEM_IMAGE := $(OPENRFSAPP_DIR)/system.raw
 OPENRFSAPP_DATA_IMAGE := $(OPENRFSAPP_DIR)/data.raw
 OPENRFSAPP_REPOSITORY := $(OPENRFSAPP_DIR)/repository/repository.sri
@@ -772,14 +773,31 @@ $(OPENRFSAPP_REPAIR_PACKAGE): $(OPENRFSAPP_APP) apps/openrfs/repair-manifest.jso
 	$(PYTHON) tools/openrfs-package.py build \
 		--spec apps/openrfs/repair-manifest.json --executable $< --output $@
 
+$(OPENRFSAPP_PROBE_PACKAGE): $(OPENRFSAPP_APP) apps/openrfs/probe-manifest.json
+	$(PYTHON) tools/openrfs-package.py build \
+		--spec apps/openrfs/probe-manifest.json --executable $< --output $@
+
 $(OPENRFSAPP_SYSTEM_IMAGE): $(OPENRFSAPP_PACKAGE) $(OPENRFSAPP_REPAIR_PACKAGE) \
+		$(OPENRFSAPP_PROBE_PACKAGE) \
 		tools/openrfs-package.py \
 		tools/fat32_image.py
 	$(PYTHON) tools/openrfs-package.py install-system \
-		--output $@ $(OPENRFSAPP_PACKAGE) $(OPENRFSAPP_REPAIR_PACKAGE)
+		--output $@ $(OPENRFSAPP_PACKAGE) $(OPENRFSAPP_REPAIR_PACKAGE) \
+		$(OPENRFSAPP_PROBE_PACKAGE)
 
-$(OPENRFSAPP_DATA_IMAGE): $(EXT4_FIXTURE) | $(OPENRFSAPP_DIR)
-	cp $< $@
+$(OPENRFSAPP_DATA_IMAGE): $(EXT4_FIXTURE) Makefile | $(OPENRFSAPP_DIR)
+	@command -v debugfs >/dev/null 2>&1 || { echo 'missing tool: debugfs'; exit 1; }
+	@command -v e2fsck >/dev/null 2>&1 || { echo 'missing tool: e2fsck'; exit 1; }
+	@set -e; \
+		image="$$(mktemp '$(OPENRFSAPP_DIR)/data.raw.tmp.XXXXXX')"; \
+		trap 'rm -f "$$image"' EXIT HUP INT TERM; \
+		cp '$<' "$$image"; \
+		E2FSPROGS_FAKE_TIME=1704067200 debugfs -w -R 'mkdir /RFSCLI' "$$image" >/dev/null; \
+		E2FSPROGS_FAKE_TIME=1704067200 debugfs -w -R 'symlink /RFSCLI/ESCAPE ../system' "$$image" >/dev/null; \
+		debugfs -R 'stat /RFSCLI/ESCAPE' "$$image" 2>/dev/null | grep -q 'Type: symlink'; \
+		e2fsck -fn "$$image" >/dev/null; \
+		mv -f "$$image" '$@'; \
+		trap - EXIT HUP INT TERM
 
 $(OPENRFSAPP_REPOSITORY): $(SDL_CHESS_RELEASE_APP) \
 		apps/upstream-sdl-chess/manifest.json \
