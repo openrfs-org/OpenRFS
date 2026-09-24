@@ -24,7 +24,11 @@ it, then retires the previous slot. A cut before the new slot's rename leaves
 the old password usable; a cut after selects the new generation. The host
 test injects a pre-rename sync failure and a post-commit unlink failure,
 checking that the old password survives the first and the new password works
-after the second. It does not simulate a power cut during the rename itself.
+after the second. An additional host test injects a malformed or short inactive
+slot alongside a valid slot; login authenticates the intact wrap and removes
+the damaged peer before exposing the Data key. An I/O error, two malformed
+slots, or a single malformed slot still fail closed. This does not simulate a
+power cut during FAT32's rename itself or establish an external rollback floor.
 The shell and desktop capture exercised production v2 creation, password
 change and login in QEMU. Deletion is not
 exposed while Data files remain plaintext and the key is not used by VFS.

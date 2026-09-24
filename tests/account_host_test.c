@@ -437,6 +437,29 @@ int main(void)
             "password change must preserve Data key")) {
         return 1;
     }
+    /* A torn inactive slot must not strand an intact credential.
+     * Successful login retires the damaged peer before exposing its key. */
+    memcpy(v2_a, v2_b, sizeof(v2_a));
+    v2_a_bytes = sizeof(v2_a);
+    v2_a_present = true;
+    v2_a[6] = 1U;
+    if (!check(account_authenticate("alice", new_password,
+            sizeof(new_password) - 1U) == ACCOUNT_STATUS_OK,
+            "valid v2 slot must survive malformed inactive slot") ||
+        !check(v2_b_present && !v2_a_present,
+            "malformed inactive slot must be retired")) {
+        return 1;
+    }
+    memcpy(v2_a, v2_b, sizeof(v2_a));
+    v2_a_bytes = sizeof(v2_a) - 1U;
+    v2_a_present = true;
+    if (!check(account_authenticate("alice", new_password,
+            sizeof(new_password) - 1U) == ACCOUNT_STATUS_OK,
+            "valid v2 slot must survive short inactive slot") ||
+        !check(v2_b_present && !v2_a_present,
+            "short inactive slot must be retired")) {
+        return 1;
+    }
     fail_unlink_v2_once = true;
     if (!check(account_change_password("alice", new_password,
             sizeof(new_password) - 1U, password,

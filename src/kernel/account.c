@@ -416,6 +416,18 @@ static enum account_status load_active_v2(
     enum account_status second_status = load_v2_slot(ACCOUNT_V2_B_PATH,
         second);
 
+    /* A cut while publishing the inactive slot can leave that directory
+     * entry present but malformed. Keep the intact slot available, then
+     * retire the damaged peer only after authenticating the intact wrap.
+     * Read I/O failures are not evidence of a torn record and still refuse. */
+    if (first_status == ACCOUNT_STATUS_STORAGE_CORRUPT &&
+            second_status == ACCOUNT_STATUS_OK) {
+        first_status = ACCOUNT_STATUS_NOT_CONFIGURED;
+    }
+    if (second_status == ACCOUNT_STATUS_STORAGE_CORRUPT &&
+            first_status == ACCOUNT_STATUS_OK) {
+        second_status = ACCOUNT_STATUS_NOT_CONFIGURED;
+    }
     if (first_status != ACCOUNT_STATUS_OK &&
             first_status != ACCOUNT_STATUS_NOT_CONFIGURED) {
         zero_bytes(second, sizeof(second));
