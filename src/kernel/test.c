@@ -7561,6 +7561,8 @@ _Noreturn void kernel_test_complete_native_openrfs(void)
         "pkgstate/gen/00000000/00000002/root/bin/CHESS.MAN";
     static const char repaired_manifest[] =
         "pkgstate/gen/00000000/00000003/root/bin/CHESS.MAN";
+    static const char noncanonical_manifest[] =
+        "pkgstate/gen/00000000/00000003/root/bin/../bin/CHESS.MAN";
     static const char state_path[] =
         "SDLCHESS/SDL/DF4F1BB4/STATE.TXT";
     static uint8_t database[4096U];
@@ -7571,8 +7573,10 @@ _Noreturn void kernel_test_complete_native_openrfs(void)
     struct openrfsfs_stat output;
     openrfsfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
+    uint8_t capability_high_byte = 0U;
     size_t read_bytes = 0U;
     size_t database_bytes = 0U;
+    uint64_t position = 0U;
     bool matches = true;
     struct network_state network;
     enum openrfsfs_status authority_status;
@@ -7700,7 +7704,9 @@ _Noreturn void kernel_test_complete_native_openrfs(void)
         proof.syscall_count < 20U || proof.thread_switches == 0U ||
         !native_process_resources_released() ||
         !native_openrfs_authority_is_canonical(database, sizeof(database),
-            &service) || service.generation != 3U ||
+                &service) || service.generation != 3U ||
+        native_process_launch_installed(noncanonical_manifest, &proof) !=
+            NATIVE_PROCESS_IMAGE_REFUSED ||
         native_process_launch_installed(repaired_manifest, &proof) !=
             NATIVE_PROCESS_OK ||
         !proof.exited || proof.faulted || proof.exit_status != 0 ||
@@ -7719,14 +7725,45 @@ _Noreturn void kernel_test_complete_native_openrfs(void)
         matches = matches && bytes[index] == expected[index];
     }
     if (openrfsfs_close(file) != OPENRFSFS_STATUS_OK || !matches ||
+        openrfsfs_open(OPENRFSFS_VOLUME_DATA, repaired_manifest,
+            OPENRFSFS_ACCESS_READ_WRITE, &file) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_seek(file, 29, OPENRFSFS_SEEK_START, &position) !=
+            OPENRFSFS_STATUS_OK || position != 29U ||
+        openrfsfs_read(file, &capability_high_byte, 1U, &read_bytes) !=
+            OPENRFSFS_STATUS_OK || read_bytes != 1U ||
+        capability_high_byte != 0U ||
+        openrfsfs_seek(file, 29, OPENRFSFS_SEEK_START, &position) !=
+            OPENRFSFS_STATUS_OK || position != 29U ||
+        openrfsfs_write(file, (const uint8_t *)"\x01", 1U, &read_bytes) !=
+            OPENRFSFS_STATUS_OK || read_bytes != 1U ||
+        openrfsfs_close(file) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK ||
+        native_process_launch_installed(repaired_manifest, &proof) !=
+            NATIVE_PROCESS_IMAGE_REFUSED ||
+        !native_process_resources_released()) {
+        kernel_test_fail("native openrfs writable capability edit was not refused");
+    }
+    if (openrfsfs_open(OPENRFSFS_VOLUME_DATA, repaired_manifest,
+            OPENRFSFS_ACCESS_WRITE, &file) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_seek(file, 29, OPENRFSFS_SEEK_START, &position) !=
+            OPENRFSFS_STATUS_OK || position != 29U ||
+        openrfsfs_write(file, &capability_high_byte, 1U, &read_bytes) !=
+            OPENRFSFS_STATUS_OK || read_bytes != 1U ||
+        openrfsfs_close(file) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK ||
+        package_service_recover(&service) != PACKAGE_SERVICE_STATUS_OK ||
+        service.generation != 3U || service.live_file_handles != 0U ||
+        service.live_allocations != 0U ||
+        !native_process_resources_released() ||
         openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK ||
         openrfsfs_unmount(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK ||
         !nvme_filesystem_session_resources_released()) {
-        kernel_test_fail("native openrfs upstream SDL launch did not cleanly sync");
+        kernel_test_fail("native openrfs restored generation did not verify cleanly");
     }
     network_native_teardown_census();
     console_write(
         "OpenRFS: damaged SDL package repaired authenticated and launched from writable ext4 passed\n");
+    console_write("OpenRFS: installed manifest capability edit refused\n");
     console_write("ST NETWORK production path bounded and recoverable\n");
     kernel_test_pass();
 }

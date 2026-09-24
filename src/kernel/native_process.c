@@ -23,6 +23,7 @@
 #include <openrfs/keyboard.h>
 #include <openrfs/paging.h>
 #include <openrfs/package_control.h>
+#include <openrfs/package_service.h>
 #include <openrfs/package_upload.h>
 #include <openrfs/process.h>
 #include <openrfs/random.h>
@@ -1340,14 +1341,15 @@ static bool sibling_image_path(
     return true;
 }
 
-static bool installed_manifest_path(const char *path)
+static bool installed_manifest_path(const char *path, uint64_t *generation)
 {
     static const char prefix[] = "pkgstate/gen/";
     static const char root[] = "/root/";
     size_t length;
     size_t offset = sizeof(prefix) - 1U;
+    uint64_t parsed_generation = 0U;
 
-    if (path == NULL) {
+    if (path == NULL || generation == NULL) {
         return false;
     }
     length = bounded_length((const uint8_t *)path, OPENRFSFS_MAX_PATH);
@@ -1368,6 +1370,8 @@ static bool installed_manifest_path(const char *path)
                     (value >= 'a' && value <= 'f'))) {
                 return false;
             }
+            parsed_generation = (parsed_generation << 4U) |
+                (uint64_t)(value <= '9' ? value - '0' : value - 'a' + 10);
         }
         offset += 8U;
         if (path[offset++] != '/') {
@@ -1380,7 +1384,58 @@ static bool installed_manifest_path(const char *path)
             return false;
         }
     }
+    offset += sizeof(root) - 1U;
+    size_t component_start = offset;
+    size_t components = 0U;
+
+    for (size_t index = offset; index <= length; ++index) {
+        if (index == length || path[index] == '/') {
+            const size_t component_length = index - component_start;
+
+            if (component_length == 0U ||
+                (component_length == 1U && path[component_start] == '.') ||
+                (component_length == 2U && path[component_start] == '.' &&
+                    path[component_start + 1U] == '.') ||
+                ++components > OPENRFSFS_MAX_DEPTH - 5U) {
+                return false;
+            }
+            component_start = index + 1U;
+        } else {
+            const char value = path[index];
+            const bool alphanumeric =
+                (value >= '0' && value <= '9') ||
+                (value >= 'A' && value <= 'Z') ||
+                (value >= 'a' && value <= 'z');
+
+            if (!alphanumeric && value != '.' && value != '_' &&
+                value != '+' && value != '-') {
+                return false;
+            }
+        }
+    }
+    *generation = parsed_generation;
     return true;
+}
+
+static bool installed_manifest_path_self_test(void)
+{
+    uint64_t generation = 0U;
+
+    return installed_manifest_path(
+            "pkgstate/gen/00000000/00000003/root/bin/CHESS.MAN",
+            &generation) && generation == 3U &&
+        !installed_manifest_path(
+            "pkgstate/gen/00000000/00000003/root/../bin/CHESS.MAN",
+            &generation) &&
+        !installed_manifest_path(
+            "pkgstate/gen/00000000/00000003/root/bin//CHESS.MAN",
+            &generation) &&
+        !installed_manifest_path(
+            "pkgstate/gen/00000000/00000003/root/bin\\CHESS.MAN",
+            &generation) &&
+        !installed_manifest_path(
+            "pkgstate/gen/00000000/00000003/root/bin/./CHESS.MAN",
+            &generation);
 }
 
 static bool allocate_page(
@@ -7237,12 +7292,27 @@ enum native_process_status native_process_launch_installed(
 )
 {
     uint64_t generation;
+    uint64_t installed_generation;
     enum native_process_status status;
+    struct package_service_report service;
 
     if (result == NULL) {
         return NATIVE_PROCESS_NULL_ARGUMENT;
     }
-    if (!installed_manifest_path(manifest_path)) {
+    if (!installed_manifest_path(manifest_path, &installed_generation)) {
+        return NATIVE_PROCESS_IMAGE_REFUSED;
+    }
+    if (scheduler_active) {
+        return NATIVE_PROCESS_BUSY;
+    }
+    /*
+     * Recovery verifies every file in the authority-selected generation.
+     * Refuse stale paths and single-file edits before using a Data manifest.
+     * The authority record is on writable Data, so this is not publisher
+     * authentication or protection against a whole-volume rollback.
+     */
+    if (package_service_recover(&service) != PACKAGE_SERVICE_STATUS_OK ||
+        service.generation != installed_generation) {
         return NATIVE_PROCESS_IMAGE_REFUSED;
     }
     status = native_process_spawn_from_volume(manifest_path,
@@ -7293,6 +7363,10 @@ bool native_process_self_test(size_t *completed_tests)
         return false;
     }
     *completed_tests += dynamic_tests;
+    if (!installed_manifest_path_self_test()) {
+        return false;
+    }
+    ++*completed_tests;
     if (!native_handle_self_test(&handle_tests)) {
         return false;
     }
