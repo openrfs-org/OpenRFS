@@ -865,6 +865,8 @@ enum account_status account_change_password(const char *username,
     uint8_t replacement[ACCOUNT_V2_RECORD_BYTES];
     uint8_t salt[16];
     uint8_t nonce[ACCOUNT_V2_NONCE_BYTES];
+    uint8_t authenticated_key[ACCOUNT_V2_KEY_BYTES];
+    uint8_t record_flags = 0U;
     const char *active_slot = NULL;
     const char *inactive_slot;
     enum account_status result;
@@ -883,7 +885,21 @@ enum account_status account_change_password(const char *username,
     }
     result = load_active_v2(current, &active_slot);
     if (result != ACCOUNT_STATUS_OK || !active_data_key_present ||
-            account_v2_generation(current) == UINT64_MAX) {
+            account_v2_generation(current) == UINT64_MAX ||
+            account_v2_record_flags(current, &record_flags) !=
+                ACCOUNT_V2_OK) {
+        result = ACCOUNT_STATUS_STORAGE_CORRUPT;
+        goto done;
+    }
+    copy_bytes(authenticated_key, active_data_key, sizeof(authenticated_key));
+    /* This second read occurs after authentication and may name bytes that
+     * changed on writable Data. Authenticate it before copying its migration
+     * state into a newly sealed generation. The checksum is not authority. */
+    result = v2_authenticate(current, username, old_password,
+        old_password_bytes);
+    if (result != ACCOUNT_STATUS_OK) goto done;
+    if (!equal_bytes(authenticated_key, active_data_key,
+            sizeof(authenticated_key))) {
         result = ACCOUNT_STATUS_STORAGE_CORRUPT;
         goto done;
     }
@@ -894,9 +910,9 @@ enum account_status account_change_password(const char *username,
         result = ACCOUNT_STATUS_RANDOM_UNAVAILABLE;
         goto done;
     }
-    const enum account_v2_status sealed = account_v2_seal(username,
+    const enum account_v2_status sealed = account_v2_seal_flags(username,
         new_password, new_password_bytes, account_v2_generation(current) + 1U,
-        salt, nonce, active_data_key, replacement);
+        record_flags, salt, nonce, active_data_key, replacement);
     if (sealed != ACCOUNT_V2_OK) {
         result = sealed == ACCOUNT_V2_KDF_UNAVAILABLE ?
             ACCOUNT_STATUS_KDF_UNAVAILABLE : ACCOUNT_STATUS_IO;
@@ -943,6 +959,7 @@ done:
     zero_bytes(replacement, sizeof(replacement));
     zero_bytes(salt, sizeof(salt));
     zero_bytes(nonce, sizeof(nonce));
+    zero_bytes(authenticated_key, sizeof(authenticated_key));
     if (result != ACCOUNT_STATUS_OK) {
         account_data_key_forget();
     }

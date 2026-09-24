@@ -10,7 +10,8 @@
 
 #include "../../vendor/monocypher/src/monocypher.h"
 
-/* All integer fields are little endian. Reserved bytes must be zero.
+/* All integer fields are little endian. Byte 6 is an authenticated Data
+ * migration flag; other reserved bytes must be zero.
  * 0: magic/version/name length; 8: KDF tuple; 28: generation;
  * 36: salt; 52: padded name; 84: verifier; 116: nonce;
  * 140: wrapped Data key; 172: AEAD tag; 188: SHA-256 corruption screen.
@@ -120,7 +121,8 @@ enum account_v2_status account_v2_validate(
     if (record == NULL || record[0] != 'O' || record[1] != 'R' ||
             record[2] != 'A' || record[3] != '2' || record[4] != 2U ||
             record[5] == 0U || record[5] >= ACCOUNT_USERNAME_BYTES ||
-            record[6] != 0U || record[7] != 0U ||
+            (record[6] & (uint8_t)~ACCOUNT_V2_FLAG_DATA_ENCRYPTED) != 0U ||
+            record[7] != 0U ||
             !account_kdf_v2_parameters_supported(read_u32(record + 8U),
                 record[12], read_u32(record + 16U), read_u32(record + 20U),
                 read_u32(record + 24U)) ||
@@ -153,9 +155,10 @@ enum account_v2_status account_v2_validate(
     return correct ? ACCOUNT_V2_OK : ACCOUNT_V2_MALFORMED;
 }
 
-enum account_v2_status account_v2_seal(const char *username,
+enum account_v2_status account_v2_seal_flags(const char *username,
     const uint8_t *password, size_t password_bytes, uint64_t generation,
-    const uint8_t salt[16], const uint8_t nonce[ACCOUNT_V2_NONCE_BYTES],
+    uint8_t flags, const uint8_t salt[16],
+    const uint8_t nonce[ACCOUNT_V2_NONCE_BYTES],
     const uint8_t data_key[ACCOUNT_V2_KEY_BYTES],
     uint8_t record[ACCOUNT_V2_RECORD_BYTES])
 {
@@ -167,6 +170,7 @@ enum account_v2_status account_v2_seal(const char *username,
     if (record == NULL || length >= ACCOUNT_USERNAME_BYTES ||
             password == NULL || password_bytes < ACCOUNT_PASSWORD_MIN_BYTES ||
             password_bytes > ACCOUNT_PASSWORD_MAX_BYTES || generation == 0U ||
+            (flags & (uint8_t)~ACCOUNT_V2_FLAG_DATA_ENCRYPTED) != 0U ||
             salt == NULL || nonce == NULL || data_key == NULL) {
         return ACCOUNT_V2_BAD_ARGUMENT;
     }
@@ -174,6 +178,7 @@ enum account_v2_status account_v2_seal(const char *username,
     record[0] = 'O'; record[1] = 'R'; record[2] = 'A'; record[3] = '2';
     record[4] = 2U;
     record[5] = (uint8_t)length;
+    record[6] = flags;
     write_u32(record + 8U, ACCOUNT_KDF_V2_ALGORITHM);
     record[12] = ACCOUNT_KDF_V2_VERSION;
     write_u32(record + 16U, ACCOUNT_KDF_V2_MEMORY_KIB);
@@ -202,6 +207,26 @@ enum account_v2_status account_v2_seal(const char *username,
     if (status != ACCOUNT_V2_OK) {
         crypto_wipe(record, ACCOUNT_V2_RECORD_BYTES);
     }
+    return status;
+}
+
+enum account_v2_status account_v2_seal(const char *username,
+    const uint8_t *password, size_t password_bytes, uint64_t generation,
+    const uint8_t salt[16], const uint8_t nonce[ACCOUNT_V2_NONCE_BYTES],
+    const uint8_t data_key[ACCOUNT_V2_KEY_BYTES],
+    uint8_t record[ACCOUNT_V2_RECORD_BYTES])
+{
+    return account_v2_seal_flags(username, password, password_bytes,
+        generation, 0U, salt, nonce, data_key, record);
+}
+
+enum account_v2_status account_v2_record_flags(
+    const uint8_t record[ACCOUNT_V2_RECORD_BYTES], uint8_t *flags)
+{
+    if (flags == NULL) return ACCOUNT_V2_BAD_ARGUMENT;
+    *flags = 0U;
+    const enum account_v2_status status = account_v2_validate(record);
+    if (status == ACCOUNT_V2_OK) *flags = record[6];
     return status;
 }
 

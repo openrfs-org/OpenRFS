@@ -46,6 +46,8 @@ static bool fail_unlink_v2_once;
 static const uint8_t *read_source;
 static size_t read_source_bytes;
 static bool ordinary_file_present;
+static unsigned int v2_a_read_opens;
+static unsigned int tamper_on_v2_a_read_open;
 static struct {
     char path[OPENRFSFS_MAX_PATH];
     unsigned int cursor;
@@ -282,6 +284,13 @@ enum openrfsfs_status openrfsfs_open(enum openrfsfs_volume volume,
     }
     if (strcmp(path, V2_A_PATH) == 0 &&
             access == OPENRFSFS_ACCESS_READ && v2_a_present) {
+        ++v2_a_read_opens;
+        if (v2_a_read_opens == tamper_on_v2_a_read_open) {
+            v2_a[6] ^= ACCOUNT_V2_FLAG_DATA_ENCRYPTED;
+            assert(package_state_sha256(v2_a, 188U, v2_a + 188U) ==
+                PACKAGE_STATE_STATUS_OK);
+            tamper_on_v2_a_read_open = 0U;
+        }
         read_position = 0U;
         read_source = v2_a;
         read_source_bytes = v2_a_bytes;
@@ -480,6 +489,39 @@ int main(void)
         return 1;
     }
     assert(account_data_key(key));
+    uint8_t migration_salt[16];
+    uint8_t migration_nonce[ACCOUNT_V2_NONCE_BYTES];
+    uint8_t record_flags = 0U;
+    for (size_t index = 0U; index < sizeof(migration_salt); ++index)
+        migration_salt[index] = (uint8_t)(0x70U + index);
+    for (size_t index = 0U; index < sizeof(migration_nonce); ++index)
+        migration_nonce[index] = (uint8_t)(0x90U + index);
+    if (!check(account_v2_seal_flags("alice", password,
+            sizeof(password) - 1U, 2U, ACCOUNT_V2_FLAG_DATA_ENCRYPTED,
+            migration_salt, migration_nonce, key, v2_a) == ACCOUNT_V2_OK,
+            "authenticated migration flag fixture") ||
+        !check(account_authenticate("alice", password,
+            sizeof(password) - 1U) == ACCOUNT_STATUS_OK,
+            "migration flag record must authenticate")) {
+        return 1;
+    }
+    memcpy(saved, v2_a, sizeof(saved));
+    tamper_on_v2_a_read_open = v2_a_read_opens + 2U;
+    if (!check(account_change_password("alice", password,
+            sizeof(password) - 1U, new_password,
+            sizeof(new_password) - 1U) ==
+            ACCOUNT_STATUS_AUTHENTICATION_FAILED,
+            "changed migration flag after login must refuse rotation") ||
+        !check(!account_session_active() && !v2_b_present,
+            "changed migration flag must revoke without a new record")) {
+        return 1;
+    }
+    memcpy(v2_a, saved, sizeof(v2_a));
+    if (!check(account_authenticate("alice", password,
+            sizeof(password) - 1U) == ACCOUNT_STATUS_OK,
+            "original authenticated record must recover after tamper")) {
+        return 1;
+    }
     if (!check(account_change_password("alice", password,
             sizeof(password) - 1U, new_password, 4U) ==
                 ACCOUNT_STATUS_INVALID_PASSWORD,
@@ -511,6 +553,10 @@ int main(void)
             "password change must commit") ||
         !check(v2_b_present && !v2_a_present,
             "new generation must retire old slot") ||
+        !check(account_v2_record_flags(v2_b, &record_flags) ==
+            ACCOUNT_V2_OK &&
+            record_flags == ACCOUNT_V2_FLAG_DATA_ENCRYPTED,
+            "password change must preserve migration flag") ||
         !check(account_authenticate("alice", password,
             sizeof(password) - 1U) == ACCOUNT_STATUS_AUTHENTICATION_FAILED,
             "old password must be refused online") ||
@@ -527,7 +573,7 @@ int main(void)
     memcpy(v2_a, v2_b, sizeof(v2_a));
     v2_a_bytes = sizeof(v2_a);
     v2_a_present = true;
-    v2_a[6] = 1U;
+    v2_a[6] = 2U;
     if (!check(account_authenticate("alice", new_password,
             sizeof(new_password) - 1U) == ACCOUNT_STATUS_OK,
             "valid v2 slot must survive malformed inactive slot") ||

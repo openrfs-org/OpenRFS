@@ -83,6 +83,31 @@ int main(void)
     assert(account_v2_open(record, "bob", password, sizeof(password) - 1U,
         recovered) == ACCOUNT_V2_AUTHENTICATION_FAILED);
 
+    uint8_t flags = 0U;
+    assert(account_v2_record_flags(record, &flags) == ACCOUNT_V2_OK &&
+        flags == 0U);
+    assert(account_v2_seal_flags("alice", password, sizeof(password) - 1U,
+        8U, ACCOUNT_V2_FLAG_DATA_ENCRYPTED, salt, nonce, data_key,
+        altered) == ACCOUNT_V2_OK);
+    assert(account_v2_record_flags(altered, &flags) == ACCOUNT_V2_OK &&
+        flags == ACCOUNT_V2_FLAG_DATA_ENCRYPTED);
+    assert(account_v2_open(altered, "alice", password,
+        sizeof(password) - 1U, recovered) == ACCOUNT_V2_OK &&
+        memcmp(recovered, data_key, sizeof(data_key)) == 0);
+    altered[6] = 0U;
+    recalculate_checksum(altered);
+    assert(account_v2_open(altered, "alice", password,
+        sizeof(password) - 1U, recovered) ==
+        ACCOUNT_V2_AUTHENTICATION_FAILED);
+    altered[6] = 2U;
+    recalculate_checksum(altered);
+    kdf_calls = 0U;
+    assert(account_v2_open(altered, "alice", password,
+        sizeof(password) - 1U, recovered) == ACCOUNT_V2_MALFORMED &&
+        kdf_calls == 0U);
+    assert(account_v2_seal_flags("alice", password, sizeof(password) - 1U,
+        8U, 2U, salt, nonce, data_key, altered) == ACCOUNT_V2_BAD_ARGUMENT);
+
     memcpy(altered, record, sizeof(record));
     altered[16] = 1U; /* unsupported work factor must not start the KDF */
     recalculate_checksum(altered);

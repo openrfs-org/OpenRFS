@@ -24,7 +24,16 @@ it, then retires the previous slot. A cut before the new slot's rename leaves
 the old password usable; a cut after selects the new generation. The host
 test injects a pre-rename sync failure and a post-commit unlink failure,
 checking that the old password survives the first and the new password works
-after the second. An additional host test injects a malformed or short inactive
+after the second. The authenticated record format now reserves byte 6 bit 0
+as the Data migration-complete state. New records keep it clear, and password
+change preserves its value. The parser rejects other bits before invoking
+Argon2id; the host test shows that clearing a set bit while recomputing the
+unkeyed checksum still fails verifier authentication. No production path sets
+the bit yet. The encrypted VFS and durable migration transaction must be
+complete before any account may set it. Whole-volume rollback can still
+restore an older record without an external freshness root.
+
+An additional host test injects a malformed or short inactive
 slot alongside a valid slot; login authenticates the intact wrap and removes
 the damaged peer before exposing the Data key. An I/O error, two malformed
 slots, or a single malformed slot still fail closed. This does not simulate a
