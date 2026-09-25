@@ -100,9 +100,26 @@ freshness value held outside the Data volume.
 
 The current envelope caps each physical file at 16 MiB. A 16 MiB FAT32 file
 and a 64 MiB ext4 mutable file cannot be represented as one encrypted file
-within the respective backend limits. Production storage needs bounded
-segments or another capacity plan before migration can accept every existing
-file without losing data.
+within the respective backend limits. `data_aead_manifest.c` seals an
+encrypted descriptor for up to eight 8 MiB plaintext segments, enough for a
+64 MiB logical file. It authenticates the file identity, logical length,
+segment revision IDs, lengths, generations, and segment binding paths. It
+derives an opaque 8.3 physical path from the Data key and each revision ID.
+The slot selector chooses the highest adjacent authenticated generation and
+refuses a shaped record with a bad tag. It cannot detect erasure of a newer
+slot without an external freshness value. It does not yet store segments,
+or connect to either backend. Its publication helper syncs and verifies each
+segment, writes and reads back a temporary manifest, removes the inactive
+slot, renames the temp into that slot, then syncs and selects the result.
+Host tests cut each of those callbacks and retry. Real FAT32 and ext4
+adapters must supply those durable operations before the helper protects
+Data. `data_aead_backend.c` now maps the callbacks to the backend operations,
+keeps segment handles open through verification, and uses 8.3 storage paths.
+Its host test exercises FAT32-style and ext4-style operation tables, disk
+full, a rename cut, tampering, and a wrong key. The adapter is not called by
+the production VFS or tested against raw filesystem images. Migration must
+refuse a file unless all of its segments fit and are verified before
+publication.
 
 **Do not wire in-place encrypted writes.** A torn header or chunk can make a
 valid old file unreadable. For partial and sparse writes, truncate, metadata

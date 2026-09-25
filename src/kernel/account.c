@@ -58,7 +58,8 @@ bool account_data_key(uint8_t out[ACCOUNT_V2_KEY_BYTES])
         return false;
     }
     for (size_t index = 0U; index < sizeof(active_data_key); ++index) {
-        out[index] = active_data_key[index];
+        out[index] = __atomic_load_n(&active_data_key[index],
+            __ATOMIC_RELAXED);
     }
     if (!account_session_active() ||
             generation != account_session_generation()) {
@@ -71,7 +72,8 @@ bool account_data_key(uint8_t out[ACCOUNT_V2_KEY_BYTES])
 void account_data_key_forget(void)
 {
     __atomic_store_n(&active_data_key_present, false, __ATOMIC_RELEASE);
-    crypto_wipe(active_data_key, sizeof(active_data_key));
+    for (size_t index = 0U; index < sizeof(active_data_key); ++index)
+        __atomic_store_n(&active_data_key[index], 0U, __ATOMIC_RELAXED);
     __atomic_add_fetch(&active_data_epoch, 1U, __ATOMIC_ACQ_REL);
 }
 
@@ -540,7 +542,10 @@ static enum account_status v2_authenticate(
     }
 
     if (status == ACCOUNT_V2_OK) {
-        copy_bytes(active_data_key, data_key, sizeof(data_key));
+        account_data_key_forget();
+        for (size_t index = 0U; index < sizeof(active_data_key); ++index)
+            __atomic_store_n(&active_data_key[index], data_key[index],
+                __ATOMIC_RELAXED);
         __atomic_store_n(&active_data_key_present, true, __ATOMIC_RELEASE);
     }
     zero_bytes(data_key, sizeof(data_key));
@@ -893,6 +898,7 @@ enum account_status account_data_state_update(const char *username,
     const char *inactive_slot;
     enum account_status result;
 
+    account_data_key_forget();
     if (username == NULL || password == NULL ||
             (next_flags != ACCOUNT_V2_FLAG_DATA_MIGRATING &&
              next_flags != ACCOUNT_V2_FLAG_DATA_ENCRYPTED)) {
@@ -1026,15 +1032,18 @@ enum account_status account_change_password(const char *username,
             goto done;
         }
     } else {
-        copy_bytes(authenticated_key, active_data_key,
-            sizeof(authenticated_key));
+        if (!account_data_key(authenticated_key)) {
+            result = ACCOUNT_STATUS_STORAGE_CORRUPT;
+            goto done;
+        }
         /* Authenticate the second read before copying its state into a new
          * generation. The checksum is not authority. */
         result = v2_authenticate(current, username, old_password,
             old_password_bytes);
         if (result != ACCOUNT_STATUS_OK) goto done;
-        if (!equal_bytes(authenticated_key, active_data_key,
-                sizeof(authenticated_key))) {
+        if (!account_data_key(verified_key) ||
+                !equal_bytes(authenticated_key, verified_key,
+                    sizeof(authenticated_key))) {
             result = ACCOUNT_STATUS_STORAGE_CORRUPT;
             goto done;
         }
@@ -1091,8 +1100,9 @@ enum account_status account_change_password(const char *username,
     } else {
         result = v2_authenticate(current, username, new_password,
             new_password_bytes);
-        if (result == ACCOUNT_STATUS_OK)
-            copy_bytes(verified_key, active_data_key, sizeof(verified_key));
+        if (result == ACCOUNT_STATUS_OK &&
+                !account_data_key(verified_key))
+            result = ACCOUNT_STATUS_STORAGE_CORRUPT;
     }
     if (result != ACCOUNT_STATUS_OK ||
             !equal_bytes(authenticated_key, verified_key,

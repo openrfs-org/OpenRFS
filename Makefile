@@ -1959,12 +1959,49 @@ $(DATA_AEAD_SLOTS_HOST_TEST): tests/data_aead_slots_host_test.c \
 data-aead-slots-host-test: $(DATA_AEAD_SLOTS_HOST_TEST)
 	$(DATA_AEAD_SLOTS_HOST_TEST)
 
+DATA_AEAD_MANIFEST_HOST_TEST := $(TEST_BUILD_DIR)/data-aead-manifest-host-test$(HOST_EXEEXT)
+
+$(DATA_AEAD_MANIFEST_HOST_TEST): tests/data_aead_manifest_host_test.c \
+		src/kernel/data_aead_manifest.c src/kernel/data_aead_rewrite.c \
+		src/kernel/data_aead.c \
+		include/openrfs/data_aead_manifest.h \
+		include/openrfs/data_aead_rewrite.h \
+		include/openrfs/data_aead.h vendor/monocypher/src/monocypher.c
+	mkdir -p $(dir $@)
+	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
+		tests/data_aead_manifest_host_test.c src/kernel/data_aead_manifest.c \
+		src/kernel/data_aead_rewrite.c src/kernel/data_aead.c \
+		vendor/monocypher/src/monocypher.c -o $@
+
+data-aead-manifest-host-test: $(DATA_AEAD_MANIFEST_HOST_TEST)
+	$(DATA_AEAD_MANIFEST_HOST_TEST)
+
+DATA_AEAD_BACKEND_HOST_TEST := $(TEST_BUILD_DIR)/data-aead-backend-host-test$(HOST_EXEEXT)
+
+$(DATA_AEAD_BACKEND_HOST_TEST): tests/data_aead_backend_host_test.c \
+		src/kernel/data_aead_backend.c src/kernel/data_aead_manifest.c \
+		src/kernel/data_aead_rewrite.c src/kernel/data_aead.c \
+		include/openrfs/data_aead_backend.h \
+		include/openrfs/data_aead_manifest.h \
+		vendor/monocypher/src/monocypher.c
+	mkdir -p $(dir $@)
+	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
+		tests/data_aead_backend_host_test.c src/kernel/data_aead_backend.c \
+		src/kernel/data_aead_manifest.c src/kernel/data_aead_rewrite.c \
+		src/kernel/data_aead.c vendor/monocypher/src/monocypher.c -o $@
+
+data-aead-backend-host-test: $(DATA_AEAD_BACKEND_HOST_TEST)
+	$(DATA_AEAD_BACKEND_HOST_TEST)
+
 boot-artifact-signature-test:
 	$(PYTHON) tools/test_boot_artifact_signature.py
 
 verify: toolchain lint installer-port-test minimal-de-host-test \
 		random-host-test account-host-test account-kdf-host-test account-v2-host-test \
 		data-aead-host-test data-aead-rewrite-host-test data-aead-slots-host-test \
+		data-aead-manifest-host-test data-aead-backend-host-test \
 		boot-artifact-signature-test
 ifneq ($(VERIFY_CLEAN),0)
 	$(MAKE) clean
