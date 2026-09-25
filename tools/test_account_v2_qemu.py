@@ -40,7 +40,7 @@ def case_image(source, destination, case):
     image = bytearray(destination.read_bytes())
     offset = record_offset(image)
     if case == "malformed":
-        image[offset + 6] = 1  # Reserved header byte.
+        image[offset + 7] = 1  # Reserved header byte.
     elif case == "forged-checksum":
         image[offset + 140] ^= 0x40  # Data-key ciphertext, outside verifier.
         image[offset + 188:offset + 220] = hashlib.sha256(
@@ -53,6 +53,8 @@ def case_image(source, destination, case):
 
 def boot_case(capture, args, case, image, directory):
     serial = directory / f"{case}.serial.log"
+    prior_image_hash = hashlib.sha256(image.read_bytes()).hexdigest() if (
+        case == "locked-shell") else None
     port = capture.free_port()
     command = [args.qemu, "-machine", "accel=tcg", "-cpu", "max",
                "-m", "128M", "-smp", "1", "-boot", "order=d",
@@ -104,7 +106,8 @@ def boot_case(capture, args, case, image, directory):
             capture.send_text(qmp, "starty")
             capture.press(qmp, "ret", 0.1)
         if case == "malformed":
-            capture.wait_serial(serial, b"account: the OpenRFS account record is corrupt")
+            expected = b"account: the OpenRFS account record is corrupt"
+            capture.wait_serial(serial, expected)
         elif case not in ("locked-shell", "storage-unavailable"):
             capture.wait_serial_after(serial, capture.PROMPT,
                                       capture.USERNAME_PROMPT)
@@ -118,6 +121,7 @@ def boot_case(capture, args, case, image, directory):
             capture.press(qmp, "ret", 0.1)
             expected = {
                 "valid": capture.DESKTOP_STARTED,
+                "valid-reboot": capture.DESKTOP_STARTED,
                 "wrong-password": b"account: invalid username or password",
                 "forged-checksum": b"account: the OpenRFS account record is corrupt",
             }[case]
@@ -126,35 +130,41 @@ def boot_case(capture, args, case, image, directory):
                 command = "write secret milestonesecret"
                 capture.send_text(qmp, command)
                 capture.press(qmp, "ret", 0.1)
-                capture.wait_serial_after(serial, command.encode(), capture.PROMPT)
+                capture.wait_serial_after(serial, command.encode(),
+                                          capture.PROMPT, timeout=120.0)
+            elif case == "valid-reboot":
+                command = "read secret"
+                capture.send_text(qmp, command)
+                capture.press(qmp, "ret", 0.1)
+                capture.wait_serial_after(serial, command.encode(),
+                                          b"milestonesecret", timeout=120.0)
+                capture.wait_serial_after(serial, command.encode(),
+                                          capture.PROMPT, timeout=120.0)
         time.sleep(0.25)
         transcript = serial.read_bytes()
-        if case != "valid" and capture.DESKTOP_STARTED in transcript:
+        if case not in ("valid", "valid-reboot") and capture.DESKTOP_STARTED in transcript:
             raise RuntimeError(f"{case} reached the desktop")
-        if case == "valid" and capture.DESKTOP_STARTED not in transcript:
+        if case in ("valid", "valid-reboot") and capture.DESKTOP_STARTED not in transcript:
             raise RuntimeError("valid record did not reach the desktop")
         if case == "locked-shell":
-            report = fat32_image.inspect_image(image.read_bytes())
-            if any(entry["path"] == "UNAUTH" for entry in report["files"]):
-                raise RuntimeError("locked shell created a Data file")
-            if not any(entry["path"] == "SECRET" and entry["size"] == 16
-                       for entry in report["files"]):
-                raise RuntimeError("locked shell changed the existing Data file")
+            if hashlib.sha256(image.read_bytes()).hexdigest() != prior_image_hash:
+                raise RuntimeError("locked shell changed the Data image")
             if b"milestonesecret" in transcript:
                 raise RuntimeError("locked shell exposed the stored Data content")
-        if case == "valid":
-            report = fat32_image.inspect_image(image.read_bytes())
-            if not any(entry["path"] == "SECRET" and entry["size"] == 16
-                       for entry in report["files"]):
-                raise RuntimeError("authenticated shell did not persist the Data file")
+        if case in ("valid", "valid-reboot"):
+            raw = image.read_bytes()
+            report = fat32_image.inspect_image(raw)
+            if any(entry["path"] == "SECRET" for entry in report["files"]):
+                raise RuntimeError("Data filename appeared in the raw image")
+            if b"milestonesecret" in raw:
+                raise RuntimeError("Data content appeared in the raw image")
         if (capture.CAPTURE_PASSWORD.encode() in transcript or
                 capture.ROTATED_PASSWORD.encode() in transcript):
             raise RuntimeError("serial output leaked a password")
         return {"case": case, "serial_sha256": hashlib.sha256(transcript).hexdigest(),
                 "image_sha256": hashlib.sha256(image.read_bytes()).hexdigest()
                     if image is not None else None,
-                "expected": expected.decode() if case != "malformed" else
-                    "account: the OpenRFS account record is corrupt",
+                "expected": expected.decode(),
                 "observed": True}
     finally:
         if qmp is not None:
@@ -186,11 +196,12 @@ def main():
     results = []
     source = args.data
     cases = ("storage-unavailable",) if args.storage_unavailable_only else (
-        "valid", "locked-shell", "wrong-password", "malformed",
+        "valid", "valid-reboot", "locked-shell", "wrong-password", "malformed",
         "forged-checksum", "storage-unavailable")
     for case in cases:
-        image = None if case == "storage-unavailable" else args.output / f"{case}.raw"
-        if image is not None:
+        image = None if case == "storage-unavailable" else (
+            source if case == "valid-reboot" else args.output / f"{case}.raw")
+        if image is not None and case != "valid-reboot":
             case_image(source, image, case)
         results.append(boot_case(capture, args, case, image, args.output))
         if case == "valid":
