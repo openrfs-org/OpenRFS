@@ -36,4 +36,11 @@ enum data_aead_status data_aead_backend_read_file(
     uint64_t offset, uint8_t *destination, size_t capacity,
     uint8_t *workspace, size_t workspace_bytes, size_t *read_bytes);
 
+enum data_aead_status data_aead_backend_append_file(
+    const struct vfs_backend_ops *backend, enum openrfsfs_volume volume,
+    const uint8_t key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
+    uint64_t expected_generation, const uint8_t *addition,
+    size_t addition_bytes, uint8_t *workspace, size_t workspace_bytes,
+    struct data_aead_manifest *published);
+
 #endif

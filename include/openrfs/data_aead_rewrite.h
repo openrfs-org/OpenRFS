@@ -20,6 +20,8 @@ struct data_aead_rewrite_io {
      * this function and a separate full-file verification succeed. */
     /* Create an exclusive, empty shadow with this exact intended size. */
     bool (*begin_shadow)(void *context, uint64_t physical_bytes);
+    bool (*begin_shadow_v2)(void *context, uint64_t physical_bytes,
+        const uint8_t header[DATA_AEAD_HEADER_BYTES]);
     bool (*read_old)(void *context, uint64_t offset, uint8_t *to,
         size_t bytes);
     bool (*write_shadow)(void *context, uint64_t offset, const uint8_t *from,
@@ -49,6 +51,15 @@ enum data_aead_status data_aead_rewrite_shadow_paths(
     const char *new_path, uint64_t old_physical_bytes,
     uint64_t new_plaintext_bytes, uint64_t patch_offset,
     const uint8_t *patch, size_t patch_bytes,
+    const struct data_aead_rewrite_io *io, uint8_t *workspace,
+    size_t workspace_bytes, uint64_t *new_physical_bytes);
+enum data_aead_status data_aead_rewrite_shadow_paths_identified(
+    const uint8_t key[DATA_AEAD_KEY_BYTES], const char *old_path,
+    const char *new_path, uint64_t old_physical_bytes,
+    uint64_t new_plaintext_bytes, uint64_t patch_offset,
+    const uint8_t *patch, size_t patch_bytes,
+    const uint8_t stable_id[DATA_AEAD_ID_BYTES],
+    const uint8_t revision_id[DATA_AEAD_ID_BYTES], uint64_t generation,
     const struct data_aead_rewrite_io *io, uint8_t *workspace,
     size_t workspace_bytes, uint64_t *new_physical_bytes);
 

@@ -125,6 +125,21 @@ tested against raw FAT32 or ext4 images.
 File and directory names in the legacy tree remain visible until a namespace
 migration removes them. The helper alone does not protect Data.
 
+`data_namespace.c` defines a versioned record for encrypted namespace events.
+It carries names, stable file and directory IDs, mode, owner, attributes, and
+times. Replay refuses duplicate names and IDs, missing parents, nonempty
+directory deletion, cycles, truncated records, and partial reads. A rename is
+one event, so descendant IDs do not change. These records must be stored only
+inside an authenticated Data file; the host test seals one record and checks
+that its name is absent from the raw ciphertext. No production namespace file
+or VFS route exists yet. Physical legacy names are still exposed.
+
+The namespace lookup folds ASCII case for FAT32 and preserves case for ext4.
+File manifests bind to a stable ID path, so renaming a directory does not
+rewrite descendant content. The backend append helper publishes one encrypted
+revision at a time. After an interrupted append, it checks the authenticated
+previous manifest and derived revision IDs before accepting a retry.
+
 **Do not wire in-place encrypted writes.** A torn header or chunk can make a
 valid old file unreadable. For partial and sparse writes, truncate, metadata
 changes, and rename, build a bounded shadow file, seal and verify it, sync it,

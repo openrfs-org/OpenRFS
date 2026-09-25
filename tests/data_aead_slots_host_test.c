@@ -347,7 +347,11 @@ int main(void)
         source_size, source_remove, source_sync
     };
     struct data_aead_rewrite_io migration_rewrite = {
-        &migration, begin_shadow, read_old, write_shadow, random_bytes
+        .context = &migration,
+        .begin_shadow = begin_shadow,
+        .read_old = read_old,
+        .write_shadow = write_shadow,
+        .random = random_bytes,
     };
     migration.fail_shadow_write = true;
     CHECK(data_aead_migrate_one(key, "HOME/NOTE.TXT", &migration_slots,

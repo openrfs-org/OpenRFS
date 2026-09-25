@@ -56,11 +56,14 @@ static enum data_aead_status open_old_chunk(
         &opened);
 }
 
-enum data_aead_status data_aead_rewrite_shadow_paths(
+static enum data_aead_status rewrite_shadow_paths_impl(
     const uint8_t key[DATA_AEAD_KEY_BYTES], const char *old_path,
     const char *new_path,
     uint64_t old_physical_bytes, uint64_t new_plaintext_bytes,
     uint64_t patch_offset, const uint8_t *patch, size_t patch_bytes,
+    const uint8_t supplied_stable_id[DATA_AEAD_ID_BYTES],
+    const uint8_t supplied_revision_id[DATA_AEAD_ID_BYTES],
+    uint64_t supplied_generation,
     const struct data_aead_rewrite_io *io, uint8_t *workspace,
     size_t workspace_bytes, uint64_t *new_physical_bytes)
 {
@@ -78,11 +81,15 @@ enum data_aead_status data_aead_rewrite_shadow_paths(
 
     if (new_physical_bytes != NULL) *new_physical_bytes = 0U;
     if (key == NULL || old_path == NULL || new_path == NULL || io == NULL ||
-            io->begin_shadow == NULL || io->read_old == NULL ||
+            (io->begin_shadow == NULL && io->begin_shadow_v2 == NULL) ||
+            io->read_old == NULL ||
             io->write_shadow == NULL ||
             io->random == NULL || workspace == NULL ||
             workspace_bytes < DATA_AEAD_REWRITE_WORKSPACE_BYTES ||
             new_physical_bytes == NULL ||
+            (supplied_stable_id == NULL) !=
+                (supplied_revision_id == NULL) ||
+            (supplied_stable_id != NULL && supplied_generation == 0U) ||
             (patch_bytes != 0U && patch == NULL) ||
             (patch_bytes != 0U &&
              (patch_offset > new_plaintext_bytes ||
@@ -116,6 +123,12 @@ enum data_aead_status data_aead_rewrite_shadow_paths(
         result = data_aead_file_identity(key, old_path, old_header,
             old_physical_bytes, stable_id);
         if (result != DATA_AEAD_OK) goto done;
+        if (supplied_stable_id != NULL &&
+                !equal_bytes(stable_id, supplied_stable_id,
+                    sizeof(stable_id))) {
+            result = DATA_AEAD_CONFLICT;
+            goto done;
+        }
         result = data_aead_generation(key, old_path, old_header,
             old_physical_bytes, &generation);
         if (result != DATA_AEAD_OK || generation == UINT64_MAX) {
@@ -123,11 +136,20 @@ enum data_aead_status data_aead_rewrite_shadow_paths(
             goto done;
         }
         ++generation;
+    } else if (supplied_stable_id != NULL) {
+        copy_bytes(stable_id, supplied_stable_id, sizeof(stable_id));
     } else if (!io->random(io->context, stable_id, sizeof(stable_id))) {
         result = DATA_AEAD_ENTROPY;
         goto done;
     }
-    if (!io->random(io->context, id, sizeof(id))) {
+    if (supplied_stable_id != NULL && generation !=
+            supplied_generation) {
+        result = DATA_AEAD_CONFLICT;
+        goto done;
+    }
+    if (supplied_revision_id != NULL)
+        copy_bytes(id, supplied_revision_id, sizeof(id));
+    else if (!io->random(io->context, id, sizeof(id))) {
         result = DATA_AEAD_ENTROPY;
         goto done;
     }
@@ -139,7 +161,9 @@ enum data_aead_status data_aead_rewrite_shadow_paths(
     result = data_aead_make_header_v2(key, new_path,
         new_plaintext_bytes, stable_id, id, generation, new_header);
     if (result != DATA_AEAD_OK) goto done;
-    if (!io->begin_shadow(io->context, output_size)) {
+    if (!(io->begin_shadow_v2 != NULL ?
+            io->begin_shadow_v2(io->context, output_size, new_header) :
+            io->begin_shadow(io->context, output_size))) {
         result = DATA_AEAD_IO;
         goto done;
     }
@@ -198,6 +222,36 @@ done:
     return result;
 }
 
+enum data_aead_status data_aead_rewrite_shadow_paths(
+    const uint8_t key[DATA_AEAD_KEY_BYTES], const char *old_path,
+    const char *new_path, uint64_t old_physical_bytes,
+    uint64_t new_plaintext_bytes, uint64_t patch_offset,
+    const uint8_t *patch, size_t patch_bytes,
+    const struct data_aead_rewrite_io *io, uint8_t *workspace,
+    size_t workspace_bytes, uint64_t *new_physical_bytes)
+{
+    return rewrite_shadow_paths_impl(key, old_path, new_path,
+        old_physical_bytes, new_plaintext_bytes, patch_offset, patch,
+        patch_bytes, NULL, NULL, 0U, io, workspace, workspace_bytes,
+        new_physical_bytes);
+}
+
+enum data_aead_status data_aead_rewrite_shadow_paths_identified(
+    const uint8_t key[DATA_AEAD_KEY_BYTES], const char *old_path,
+    const char *new_path, uint64_t old_physical_bytes,
+    uint64_t new_plaintext_bytes, uint64_t patch_offset,
+    const uint8_t *patch, size_t patch_bytes,
+    const uint8_t stable_id[DATA_AEAD_ID_BYTES],
+    const uint8_t revision_id[DATA_AEAD_ID_BYTES], uint64_t generation,
+    const struct data_aead_rewrite_io *io, uint8_t *workspace,
+    size_t workspace_bytes, uint64_t *new_physical_bytes)
+{
+    return rewrite_shadow_paths_impl(key, old_path, new_path,
+        old_physical_bytes, new_plaintext_bytes, patch_offset, patch,
+        patch_bytes, stable_id, revision_id, generation, io, workspace,
+        workspace_bytes, new_physical_bytes);
+}
+
 enum data_aead_status data_aead_rewrite_shadow(
     const uint8_t key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
     uint64_t old_physical_bytes, uint64_t new_plaintext_bytes,
@@ -231,7 +285,8 @@ static enum data_aead_status migrate_plain_shadow_impl(
 
     if (new_physical_bytes != NULL) *new_physical_bytes = 0U;
     if (key == NULL || canonical_path == NULL || io == NULL ||
-            io->begin_shadow == NULL || io->read_old == NULL ||
+            (io->begin_shadow == NULL && io->begin_shadow_v2 == NULL) ||
+            io->read_old == NULL ||
             io->write_shadow == NULL || io->random == NULL ||
             workspace == NULL ||
             workspace_bytes < DATA_AEAD_REWRITE_WORKSPACE_BYTES ||
@@ -265,7 +320,9 @@ static enum data_aead_status migrate_plain_shadow_impl(
     result = data_aead_make_header_v2(key, canonical_path,
         old_plaintext_bytes, stable_id, id, generation, header);
     if (result != DATA_AEAD_OK) goto done;
-    if (!io->begin_shadow(io->context, output_size) ||
+    if (!(io->begin_shadow_v2 != NULL ?
+            io->begin_shadow_v2(io->context, output_size, header) :
+            io->begin_shadow(io->context, output_size)) ||
             !io->write_shadow(io->context, 0U, header,
                 DATA_AEAD_HEADER_BYTES)) {
         result = DATA_AEAD_IO;

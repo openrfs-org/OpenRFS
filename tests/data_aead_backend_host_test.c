@@ -454,6 +454,49 @@ static int run_case(bool ext4_style)
             find_file("DOC/EMPTY.TXT") == NULL && no_open_handles(),
             "empty migration publishes before source removal"))
         return 1;
+    struct data_aead_manifest namespace_file = {0};
+    namespace_file.stable_id[0] = 71U;
+    namespace_file.generation = 1U;
+    if (!check(data_aead_backend_publish_manifest(&backend,
+            OPENRFSFS_VOLUME_DATA, key, "NAMESPACE", &namespace_file,
+            workspace, sizeof(workspace), &published, &slot) ==
+            DATA_AEAD_OK && no_open_handles(),
+            "empty namespace file publishes")) return 1;
+    const uint8_t event[] = {'e', 'v', 'e', 'n', 't'};
+    if (!check(data_aead_backend_append_file(&backend,
+            OPENRFSFS_VOLUME_DATA, key, "NAMESPACE", 1U, event,
+            sizeof(event), workspace, sizeof(workspace), &published) ==
+            DATA_AEAD_OK && published.generation == 2U &&
+            published.plaintext_bytes == sizeof(event) &&
+            no_open_handles(), "encrypted append publishes")) return 1;
+    memset(readback, 0U, sizeof(readback));
+    if (!check(data_aead_backend_read_file(&backend,
+            OPENRFSFS_VOLUME_DATA, key, "NAMESPACE", 0U, readback,
+            sizeof(readback), workspace, sizeof(workspace), &read_bytes) ==
+            DATA_AEAD_OK && read_bytes == sizeof(event) &&
+            memcmp(readback, event, sizeof(event)) == 0,
+            "append content decrypts")) return 1;
+    if (!check(data_aead_backend_append_file(&backend,
+            OPENRFSFS_VOLUME_DATA, key, "NAMESPACE", 1U, event,
+            sizeof(event), workspace, sizeof(workspace), &published) ==
+            DATA_AEAD_OK && published.generation == 2U &&
+            published.plaintext_bytes == sizeof(event),
+            "append retry does not duplicate content")) return 1;
+    if (!check(data_aead_backend_append_file(&backend,
+            OPENRFSFS_VOLUME_DATA, key, "NAMESPACE", 1U,
+            event + 1U, sizeof(event) - 1U, workspace,
+            sizeof(workspace), &published) == DATA_AEAD_CONFLICT &&
+            published.generation == 0U && no_open_handles(),
+            "matching suffix is not a matching append revision")) return 1;
+    const uint8_t next_event[] = {'n', 'e', 'x', 't'};
+    if (!check(data_aead_backend_append_file(&backend,
+            OPENRFSFS_VOLUME_DATA, key, "NAMESPACE", 2U, next_event,
+            sizeof(next_event), workspace, sizeof(workspace),
+            &published) == DATA_AEAD_OK &&
+            published.generation == 3U &&
+            published.plaintext_bytes ==
+                sizeof(event) + sizeof(next_event),
+            "append rewrites existing segment")) return 1;
     return 0;
 }
 
@@ -525,11 +568,95 @@ static int run_migration_cuts(bool ext4_style)
     return 0;
 }
 
+static int run_append_cuts(bool ext4_style)
+{
+    uint8_t key[DATA_AEAD_KEY_BYTES];
+    uint8_t workspace[DATA_AEAD_REWRITE_WORKSPACE_BYTES];
+    const uint8_t addition[] = {'e', 'v', 'e', 'n', 't'};
+    for (size_t at = 0U; at < sizeof(key); ++at)
+        key[at] = (uint8_t)(at + 1U);
+    for (unsigned cut = 1U; cut < 40U; ++cut) {
+        memset(files, 0, sizeof(files));
+        memset(handles, 0, sizeof(handles));
+        write_budget = SIZE_MAX;
+        fail_rename_after = false;
+        nonce_seed = 1U;
+        fault_step = 0U;
+        step_count = 0U;
+        struct vfs_backend_ops backend = {
+            .sync = fake_sync,
+            .open = fake_open,
+            .close = fake_close,
+            .pread = fake_pread,
+            .write = fake_write,
+            .stat_path = fake_stat,
+            .mkdir = fake_mkdir,
+            .rename = fake_rename,
+            .unlink = fake_unlink,
+            .create = fake_create,
+        };
+        if (ext4_style) {
+            backend.open_options = fake_open_options;
+            backend.fstat = fake_fstat;
+            backend.lstat_path = fake_stat;
+        }
+        struct data_aead_manifest empty_manifest = {0};
+        struct data_aead_manifest published;
+        unsigned slot = 0U;
+        empty_manifest.stable_id[0] = 91U;
+        empty_manifest.generation = 1U;
+        if (!check(data_aead_backend_publish_manifest(&backend,
+                OPENRFSFS_VOLUME_DATA, key, "NAMESPACE",
+                &empty_manifest, workspace, sizeof(workspace),
+                &published, &slot) == DATA_AEAD_OK,
+                "append cut fixture publishes empty file")) return 1;
+        step_count = 0U;
+        fault_step = cut;
+        const enum data_aead_status first =
+            data_aead_backend_append_file(&backend,
+                OPENRFSFS_VOLUME_DATA, key, "NAMESPACE", 1U,
+                addition, sizeof(addition), workspace,
+                sizeof(workspace), &published);
+        if (!check(first == DATA_AEAD_IO || first == DATA_AEAD_OK,
+                "append cut returns I/O or success") ||
+            !check(no_open_handles(), "append cut closes every handle"))
+            return 1;
+        fault_step = 0U;
+        if (!check(data_aead_backend_append_file(&backend,
+                OPENRFSFS_VOLUME_DATA, key, "NAMESPACE", 1U,
+                addition, sizeof(addition), workspace,
+                sizeof(workspace), &published) == DATA_AEAD_OK &&
+                published.generation == 2U &&
+                published.plaintext_bytes == sizeof(addition) &&
+                no_open_handles(),
+                "append cut resumes without duplicate bytes")) return 1;
+        uint8_t readback[8] = {0};
+        size_t read_bytes = 0U;
+        if (!check(data_aead_backend_read_file(&backend,
+                OPENRFSFS_VOLUME_DATA, key, "NAMESPACE", 0U, readback,
+                sizeof(readback), workspace, sizeof(workspace),
+                &read_bytes) == DATA_AEAD_OK &&
+                read_bytes == sizeof(addition) &&
+                memcmp(readback, addition, sizeof(addition)) == 0,
+                "append cut leaves complete content")) return 1;
+        if (first == DATA_AEAD_OK) {
+            if (!check(cut > 10U, "append cut sweep reached commit"))
+                return 1;
+            break;
+        }
+        if (!check(cut < 39U, "append cut sweep reaches success"))
+            return 1;
+    }
+    return 0;
+}
+
 int main(void)
 {
     if (run_case(false) != 0 || run_case(true) != 0 ||
             run_migration_cuts(false) != 0 ||
-            run_migration_cuts(true) != 0) return 1;
-    puts("Data AEAD FAT32/ext4 backend adapter, migration cuts, disk full, tamper and wrong-key controls passed");
+            run_migration_cuts(true) != 0 ||
+            run_append_cuts(false) != 0 ||
+            run_append_cuts(true) != 0) return 1;
+    puts("Data AEAD FAT32/ext4 backend adapter, migration and append cuts, disk full, tamper and wrong-key controls passed");
     return 0;
 }

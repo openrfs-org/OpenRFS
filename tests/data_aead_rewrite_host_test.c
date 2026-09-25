@@ -28,6 +28,8 @@ struct memory_io {
     size_t write_limit;
     unsigned int random_calls;
     unsigned int fail_random_at;
+    uint8_t opened_header[DATA_AEAD_HEADER_BYTES];
+    bool header_seen;
 };
 
 static struct memory_file old_file;
@@ -42,6 +44,15 @@ static bool begin_shadow(void *context, uint64_t physical_bytes)
     if (physical_bytes > FILE_CAPACITY) return false;
     memset(io->shadow, 0, sizeof(*io->shadow));
     return true;
+}
+
+static bool begin_shadow_v2(void *context, uint64_t physical_bytes,
+    const uint8_t header[DATA_AEAD_HEADER_BYTES])
+{
+    struct memory_io *io = context;
+    io->header_seen = true;
+    memcpy(io->opened_header, header, DATA_AEAD_HEADER_BYTES);
+    return begin_shadow(context, physical_bytes);
 }
 
 static bool read_old(void *context, uint64_t offset, uint8_t *to,
@@ -135,9 +146,17 @@ int main(void)
     uint8_t stable_id[DATA_AEAD_ID_BYTES];
     uint8_t rewritten_id[DATA_AEAD_ID_BYTES];
     uint64_t produced = 0U;
-    struct memory_io io = {&old_file, &shadow_file, FILE_CAPACITY, 0U, 0U};
+    struct memory_io io = {
+        .old = &old_file,
+        .shadow = &shadow_file,
+        .write_limit = FILE_CAPACITY,
+    };
     const struct data_aead_rewrite_io callbacks = {
-        &io, begin_shadow, read_old, write_shadow, random_bytes
+        .context = &io,
+        .begin_shadow = begin_shadow,
+        .read_old = read_old,
+        .write_shadow = write_shadow,
+        .random = random_bytes,
     };
     for (size_t index = 0U; index < sizeof(key); ++index) {
         key[index] = (uint8_t)(index + 7U);
@@ -386,6 +405,51 @@ int main(void)
     io.fail_random_at = 0U;
     expect_wiped();
 
-    puts("Data AEAD shadow rewrite/readback/range/rename/plaintext migration, partial/sparse/truncate, tamper, disk-full and entropy controls passed");
+    memset(&old_file, 0, sizeof(old_file));
+    struct data_aead_rewrite_io identified_callbacks = callbacks;
+    identified_callbacks.begin_shadow = NULL;
+    identified_callbacks.begin_shadow_v2 = begin_shadow_v2;
+    supplied_stable[0] = 41U;
+    supplied_revision[0] = 42U;
+    const uint8_t first_patch = 'A';
+    CHECK(data_aead_rewrite_shadow_paths_identified(key,
+        "HOME/NOTE.TXT", "HOME/NOTE.TXT", 0U, 1U, 0U,
+        &first_patch, 1U, supplied_stable, supplied_revision, 1U,
+        &identified_callbacks, workspace, sizeof(workspace),
+        &produced) == DATA_AEAD_OK && io.header_seen &&
+        memcmp(io.opened_header + 20U, supplied_revision,
+            DATA_AEAD_ID_BYTES) == 0);
+    CHECK(data_aead_file_identity(key, "HOME/NOTE.TXT",
+        shadow_file.bytes, produced, stable_id) == DATA_AEAD_OK &&
+        memcmp(stable_id, supplied_stable, sizeof(stable_id)) == 0);
+    publish_shadow(&io);
+    const uint8_t second_patch = 'B';
+    supplied_revision[0] = 43U;
+    io.header_seen = false;
+    CHECK(data_aead_rewrite_shadow_paths_identified(key,
+        "HOME/NOTE.TXT", "HOME/NOTE.TXT", old_file.length, 2U, 1U,
+        &second_patch, 1U, supplied_stable, supplied_revision, 2U,
+        &identified_callbacks, workspace, sizeof(workspace),
+        &produced) == DATA_AEAD_OK && io.header_seen);
+    const uint8_t two_bytes[] = {'A', 'B'};
+    check_plaintext(key, &shadow_file, two_bytes, sizeof(two_bytes));
+    uint64_t identified_generation = 0U;
+    CHECK(data_aead_generation(key, "HOME/NOTE.TXT",
+        shadow_file.bytes, produced, &identified_generation) ==
+        DATA_AEAD_OK && identified_generation == 2U);
+    supplied_stable[0] ^= 1U;
+    CHECK(data_aead_rewrite_shadow_paths_identified(key,
+        "HOME/NOTE.TXT", "HOME/NOTE.TXT", old_file.length, 2U, 1U,
+        &second_patch, 1U, supplied_stable, supplied_revision, 2U,
+        &identified_callbacks, workspace, sizeof(workspace),
+        &produced) == DATA_AEAD_CONFLICT);
+    supplied_stable[0] ^= 1U;
+    CHECK(data_aead_rewrite_shadow_paths_identified(key,
+        "HOME/NOTE.TXT", "HOME/NOTE.TXT", old_file.length, 2U, 1U,
+        &second_patch, 1U, supplied_stable, supplied_revision, 3U,
+        &identified_callbacks, workspace, sizeof(workspace),
+        &produced) == DATA_AEAD_CONFLICT);
+
+    puts("Data AEAD shadow rewrite/readback/range/rename/plaintext migration, identified revisions, partial/sparse/truncate, tamper, disk-full and entropy controls passed");
     return 0;
 }

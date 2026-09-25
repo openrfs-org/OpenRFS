@@ -1995,6 +1995,22 @@ $(DATA_AEAD_BACKEND_HOST_TEST): tests/data_aead_backend_host_test.c \
 data-aead-backend-host-test: $(DATA_AEAD_BACKEND_HOST_TEST)
 	$(DATA_AEAD_BACKEND_HOST_TEST)
 
+DATA_NAMESPACE_HOST_TEST := $(TEST_BUILD_DIR)/data-namespace-host-test$(HOST_EXEEXT)
+
+$(DATA_NAMESPACE_HOST_TEST): tests/data_namespace_host_test.c \
+		src/kernel/data_namespace.c src/kernel/data_aead.c \
+		include/openrfs/data_namespace.h include/openrfs/data_aead.h \
+		vendor/monocypher/src/monocypher.c
+	mkdir -p $(dir $@)
+	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
+		tests/data_namespace_host_test.c src/kernel/data_namespace.c \
+		src/kernel/data_aead.c \
+		vendor/monocypher/src/monocypher.c -o $@
+
+data-namespace-host-test: $(DATA_NAMESPACE_HOST_TEST)
+	$(DATA_NAMESPACE_HOST_TEST)
+
 boot-artifact-signature-test:
 	$(PYTHON) tools/test_boot_artifact_signature.py
 
@@ -2002,6 +2018,7 @@ verify: toolchain lint installer-port-test minimal-de-host-test \
 		random-host-test account-host-test account-kdf-host-test account-v2-host-test \
 		data-aead-host-test data-aead-rewrite-host-test data-aead-slots-host-test \
 		data-aead-manifest-host-test data-aead-backend-host-test \
+		data-namespace-host-test \
 		boot-artifact-signature-test
 ifneq ($(VERIFY_CLEAN),0)
 	$(MAKE) clean

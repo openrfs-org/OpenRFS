@@ -753,3 +753,279 @@ done:
     zero_bytes(workspace, DATA_AEAD_REWRITE_WORKSPACE_BYTES);
     return result;
 }
+
+static void encode_u64(uint8_t to[8], uint64_t value)
+{
+    for (size_t at = 0U; at < 8U; ++at)
+        to[at] = (uint8_t)(value >> (8U * at));
+}
+
+static enum data_aead_status append_revision_id(
+    const uint8_t key[DATA_AEAD_KEY_BYTES],
+    const uint8_t stable_id[DATA_AEAD_ID_BYTES],
+    const uint8_t old_revision[DATA_AEAD_ID_BYTES],
+    uint64_t manifest_generation, unsigned segment_index,
+    uint64_t old_bytes, const uint8_t *addition, size_t addition_bytes,
+    uint8_t revision_id[DATA_AEAD_ID_BYTES])
+{
+    static const uint8_t label[] = "OpenRFS/v1/data/append-revision";
+    uint8_t numbers[32] = {0};
+    encode_u64(numbers, manifest_generation);
+    encode_u64(numbers + 8U, segment_index);
+    encode_u64(numbers + 16U, old_bytes);
+    encode_u64(numbers + 24U, addition_bytes);
+    crypto_blake2b_ctx hash;
+    crypto_blake2b_keyed_init(&hash, DATA_AEAD_ID_BYTES, key,
+        DATA_AEAD_KEY_BYTES);
+    crypto_blake2b_update(&hash, label, sizeof(label) - 1U);
+    crypto_blake2b_update(&hash, stable_id, DATA_AEAD_ID_BYTES);
+    crypto_blake2b_update(&hash, old_revision, DATA_AEAD_ID_BYTES);
+    crypto_blake2b_update(&hash, numbers, sizeof(numbers));
+    crypto_blake2b_update(&hash, addition, addition_bytes);
+    crypto_blake2b_final(&hash, revision_id);
+    crypto_wipe(&hash, sizeof(hash));
+    zero_bytes(numbers, sizeof(numbers));
+    uint8_t any = 0U;
+    for (size_t at = 0U; at < DATA_AEAD_ID_BYTES; ++at)
+        any |= revision_id[at];
+    if (any == 0U || same_id(revision_id, old_revision)) {
+        zero_bytes(revision_id, DATA_AEAD_ID_BYTES);
+        return DATA_AEAD_ENTROPY;
+    }
+    return DATA_AEAD_OK;
+}
+
+static enum data_aead_status append_candidate(
+    const uint8_t key[DATA_AEAD_KEY_BYTES],
+    const struct data_aead_manifest *active, const uint8_t *addition,
+    size_t addition_bytes, struct data_aead_manifest *candidate)
+{
+    if (active->generation == UINT64_MAX ||
+            active->plaintext_bytes >
+                DATA_AEAD_SEGMENT_BYTES * DATA_AEAD_SEGMENTS_MAX -
+                    addition_bytes)
+        return DATA_AEAD_RANGE;
+    *candidate = *active;
+    candidate->generation++;
+    candidate->plaintext_bytes += addition_bytes;
+    size_t consumed = 0U;
+    while (consumed < addition_bytes) {
+        const uint64_t position = active->plaintext_bytes + consumed;
+        const unsigned index = (unsigned)(position /
+            DATA_AEAD_SEGMENT_BYTES);
+        const bool replacing = index < active->segment_count;
+        const struct data_aead_segment *previous = replacing ?
+            &active->segments[index] : NULL;
+        const uint64_t old_bytes = replacing ?
+            previous->plaintext_bytes : 0U;
+        size_t amount = addition_bytes - consumed;
+        if (DATA_AEAD_SEGMENT_BYTES - old_bytes < amount)
+            amount = (size_t)(DATA_AEAD_SEGMENT_BYTES - old_bytes);
+        struct data_aead_segment *next = &candidate->segments[index];
+        uint8_t old_revision[DATA_AEAD_ID_BYTES] = {0};
+        if (replacing)
+            for (size_t at = 0U; at < DATA_AEAD_ID_BYTES; ++at)
+                old_revision[at] = previous->revision_id[at];
+        enum data_aead_status result = append_revision_id(key,
+            active->stable_id, old_revision, candidate->generation,
+            index, old_bytes, addition + consumed, amount,
+            next->revision_id);
+        zero_bytes(old_revision, sizeof(old_revision));
+        if (result != DATA_AEAD_OK) return result;
+        next->plaintext_bytes = old_bytes + amount;
+        next->generation = replacing ? previous->generation + 1U : 1U;
+        if (next->generation == 0U) return DATA_AEAD_RANGE;
+        if (candidate->segment_count <= index)
+            candidate->segment_count = index + 1U;
+        consumed += amount;
+    }
+    return DATA_AEAD_OK;
+}
+
+static bool same_manifest(const struct data_aead_manifest *left,
+    const struct data_aead_manifest *right)
+{
+    if (!same_id(left->stable_id, right->stable_id) ||
+            left->generation != right->generation ||
+            left->plaintext_bytes != right->plaintext_bytes ||
+            left->segment_count != right->segment_count)
+        return false;
+    for (unsigned at = 0U; at < left->segment_count; ++at)
+        if (!same_id(left->segments[at].revision_id,
+                right->segments[at].revision_id) ||
+                left->segments[at].generation !=
+                    right->segments[at].generation ||
+                left->segments[at].plaintext_bytes !=
+                    right->segments[at].plaintext_bytes)
+            return false;
+    return true;
+}
+
+enum data_aead_status data_aead_backend_append_file(
+    const struct vfs_backend_ops *backend, enum openrfsfs_volume volume,
+    const uint8_t key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
+    uint64_t expected_generation, const uint8_t *addition,
+    size_t addition_bytes, uint8_t *workspace, size_t workspace_bytes,
+    struct data_aead_manifest *published)
+{
+    if (published != NULL) zero_bytes(published, sizeof(*published));
+    if (published == NULL || key == NULL || addition == NULL ||
+            addition_bytes == 0U ||
+            addition_bytes > DATA_AEAD_CHUNK_BYTES ||
+            expected_generation == 0U || workspace == NULL ||
+            workspace_bytes < DATA_AEAD_REWRITE_WORKSPACE_BYTES)
+        return DATA_AEAD_ARGUMENT;
+    struct data_aead_manifest active = {0};
+    unsigned slot = 0U;
+    enum data_aead_status result = data_aead_backend_load_manifest(backend,
+        volume, key, canonical_path, workspace, workspace_bytes,
+        &active, &slot);
+    if (result != DATA_AEAD_OK) goto done;
+    if (expected_generation != UINT64_MAX &&
+            active.generation == expected_generation + 1U) {
+        struct backend_context context = {0};
+        context.backend = backend;
+        context.volume = volume;
+        context.key = key;
+        struct data_aead_manifest previous = {0};
+        struct data_aead_manifest predicted = {0};
+        uint8_t record[DATA_AEAD_MANIFEST_BYTES] = {0};
+        bool present = false;
+        result = data_aead_manifest_storage_path(key, canonical_path,
+            slot ^ 1U, context.slot_paths[slot ^ 1U]);
+        if (result == DATA_AEAD_OK &&
+                !slot_read(&context, slot ^ 1U, record, &present))
+            result = DATA_AEAD_IO;
+        if (result == DATA_AEAD_OK)
+            result = present ? data_aead_manifest_open(key,
+                canonical_path, record, &previous) : DATA_AEAD_CONFLICT;
+        if (result == DATA_AEAD_OK &&
+                previous.generation != expected_generation)
+            result = DATA_AEAD_CONFLICT;
+        if (result == DATA_AEAD_OK)
+            result = append_candidate(key, &previous, addition,
+                addition_bytes, &predicted);
+        if (result == DATA_AEAD_OK && !same_manifest(&active, &predicted))
+            result = DATA_AEAD_CONFLICT;
+        if (result == DATA_AEAD_OK) *published = active;
+        zero_bytes(record, sizeof(record));
+        zero_bytes(&previous, sizeof(previous));
+        zero_bytes(&predicted, sizeof(predicted));
+        zero_bytes(&context, sizeof(context));
+        goto done;
+    }
+    if (active.generation != expected_generation ||
+            active.generation == UINT64_MAX) {
+        result = DATA_AEAD_CONFLICT;
+        goto done;
+    }
+    struct data_aead_manifest candidate = {0};
+    result = append_candidate(key, &active, addition, addition_bytes,
+        &candidate);
+    if (result != DATA_AEAD_OK) goto done;
+    const struct data_aead_rewrite_io io = {
+        .begin_shadow = migration_begin,
+        .read_old = migration_read,
+        .write_shadow = migration_write,
+        .random = random_nonce,
+    };
+    size_t consumed = 0U;
+    while (consumed < addition_bytes) {
+        const uint64_t position = active.plaintext_bytes + consumed;
+        const unsigned index = (unsigned)(position /
+            DATA_AEAD_SEGMENT_BYTES);
+        if (index >= DATA_AEAD_SEGMENTS_MAX) {
+            result = DATA_AEAD_RANGE;
+            break;
+        }
+        const bool replacing = index < active.segment_count;
+        const struct data_aead_segment *previous = replacing ?
+            &active.segments[index] : NULL;
+        const uint64_t old_bytes = replacing ?
+            previous->plaintext_bytes : 0U;
+        size_t amount = addition_bytes - consumed;
+        if (DATA_AEAD_SEGMENT_BYTES - old_bytes < amount)
+            amount = (size_t)(DATA_AEAD_SEGMENT_BYTES - old_bytes);
+        const struct data_aead_segment *next = &candidate.segments[index];
+        struct migration_context migration = {0};
+        migration.storage.backend = backend;
+        migration.storage.volume = volume;
+        migration.storage.key = key;
+        result = data_aead_segment_storage_path(key, next->revision_id,
+            migration.shadow_path);
+        if (result != DATA_AEAD_OK) break;
+        uint64_t old_physical_bytes = 0U;
+        if (replacing) {
+            char old_path[DATA_AEAD_PATH_MAX + 1U];
+            result = data_aead_segment_storage_path(key,
+                previous->revision_id, old_path);
+            if (result == DATA_AEAD_OK) {
+                struct openrfsfs_stat stat;
+                const enum openrfsfs_status found =
+                    backend->lstat_path != NULL ?
+                    backend->lstat_path(volume, old_path, &stat) :
+                    backend->stat_path(volume, old_path, &stat);
+                old_physical_bytes = data_aead_physical_size(old_bytes);
+                if (found != OPENRFSFS_STATUS_OK || stat.directory ||
+                        is_symlink(&stat) ||
+                        stat.size != old_physical_bytes ||
+                        backend->open(volume, old_path,
+                            OPENRFSFS_ACCESS_READ, &migration.source) !=
+                            OPENRFSFS_STATUS_OK)
+                    result = DATA_AEAD_IO;
+                else
+                    migration.source_open = true;
+            }
+            zero_bytes(old_path, sizeof(old_path));
+        }
+        if (result == DATA_AEAD_OK) {
+            char binding[DATA_AEAD_PATH_MAX + 1U];
+            result = data_aead_segment_binding(active.stable_id, index,
+                binding);
+            if (result == DATA_AEAD_OK) {
+                struct data_aead_rewrite_io rewrite = io;
+                rewrite.context = &migration;
+                uint64_t new_physical_bytes = 0U;
+                result = data_aead_rewrite_shadow_paths_identified(key,
+                    binding, binding, old_physical_bytes,
+                    next->plaintext_bytes, old_bytes,
+                    addition + consumed, amount, active.stable_id,
+                    next->revision_id, next->generation, &rewrite,
+                    workspace, workspace_bytes, &new_physical_bytes);
+                if (result == DATA_AEAD_OK &&
+                        (!migration.shadow_open ||
+                         migration.shadow_offset != new_physical_bytes ||
+                         backend->close(migration.shadow) !=
+                            OPENRFSFS_STATUS_OK)) {
+                    result = DATA_AEAD_IO;
+                }
+                if (result == DATA_AEAD_OK) {
+                    migration.shadow_open = false;
+                    if (backend->sync(volume) != OPENRFSFS_STATUS_OK)
+                        result = DATA_AEAD_IO;
+                }
+            }
+            zero_bytes(binding, sizeof(binding));
+        }
+        if (migration.shadow_open &&
+                backend->close(migration.shadow) != OPENRFSFS_STATUS_OK)
+            result = DATA_AEAD_IO;
+        if (migration.source_open &&
+                backend->close(migration.source) != OPENRFSFS_STATUS_OK)
+            result = DATA_AEAD_IO;
+        zero_bytes(&migration, sizeof(migration));
+        if (result != DATA_AEAD_OK) break;
+        consumed += amount;
+    }
+    if (result == DATA_AEAD_OK)
+        result = data_aead_backend_publish_manifest(backend, volume, key,
+            canonical_path, &candidate, workspace, workspace_bytes,
+            published, &slot);
+    zero_bytes(&candidate, sizeof(candidate));
+done:
+    if (result != DATA_AEAD_OK)
+        zero_bytes(published, sizeof(*published));
+    zero_bytes(&active, sizeof(active));
+    zero_bytes(workspace, DATA_AEAD_REWRITE_WORKSPACE_BYTES);
+    return result;
+}
