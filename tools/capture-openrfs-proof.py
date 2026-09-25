@@ -196,15 +196,21 @@ def encrypted_data_shell_check(qmp, serial):
         start = len(serial.read_bytes())
         send_text(qmp, command)
         press(qmp, "ret", 0.10)
+        command_end = command.encode("ascii") + b"\n"
         deadline = time.monotonic() + 40.0
         while time.monotonic() < deadline:
             output = serial.read_bytes()[start:]
-            if b"openrfs$ " in output:
-                if expected is not None and expected not in output:
-                    raise RuntimeError(f"{command!r} returned {output!r}")
-                if b": " in output.split(b"\n", 1)[-1]:
-                    raise RuntimeError(f"{command!r} failed: {output!r}")
-                break
+            echo_end = output.find(command_end)
+            if echo_end >= 0:
+                response = output[echo_end + len(command_end):]
+                prompt = response.find(PROMPT)
+                if prompt >= 0:
+                    response = response[:prompt]
+                    if expected is not None and expected not in response:
+                        raise RuntimeError(f"{command!r} returned {response!r}")
+                    if b": " in response:
+                        raise RuntimeError(f"{command!r} failed: {response!r}")
+                    break
             time.sleep(0.05)
         else:
             raise RuntimeError(f"{command!r} did not return to the shell")
