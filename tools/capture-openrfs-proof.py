@@ -27,7 +27,7 @@ import ext4_image
 PROOF_LINE = b"OpenRFS: BT11 Boot Ledger installed proof passed"
 TERMINAL_COMMAND = "echo openrfs"
 TERMINAL_RESULT = b"echo openrfs\nopenrfs\nopenrfs$ "
-GFETCH_RESULT = b"kernel      OpenRFS 2.4.0 / x86_64"
+GFETCH_RESULT = b"kernel      OpenRFS 2.5 beta / x86_64"
 PROMPT = b"openrfs$ "
 NEW_PASSWORD_PROMPT = b"New password (8-64 characters): "
 CONFIRM_PASSWORD_PROMPT = b"Confirm password: "

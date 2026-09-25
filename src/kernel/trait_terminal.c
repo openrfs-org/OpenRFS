@@ -53,7 +53,7 @@ static uint32_t term_opacity = TERM_SHEER;
 
 /* ONE STRING.  uname -a prints it and gfetch prints it, and two copies
  * of a version number are two copies that can disagree. */
-static const char KERNEL[] = "OpenRFS 2.4 amd64";
+static const char KERNEL[] = "OpenRFS 2.5 beta amd64";
 
 static const char PROMPT[] = "user@openrfs:~$ ";
 

@@ -1080,7 +1080,7 @@ static void command_version(void)
 {
     const struct screen_state screen = screen_get_state();
 
-    console_write("OpenRFS 2.4.0, a proof-driven x86_64 operating system.\n");
+    console_write("OpenRFS 2.5 beta, an experimental x86_64 operating system.\n");
     console_write("console ");
     console_write_u64(screen.columns);
     console_putc('x');
@@ -1139,7 +1139,7 @@ static void command_gfetch(void)
     }
     console_write("\n");
     console_write("  OpenRFS\n");
-    console_write("  kernel      OpenRFS 2.4.0 / x86_64\n");
+    console_write("  kernel      OpenRFS 2.5 beta / x86_64\n");
     console_write("  terminal    ");
     console_write_u64(screen.columns);
     console_putc('x');
