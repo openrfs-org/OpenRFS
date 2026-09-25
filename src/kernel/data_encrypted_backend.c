@@ -287,8 +287,12 @@ static enum openrfsfs_status encrypted_unmount(enum openrfsfs_volume volume)
 
 static enum openrfsfs_status encrypted_sync(enum openrfsfs_volume volume)
 {
-    return physical != NULL ? physical->sync(volume) :
-        OPENRFSFS_STATUS_NOT_MOUNTED;
+    if (physical == NULL) return OPENRFSFS_STATUS_NOT_MOUNTED;
+    if (!begin_work()) return OPENRFSFS_STATUS_BUSY;
+    const enum openrfsfs_status result = physical->sync(volume);
+    if (result != OPENRFSFS_STATUS_OK && active) fail_session();
+    end_work();
+    return result;
 }
 
 static struct openrfsfs_drive_info encrypted_drive(
@@ -1585,6 +1589,7 @@ static enum openrfsfs_status encrypted_fsync(openrfsfs_handle handle)
         const enum openrfsfs_status result = physical->fsync != NULL ?
             physical->fsync(state->physical_handle) :
             physical->sync(OPENRFSFS_VOLUME_DATA);
+        if (result != OPENRFSFS_STATUS_OK && active) fail_session();
         end_work();
         return result;
     }
@@ -1594,6 +1599,7 @@ static enum openrfsfs_status encrypted_fsync(openrfsfs_handle handle)
     }
     const enum openrfsfs_status result =
         physical->sync(OPENRFSFS_VOLUME_DATA);
+    if (result != OPENRFSFS_STATUS_OK) fail_session();
     end_work();
     return result;
 }

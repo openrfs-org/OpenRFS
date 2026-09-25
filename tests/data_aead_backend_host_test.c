@@ -1463,6 +1463,28 @@ static int run_encrypted_vfs_case(bool ext4_style)
     if (!check(encrypted->rmdir(OPENRFSFS_VOLUME_DATA,
             "folder") == OPENRFSFS_STATUS_OK,
             "encrypted VFS removes empty directory")) return 1;
+    fault_step = step_count + 1U;
+    if (!check(encrypted->sync(OPENRFSFS_VOLUME_DATA) ==
+                OPENRFSFS_STATUS_IO &&
+            encrypted->open(OPENRFSFS_VOLUME_DATA, "locked.txt",
+                OPENRFSFS_ACCESS_READ, &first) ==
+                OPENRFSFS_STATUS_ACCESS && no_open_handles(),
+            "Data sync failure revokes the unlocked session")) return 1;
+    fault_step = 0U;
+    if (!check(data_encrypted_backend_activate(key) ==
+                OPENRFSFS_STATUS_OK &&
+            encrypted->open_options(OPENRFSFS_VOLUME_DATA, "fsync.txt",
+                OPENRFSFS_ACCESS_READ_WRITE,
+                OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE,
+                0600U, &first, &stat) == OPENRFSFS_STATUS_OK,
+            "encrypted VFS reopens after a sync failure")) return 1;
+    fault_step = step_count + 1U;
+    if (!check(encrypted->fsync(first) == OPENRFSFS_STATUS_IO &&
+            encrypted->open(OPENRFSFS_VOLUME_DATA, "fsync.txt",
+                OPENRFSFS_ACCESS_READ, &second) ==
+                OPENRFSFS_STATUS_ACCESS && no_open_handles(),
+            "Data fsync failure revokes the unlocked session")) return 1;
+    fault_step = 0U;
     data_encrypted_backend_deactivate();
     return check(no_open_handles(), "encrypted VFS closes physical handles")
         ? 0 : 1;
