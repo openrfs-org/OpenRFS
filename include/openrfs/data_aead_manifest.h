@@ -91,6 +91,10 @@ enum data_aead_status data_aead_segment_storage_path(
 enum data_aead_status data_aead_manifest_storage_path(
     const uint8_t key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
     unsigned slot, char path[DATA_AEAD_PATH_MAX + 1U]);
+enum data_aead_status data_aead_migration_ids(
+    const uint8_t key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
+    unsigned segment_index, uint8_t stable_id[DATA_AEAD_ID_BYTES],
+    uint8_t revision_id[DATA_AEAD_ID_BYTES]);
 enum data_aead_status data_aead_manifest_check_segment(
     const uint8_t key[DATA_AEAD_KEY_BYTES],
     const struct data_aead_manifest *manifest, unsigned index,

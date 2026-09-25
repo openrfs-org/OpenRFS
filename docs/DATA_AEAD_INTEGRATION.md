@@ -107,19 +107,23 @@ segment revision IDs, lengths, generations, and segment binding paths. It
 derives an opaque 8.3 physical path from the Data key and each revision ID.
 The slot selector chooses the highest adjacent authenticated generation and
 refuses a shaped record with a bad tag. It cannot detect erasure of a newer
-slot without an external freshness value. It does not yet store segments,
-or connect to either backend. Its publication helper syncs and verifies each
-segment, writes and reads back a temporary manifest, removes the inactive
+slot without an external freshness value. Its publication helper syncs and
+verifies each segment, writes and reads back a temporary manifest, removes the inactive
 slot, renames the temp into that slot, then syncs and selects the result.
-Host tests cut each of those callbacks and retry. Real FAT32 and ext4
-adapters must supply those durable operations before the helper protects
-Data. `data_aead_backend.c` now maps the callbacks to the backend operations,
-keeps segment handles open through verification, and uses 8.3 storage paths.
-Its host test exercises FAT32-style and ext4-style operation tables, disk
-full, a rename cut, tampering, and a wrong key. The adapter is not called by
-the production VFS or tested against raw filesystem images. Migration must
-refuse a file unless all of its segments fit and are verified before
-publication.
+Host tests cut each of those callbacks and retry. `data_aead_backend.c` maps
+them to FAT32 and ext4 backend operations, keeps segment handles open through
+verification, and uses 8.3 storage paths. It also migrates one held plaintext
+file: it derives repeatable staging IDs, writes each encrypted segment with
+fresh random chunk nonces, syncs, verifies and publishes the manifest, then
+removes the plaintext source. A retry checks the published manifest first;
+if it is complete, it finishes source removal. Host tests cut each simulated
+write, directory creation, sync, rename and removal boundary on both backend
+styles, plus disk full, tampering, and a wrong key. Its read helper verifies
+the manifest and segments, decrypts the requested range, and clears output
+after an error. No production caller uses the adapter yet. It has not been
+tested against raw FAT32 or ext4 images.
+File and directory names in the legacy tree remain visible until a namespace
+migration removes them. The helper alone does not protect Data.
 
 **Do not wire in-place encrypted writes.** A torn header or chunk can make a
 valid old file unreadable. For partial and sparse writes, truncate, metadata
@@ -140,6 +144,9 @@ and storage snapshots can retain plaintext; a filesystem cannot promise
 secure erase. Account deletion must refuse while any data remains unencrypted
 or a transaction is pending. Once encrypted, deletion can destroy the wraps,
 but physical rollback of old wraps remains possible without external state.
+Legacy plaintext has no authentication; a change made before the first trusted
+inventory cannot be distinguished from the user's original bytes without a
+prior trusted digest or an external trust root.
 The current `userdel` allows removal only after a bounded scan finds no
 noncredential files. It does not quiesce concurrent native writes, erase
 freed plaintext, or authorize deletion of an encrypted but nonempty Data tree.

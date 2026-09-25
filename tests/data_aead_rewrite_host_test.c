@@ -350,6 +350,22 @@ int main(void)
         read_shadow, &io, workspace, sizeof(workspace), &verified) ==
         DATA_AEAD_OK && verified == sizeof(expected));
     expect_wiped();
+    uint8_t supplied_stable[DATA_AEAD_ID_BYTES] = {1U};
+    uint8_t supplied_revision[DATA_AEAD_ID_BYTES] = {2U};
+    CHECK(data_aead_migrate_plain_shadow_identified(key,
+        "HOME/NOTE.TXT", old_file.length, supplied_stable,
+        supplied_revision, 7U, &callbacks, workspace,
+        sizeof(workspace), &produced) == DATA_AEAD_OK);
+    CHECK(data_aead_file_identity(key, "HOME/NOTE.TXT",
+        shadow_file.bytes, produced, stable_id) == DATA_AEAD_OK &&
+        memcmp(stable_id, supplied_stable, sizeof(stable_id)) == 0);
+    CHECK(data_aead_generation(key, "HOME/NOTE.TXT",
+        shadow_file.bytes, produced, &generation) == DATA_AEAD_OK &&
+        generation == 7U &&
+        memcmp(shadow_file.bytes + 20U, supplied_revision,
+            sizeof(supplied_revision)) == 0);
+    check_plaintext(key, &shadow_file, expected, sizeof(expected));
+    expect_wiped();
     --old_file.length;
     CHECK(data_aead_migrate_plain_shadow(key, "HOME/NOTE.TXT",
         sizeof(expected), &callbacks, workspace, sizeof(workspace),

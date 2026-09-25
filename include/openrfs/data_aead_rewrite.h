@@ -61,6 +61,14 @@ enum data_aead_status data_aead_migrate_plain_shadow(
     uint64_t old_plaintext_bytes, const struct data_aead_rewrite_io *io,
     uint8_t *workspace, size_t workspace_bytes,
     uint64_t *new_physical_bytes);
+enum data_aead_status data_aead_migrate_plain_shadow_identified(
+    const uint8_t key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
+    uint64_t old_plaintext_bytes,
+    const uint8_t stable_id[DATA_AEAD_ID_BYTES],
+    const uint8_t revision_id[DATA_AEAD_ID_BYTES], uint64_t generation,
+    const struct data_aead_rewrite_io *io,
+    uint8_t *workspace, size_t workspace_bytes,
+    uint64_t *new_physical_bytes);
 
 /* Reopen and authenticate a complete candidate after its storage barrier and
  * before publication. The callback must read exactly the requested span or

@@ -7,7 +7,7 @@
 #include <openrfs/data_aead_backend.h>
 #include <openrfs/random.h>
 
-#define FAKE_FILES 40U
+#define FAKE_FILES 80U
 #define FAKE_HANDLES 16U
 #define FAKE_FILE_BYTES 5000U
 
@@ -30,6 +30,14 @@ static struct fake_handle handles[FAKE_HANDLES];
 static size_t write_budget;
 static bool fail_rename_after;
 static uint8_t nonce_seed;
+static unsigned fault_step;
+static unsigned step_count;
+
+static bool cut_after_change(void)
+{
+    ++step_count;
+    return step_count == fault_step;
+}
 
 static bool check(bool condition, const char *message)
 {
@@ -75,8 +83,8 @@ static enum openrfsfs_status fake_mkdir(enum openrfsfs_volume volume,
     const char *path)
 {
     if (volume != OPENRFSFS_VOLUME_DATA) return OPENRFSFS_STATUS_INVALID_ARGUMENT;
-    return create_file(path, true) == NULL ? OPENRFSFS_STATUS_EXISTS :
-        OPENRFSFS_STATUS_OK;
+    if (create_file(path, true) == NULL) return OPENRFSFS_STATUS_EXISTS;
+    return cut_after_change() ? OPENRFSFS_STATUS_IO : OPENRFSFS_STATUS_OK;
 }
 
 static enum openrfsfs_status fake_create(enum openrfsfs_volume volume,
@@ -84,8 +92,8 @@ static enum openrfsfs_status fake_create(enum openrfsfs_volume volume,
 {
     (void)mode;
     if (volume != OPENRFSFS_VOLUME_DATA) return OPENRFSFS_STATUS_INVALID_ARGUMENT;
-    return create_file(path, false) == NULL ? OPENRFSFS_STATUS_EXISTS :
-        OPENRFSFS_STATUS_OK;
+    if (create_file(path, false) == NULL) return OPENRFSFS_STATUS_EXISTS;
+    return cut_after_change() ? OPENRFSFS_STATUS_IO : OPENRFSFS_STATUS_OK;
 }
 
 static enum openrfsfs_status fake_open(enum openrfsfs_volume volume,
@@ -172,7 +180,7 @@ static enum openrfsfs_status fake_write(openrfsfs_handle handle,
     if (file->size < opened->position) file->size = opened->position;
     write_budget -= count;
     *written = count;
-    return OPENRFSFS_STATUS_OK;
+    return cut_after_change() ? OPENRFSFS_STATUS_IO : OPENRFSFS_STATUS_OK;
 }
 
 static enum openrfsfs_status fake_unlink(enum openrfsfs_volume volume,
@@ -182,7 +190,7 @@ static enum openrfsfs_status fake_unlink(enum openrfsfs_volume volume,
     struct fake_file *file = find_file(path);
     if (file == NULL) return OPENRFSFS_STATUS_NOT_FOUND;
     file->present = false;
-    return OPENRFSFS_STATUS_OK;
+    return cut_after_change() ? OPENRFSFS_STATUS_IO : OPENRFSFS_STATUS_OK;
 }
 
 static enum openrfsfs_status fake_rename(enum openrfsfs_volume volume,
@@ -197,13 +205,14 @@ static enum openrfsfs_status fake_rename(enum openrfsfs_volume volume,
         fail_rename_after = false;
         return OPENRFSFS_STATUS_IO;
     }
-    return OPENRFSFS_STATUS_OK;
+    return cut_after_change() ? OPENRFSFS_STATUS_IO : OPENRFSFS_STATUS_OK;
 }
 
 static enum openrfsfs_status fake_sync(enum openrfsfs_volume volume)
 {
-    return volume == OPENRFSFS_VOLUME_DATA ? OPENRFSFS_STATUS_OK :
-        OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    if (volume != OPENRFSFS_VOLUME_DATA)
+        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    return cut_after_change() ? OPENRFSFS_STATUS_IO : OPENRFSFS_STATUS_OK;
 }
 
 enum random_status random_bytes(void *destination, size_t length)
@@ -228,6 +237,8 @@ static int run_case(bool ext4_style)
     write_budget = SIZE_MAX;
     fail_rename_after = false;
     nonce_seed = 1U;
+    fault_step = 0U;
+    step_count = 0U;
     struct vfs_backend_ops backend = {
         .sync = fake_sync,
         .open = fake_open,
@@ -255,6 +266,7 @@ static int run_case(bool ext4_style)
     char manifest_path[DATA_AEAD_PATH_MAX + 1U];
     struct data_aead_manifest candidate = {0};
     struct data_aead_manifest published;
+    struct data_aead_manifest loaded;
     unsigned slot = 99U;
     for (size_t at = 0U; at < sizeof(key); ++at) {
         key[at] = (uint8_t)(at + 1U);
@@ -297,6 +309,11 @@ static int run_case(bool ext4_style)
             find_file(manifest_path)->size == DATA_AEAD_MANIFEST_BYTES &&
             memcmp(segment->bytes, "hello", 5U) != 0,
             "raw storage contains ciphertext and manifest")) return 1;
+    if (!check(data_aead_backend_load_manifest(&backend,
+            OPENRFSFS_VOLUME_DATA, key, "DOC/NOTE.TXT", workspace,
+            sizeof(workspace), &loaded, &slot) == DATA_AEAD_OK &&
+            loaded.plaintext_bytes == 5U && slot == 0U &&
+            no_open_handles(), "load verifies complete content")) return 1;
     candidate.generation = 2U;
     if (!check(data_aead_backend_publish_manifest(&backend,
             OPENRFSFS_VOLUME_DATA, key, "DOC/NOTE.TXT", &candidate,
@@ -331,6 +348,11 @@ static int run_case(bool ext4_style)
             "rename cut resumes at complete generation")) return 1;
     candidate.generation = 5U;
     segment->bytes[segment->size - 1U] ^= 1U;
+    if (!check(data_aead_backend_load_manifest(&backend,
+            OPENRFSFS_VOLUME_DATA, key, "DOC/NOTE.TXT", workspace,
+            sizeof(workspace), &loaded, &slot) ==
+            DATA_AEAD_AUTHENTICATION && no_open_handles(),
+            "load refuses tampered content")) return 1;
     if (!check(data_aead_backend_publish_manifest(&backend,
             OPENRFSFS_VOLUME_DATA, key, "DOC/NOTE.TXT", &candidate,
             workspace, sizeof(workspace), &published, &slot) ==
@@ -344,12 +366,170 @@ static int run_case(bool ext4_style)
             DATA_AEAD_IO && no_open_handles(),
             "wrong key never accepts plaintext or another storage root"))
         return 1;
+    struct fake_file *legacy = create_file("DOC/LEGACY.TXT", false);
+    if (!check(legacy != NULL, "create legacy source")) return 1;
+    memcpy(legacy->bytes, "secret", 6U);
+    legacy->size = 6U;
+    write_budget = 100U;
+    if (!check(data_aead_backend_migrate_plain(&backend,
+            OPENRFSFS_VOLUME_DATA, key, "DOC/LEGACY.TXT", workspace,
+            sizeof(workspace), &loaded) == DATA_AEAD_IO &&
+            find_file("DOC/LEGACY.TXT") != NULL && no_open_handles(),
+            "disk full retains plaintext source")) return 1;
+    write_budget = SIZE_MAX;
+    if (!check(data_aead_backend_migrate_plain(&backend,
+            OPENRFSFS_VOLUME_DATA, key, "DOC/LEGACY.TXT", workspace,
+            sizeof(workspace), &loaded) == DATA_AEAD_OK &&
+            loaded.plaintext_bytes == 6U &&
+            find_file("DOC/LEGACY.TXT") == NULL && no_open_handles(),
+            "disk-full migration resumes")) return 1;
+    if (!check(data_aead_segment_storage_path(key,
+            loaded.segments[0].revision_id, segment_path) == DATA_AEAD_OK &&
+            find_file(segment_path) != NULL &&
+            memcmp(find_file(segment_path)->bytes, "secret", 6U) != 0 &&
+            data_aead_backend_load_manifest(&backend,
+                OPENRFSFS_VOLUME_DATA, key, "DOC/LEGACY.TXT", workspace,
+                sizeof(workspace), &loaded, &slot) == DATA_AEAD_OK,
+            "migrated content is authenticated and raw bytes differ"))
+        return 1;
+    uint8_t readback[8] = {0};
+    size_t read_bytes = 0U;
+    memset(readback, 0xa5, sizeof(readback));
+    if (!check(data_aead_backend_read_file(&backend,
+            OPENRFSFS_VOLUME_DATA, key, "DOC/NONE.TXT", 0U, readback,
+            sizeof(readback), workspace, sizeof(workspace), &read_bytes) ==
+            DATA_AEAD_NOT_FOUND && read_bytes == 0U &&
+            memcmp(readback, "\0\0\0\0\0\0\0\0", sizeof(readback)) == 0,
+            "missing manifest never falls back to plaintext")) return 1;
+    if (!check(data_aead_backend_read_file(&backend,
+            OPENRFSFS_VOLUME_DATA, key, "DOC/LEGACY.TXT", 0U, readback,
+            sizeof(readback), workspace, sizeof(workspace), &read_bytes) ==
+            DATA_AEAD_OK && read_bytes == 6U &&
+            memcmp(readback, "secret", 6U) == 0 && no_open_handles(),
+            "backend read decrypts migrated content")) return 1;
+    memset(readback, 0U, sizeof(readback));
+    if (!check(data_aead_backend_read_file(&backend,
+            OPENRFSFS_VOLUME_DATA, key, "DOC/LEGACY.TXT", 2U, readback,
+            3U, workspace, sizeof(workspace), &read_bytes) == DATA_AEAD_OK &&
+            read_bytes == 3U && memcmp(readback, "cre", 3U) == 0 &&
+            data_aead_backend_read_file(&backend,
+                OPENRFSFS_VOLUME_DATA, key, "DOC/LEGACY.TXT", 6U,
+                readback, sizeof(readback), workspace,
+                sizeof(workspace), &read_bytes) == DATA_AEAD_OK &&
+            read_bytes == 0U && no_open_handles(),
+            "bounded and EOF reads")) return 1;
+    struct fake_file *encrypted = find_file(segment_path);
+    encrypted->bytes[encrypted->size - 1U] ^= 1U;
+    memset(readback, 0xa5, sizeof(readback));
+    if (!check(data_aead_backend_read_file(&backend,
+            OPENRFSFS_VOLUME_DATA, key, "DOC/LEGACY.TXT", 0U, readback,
+            sizeof(readback), workspace, sizeof(workspace), &read_bytes) ==
+            DATA_AEAD_AUTHENTICATION && read_bytes == 0U &&
+            memcmp(readback, "\0\0\0\0\0\0\0\0", sizeof(readback)) == 0 &&
+            no_open_handles(), "tampered read clears output")) return 1;
+    encrypted->bytes[encrypted->size - 1U] ^= 1U;
+    legacy = create_file("DOC/CUT.TXT", false);
+    if (!check(legacy != NULL, "create cut source")) return 1;
+    memcpy(legacy->bytes, "restore", 7U);
+    legacy->size = 7U;
+    fail_rename_after = true;
+    if (!check(data_aead_backend_migrate_plain(&backend,
+            OPENRFSFS_VOLUME_DATA, key, "DOC/CUT.TXT", workspace,
+            sizeof(workspace), &loaded) == DATA_AEAD_IO &&
+            find_file("DOC/CUT.TXT") != NULL && no_open_handles(),
+            "publication cut keeps source")) return 1;
+    if (!check(data_aead_backend_migrate_plain(&backend,
+            OPENRFSFS_VOLUME_DATA, key, "DOC/CUT.TXT", workspace,
+            sizeof(workspace), &loaded) == DATA_AEAD_OK &&
+            loaded.plaintext_bytes == 7U &&
+            find_file("DOC/CUT.TXT") == NULL && no_open_handles(),
+            "publication cut resumes without rewriting")) return 1;
+    if (!check(create_file("DOC/EMPTY.TXT", false) != NULL,
+            "create empty legacy source")) return 1;
+    const enum data_aead_status empty_result =
+        data_aead_backend_migrate_plain(&backend, OPENRFSFS_VOLUME_DATA,
+            key, "DOC/EMPTY.TXT", workspace, sizeof(workspace), &loaded);
+    if (!check(empty_result == DATA_AEAD_OK &&
+            loaded.segment_count == 0U && loaded.plaintext_bytes == 0U &&
+            find_file("DOC/EMPTY.TXT") == NULL && no_open_handles(),
+            "empty migration publishes before source removal"))
+        return 1;
+    return 0;
+}
+
+static int run_migration_cuts(bool ext4_style)
+{
+    uint8_t key[DATA_AEAD_KEY_BYTES];
+    uint8_t workspace[DATA_AEAD_REWRITE_WORKSPACE_BYTES];
+    for (size_t at = 0U; at < sizeof(key); ++at)
+        key[at] = (uint8_t)(at + 1U);
+    for (unsigned cut = 1U; cut < 40U; ++cut) {
+        memset(files, 0, sizeof(files));
+        memset(handles, 0, sizeof(handles));
+        write_budget = SIZE_MAX;
+        fail_rename_after = false;
+        nonce_seed = 1U;
+        fault_step = 0U;
+        step_count = 0U;
+        struct vfs_backend_ops backend = {
+            .sync = fake_sync,
+            .open = fake_open,
+            .close = fake_close,
+            .pread = fake_pread,
+            .write = fake_write,
+            .stat_path = fake_stat,
+            .mkdir = fake_mkdir,
+            .rename = fake_rename,
+            .unlink = fake_unlink,
+            .create = fake_create,
+        };
+        if (ext4_style) {
+            backend.open_options = fake_open_options;
+            backend.fstat = fake_fstat;
+            backend.lstat_path = fake_stat;
+        }
+        struct fake_file *source = create_file("DOC/CUTS.TXT", false);
+        if (!check(source != NULL, "cut fixture source")) return 1;
+        memcpy(source->bytes, "private", 7U);
+        source->size = 7U;
+        struct data_aead_manifest migrated;
+        fault_step = cut;
+        const enum data_aead_status first = data_aead_backend_migrate_plain(
+            &backend, OPENRFSFS_VOLUME_DATA, key, "DOC/CUTS.TXT",
+            workspace, sizeof(workspace), &migrated);
+        if (!check(first == DATA_AEAD_IO || first == DATA_AEAD_OK,
+                "cut returns I/O or complete migration") ||
+            !check(no_open_handles(), "cut closes every handle"))
+            return 1;
+        fault_step = 0U;
+        if (!check(data_aead_backend_migrate_plain(&backend,
+                OPENRFSFS_VOLUME_DATA, key, "DOC/CUTS.TXT", workspace,
+                sizeof(workspace), &migrated) == DATA_AEAD_OK &&
+                migrated.plaintext_bytes == 7U &&
+                find_file("DOC/CUTS.TXT") == NULL && no_open_handles(),
+                "each cut resumes to a complete encrypted file"))
+            return 1;
+        char segment_path[DATA_AEAD_PATH_MAX + 1U];
+        if (!check(data_aead_segment_storage_path(key,
+                migrated.segments[0].revision_id, segment_path) ==
+                DATA_AEAD_OK && find_file(segment_path) != NULL &&
+                memcmp(find_file(segment_path)->bytes, "private", 7U) != 0,
+                "cut retry leaves ciphertext at physical path")) return 1;
+        if (first == DATA_AEAD_OK) {
+            if (!check(cut > 10U, "cut sweep reached publication"))
+                return 1;
+            break;
+        }
+        if (!check(cut < 39U, "cut sweep reaches success")) return 1;
+    }
     return 0;
 }
 
 int main(void)
 {
-    if (run_case(false) != 0 || run_case(true) != 0) return 1;
-    puts("Data AEAD FAT32/ext4 backend adapter, disk full, rename cut, tamper and wrong-key controls passed");
+    if (run_case(false) != 0 || run_case(true) != 0 ||
+            run_migration_cuts(false) != 0 ||
+            run_migration_cuts(true) != 0) return 1;
+    puts("Data AEAD FAT32/ext4 backend adapter, migration cuts, disk full, tamper and wrong-key controls passed");
     return 0;
 }

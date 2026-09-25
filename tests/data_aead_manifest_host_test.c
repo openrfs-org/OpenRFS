@@ -160,6 +160,10 @@ int main(void)
 {
     uint8_t key[DATA_AEAD_KEY_BYTES];
     uint8_t wrong_key[DATA_AEAD_KEY_BYTES];
+    uint8_t migration_stable[DATA_AEAD_ID_BYTES];
+    uint8_t migration_revision[DATA_AEAD_ID_BYTES];
+    uint8_t retry_stable[DATA_AEAD_ID_BYTES];
+    uint8_t retry_revision[DATA_AEAD_ID_BYTES];
     uint8_t record[DATA_AEAD_MANIFEST_BYTES];
     uint8_t second[DATA_AEAD_MANIFEST_BYTES];
     uint8_t damaged[DATA_AEAD_MANIFEST_BYTES];
@@ -177,6 +181,39 @@ int main(void)
         key[at] = (uint8_t)(at + 1U);
         wrong_key[at] = (uint8_t)(at + 2U);
     }
+    if (!check(data_aead_migration_ids(key, "HOME/BIG.BIN", 0U,
+            migration_stable, migration_revision) == DATA_AEAD_OK,
+            "migration ids derive") ||
+        !check(data_aead_migration_ids(key, "HOME/BIG.BIN", 0U,
+            retry_stable, retry_revision) == DATA_AEAD_OK &&
+            memcmp(migration_stable, retry_stable,
+                DATA_AEAD_ID_BYTES) == 0 &&
+            memcmp(migration_revision, retry_revision,
+                DATA_AEAD_ID_BYTES) == 0,
+            "migration retry finds the same staging identity") ||
+        !check(data_aead_migration_ids(key, "HOME/BIG.BIN", 1U,
+            retry_stable, retry_revision) == DATA_AEAD_OK &&
+            memcmp(migration_stable, retry_stable,
+                DATA_AEAD_ID_BYTES) == 0 &&
+            memcmp(migration_revision, retry_revision,
+                DATA_AEAD_ID_BYTES) != 0,
+            "segments share a file identity but not a revision") ||
+        !check(data_aead_migration_ids(key, "HOME/OTHER.BIN", 0U,
+            retry_stable, retry_revision) == DATA_AEAD_OK &&
+            memcmp(migration_stable, retry_stable,
+                DATA_AEAD_ID_BYTES) != 0,
+            "migration path changes file identity") ||
+        !check(data_aead_migration_ids(wrong_key, "HOME/BIG.BIN", 0U,
+            retry_stable, retry_revision) == DATA_AEAD_OK &&
+            memcmp(migration_stable, retry_stable,
+                DATA_AEAD_ID_BYTES) != 0,
+            "migration key changes file identity") ||
+        !check(data_aead_migration_ids(key, "HOME/BIG.BIN",
+            DATA_AEAD_SEGMENTS_MAX, retry_stable, retry_revision) ==
+            DATA_AEAD_ARGUMENT &&
+            is_zero(retry_stable, sizeof(retry_stable)) &&
+            is_zero(retry_revision, sizeof(retry_revision)),
+            "invalid migration segment clears output")) return 1;
     for (size_t at = 0U; at < DATA_AEAD_ID_BYTES; ++at)
         original.stable_id[at] = (uint8_t)(0xa0U + at);
     original.segment_count = DATA_AEAD_SEGMENTS_MAX;

@@ -18,6 +18,9 @@ static const uint8_t manifest_key_label[] = "OpenRFS/v1/data/manifest-key";
 static const uint8_t manifest_ad_label[] = "OpenRFS/v1/data/manifest-ad";
 static const uint8_t storage_root_label[] = "OpenRFS/v1/data/storage-root";
 static const uint8_t manifest_path_label[] = "OpenRFS/v1/data/manifest-path";
+static const uint8_t migration_id_label[] = "OpenRFS/v1/data/migration-id";
+static const uint8_t migration_revision_label[] =
+    "OpenRFS/v1/data/migration-revision";
 static const char hex_digits[] = "0123456789ABCDEF";
 
 static void copy_bytes(uint8_t *to, const uint8_t *from, size_t count)
@@ -401,6 +404,50 @@ enum data_aead_status data_aead_manifest_storage_path(
     path[used++] = '.'; path[used++] = 'D';
     path[used++] = 'A'; path[used++] = 'T';
     path[used] = '\0';
+    return DATA_AEAD_OK;
+}
+
+enum data_aead_status data_aead_migration_ids(
+    const uint8_t key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
+    unsigned segment_index, uint8_t stable_id[DATA_AEAD_ID_BYTES],
+    uint8_t revision_id[DATA_AEAD_ID_BYTES])
+{
+    if (stable_id == NULL || revision_id == NULL ||
+            stable_id == revision_id) return DATA_AEAD_ARGUMENT;
+    zero_bytes(stable_id, DATA_AEAD_ID_BYTES);
+    zero_bytes(revision_id, DATA_AEAD_ID_BYTES);
+    const size_t length = path_length(canonical_path);
+    if (key == NULL || length == 0U ||
+            segment_index >= DATA_AEAD_SEGMENTS_MAX)
+        return DATA_AEAD_ARGUMENT;
+    const uint8_t encoded_length[2] = {
+        (uint8_t)length, (uint8_t)(length >> 8U)
+    };
+    crypto_blake2b_ctx context;
+    crypto_blake2b_keyed_init(&context, DATA_AEAD_ID_BYTES,
+        key, DATA_AEAD_KEY_BYTES);
+    crypto_blake2b_update(&context, migration_id_label,
+        sizeof(migration_id_label) - 1U);
+    crypto_blake2b_update(&context, encoded_length,
+        sizeof(encoded_length));
+    crypto_blake2b_update(&context,
+        (const uint8_t *)canonical_path, length);
+    crypto_blake2b_final(&context, stable_id);
+    crypto_wipe(&context, sizeof(context));
+    const uint8_t encoded_index = (uint8_t)segment_index;
+    crypto_blake2b_keyed_init(&context, DATA_AEAD_ID_BYTES,
+        key, DATA_AEAD_KEY_BYTES);
+    crypto_blake2b_update(&context, migration_revision_label,
+        sizeof(migration_revision_label) - 1U);
+    crypto_blake2b_update(&context, stable_id, DATA_AEAD_ID_BYTES);
+    crypto_blake2b_update(&context, &encoded_index, 1U);
+    crypto_blake2b_final(&context, revision_id);
+    crypto_wipe(&context, sizeof(context));
+    if (!valid_id(stable_id) || !valid_id(revision_id)) {
+        zero_bytes(stable_id, DATA_AEAD_ID_BYTES);
+        zero_bytes(revision_id, DATA_AEAD_ID_BYTES);
+        return DATA_AEAD_FORMAT;
+    }
     return DATA_AEAD_OK;
 }
 
