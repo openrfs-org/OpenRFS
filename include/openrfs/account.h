@@ -6,6 +6,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <openrfs/fat32_fs.h>
+
 #define ACCOUNT_USERNAME_BYTES 32U
 #define ACCOUNT_PASSWORD_MIN_BYTES 8U
 #define ACCOUNT_PASSWORD_MAX_BYTES 64U
@@ -49,6 +51,14 @@ enum account_status account_change_password(
 /* The caller durably verifies the encrypted tree before setting completion. */
 enum account_status account_data_state_update(const char *username,
     const uint8_t *password, size_t password_bytes, uint8_t next_flags);
+struct account_data_storage_hooks {
+    enum openrfsfs_status (*preflight)(const uint8_t key[32]);
+    enum openrfsfs_status (*migrate)(const uint8_t key[32]);
+    enum openrfsfs_status (*activate)(const uint8_t key[32]);
+    void (*deactivate)(void);
+};
+void account_data_storage_install(
+    const struct account_data_storage_hooks *hooks);
 /* Remove the only active credential after authenticating it. This revokes
  * access but does not erase existing Data blocks or provide rollback defense. */
 enum account_status account_delete(const char *username,

@@ -172,6 +172,112 @@ def wait_serial_after(path, anchor, marker, timeout=35.0):
     )
 
 
+def encrypted_data_shell_check(qmp, serial):
+    steps = (
+        ("read SECRET.TXT", b"OPENRFS_PLAINTEXT_SENTINEL_9466"),
+        ("write SECRET.TXT amber", None),
+        ("read SECRET.TXT", b"amber\n"),
+        ("append SECRET.TXT blue", None),
+        ("read SECRET.TXT", b"amber\nblue\n"),
+        ("writeat SECRET.TXT 0 gold", None),
+        ("truncate SECRET.TXT 5", None),
+        ("read SECRET.TXT", b"gold\n"),
+        ("mv SECRET.TXT HIDDEN.TXT", None),
+        ("read HIDDEN.TXT", b"gold\n"),
+        ("mkdir VAULT", None),
+        ("write VAULT/NOTE.TXT nested", None),
+        ("mv VAULT CLOSED", None),
+        ("read CLOSED/NOTE.TXT", b"nested\n"),
+        ("rm CLOSED/NOTE.TXT", None),
+        ("rm CLOSED", None),
+        ("rm HIDDEN.TXT", None),
+    )
+    for command, expected in steps:
+        start = len(serial.read_bytes())
+        send_text(qmp, command)
+        press(qmp, "ret", 0.10)
+        deadline = time.monotonic() + 40.0
+        while time.monotonic() < deadline:
+            output = serial.read_bytes()[start:]
+            if b"openrfs$ " in output:
+                if expected is not None and expected not in output:
+                    raise RuntimeError(f"{command!r} returned {output!r}")
+                if b": " in output.split(b"\n", 1)[-1]:
+                    raise RuntimeError(f"{command!r} failed: {output!r}")
+                break
+            time.sleep(0.05)
+        else:
+            raise RuntimeError(f"{command!r} did not return to the shell")
+
+
+def rotate_encrypted_data_password(qmp, serial):
+    send_text(qmp, "passwd")
+    press(qmp, "ret", 0.10)
+    wait_serial_after(serial, TERMINAL_RESULT, USERNAME_PROMPT)
+    send_text(qmp, CAPTURE_USERNAME)
+    press(qmp, "ret", 0.10)
+    current_prompt = b"Current password: "
+    wait_serial_after(serial, TERMINAL_RESULT, current_prompt)
+    send_text(qmp, CAPTURE_PASSWORD)
+    press(qmp, "ret", 0.10)
+    wait_serial_after(serial, current_prompt, NEW_PASSWORD_PROMPT)
+    send_text(qmp, ROTATED_PASSWORD)
+    press(qmp, "ret", 0.10)
+    wait_serial_after(serial, current_prompt, b"Confirm new password: ")
+    send_text(qmp, ROTATED_PASSWORD)
+    press(qmp, "ret", 0.10)
+    wait_serial_after(serial, current_prompt, PASSWORD_CHANGED, timeout=90.0)
+
+
+def native_encrypted_data_check(qmp, serial):
+    start = len(serial.read_bytes())
+    send_text(qmp, "native NATIVET.MAN")
+    press(qmp, "ret", 0.10)
+    deadline = time.monotonic() + 900.0
+    while time.monotonic() < deadline:
+        output = serial.read_bytes()[start:]
+        if b"openrfs$ " in output:
+            if b"OPENRFS NATIVE PASS" not in output or b"released=yes" not in output:
+                raise RuntimeError(f"native Data probe failed: {output!r}")
+            return
+        time.sleep(0.05)
+    raise RuntimeError("native Data probe did not return to the shell")
+
+
+def upload_encrypted_data_check(qmp, serial):
+    start = len(serial.read_bytes())
+    send_text(qmp, "native ENCUPL.MAN")
+    press(qmp, "ret", 0.10)
+    deadline = time.monotonic() + 300.0
+    while time.monotonic() < deadline:
+        output = serial.read_bytes()[start:]
+        if b"openrfs$ " in output:
+            if (b"OPENRFS NATIVE DATA PASS" not in output or
+                    b"OPENRFS UPLOAD PASS" not in output or
+                    b"released=yes" not in output):
+                raise RuntimeError(f"package upload probe failed: {output!r}")
+            return
+        time.sleep(0.05)
+    raise RuntimeError("package upload probe did not return to the shell")
+
+
+def disk_full_encrypted_data_check(qmp, serial):
+    start = len(serial.read_bytes())
+    send_text(qmp, "append SECRET.TXT extra")
+    press(qmp, "ret", 0.10)
+    wait_serial_after(serial, b"append SECRET.TXT extra", PROMPT, timeout=90.0)
+    output = serial.read_bytes()[start:]
+    if b"append: " not in output:
+        raise RuntimeError(f"disk-full append was not refused: {output!r}")
+    start = len(serial.read_bytes())
+    send_text(qmp, "read SECRET.TXT")
+    press(qmp, "ret", 0.10)
+    wait_serial_after(serial, b"read SECRET.TXT", PROMPT, timeout=30.0)
+    output = serial.read_bytes()[start:]
+    if b"account: login required" not in output:
+        raise RuntimeError(f"Data session survived storage failure: {output!r}")
+
+
 def capture(qmp, directory, stem, frame=None):
     ppm = directory / f"{stem}.ppm"
     png = directory / f"{stem}.png"
@@ -216,7 +322,9 @@ def verify_wvrm_revoked(data_frame, revoked_frame):
 
 def send_text(qmp, text, delay=0.04):
     for key in text:
-        qmp.hmp(f"sendkey {'spc' if key == ' ' else key}")
+        sent = f"shift-{key.lower()}" if key.isupper() else (
+            {" ": "spc", ".": "dot", "/": "slash"}.get(key, key))
+        qmp.hmp(f"sendkey {sent}")
         time.sleep(delay)
 
 def press(qmp, key, delay=0.30):
@@ -224,17 +332,20 @@ def press(qmp, key, delay=0.30):
     time.sleep(delay)
 
 
-def start_authenticated_desktop(qmp, serial, rotate_password=False):
-    send_text(qmp, f"useradd {CAPTURE_USERNAME}")
-    press(qmp, "ret", 0.10)
-    wait_serial_after(serial, PROMPT, NEW_PASSWORD_PROMPT, timeout=30.0)
-    send_text(qmp, CAPTURE_PASSWORD)
-    press(qmp, "ret", 0.10)
-    wait_serial(serial, CONFIRM_PASSWORD_PROMPT, timeout=30.0)
-    send_text(qmp, CAPTURE_PASSWORD)
-    press(qmp, "ret", 0.10)
-    wait_serial(serial, ACCOUNT_CREATED, timeout=90.0)
-    wait_serial_after(serial, ACCOUNT_CREATED, PROMPT, timeout=30.0)
+def start_authenticated_desktop(qmp, serial, rotate_password=False,
+                                expect_migration_refusal=False,
+                                existing_account=False, migration_cut=None):
+    if not existing_account:
+        send_text(qmp, f"useradd {CAPTURE_USERNAME}")
+        press(qmp, "ret", 0.10)
+        wait_serial_after(serial, PROMPT, NEW_PASSWORD_PROMPT, timeout=30.0)
+        send_text(qmp, CAPTURE_PASSWORD)
+        press(qmp, "ret", 0.10)
+        wait_serial(serial, CONFIRM_PASSWORD_PROMPT, timeout=30.0)
+        send_text(qmp, CAPTURE_PASSWORD)
+        press(qmp, "ret", 0.10)
+        wait_serial(serial, ACCOUNT_CREATED, timeout=90.0)
+        wait_serial_after(serial, ACCOUNT_CREATED, PROMPT, timeout=30.0)
     if rotate_password:
         send_text(qmp, "passwd")
         press(qmp, "ret", 0.10)
@@ -267,7 +378,68 @@ def start_authenticated_desktop(qmp, serial, rotate_password=False):
     wait_serial(serial, PASSWORD_PROMPT, timeout=30.0)
     send_text(qmp, ROTATED_PASSWORD if rotate_password else CAPTURE_PASSWORD)
     press(qmp, "ret", 0.10)
+    if migration_cut is not None:
+        wait_migrating_and_cut(*migration_cut)
+        return
+    if expect_migration_refusal:
+        refused = b"account: encrypted Data account requires the protected VFS path"
+        wait_serial(serial, refused, timeout=90.0)
+        send_text(qmp, "ls")
+        press(qmp, "ret", 0.10)
+        wait_serial_after(serial, refused,
+                          b"account: login required; run 'starty'")
+        return
     wait_serial(serial, DESKTOP_STARTED, timeout=90.0)
+
+
+def wait_migrating_and_cut(image, filesystem, process):
+    directory_offset = None
+    geometry = None
+    if filesystem == "fat32":
+        raw = image.read_bytes()
+        geometry = fat32_image.parse_geometry(raw)
+        credentials = [entry for entry in fat32_image.inspect_image(raw)["files"]
+                       if entry["path"] == "OPENRFS" and entry["directory"]]
+        if len(credentials) != 1:
+            raise RuntimeError("FAT32 credential directory is missing")
+        directory_offset = geometry.sector_offset(
+            geometry.cluster_sector(credentials[0]["first_cluster"]))
+    deadline = time.monotonic() + 90.0
+    while time.monotonic() < deadline:
+        offset = None
+        if filesystem == "fat32":
+            with image.open("rb") as source:
+                source.seek(directory_offset)
+                directory = source.read(geometry.bytes_per_sector *
+                                        geometry.sectors_per_cluster)
+            for at in range(0, len(directory), 32):
+                entry = directory[at:at + 32]
+                if entry[:11] == b"LOGIN   V2B":
+                    high = int.from_bytes(entry[20:22], "little")
+                    low = int.from_bytes(entry[26:28], "little")
+                    cluster = (high << 16) | low
+                    if cluster >= 2:
+                        offset = geometry.sector_offset(
+                            geometry.cluster_sector(cluster))
+                    break
+        else:
+            result = subprocess.run(("debugfs", "-R",
+                                     "blocks /OPENRFS/LOGIN.V2B", str(image)),
+                                    capture_output=True, text=True, check=True)
+            blocks = result.stdout.split()
+            if blocks and blocks[0].isdigit():
+                offset = int(blocks[0]) * 4096
+        if offset is not None:
+            with image.open("rb") as source:
+                source.seek(offset)
+                record = source.read(224)
+            if len(record) == 224 and record[6] == 2:
+                process.kill()
+                process.wait(timeout=10.0)
+                print("cut after observing MIGRATING account record")
+                return
+        time.sleep(0.05)
+    raise RuntimeError("did not observe a durable MIGRATING account record")
 
 
 def storage_arguments(userspace, system, data, data_filesystem="fat32"):
@@ -352,6 +524,15 @@ def main():
     parser.add_argument("--output", required=True)
     parser.add_argument("--rotate-password", action="store_true")
     parser.add_argument("--logout-test", action="store_true")
+    parser.add_argument("--encrypted-data-test", action="store_true")
+    parser.add_argument("--rotate-after-login", action="store_true")
+    parser.add_argument("--native-data-test", action="store_true")
+    parser.add_argument("--upload-data-test", action="store_true")
+    parser.add_argument("--expect-migration-refusal", action="store_true")
+    parser.add_argument("--existing-account", action="store_true")
+    parser.add_argument("--expect-unlock-refusal", action="store_true")
+    parser.add_argument("--power-cut-migrating", action="store_true")
+    parser.add_argument("--disk-full-test", action="store_true")
     deletion = parser.add_mutually_exclusive_group()
     deletion.add_argument("--delete-account", action="store_true")
     deletion.add_argument("--refuse-delete-account", action="store_true")
@@ -366,6 +547,33 @@ def main():
         parser.error("--rotate-password requires --system and --data")
     if args.logout_test and args.data is None:
         parser.error("--logout-test requires --system and --data")
+    if args.encrypted_data_test and args.data is None:
+        parser.error("--encrypted-data-test requires --system and --data")
+    if args.rotate_after_login and (not args.encrypted_data_test or
+                                    args.rotate_password):
+        parser.error("--rotate-after-login requires an encrypted Data test")
+    if args.native_data_test and not args.encrypted_data_test:
+        parser.error("--native-data-test requires an encrypted Data test")
+    if args.upload_data_test and not args.encrypted_data_test:
+        parser.error("--upload-data-test requires an encrypted Data test")
+    if args.existing_account and (args.data is None or args.rotate_password or
+                                  args.delete_account or args.refuse_delete_account):
+        parser.error("existing account requires a Data image and login")
+    if args.expect_unlock_refusal and not args.existing_account:
+        parser.error("unlock refusal requires an existing account")
+    if args.power_cut_migrating and (args.data is None or args.existing_account or
+                                    args.rotate_password or args.encrypted_data_test):
+        parser.error("migration cut requires a fresh Data account")
+    if args.disk_full_test and (not args.existing_account or
+                                args.encrypted_data_test or
+                                args.expect_unlock_refusal):
+        parser.error("disk-full test requires an existing unlocked account")
+    if args.expect_migration_refusal and (
+            args.data is None or args.data_filesystem != "ext4" or
+            args.rotate_password or args.delete_account or
+            args.refuse_delete_account or args.encrypted_data_test or
+            args.rotate_after_login):
+        parser.error("migration refusal requires an ext4 data image")
     if (args.delete_account or args.refuse_delete_account) and (
             args.data is None or args.data_filesystem != "ext4"):
         parser.error("account deletion gates require ext4 --system and --data")
@@ -402,7 +610,16 @@ def main():
             wait_serial_after(serial, PROOF_LINE,
                               b"account: create a user first with 'useradd NAME'")
         if durable_data is not None:
-            start_authenticated_desktop(qmp, serial, args.rotate_password)
+            start_authenticated_desktop(qmp, serial, args.rotate_password,
+                                        args.expect_migration_refusal or
+                                        args.expect_unlock_refusal,
+                                        args.existing_account,
+                                        (durable_data, args.data_filesystem,
+                                         process)
+                                        if args.power_cut_migrating else None)
+            if (args.expect_migration_refusal or args.expect_unlock_refusal or
+                    args.power_cut_migrating):
+                return
         time.sleep(0.25)
         # starty opens the minimal desktop with its terminal attached to the
         # production shell. Capture the initial guest frame, then exercise
@@ -423,6 +640,17 @@ def main():
         wait_serial_after(serial, DESKTOP_STARTED, TERMINAL_RESULT)
         time.sleep(0.20)
         terminal = capture(qmp, output, "openrfs-proof-terminal")
+        if args.rotate_after_login:
+            rotate_encrypted_data_password(qmp, serial)
+        if args.encrypted_data_test:
+            encrypted_data_shell_check(qmp, serial)
+        if args.native_data_test:
+            native_encrypted_data_check(qmp, serial)
+        if args.upload_data_test:
+            upload_encrypted_data_check(qmp, serial)
+        if args.disk_full_test:
+            disk_full_encrypted_data_check(qmp, serial)
+            return
         if args.logout_test:
             send_text(qmp, "logout")
             press(qmp, "ret", 0.10)
@@ -438,7 +666,8 @@ def main():
             send_text(qmp, CAPTURE_USERNAME)
             press(qmp, "ret", 0.10)
             wait_serial_after(serial, denied, PASSWORD_PROMPT)
-            send_text(qmp, ROTATED_PASSWORD if args.rotate_password
+            send_text(qmp, ROTATED_PASSWORD if (
+                      args.rotate_password or args.rotate_after_login)
                       else CAPTURE_PASSWORD)
             press(qmp, "ret", 0.10)
             wait_serial_after(serial, denied, b"OpenRFS session resumed.")
@@ -496,12 +725,13 @@ def main():
                 send_text(qmp, CAPTURE_USERNAME)
                 press(qmp, "ret", 0.10)
                 wait_serial_after(serial, TERMINAL_RESULT, PASSWORD_PROMPT)
-                send_text(qmp, ROTATED_PASSWORD if args.rotate_password
+                send_text(qmp, ROTATED_PASSWORD if (
+                          args.rotate_password or args.rotate_after_login)
                           else CAPTURE_PASSWORD)
                 press(qmp, "ret", 0.10)
                 outcome = (b"OpenRFS account removed; Data directories remain."
                            if args.delete_account else
-                           b"account: Data still contains unencrypted files; account deletion refused")
+                           b"account: Data still contains files; account deletion refused")
                 wait_serial_after(serial, TERMINAL_RESULT, outcome)
                 send_text(qmp, "ls")
                 press(qmp, "ret", 0.10)
@@ -533,29 +763,34 @@ def main():
 
 
     transcript = serial.read_bytes() if serial.exists() else b""
-    if (PROOF_LINE not in transcript or ACCOUNT_CREATED not in transcript or
+    if (PROOF_LINE not in transcript or
+            (not args.existing_account and ACCOUNT_CREATED not in transcript) or
             DESKTOP_STARTED not in transcript or GFETCH_RESULT not in transcript or
             TERMINAL_RESULT not in transcript or
             CAPTURE_PASSWORD.encode("ascii") in transcript or
             ROTATED_PASSWORD.encode("ascii") in transcript or
-            (args.rotate_password and PASSWORD_CHANGED not in transcript) or
+            ((args.rotate_password or args.rotate_after_login) and
+             PASSWORD_CHANGED not in transcript) or
             RUNTIME_FAILURE in transcript):
         tail = transcript[-4096:].decode("utf-8", errors="replace")
         raise RuntimeError("proof capture omitted readiness evidence\n" + tail)
     if durable_data is not None and args.data_filesystem == "ext4":
-        verify_ext4_account(durable_data, output, args.rotate_password,
+        verify_ext4_account(durable_data, output,
+                            args.rotate_password or args.rotate_after_login,
                             args.delete_account)
     if durable_data is not None and args.data_filesystem == "fat32":
         report = fat32_image.inspect_image(durable_data.read_bytes())
         login = [
             item for item in report["files"]
-            if item["path"] == ("OPENRFS/LOGIN.V2B" if args.rotate_password
+            if item["path"] == ("OPENRFS/LOGIN.V2B" if (
+                                 args.rotate_password or args.rotate_after_login)
                                  else "OPENRFS/LOGIN.V2A") and not item["directory"]
         ]
         stale_login = [
             item for item in report["files"]
             if item["path"] in ("OPENRFS/LOGIN.DAT",
-                                "OPENRFS/LOGIN.V2A" if args.rotate_password
+                                "OPENRFS/LOGIN.V2A" if (
+                                    args.rotate_password or args.rotate_after_login)
                                 else "OPENRFS/LOGIN.V2B")
         ]
         if (not bool(report["fat_copies_match"]) or int(report["cycles"]) != 0 or

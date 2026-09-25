@@ -1,0 +1,10 @@
+{
+  "name": "Encrypted Data upload test",
+  "identifier": "ENCUPL",
+  "executable": "ENCUPL.APP",
+  "data_namespace": "ENCUPL",
+  "memory_limit": 33554432,
+  "max_handles": 8,
+  "max_threads": 1,
+  "capabilities": ["console", "data-read", "data-write", "packages"]
+}

@@ -84,4 +84,9 @@ struct vfs_backend_ops {
         const char *path, openrfsfs_handle *handle, struct openrfsfs_stat *stat);
 };
 
+const struct vfs_backend_ops *openrfsfs_data_backend_current(void);
+enum openrfsfs_status openrfsfs_data_backend_replace(
+    const struct vfs_backend_ops *expected,
+    const struct vfs_backend_ops *replacement);
+
 #endif

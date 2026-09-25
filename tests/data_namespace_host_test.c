@@ -182,6 +182,33 @@ int main(void)
     event.target_name[0] = '\0';
     if (!check(roundtrip_apply(&state, &event) == DATA_NS_OK &&
             state.count == 0U, "delete empty directory")) return 1;
+    struct data_ns_event replace_source = {0};
+    replace_source.operation = DATA_NS_CREATE;
+    replace_source.kind = DATA_NS_FILE;
+    replace_source.mode = 0600U;
+    memcpy(replace_source.parent_id, state.root_id,
+        DATA_AEAD_ID_BYTES);
+    replace_source.child_id[0] = 21U;
+    strcpy(replace_source.name, "SOURCE");
+    struct data_ns_event replace_target = replace_source;
+    replace_target.child_id[0] = 22U;
+    strcpy(replace_target.name, "TARGET");
+    if (!check(roundtrip_apply(&state, &replace_source) == DATA_NS_OK &&
+            roundtrip_apply(&state, &replace_target) == DATA_NS_OK,
+            "replacement fixture has two files")) return 1;
+    replace_source.operation = DATA_NS_RENAME_REPLACE;
+    memcpy(replace_source.target_parent_id, state.root_id,
+        DATA_AEAD_ID_BYTES);
+    strcpy(replace_source.target_name, "TARGET");
+    if (!check(roundtrip_apply(&state, &replace_source) == DATA_NS_OK &&
+            state.count == 1U &&
+            data_ns_find(&state, state.root_id, "SOURCE") == NULL &&
+            data_ns_find(&state, state.root_id, "TARGET") != NULL &&
+            memcmp(data_ns_find(&state, state.root_id,
+                "TARGET")->child_id, replace_source.child_id,
+                DATA_AEAD_ID_BYTES) == 0,
+            "replace rename publishes source identity in one event"))
+        return 1;
     event.operation = DATA_NS_CREATE;
     strcpy(event.name, "../escape");
     if (!check(data_ns_event_encode(&event, record) == DATA_NS_ARGUMENT &&

@@ -146,6 +146,9 @@ HTTPS_HOST_OBJECT := $(TEST_BUILD_DIR)/https-client-host.o
 ZLIB_HOST_TEST := $(TEST_BUILD_DIR)/zlib-host-test$(HOST_EXEEXT)
 EXT4_FIXTURE := $(TEST_BUILD_DIR)/ext4/openrfs-ext4.raw
 EXT4_EMPTY_FIXTURE := $(TEST_BUILD_DIR)/ext4/openrfs-empty-ext4.raw
+EXT4_PLAINTEXT_FIXTURE := $(TEST_BUILD_DIR)/encrypted-data-fixtures/ext4.raw
+EXT4_XATTR_FIXTURE := $(TEST_BUILD_DIR)/encrypted-data-fixtures/ext4-xattr.raw
+FAT32_PLAINTEXT_FIXTURE := $(TEST_BUILD_DIR)/encrypted-data-fixtures/fat32.raw
 EXT4_RECOVERY_FIXTURE := $(TEST_BUILD_DIR)/ext4-recovery/data.raw
 RUST_SOURCES := $(wildcard src/rust/*.rs)
 RUST_MANIFEST := src/rust/Cargo.toml
@@ -274,6 +277,9 @@ NATIVE_TEST_APP := $(NATIVE_APP_DIR)/NATIVET.APP
 NATIVE_TEST_PACKAGE := $(NATIVE_APP_DIR)/NATIVET.SPK
 NATIVE_SYSTEM_IMAGE := $(NATIVE_APP_DIR)/system.raw
 NATIVE_DATA_IMAGE := $(NATIVE_APP_DIR)/data.raw
+ENCRYPTED_UPLOAD_APP := $(NATIVE_APP_DIR)/ENCUPL.APP
+ENCRYPTED_UPLOAD_PACKAGE := $(NATIVE_APP_DIR)/ENCUPL.SPK
+ENCRYPTED_SYSTEM_IMAGE := $(NATIVE_APP_DIR)/encrypted-system.raw
 LUA_PORT_DIR := $(BUILD_DIR)/ports/lua
 LUA_PORT_WORK_DIR := $(BUILD_DIR)/ports/lua-work
 LUA_APP := $(LUA_PORT_DIR)/LUA.APP
@@ -511,7 +517,7 @@ DEPENDENCIES := $(C_OBJECTS:.o=.d) $(MONOCYPHER_OBJECTS:.o=.d) \
 # implicit and pattern rule search for a phony target, so declaring them phony
 # makes every scenario resolve to "nothing to be done" and pass without booting.
 # They never create a file of their own name, so they rerun regardless.
-.PHONY: all installer-port-test audio-wav-tests capture-boot-video capture-openrfs capture-openrfs-proof capture-networking clean contract-counts contract-scenarios dynamic-elf-tests ext4-images ext4-tests ext4-fsync-test ext4-sparse-truncate-test fat32-images force-package-trust hooks https-tests account-host-test account-kdf-host-test account-v2-host-test account-delete-qemu-test account-delete-refusal-qemu-test random-host-test entropy-qemu-test boot-artifact-signature-test \
+.PHONY: all installer-port-test audio-wav-tests capture-boot-video capture-openrfs capture-openrfs-proof capture-networking clean contract-counts contract-scenarios dynamic-elf-tests ext4-images ext4-tests ext4-fsync-test ext4-sparse-truncate-test fat32-images force-package-trust hooks https-tests account-host-test account-kdf-host-test account-v2-host-test account-delete-qemu-test account-delete-refusal-qemu-test account-migration-refusal-qemu-test account-migration-xattr-refusal-qemu-test encrypted-data-qemu-test encrypted-data-native-qemu-test encrypted-data-tamper-qemu-test encrypted-data-powercut-qemu-test encrypted-data-diskfull-qemu-test random-host-test entropy-qemu-test boot-artifact-signature-test \
 	iso kernel lint native-apps native-audio-proof native-dynamic-proof native-https-proof native-openrfs-proof native-sdl-proof sdl-preference-tests port-tests qemu-port-tests reproducible-sdk run \
 	package-control-tests package-fetch-tests package-manager-tests package-repository-tests package-service-tests package-state-tests package-transaction-tests package-trust-asset-tests package-trust-tests package-upload-tests qemu-test-ext4-powercuts screenshot-proof sdk sdk-once smoke tls-tests toolchain verify wall-clock-tests zlib-tests
 
@@ -662,6 +668,20 @@ $(NATIVE_TEST_PACKAGE): $(NATIVE_TEST_APP) apps/native-test/manifest.json \
 		apps/native-test/RESOURCE.TXT
 	$(PYTHON) tools/openrfs-package.py build \
 		--spec apps/native-test/manifest.json --executable $< --output $@
+
+$(NATIVE_APP_DIR)/encrypted-upload-test.o: apps/encrypted-upload-test/main.c \
+		$(SDK_BUILD_DIR)/.installed | $(NATIVE_APP_DIR)
+	$(SDK_CC) $(SDK_CFLAGS) -c $< -o $@
+
+$(ENCRYPTED_UPLOAD_APP): $(NATIVE_APP_DIR)/encrypted-upload-test.o \
+		$(SDK_BUILD_DIR)/.installed
+	$(SDK_LD) $(SDK_LDFLAGS) -o $@ $(SDK_CRT) $< $(SDK_LIB)
+
+$(ENCRYPTED_UPLOAD_PACKAGE): $(ENCRYPTED_UPLOAD_APP) \
+		apps/encrypted-upload-test/manifest.json
+	$(PYTHON) tools/openrfs-package.py build \
+		--spec apps/encrypted-upload-test/manifest.json \
+		--executable $< --output $@
 
 $(CRASH_APP_DIR)/main.o: apps/native-crash/main.c \
 		$(SDK_BUILD_DIR)/.installed | $(CRASH_APP_DIR)
@@ -929,6 +949,11 @@ $(NATIVE_SYSTEM_IMAGE): $(NATIVE_TEST_PACKAGE) tools/openrfs-package.py \
 		tools/fat32_image.py
 	$(PYTHON) tools/openrfs-package.py install-system \
 		--output $@ $(NATIVE_TEST_PACKAGE)
+
+$(ENCRYPTED_SYSTEM_IMAGE): $(NATIVE_TEST_PACKAGE) \
+		$(ENCRYPTED_UPLOAD_PACKAGE) tools/openrfs-package.py tools/fat32_image.py
+	$(PYTHON) tools/openrfs-package.py install-system \
+		--output $@ $(NATIVE_TEST_PACKAGE) $(ENCRYPTED_UPLOAD_PACKAGE)
 
 $(NATIVE_DATA_IMAGE): tools/fat32_image.py | $(NATIVE_APP_DIR)
 	$(PYTHON) tools/fat32_image.py format data $@
@@ -1980,6 +2005,8 @@ data-aead-manifest-host-test: $(DATA_AEAD_MANIFEST_HOST_TEST)
 DATA_AEAD_BACKEND_HOST_TEST := $(TEST_BUILD_DIR)/data-aead-backend-host-test$(HOST_EXEEXT)
 
 $(DATA_AEAD_BACKEND_HOST_TEST): tests/data_aead_backend_host_test.c \
+		src/kernel/data_encrypted_backend.c \
+		src/kernel/data_encrypted_migration.c \
 		src/kernel/data_aead_backend.c src/kernel/data_aead_manifest.c \
 		src/kernel/data_aead_rewrite.c src/kernel/data_aead.c \
 		src/kernel/data_namespace.c src/kernel/data_namespace_backend.c \
@@ -1991,7 +2018,9 @@ $(DATA_AEAD_BACKEND_HOST_TEST): tests/data_aead_backend_host_test.c \
 	mkdir -p $(dir $@)
 	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
 		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
-		tests/data_aead_backend_host_test.c src/kernel/data_aead_backend.c \
+		tests/data_aead_backend_host_test.c \
+		src/kernel/data_encrypted_backend.c \
+		src/kernel/data_encrypted_migration.c src/kernel/data_aead_backend.c \
 		src/kernel/data_aead_manifest.c src/kernel/data_aead_rewrite.c \
 		src/kernel/data_aead.c src/kernel/data_namespace.c \
 		src/kernel/data_namespace_backend.c \
@@ -2003,6 +2032,8 @@ data-aead-backend-host-test: $(DATA_AEAD_BACKEND_HOST_TEST)
 DATA_AEAD_BOUNDARY_HOST_TEST := $(TEST_BUILD_DIR)/data-aead-boundary-host-test$(HOST_EXEEXT)
 
 $(DATA_AEAD_BOUNDARY_HOST_TEST): tests/data_aead_backend_host_test.c \
+		src/kernel/data_encrypted_backend.c \
+		src/kernel/data_encrypted_migration.c \
 		src/kernel/data_aead_backend.c src/kernel/data_aead_manifest.c \
 		src/kernel/data_aead_rewrite.c src/kernel/data_aead.c \
 		src/kernel/data_namespace.c src/kernel/data_namespace_backend.c \
@@ -2012,7 +2043,9 @@ $(DATA_AEAD_BOUNDARY_HOST_TEST): tests/data_aead_backend_host_test.c \
 	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
 		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
 		-DDATA_AEAD_SEGMENT_BYTES=4096U \
-		tests/data_aead_backend_host_test.c src/kernel/data_aead_backend.c \
+		tests/data_aead_backend_host_test.c \
+		src/kernel/data_encrypted_backend.c \
+		src/kernel/data_encrypted_migration.c src/kernel/data_aead_backend.c \
 		src/kernel/data_aead_manifest.c src/kernel/data_aead_rewrite.c \
 		src/kernel/data_aead.c src/kernel/data_namespace.c \
 		src/kernel/data_namespace_backend.c \
@@ -2793,10 +2826,22 @@ capture-openrfs-proof: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 		$(OPENRFS_PROOF_TERMINAL_IMAGE) \
 		$(OPENRFS_PROOF_CAPTURE_DIR)/openrfs-proof-terminal.png
 
-capture-openrfs: iso $(FAT32_SYSTEM_IMAGE) $(EXT4_FIXTURE)
+$(EXT4_PLAINTEXT_FIXTURE): $(EXT4_EMPTY_FIXTURE) tools/encrypted_data_fixture.py
+	$(PYTHON) tools/encrypted_data_fixture.py --filesystem ext4 \
+		--base $(EXT4_EMPTY_FIXTURE) --output $@
+
+$(EXT4_XATTR_FIXTURE): $(EXT4_EMPTY_FIXTURE) tools/encrypted_data_fixture.py
+	$(PYTHON) tools/encrypted_data_fixture.py --filesystem ext4 \
+		--base $(EXT4_EMPTY_FIXTURE) --output $@ --xattr
+
+$(FAT32_PLAINTEXT_FIXTURE): $(FAT32_DATA_IMAGE) tools/encrypted_data_fixture.py
+	$(PYTHON) tools/encrypted_data_fixture.py --filesystem fat32 \
+		--base $(FAT32_DATA_IMAGE) --output $@
+
+capture-openrfs: iso $(FAT32_SYSTEM_IMAGE) $(EXT4_PLAINTEXT_FIXTURE)
 	rm -rf $(OPENRFS_CAPTURE_DIR)
 	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
-		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_FIXTURE) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_PLAINTEXT_FIXTURE) \
 		--data-filesystem ext4 --output $(OPENRFS_CAPTURE_DIR)
 
 account-delete-qemu-test: iso $(FAT32_SYSTEM_IMAGE) $(EXT4_EMPTY_FIXTURE)
@@ -2816,11 +2861,163 @@ account-logout-ext4-qemu-test: iso $(FAT32_SYSTEM_IMAGE) $(EXT4_EMPTY_FIXTURE)
 		--data-filesystem ext4 --logout-test \
 		--output $(TEST_BUILD_DIR)/account-logout-ext4-qemu
 
-account-delete-refusal-qemu-test: iso $(FAT32_SYSTEM_IMAGE) $(EXT4_FIXTURE)
+account-delete-refusal-qemu-test: iso $(FAT32_SYSTEM_IMAGE) $(EXT4_PLAINTEXT_FIXTURE)
 	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
-		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_FIXTURE) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_PLAINTEXT_FIXTURE) \
 		--data-filesystem ext4 --refuse-delete-account \
 		--output $(TEST_BUILD_DIR)/account-delete-refusal-qemu
+
+account-migration-refusal-qemu-test: iso $(FAT32_SYSTEM_IMAGE) $(EXT4_FIXTURE)
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_FIXTURE) \
+		--data-filesystem ext4 --expect-migration-refusal \
+		--output $(TEST_BUILD_DIR)/account-migration-refusal-qemu
+
+account-migration-xattr-refusal-qemu-test: iso $(FAT32_SYSTEM_IMAGE) $(EXT4_XATTR_FIXTURE)
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_XATTR_FIXTURE) \
+		--data-filesystem ext4 --expect-migration-refusal \
+		--output $(TEST_BUILD_DIR)/account-migration-xattr-refusal-qemu
+
+encrypted-data-qemu-test: iso $(FAT32_SYSTEM_IMAGE) \
+		$(FAT32_PLAINTEXT_FIXTURE) $(EXT4_PLAINTEXT_FIXTURE) \
+		tools/check_encrypted_data_image.py
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(FAT32_PLAINTEXT_FIXTURE) \
+		--encrypted-data-test --rotate-after-login --logout-test \
+		--output $(TEST_BUILD_DIR)/encrypted-data-fat32-qemu
+	$(PYTHON) tools/check_encrypted_data_image.py --filesystem fat32 \
+		--image $(TEST_BUILD_DIR)/encrypted-data-fat32-qemu/openrfs-proof-data.raw \
+		--report $(TEST_BUILD_DIR)/encrypted-data-fat32-qemu/raw-check.json
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_PLAINTEXT_FIXTURE) \
+		--data-filesystem ext4 --encrypted-data-test \
+		--rotate-after-login --logout-test \
+		--output $(TEST_BUILD_DIR)/encrypted-data-ext4-qemu
+	$(PYTHON) tools/check_encrypted_data_image.py --filesystem ext4 \
+		--image $(TEST_BUILD_DIR)/encrypted-data-ext4-qemu/openrfs-proof-data.raw \
+		--report $(TEST_BUILD_DIR)/encrypted-data-ext4-qemu/raw-check.json
+
+encrypted-data-native-qemu-test: iso $(ENCRYPTED_SYSTEM_IMAGE) \
+		$(FAT32_PLAINTEXT_FIXTURE) $(EXT4_PLAINTEXT_FIXTURE) \
+		tools/check_encrypted_data_image.py
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(ENCRYPTED_SYSTEM_IMAGE) --data $(FAT32_PLAINTEXT_FIXTURE) \
+		--encrypted-data-test --native-data-test --upload-data-test \
+		--output $(TEST_BUILD_DIR)/encrypted-data-native-fat32-qemu
+	$(PYTHON) tools/check_encrypted_data_image.py --filesystem fat32 \
+		--image $(TEST_BUILD_DIR)/encrypted-data-native-fat32-qemu/openrfs-proof-data.raw \
+		--report $(TEST_BUILD_DIR)/encrypted-data-native-fat32-qemu/raw-check.json
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(ENCRYPTED_SYSTEM_IMAGE) --data $(EXT4_PLAINTEXT_FIXTURE) \
+		--data-filesystem ext4 --encrypted-data-test \
+		--upload-data-test \
+		--output $(TEST_BUILD_DIR)/encrypted-data-native-ext4-qemu
+	$(PYTHON) tools/check_encrypted_data_image.py --filesystem ext4 \
+		--image $(TEST_BUILD_DIR)/encrypted-data-native-ext4-qemu/openrfs-proof-data.raw \
+		--report $(TEST_BUILD_DIR)/encrypted-data-native-ext4-qemu/raw-check.json
+
+encrypted-data-tamper-qemu-test: iso $(FAT32_SYSTEM_IMAGE) \
+		$(FAT32_PLAINTEXT_FIXTURE) $(EXT4_PLAINTEXT_FIXTURE) \
+		tools/tamper_encrypted_data_image.py
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(FAT32_PLAINTEXT_FIXTURE) \
+		--output $(TEST_BUILD_DIR)/encrypted-data-tamper-fat32-source
+	$(PYTHON) tools/tamper_encrypted_data_image.py --filesystem fat32 \
+		--source $(TEST_BUILD_DIR)/encrypted-data-tamper-fat32-source/openrfs-proof-data.raw \
+		--output $(TEST_BUILD_DIR)/encrypted-data-tamper-fat32.raw
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) \
+		--data $(TEST_BUILD_DIR)/encrypted-data-tamper-fat32.raw \
+		--existing-account --expect-unlock-refusal \
+		--output $(TEST_BUILD_DIR)/encrypted-data-tamper-fat32-refused
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_PLAINTEXT_FIXTURE) \
+		--data-filesystem ext4 \
+		--output $(TEST_BUILD_DIR)/encrypted-data-tamper-ext4-source
+	$(PYTHON) tools/tamper_encrypted_data_image.py --filesystem ext4 \
+		--source $(TEST_BUILD_DIR)/encrypted-data-tamper-ext4-source/openrfs-proof-data.raw \
+		--output $(TEST_BUILD_DIR)/encrypted-data-tamper-ext4.raw
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) \
+		--data $(TEST_BUILD_DIR)/encrypted-data-tamper-ext4.raw \
+		--data-filesystem ext4 --existing-account --expect-unlock-refusal \
+		--output $(TEST_BUILD_DIR)/encrypted-data-tamper-ext4-refused
+
+encrypted-data-powercut-qemu-test: iso $(FAT32_SYSTEM_IMAGE) \
+		$(FAT32_PLAINTEXT_FIXTURE) $(EXT4_PLAINTEXT_FIXTURE) \
+		tools/check_encrypted_data_image.py
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(FAT32_PLAINTEXT_FIXTURE) \
+		--power-cut-migrating \
+		--output $(TEST_BUILD_DIR)/encrypted-data-cut-fat32-qemu
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) \
+		--data $(TEST_BUILD_DIR)/encrypted-data-cut-fat32-qemu/openrfs-proof-data.raw \
+		--existing-account --encrypted-data-test \
+		--output $(TEST_BUILD_DIR)/encrypted-data-recover-fat32-qemu
+	$(PYTHON) tools/check_encrypted_data_image.py --filesystem fat32 \
+		--image $(TEST_BUILD_DIR)/encrypted-data-recover-fat32-qemu/openrfs-proof-data.raw \
+		--report $(TEST_BUILD_DIR)/encrypted-data-recover-fat32-qemu/raw-check.json
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_PLAINTEXT_FIXTURE) \
+		--data-filesystem ext4 --power-cut-migrating \
+		--output $(TEST_BUILD_DIR)/encrypted-data-cut-ext4-qemu
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) \
+		--data $(TEST_BUILD_DIR)/encrypted-data-cut-ext4-qemu/openrfs-proof-data.raw \
+		--data-filesystem ext4 --existing-account --encrypted-data-test \
+		--output $(TEST_BUILD_DIR)/encrypted-data-recover-ext4-qemu
+	$(PYTHON) tools/check_encrypted_data_image.py --filesystem ext4 \
+		--image $(TEST_BUILD_DIR)/encrypted-data-recover-ext4-qemu/openrfs-proof-data.raw \
+		--report $(TEST_BUILD_DIR)/encrypted-data-recover-ext4-qemu/raw-check.json
+
+encrypted-data-diskfull-qemu-test: iso $(FAT32_SYSTEM_IMAGE) \
+		$(FAT32_PLAINTEXT_FIXTURE) $(EXT4_PLAINTEXT_FIXTURE) \
+		tools/fill_encrypted_data_image.py tools/check_encrypted_data_image.py
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(FAT32_PLAINTEXT_FIXTURE) \
+		--output $(TEST_BUILD_DIR)/encrypted-data-full-fat32-base
+	$(PYTHON) tools/fill_encrypted_data_image.py --filesystem fat32 \
+		--source $(TEST_BUILD_DIR)/encrypted-data-full-fat32-base/openrfs-proof-data.raw \
+		--output $(TEST_BUILD_DIR)/encrypted-data-full-fat32.raw
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(TEST_BUILD_DIR)/encrypted-data-full-fat32.raw \
+		--existing-account --disk-full-test \
+		--output $(TEST_BUILD_DIR)/encrypted-data-full-fat32-error
+	$(PYTHON) tools/fill_encrypted_data_image.py --filesystem fat32 --remove \
+		--source $(TEST_BUILD_DIR)/encrypted-data-full-fat32-error/openrfs-proof-data.raw \
+		--output $(TEST_BUILD_DIR)/encrypted-data-full-fat32-recovered.raw
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) \
+		--data $(TEST_BUILD_DIR)/encrypted-data-full-fat32-recovered.raw \
+		--existing-account --encrypted-data-test \
+		--output $(TEST_BUILD_DIR)/encrypted-data-full-fat32-reboot
+	$(PYTHON) tools/check_encrypted_data_image.py --filesystem fat32 \
+		--image $(TEST_BUILD_DIR)/encrypted-data-full-fat32-reboot/openrfs-proof-data.raw \
+		--report $(TEST_BUILD_DIR)/encrypted-data-full-fat32-reboot/raw-check.json
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_PLAINTEXT_FIXTURE) \
+		--data-filesystem ext4 \
+		--output $(TEST_BUILD_DIR)/encrypted-data-full-ext4-base
+	$(PYTHON) tools/fill_encrypted_data_image.py --filesystem ext4 \
+		--source $(TEST_BUILD_DIR)/encrypted-data-full-ext4-base/openrfs-proof-data.raw \
+		--output $(TEST_BUILD_DIR)/encrypted-data-full-ext4.raw
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(TEST_BUILD_DIR)/encrypted-data-full-ext4.raw \
+		--data-filesystem ext4 --existing-account --disk-full-test \
+		--output $(TEST_BUILD_DIR)/encrypted-data-full-ext4-error
+	$(PYTHON) tools/fill_encrypted_data_image.py --filesystem ext4 --remove \
+		--source $(TEST_BUILD_DIR)/encrypted-data-full-ext4-error/openrfs-proof-data.raw \
+		--output $(TEST_BUILD_DIR)/encrypted-data-full-ext4-recovered.raw
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) \
+		--data $(TEST_BUILD_DIR)/encrypted-data-full-ext4-recovered.raw \
+		--data-filesystem ext4 --existing-account --encrypted-data-test \
+		--output $(TEST_BUILD_DIR)/encrypted-data-full-ext4-reboot
+	$(PYTHON) tools/check_encrypted_data_image.py --filesystem ext4 \
+		--image $(TEST_BUILD_DIR)/encrypted-data-full-ext4-reboot/openrfs-proof-data.raw \
+		--report $(TEST_BUILD_DIR)/encrypted-data-full-ext4-reboot/raw-check.json
 
 capture-networking: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 	rm -rf $(NETWORK_CAPTURE_DIR)

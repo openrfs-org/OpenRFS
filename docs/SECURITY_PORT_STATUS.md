@@ -17,8 +17,8 @@ current OpenRFS. No reference README or descriptive page was copied here.
 | SHA-256 | Standalone GPL-3.0-only implementation | `package_state_sha256*` already linked | Existing implementation reused |
 | HMAC, HKDF, HMAC_DRBG, health tests | GPL-3.0-only reference and published vectors | Xoshiro/splitmix for ordinary random output | Adapted into the production `random.c` path |
 | AEAD | Vendored Monocypher 4.0.3, BSD-2-Clause OR CC0-1.0 | Monocypher already linked | No duplicate copied |
-| Credential records and Argon2id | Reference v2 design and parsers | v1 iterated SHA-256 account record | Production v2 verifier and wrapped random Data key, v1 migration, `passwd` rewrap, and bounded `userdel` for an otherwise empty Data volume; credential media power-cut proof remains open |
-| Vault and Data file migration | Reference design and tests | Plaintext FAT32/ext4 Data paths through VFS | **Not ported** |
+| Credential records and Argon2id | Reference v2 design and parsers | v1 iterated SHA-256 account record | Production v2 verifier and wrapped random Data key, v1 migration, `passwd` rewrap, and deletion of an empty logical Data namespace |
+| Vault and Data file migration | Reference design and tests | Plaintext FAT32/ext4 Data paths through VFS | Encrypted VFS backend, authenticated namespace, and resumable migration for supported files on FAT32 and ext4 |
 | Kernel authenticity | Reference acknowledges no image verification | Unsigned GRUB Multiboot2 image and configuration | Detached host verifier added; **not enforcing at boot** |
 | TPM and rollback | Reference measurement model | No external freshness authority | **Not integrated** |
 | Process and package controls | Reference proposals | Current native and package paths | **Not audited to completion** |
@@ -30,9 +30,9 @@ key, persistence and migration gates. The 64 MiB Argon2id work arena has an
 independent host result and a counted 128 MiB QEMU scenario. Production account
 creation and login now call it, and the desktop capture confirms the live v2
 path. Password change preserves the random Data key through a new authenticated
-wrap. The VFS does not consume this key yet. `userdel` refuses a Data volume
-with noncredential files; it does not erase freed plaintext or prevent raw
-volume rollback. Credential media power-cut recovery remains unproved.
+wrap. The VFS consumes this key after login and authenticates file content,
+names, and supported metadata. `userdel` refuses a nonempty logical Data
+namespace. It does not erase freed plaintext or prevent raw volume rollback.
 
 The branch now also contains OpenRFS's driver-layer merge at
 `f78d25d4ac43f05875bce17d80fbba738428d61e`. Its network device selector
@@ -73,8 +73,8 @@ Callers now handle refusal: network identifiers do not get a zero or fixed
 substitute, network initialization refuses when entropy is absent, account
 creation returns its random-unavailable status, the native random syscall
 returns an error, and the network syscall reports an entropy error rather than
-a bad pointer. The native syscall wipes its transfer buffer after use. These
-changes do not make existing credential records or Data files encrypted.
+a bad pointer. The native syscall wipes its transfer buffer after use. Legacy
+Data files become encrypted only after authenticated migration.
 
 CPU entropy is a platform trust assumption. These health checks detect some
 failures, including a stuck source; they do not measure physical min-entropy,
@@ -101,8 +101,8 @@ marker. A timeout is a failure.
 At predecessor head `2c2bf39b737f4fb7164535f673c509be94c864b6`, the required
 `build-and-boot` workflow passed `make verify` and all 116 declared QEMU
 scenarios. Its retained account, desktop, and ten ext4 power-cut artifacts
-were inspected. Production Data encryption and migration, credential media
-power-cut proof, hardware trust evidence, and independent review remain open.
+were inspected. The encrypted Data work requires its own exact-head CI and
+power-cut checks. Hardware trust evidence and independent review remain open.
 
 ## Boot and storage decisions still required
 
@@ -115,13 +115,14 @@ Enforcing image authenticity requires an operator-controlled firmware or
 external verification chain covering GRUB, configuration, kernel, and modules,
 plus a rollback floor and recovery image. No such chain is claimed here.
 
-The current Data namespace uses VFS over FAT32 or ext4, and native handles and
-package upload paths call those production file operations. File content
-encryption needs a versioned abstraction shared by all those operations, with
-stable file identity, authenticated metadata, crash transactions, and a
-resumable plaintext migration. No production file path is encrypted by this
-branch. Existing deleted or rewritten plaintext can remain on physical media.
-Whole-volume rollback remains possible without an external freshness root.
+The encrypted Data backend is installed at the VFS mount used by the shell,
+desktop Files, native handles, and package file operations. It hides logical
+names in an authenticated namespace and encrypts supported regular files
+with stable object IDs. Migration refuses unsupported legacy entries before
+retiring them. See [`DATA_AEAD_INTEGRATION.md`](DATA_AEAD_INTEGRATION.md) for
+the format and limits. Deleted or rewritten plaintext, including directory
+slack and journal copies, can remain on physical media. Whole-volume rollback
+remains possible without an external freshness root.
 
 No qualified independent cryptography or OS-security review has occurred.
 Physical hardware, firmware enrollment, metadata leakage, deleted-data

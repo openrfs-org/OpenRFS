@@ -5,13 +5,15 @@
 #include <string.h>
 
 #include <openrfs/data_aead_backend.h>
+#include <openrfs/data_encrypted_backend.h>
+#include <openrfs/data_encrypted_migration.h>
 #include <openrfs/data_namespace.h>
 #include <openrfs/data_namespace_backend.h>
 #include <openrfs/random.h>
 
-#define FAKE_FILES 80U
+#define FAKE_FILES 128U
 #define FAKE_HANDLES 16U
-#define FAKE_FILE_BYTES 5000U
+#define FAKE_FILE_BYTES 10000U
 
 struct fake_file {
     char path[OPENRFSFS_MAX_PATH];
@@ -28,6 +30,7 @@ struct fake_handle {
 };
 
 static struct fake_file files[FAKE_FILES];
+static struct fake_file migration_baseline[FAKE_FILES];
 static struct fake_handle handles[FAKE_HANDLES];
 static size_t write_budget;
 static bool fail_rename_after;
@@ -45,6 +48,15 @@ static bool check(bool condition, const char *message)
 {
     if (!condition) fprintf(stderr, "Data backend: %s\n", message);
     return condition;
+}
+
+static bool contains_bytes(const uint8_t *haystack, size_t bytes,
+    const char *needle, size_t needle_bytes)
+{
+    for (size_t at = 0U; at + needle_bytes <= bytes; ++at)
+        if (memcmp(haystack + at, needle, needle_bytes) == 0)
+            return true;
+    return false;
 }
 
 static struct fake_file *find_file(const char *path)
@@ -73,12 +85,69 @@ static enum openrfsfs_status fake_stat(enum openrfsfs_volume volume,
     const char *path, struct openrfsfs_stat *stat)
 {
     if (volume != OPENRFSFS_VOLUME_DATA) return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    if (strcmp(path, ".") == 0) {
+        memset(stat, 0, sizeof(*stat));
+        stat->directory = true;
+        return OPENRFSFS_STATUS_OK;
+    }
     struct fake_file *file = find_file(path);
     if (file == NULL) return OPENRFSFS_STATUS_NOT_FOUND;
     memset(stat, 0, sizeof(*stat));
     stat->size = file->size;
     stat->directory = file->directory;
     return OPENRFSFS_STATUS_OK;
+}
+
+static enum openrfsfs_status fake_list(enum openrfsfs_volume volume,
+    const char *path, struct openrfsfs_list_entry *output,
+    size_t capacity, size_t *count)
+{
+    if (count == NULL || volume != OPENRFSFS_VOLUME_DATA)
+        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    *count = 0U;
+    if (strcmp(path, ".") != 0) {
+        struct fake_file *parent = find_file(path);
+        if (parent == NULL) return OPENRFSFS_STATUS_NOT_FOUND;
+        if (!parent->directory) return OPENRFSFS_STATUS_NOT_DIRECTORY;
+    }
+    const size_t parent_bytes = strcmp(path, ".") == 0 ?
+        0U : strlen(path);
+    for (unsigned at = 0U; at < FAKE_FILES; ++at) {
+        if (!files[at].present) continue;
+        const char *name = files[at].path;
+        if (parent_bytes != 0U) {
+            if (strncmp(name, path, parent_bytes) != 0 ||
+                    name[parent_bytes] != '/') continue;
+            name += parent_bytes + 1U;
+        }
+        if (strchr(name, '/') != NULL || name[0] == '\0') continue;
+        if (*count == capacity) return OPENRFSFS_STATUS_RANGE;
+        memset(&output[*count], 0, sizeof(output[*count]));
+        strcpy(output[*count].name, name);
+        output[*count].size = files[at].size;
+        output[*count].directory = files[at].directory;
+        ++*count;
+    }
+    return OPENRFSFS_STATUS_OK;
+}
+
+static enum openrfsfs_status fake_rmdir(enum openrfsfs_volume volume,
+    const char *path)
+{
+    if (volume != OPENRFSFS_VOLUME_DATA)
+        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    struct fake_file *directory = find_file(path);
+    if (directory == NULL) return OPENRFSFS_STATUS_NOT_FOUND;
+    if (!directory->directory) return OPENRFSFS_STATUS_NOT_DIRECTORY;
+    const size_t length = strlen(path);
+    for (unsigned at = 0U; at < FAKE_FILES; ++at)
+        if (files[at].present &&
+                strncmp(files[at].path, path, length) == 0 &&
+                files[at].path[length] == '/')
+            return OPENRFSFS_STATUS_NOT_EMPTY;
+    directory->present = false;
+    return cut_after_change() ? OPENRFSFS_STATUS_IO :
+        OPENRFSFS_STATUS_OK;
 }
 
 static enum openrfsfs_status fake_mkdir(enum openrfsfs_volume volume,
@@ -1250,6 +1319,265 @@ static int run_boundary_case(bool ext4_style)
     return 0;
 }
 
+static int run_encrypted_vfs_case(bool ext4_style)
+{
+    memset(files, 0, sizeof(files));
+    memset(handles, 0, sizeof(handles));
+    write_budget = SIZE_MAX;
+    fail_rename_after = false;
+    nonce_seed = 1U;
+    fault_step = 0U;
+    step_count = 0U;
+    struct vfs_backend_ops backend = {
+        .sync = fake_sync,
+        .open = fake_open,
+        .close = fake_close,
+        .pread = fake_pread,
+        .write = fake_write,
+        .stat_path = fake_stat,
+        .lstat_path = fake_stat,
+        .mkdir = fake_mkdir,
+        .rename = fake_rename,
+        .unlink = fake_unlink,
+        .create = fake_create,
+        .case_sensitive = ext4_style,
+    };
+    if (ext4_style) {
+        backend.open_options = fake_open_options;
+        backend.fstat = fake_fstat;
+    }
+    uint8_t key[DATA_AEAD_KEY_BYTES];
+    uint8_t wrong_key[DATA_AEAD_KEY_BYTES];
+    uint8_t workspace[DATA_AEAD_REWRITE_WORKSPACE_BYTES];
+    for (size_t at = 0U; at < sizeof(key); ++at) {
+        key[at] = (uint8_t)(at + 1U);
+        wrong_key[at] = (uint8_t)(at + 2U);
+    }
+    data_encrypted_backend_bind(&backend, NULL);
+    const struct vfs_backend_ops *encrypted = data_encrypted_backend_ops();
+    struct openrfsfs_stat stat;
+    if (!check(encrypted->stat_path(OPENRFSFS_VOLUME_DATA, ".",
+            &stat) == OPENRFSFS_STATUS_OK && stat.directory &&
+            encrypted->stat_path(OPENRFSFS_VOLUME_DATA,
+                "private.txt", &stat) == OPENRFSFS_STATUS_ACCESS &&
+            data_encrypted_backend_activate(wrong_key) !=
+                OPENRFSFS_STATUS_OK,
+            "encrypted VFS refuses before a recorded namespace")) return 1;
+    uint64_t generation = 0U;
+    if (!check(data_ns_backend_create_empty(&backend,
+            OPENRFSFS_VOLUME_DATA, key, workspace, sizeof(workspace),
+            &generation) == DATA_NS_OK &&
+            data_encrypted_backend_activate(wrong_key) !=
+                OPENRFSFS_STATUS_OK &&
+            data_encrypted_backend_activate(key) == OPENRFSFS_STATUS_OK,
+            "encrypted VFS authenticates namespace key")) return 1;
+    openrfsfs_handle first = 0U;
+    if (!check(encrypted->open_options(OPENRFSFS_VOLUME_DATA,
+            "private.txt", OPENRFSFS_ACCESS_READ_WRITE,
+            OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE,
+            0600U, &first, &stat) == OPENRFSFS_STATUS_OK &&
+            first != 0U && stat.size == 0U &&
+            find_file("private.txt") == NULL,
+            "encrypted VFS creates a name-free physical file")) return 1;
+    size_t written = 0U;
+    if (!check(encrypted->write(first, (const uint8_t *)"secret", 6U,
+            &written) == OPENRFSFS_STATUS_OK && written == 6U,
+            "encrypted VFS writes ciphertext")) return 1;
+    uint8_t readback[8] = {0};
+    size_t got = 0U;
+    if (!check(encrypted->pread(first, readback, 6U, 0U, &got) ==
+            OPENRFSFS_STATUS_OK && got == 6U &&
+            memcmp(readback, "secret", 6U) == 0 &&
+            encrypted->stat_path(OPENRFSFS_VOLUME_DATA,
+                "private.txt", &stat) == OPENRFSFS_STATUS_OK &&
+            stat.size == 6U,
+            "encrypted VFS reads authenticated plaintext")) return 1;
+    bool raw_plain = false;
+    for (unsigned at = 0U; at < FAKE_FILES; ++at)
+        if (files[at].present &&
+                (strstr(files[at].path, "private") != NULL ||
+                 contains_bytes(files[at].bytes, files[at].size,
+                     "secret", 6U)))
+            raw_plain = true;
+    if (!check(!raw_plain, "encrypted VFS hides name and content in raw files"))
+        return 1;
+    openrfsfs_handle second = 0U;
+    struct openrfsfs_list_entry visible[4];
+    size_t visible_count = 0U;
+    bool matched = false;
+    if (!check(encrypted->open_options(OPENRFSFS_VOLUME_DATA,
+            "B.TXT", OPENRFSFS_ACCESS_READ_WRITE,
+            OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE,
+            0600U, &second, &stat) == OPENRFSFS_STATUS_OK &&
+            encrypted->close(second) == OPENRFSFS_STATUS_OK &&
+            encrypted->list(OPENRFSFS_VOLUME_DATA, ".", visible,
+                4U, &visible_count) == OPENRFSFS_STATUS_OK,
+            "encrypted VFS lists created names")) return 1;
+    for (size_t at = 0U; at < visible_count; ++at)
+        if (strcmp(visible[at].name,
+                ext4_style ? "B.TXT" : "b.txt") == 0)
+            matched = true;
+    if (!check(matched && encrypted->unlink(OPENRFSFS_VOLUME_DATA,
+            "B.TXT") == OPENRFSFS_STATUS_OK,
+            "encrypted VFS lists FAT32 names in lowercase")) return 1;
+    if (!check(encrypted->rename(OPENRFSFS_VOLUME_DATA,
+            "private.txt", "renamed.txt") == OPENRFSFS_STATUS_OK &&
+            encrypted->stat_path(OPENRFSFS_VOLUME_DATA,
+                "private.txt", &stat) == OPENRFSFS_STATUS_NOT_FOUND &&
+            encrypted->stat_path(OPENRFSFS_VOLUME_DATA,
+                "renamed.txt", &stat) == OPENRFSFS_STATUS_OK &&
+            encrypted->close(first) == OPENRFSFS_STATUS_OK,
+            "encrypted VFS rename keeps content identity")) return 1;
+    data_encrypted_backend_deactivate();
+    if (!check(data_encrypted_backend_activate(key) == OPENRFSFS_STATUS_OK &&
+            encrypted->open(OPENRFSFS_VOLUME_DATA, "renamed.txt",
+                OPENRFSFS_ACCESS_READ_WRITE, &first) == OPENRFSFS_STATUS_OK &&
+            encrypted->pread(first, readback, 6U, 0U, &got) ==
+                OPENRFSFS_STATUS_OK && got == 6U &&
+            memcmp(readback, "secret", 6U) == 0,
+            "encrypted VFS replays names and content after logout")) return 1;
+    if (!check(encrypted->append(first, (const uint8_t *)"!", 1U,
+            &written) == OPENRFSFS_STATUS_OK && written == 1U &&
+            encrypted->pread(first, readback, 7U, 0U, &got) ==
+                OPENRFSFS_STATUS_OK && got == 7U &&
+            memcmp(readback, "secret!", 7U) == 0 &&
+            encrypted->ftruncate(first, 3U) == OPENRFSFS_STATUS_OK &&
+            encrypted->pread(first, readback, 7U, 0U, &got) ==
+                OPENRFSFS_STATUS_OK && got == 3U &&
+            memcmp(readback, "sec", 3U) == 0 &&
+            encrypted->close(first) == OPENRFSFS_STATUS_OK,
+            "encrypted VFS appends and truncates through a held handle"))
+        return 1;
+    if (!check(encrypted->mkdir(OPENRFSFS_VOLUME_DATA,
+            "folder") == OPENRFSFS_STATUS_OK,
+            "encrypted VFS creates directory")) return 1;
+    if (!check(encrypted->rename(OPENRFSFS_VOLUME_DATA,
+            "renamed.txt", "folder/renamed.txt") == OPENRFSFS_STATUS_OK,
+            "encrypted VFS moves into directory")) return 1;
+    if (!check(encrypted->rmdir(OPENRFSFS_VOLUME_DATA,
+            "folder") == OPENRFSFS_STATUS_NOT_EMPTY,
+            "encrypted VFS refuses nonempty directory removal")) return 1;
+    if (!check(encrypted->unlink(OPENRFSFS_VOLUME_DATA,
+            "folder/renamed.txt") == OPENRFSFS_STATUS_OK,
+            "encrypted VFS removes moved file")) return 1;
+    if (!check(encrypted->rmdir(OPENRFSFS_VOLUME_DATA,
+            "folder") == OPENRFSFS_STATUS_OK,
+            "encrypted VFS removes empty directory")) return 1;
+    data_encrypted_backend_deactivate();
+    return check(no_open_handles(), "encrypted VFS closes physical handles")
+        ? 0 : 1;
+}
+
+static int run_tree_migration_case(bool ext4_style)
+{
+    memset(files, 0, sizeof(files));
+    memset(handles, 0, sizeof(handles));
+    write_budget = SIZE_MAX;
+    fail_rename_after = false;
+    nonce_seed = 1U;
+    fault_step = 0U;
+    step_count = 0U;
+    struct vfs_backend_ops backend = {
+        .sync = fake_sync,
+        .open = fake_open,
+        .close = fake_close,
+        .pread = fake_pread,
+        .write = fake_write,
+        .stat_path = fake_stat,
+        .lstat_path = fake_stat,
+        .list = fake_list,
+        .mkdir = fake_mkdir,
+        .rmdir = fake_rmdir,
+        .rename = fake_rename,
+        .unlink = fake_unlink,
+        .create = fake_create,
+        .case_sensitive = ext4_style,
+    };
+    if (ext4_style) {
+        backend.open_options = fake_open_options;
+        backend.fstat = fake_fstat;
+    }
+    uint8_t key[DATA_AEAD_KEY_BYTES];
+    for (size_t at = 0U; at < sizeof(key); ++at)
+        key[at] = (uint8_t)(at + 1U);
+    struct fake_file *credential = create_file("OPENRFS", true);
+    struct fake_file *record = create_file("OPENRFS/LOGIN.V2A", false);
+    struct fake_file *directory = create_file("docs", true);
+    struct fake_file *source = create_file("docs/note.txt", false);
+    if (!check(credential != NULL && record != NULL &&
+            directory != NULL && source != NULL,
+            "prepare legacy tree")) return 1;
+    memcpy(source->bytes, "secret", 6U);
+    source->size = 6U;
+    memcpy(migration_baseline, files, sizeof(files));
+    if (!check(data_encrypted_migration_preflight(&backend, key) ==
+            OPENRFSFS_STATUS_OK &&
+            data_encrypted_migration_run(&backend, key) ==
+                OPENRFSFS_STATUS_OK &&
+            find_file("docs/note.txt") == NULL &&
+            find_file("docs") == NULL,
+            "whole-tree migration retires names")) return 1;
+    const unsigned durable_steps = step_count;
+    if (!check(data_encrypted_migration_run(&backend, key) ==
+            OPENRFSFS_STATUS_OK,
+            "whole-tree migration is idempotent")) return 1;
+    data_encrypted_backend_bind(&backend, NULL);
+    const struct vfs_backend_ops *encrypted =
+        data_encrypted_backend_ops();
+    openrfsfs_handle handle = 0U;
+    uint8_t readback[6];
+    size_t got = 0U;
+    if (!check(data_encrypted_backend_activate(key) ==
+            OPENRFSFS_STATUS_OK &&
+            encrypted->open(OPENRFSFS_VOLUME_DATA,
+                "docs/note.txt", OPENRFSFS_ACCESS_READ,
+                &handle) == OPENRFSFS_STATUS_OK &&
+            encrypted->pread(handle, readback, sizeof(readback),
+                0U, &got) == OPENRFSFS_STATUS_OK &&
+            got == 6U && memcmp(readback, "secret", 6U) == 0 &&
+            encrypted->close(handle) == OPENRFSFS_STATUS_OK,
+            "migrated tree reads through encrypted VFS")) return 1;
+    data_encrypted_backend_deactivate();
+    bool exposed = false;
+    for (unsigned at = 0U; at < FAKE_FILES; ++at)
+        if (files[at].present &&
+                (strstr(files[at].path, "note.txt") != NULL ||
+                 contains_bytes(files[at].bytes, files[at].size,
+                     "secret", 6U))) exposed = true;
+    if (!check(!exposed && no_open_handles(),
+            "live raw entries contain no migrated name or plaintext"))
+        return 1;
+    for (unsigned cut = 1U; cut <= durable_steps; ++cut) {
+        memcpy(files, migration_baseline, sizeof(files));
+        memset(handles, 0, sizeof(handles));
+        write_budget = SIZE_MAX;
+        nonce_seed = 1U;
+        fault_step = cut;
+        step_count = 0U;
+        (void)data_encrypted_migration_run(&backend, key);
+        memset(handles, 0, sizeof(handles));
+        nonce_seed = (uint8_t)(nonce_seed + 17U);
+        fault_step = 0U;
+        step_count = 0U;
+        if (!check(data_encrypted_migration_run(&backend, key) ==
+                OPENRFSFS_STATUS_OK &&
+                find_file("docs/note.txt") == NULL &&
+                find_file("docs") == NULL &&
+                data_encrypted_backend_activate(key) ==
+                    OPENRFSFS_STATUS_OK &&
+                encrypted->stat_path(OPENRFSFS_VOLUME_DATA,
+                    "docs/note.txt", &(struct openrfsfs_stat){0}) ==
+                    OPENRFSFS_STATUS_OK,
+                "whole-tree migration resumes after each durable cut")) {
+            fprintf(stderr, "migration cut %u of %u\n", cut,
+                durable_steps);
+            return 1;
+        }
+        data_encrypted_backend_deactivate();
+    }
+    return 0;
+}
+
 int main(void)
 {
     if (run_case(false) != 0 || run_case(true) != 0 ||
@@ -1268,7 +1596,11 @@ int main(void)
             run_namespace_cuts(false) != 0 ||
             run_namespace_cuts(true) != 0 ||
             run_boundary_case(false) != 0 ||
-            run_boundary_case(true) != 0) return 1;
+            run_boundary_case(true) != 0 ||
+            run_encrypted_vfs_case(false) != 0 ||
+            run_encrypted_vfs_case(true) != 0 ||
+            run_tree_migration_case(false) != 0 ||
+            run_tree_migration_case(true) != 0) return 1;
     puts("Data AEAD FAT32/ext4 backend migration, namespace replay, append and rewrite cuts, disk full, tamper and wrong-key controls passed");
     return 0;
 }

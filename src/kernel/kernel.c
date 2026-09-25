@@ -10,6 +10,7 @@
 #include <openrfs/boot_ledger.h>
 #include <openrfs/boot_plan.h>
 #include <openrfs/console.h>
+#include <openrfs/data_encrypted_backend.h>
 #include <openrfs/ext4_fs.h>
 #include <openrfs/fat32_fs.h>
 #include <openrfs/native_process.h>
@@ -180,6 +181,21 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
          * test runs its legacy recovery first, then exercises this same gate. */
         openrfsfs_data_login_lock_enable(account_session_active,
             account_session_generation);
+        const struct vfs_backend_ops *physical =
+            openrfsfs_data_backend_current();
+        data_encrypted_backend_bind(physical,
+            account_data_key_forget);
+        if (openrfsfs_data_backend_replace(physical,
+                data_encrypted_backend_ops()) !=
+                OPENRFSFS_STATUS_OK)
+            console_panic("Data backend installation failed");
+        const struct account_data_storage_hooks storage_hooks = {
+            .preflight = data_encrypted_backend_migration_preflight,
+            .migrate = data_encrypted_backend_migrate,
+            .activate = data_encrypted_backend_activate,
+            .deactivate = data_encrypted_backend_deactivate,
+        };
+        account_data_storage_install(&storage_hooks);
         shell_authorization_enable();
     }
     if (!native_process_self_test(&native_process_tests)) {

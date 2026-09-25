@@ -40,6 +40,18 @@ static struct account_throttle login_throttle;
 static uint8_t active_data_key[ACCOUNT_V2_KEY_BYTES];
 static bool active_data_key_present;
 static uint64_t active_data_epoch = 1U;
+static struct account_data_storage_hooks data_storage_hooks;
+
+void account_data_storage_install(
+    const struct account_data_storage_hooks *hooks)
+{
+    if (hooks == NULL || hooks->preflight == NULL ||
+            hooks->migrate == NULL || hooks->activate == NULL ||
+            hooks->deactivate == NULL)
+        return;
+    if (data_storage_hooks.activate == NULL)
+        data_storage_hooks = *hooks;
+}
 
 bool account_session_active(void)
 {
@@ -75,6 +87,8 @@ void account_data_key_forget(void)
     for (size_t index = 0U; index < sizeof(active_data_key); ++index)
         __atomic_store_n(&active_data_key[index], 0U, __ATOMIC_RELAXED);
     __atomic_add_fetch(&active_data_epoch, 1U, __ATOMIC_ACQ_REL);
+    if (data_storage_hooks.deactivate != NULL)
+        data_storage_hooks.deactivate();
 }
 
 static const uint8_t account_magic[4] = { 'O', 'G', 'A', '1' };
@@ -524,25 +538,76 @@ done:
     return result;
 }
 
+static enum account_status prepare_encrypted_data(
+    const char *username, const uint8_t *password,
+    size_t password_bytes, uint8_t flags,
+    const uint8_t data_key[ACCOUNT_V2_KEY_BYTES])
+{
+    if (data_storage_hooks.activate == NULL)
+        return flags == 0U ? ACCOUNT_STATUS_OK :
+            ACCOUNT_STATUS_ENCRYPTED_DATA_UNAVAILABLE;
+    enum account_status result = ACCOUNT_STATUS_OK;
+    if (flags == 0U) {
+        const enum openrfsfs_status ready =
+            data_storage_hooks.preflight(data_key);
+        if (ready != OPENRFSFS_STATUS_OK)
+            return ready == OPENRFSFS_STATUS_CORRUPT ?
+                ACCOUNT_STATUS_STORAGE_CORRUPT : ACCOUNT_STATUS_IO;
+        result = account_data_state_update(username, password,
+            password_bytes, ACCOUNT_V2_FLAG_DATA_MIGRATING);
+        if (result != ACCOUNT_STATUS_OK) return result;
+        flags = ACCOUNT_V2_FLAG_DATA_MIGRATING;
+    }
+    if (flags == ACCOUNT_V2_FLAG_DATA_MIGRATING) {
+        if (data_storage_hooks.migrate(data_key) !=
+                OPENRFSFS_STATUS_OK)
+            return ACCOUNT_STATUS_ENCRYPTED_DATA_UNAVAILABLE;
+        result = account_data_state_update(username, password,
+            password_bytes, ACCOUNT_V2_FLAG_DATA_ENCRYPTED);
+        if (result != ACCOUNT_STATUS_OK) return result;
+    } else if (flags != ACCOUNT_V2_FLAG_DATA_ENCRYPTED)
+        return ACCOUNT_STATUS_STORAGE_CORRUPT;
+    uint8_t final_record[ACCOUNT_V2_RECORD_BYTES];
+    uint8_t checked_key[ACCOUNT_V2_KEY_BYTES];
+    uint8_t final_flags = 0U;
+    result = load_active_v2(final_record, NULL);
+    if (result == ACCOUNT_STATUS_OK &&
+            (account_v2_record_flags(final_record,
+                &final_flags) != ACCOUNT_V2_OK ||
+             final_flags != ACCOUNT_V2_FLAG_DATA_ENCRYPTED ||
+             account_v2_open(final_record, username, password,
+                password_bytes, checked_key) != ACCOUNT_V2_OK ||
+             !equal_bytes(checked_key, data_key,
+                 ACCOUNT_V2_KEY_BYTES)))
+        result = ACCOUNT_STATUS_STORAGE_CORRUPT;
+    zero_bytes(final_record, sizeof(final_record));
+    zero_bytes(checked_key, sizeof(checked_key));
+    if (result != ACCOUNT_STATUS_OK) return result;
+    return data_storage_hooks.activate(data_key) ==
+        OPENRFSFS_STATUS_OK ? ACCOUNT_STATUS_OK :
+        ACCOUNT_STATUS_ENCRYPTED_DATA_UNAVAILABLE;
+}
+
 static enum account_status v2_authenticate(
     const uint8_t record[ACCOUNT_V2_RECORD_BYTES], const char *username,
     const uint8_t *password, size_t password_bytes)
 {
     uint8_t data_key[ACCOUNT_V2_KEY_BYTES];
+    account_data_key_forget();
     const enum account_v2_status status = account_v2_open(record, username,
         password, password_bytes, data_key);
 
-    /* Until migration and the encrypted VFS are installed, these states must
-     * not unlock the raw Data path. */
-    if (status == ACCOUNT_V2_OK &&
-            (record[6] & (ACCOUNT_V2_FLAG_DATA_ENCRYPTED |
-                ACCOUNT_V2_FLAG_DATA_MIGRATING)) != 0U) {
-        zero_bytes(data_key, sizeof(data_key));
-        return ACCOUNT_STATUS_ENCRYPTED_DATA_UNAVAILABLE;
+    if (status == ACCOUNT_V2_OK) {
+        const enum account_status prepared = prepare_encrypted_data(
+            username, password, password_bytes, record[6],
+            data_key);
+        if (prepared != ACCOUNT_STATUS_OK) {
+            zero_bytes(data_key, sizeof(data_key));
+            return prepared;
+        }
     }
 
     if (status == ACCOUNT_V2_OK) {
-        account_data_key_forget();
         for (size_t index = 0U; index < sizeof(active_data_key); ++index)
             __atomic_store_n(&active_data_key[index], data_key[index],
                 __ATOMIC_RELAXED);
@@ -610,9 +675,6 @@ static enum account_status retire_previous_slot(const char *active_slot)
     return ACCOUNT_STATUS_OK;
 }
 
-/* Until VFS encryption and migration are installed, deletion is only safe
- * for a volume with no noncredential files. Bound depth and total work;
- * ambiguous names, I/O errors and oversized trees refuse deletion. */
 static enum account_status deletion_data_census(void)
 {
     char paths[OPENRFSFS_MAX_DEPTH][OPENRFSFS_MAX_PATH] = {{0}};
@@ -824,7 +886,11 @@ enum account_status account_authenticate(const char *username,
         if (status == ACCOUNT_STATUS_OK) {
             status = retire_legacy_record();
             if (status == ACCOUNT_STATUS_OK) {
-                status = retire_previous_slot(active_slot);
+                uint8_t selected[ACCOUNT_V2_RECORD_BYTES];
+                status = load_active_v2(selected, &active_slot);
+                zero_bytes(selected, sizeof(selected));
+                if (status == ACCOUNT_STATUS_OK)
+                    status = retire_previous_slot(active_slot);
                 if (status == ACCOUNT_STATUS_CLEANUP_PENDING) {
                     status = ACCOUNT_STATUS_IO;
                 }
@@ -1281,7 +1347,7 @@ const char *account_status_string(enum account_status status)
         "account login is temporarily rate limited",
         "the bounded account KDF is unavailable",
         "password changed, but old credential cleanup is pending; use the new password",
-        "Data still contains unencrypted files; account deletion refused",
+        "Data still contains files; account deletion refused",
         "encrypted Data account requires the protected VFS path"
     };
 

@@ -116,7 +116,8 @@ static bool event_valid(const struct data_ns_event *event)
             event->mtime_seconds > INT64_MAX ||
             event->ctime_seconds > INT64_MAX)
         return false;
-    if (event->operation == DATA_NS_RENAME)
+    if (event->operation == DATA_NS_RENAME ||
+            event->operation == DATA_NS_RENAME_REPLACE)
         return !zero_id(event->target_parent_id) &&
             name_length(event->target_name) != 0U;
     if (event->operation != DATA_NS_CREATE &&
@@ -146,7 +147,8 @@ enum data_ns_status data_ns_event_encode(const struct data_ns_event *event,
     zero_bytes(record, DATA_NS_RECORD_BYTES);
     if (!event_valid(event)) return DATA_NS_ARGUMENT;
     const size_t name_bytes = name_length(event->name);
-    const size_t target_bytes = event->operation == DATA_NS_RENAME ?
+    const size_t target_bytes = event->operation == DATA_NS_RENAME ||
+        event->operation == DATA_NS_RENAME_REPLACE ?
         name_length(event->target_name) : 0U;
     copy_bytes(record, record_magic, sizeof(record_magic));
     record[4] = (uint8_t)event->operation;
@@ -411,7 +413,18 @@ enum data_ns_status data_ns_apply(struct data_ns_state *state,
         return DATA_NS_CONFLICT;
     struct data_ns_entry *target = find_mutable(state,
         event->target_parent_id, event->target_name);
-    if (target != NULL && target != entry) return DATA_NS_CONFLICT;
+    if (target != NULL && target != entry) {
+        if (event->operation != DATA_NS_RENAME_REPLACE ||
+                target->kind != entry->kind)
+            return DATA_NS_CONFLICT;
+        if (target->kind == DATA_NS_DIRECTORY)
+            for (size_t at = 0U; at < state->capacity; ++at)
+                if (state->entries[at].active &&
+                        equal_id(state->entries[at].parent_id,
+                            target->child_id)) return DATA_NS_CONFLICT;
+        zero_bytes(target, sizeof(*target));
+        --state->count;
+    }
     copy_bytes(entry->parent_id, event->target_parent_id,
         DATA_AEAD_ID_BYTES);
     zero_bytes(entry->name, sizeof(entry->name));

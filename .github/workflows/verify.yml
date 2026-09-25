@@ -21,6 +21,10 @@ jobs:
         steps:
             - name: Check out source
               uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+              with:
+                  ref: ${{ github.event.pull_request.head.sha || github.sha }}
+            - name: Confirm source commit
+              run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
             - name: Install build tools
               run: |
                   sudo sed -i '\|azure.archive.ubuntu.com|d' /etc/apt/apt-mirrors.txt
@@ -89,10 +93,11 @@ jobs:
             - name: Capture the normal ext4plus Data desktop from QEMU
               run: |
                   make ext4-images
+                  make build/tests/encrypted-data-fixtures/ext4.raw
                   python3 tools/capture-openrfs-proof.py \
                       --iso build/openrfs.iso \
                       --system build/userspace/openrfs-system-fat32.raw \
-                      --data build/tests/ext4/openrfs-ext4.raw \
+                      --data build/tests/encrypted-data-fixtures/ext4.raw \
                       --data-filesystem ext4 \
                       --output build/openrfs-ext4-captures
                   python3 - <<'PY'
@@ -158,4 +163,49 @@ jobs:
               with:
                   name: openrfs-ext4-powercuts
                   path: build/tests/ext4-powercuts
+                  if-no-files-found: error
+
+    encrypted-data:
+        name: encrypted-data
+        runs-on: ubuntu-24.04
+        timeout-minutes: 90
+        steps:
+            - name: Check out PR head
+              uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+              with:
+                  ref: ${{ github.event.pull_request.head.sha || github.sha }}
+            - name: Confirm source commit
+              run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+            - name: Install build tools
+              run: |
+                  sudo sed -i '\|azure.archive.ubuntu.com|d' /etc/apt/apt-mirrors.txt
+                  sudo apt-get update
+                  sudo apt-get install --yes --no-install-recommends \
+                      binutils clang e2fsprogs ffmpeg gcc grub-common grub-pc-bin lld make mtools \
+                      python3-cryptography qemu-system-x86 xorriso
+            - name: Install the Rust bare-metal target
+              run: rustup target add x86_64-unknown-none
+            - name: Check encrypted Data on FAT32 and ext4
+              run: |
+                  test "$(make -s contract-counts)" = "116 460"
+                  make data-aead-backend-host-test account-host-test
+                  make encrypted-data-qemu-test
+                  make encrypted-data-native-qemu-test
+                  make encrypted-data-tamper-qemu-test
+                  make encrypted-data-powercut-qemu-test
+                  make encrypted-data-diskfull-qemu-test
+                  make account-migration-refusal-qemu-test
+                  make account-migration-xattr-refusal-qemu-test
+                  make account-delete-qemu-test account-delete-refusal-qemu-test
+            - name: Upload encrypted Data evidence
+              if: always()
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: openrfs-encrypted-data
+                  path: |
+                      build/tests/encrypted-data-*-qemu/capture-serial.log
+                      build/tests/encrypted-data-*-qemu/raw-check.json
+                      build/tests/encrypted-data-*-qemu/report.json
+                      build/tests/account-migration-*-qemu/capture-serial.log
+                      build/tests/account-delete-*-qemu/capture-serial.log
                   if-no-files-found: error

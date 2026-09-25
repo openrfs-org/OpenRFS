@@ -163,6 +163,9 @@ static const struct vfs_backend_ops ext4_backend_ops = {
 };
 
 static const struct vfs_backend_ops *volume_backends[OPENRFSFS_VOLUME_COUNT];
+static bool vnode_metadata_acquire(void);
+static void vnode_metadata_release(bool restore_interrupts);
+static uint64_t next_generation(uint64_t *counter, uint64_t maximum);
 
 _Static_assert(VFS_MAX_OPEN_FILES <= UINT8_MAX,
     "VFS open-file index no longer fits encoded handle");
@@ -236,6 +239,46 @@ void openrfsfs_data_login_lock_enable(bool (*session_active)(void),
         data_session_generation = session_generation;
         __atomic_store_n(&data_login_lock_enabled, true, __ATOMIC_RELEASE);
     }
+}
+
+const struct vfs_backend_ops *openrfsfs_data_backend_current(void)
+{
+    const bool restore_interrupts = vnode_metadata_acquire();
+    const struct vfs_backend_ops *backend =
+        volume_backends[OPENRFSFS_VOLUME_DATA];
+    vnode_metadata_release(restore_interrupts);
+    return backend;
+}
+
+enum openrfsfs_status openrfsfs_data_backend_replace(
+    const struct vfs_backend_ops *expected,
+    const struct vfs_backend_ops *replacement)
+{
+    if (expected == NULL || replacement == NULL)
+        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    const bool restore_interrupts = vnode_metadata_acquire();
+    struct vfs_mount_state *mount = &mounts[OPENRFSFS_VOLUME_DATA];
+    enum openrfsfs_status result = OPENRFSFS_STATUS_OK;
+    if (!__atomic_load_n(&data_login_lock_enabled,
+            __ATOMIC_ACQUIRE) ||
+            volume_backends[OPENRFSFS_VOLUME_DATA] != expected ||
+            (data_session_active != NULL && data_session_active()))
+        result = OPENRFSFS_STATUS_ACCESS;
+    else if (mount->mounting || mount->unmounting ||
+            __atomic_load_n(&mount->references,
+                __ATOMIC_ACQUIRE) != 0U ||
+            (mount->active && mount->backend != expected))
+        result = OPENRFSFS_STATUS_BUSY;
+    else {
+        volume_backends[OPENRFSFS_VOLUME_DATA] = replacement;
+        if (mount->active) {
+            mount->backend = replacement;
+            mount->generation = next_generation(
+                &next_mount_generation, UINT64_MAX);
+        }
+    }
+    vnode_metadata_release(restore_interrupts);
+    return result;
 }
 
 static uint64_t data_session_epoch(enum openrfsfs_volume volume)
@@ -974,8 +1017,10 @@ struct openrfsfs_drive_info openrfsfs_drive(enum openrfsfs_volume volume)
     // own metadata protection and must run outside the VFS metadata lock.
     if (backend == NULL) return absent;
     struct openrfsfs_drive_info drive = backend->drive(volume);
-    drive.filesystem = backend == &ext4_backend_ops ?
-        OPENRFSFS_FILESYSTEM_EXT4PLUS : OPENRFSFS_FILESYSTEM_FAT32;
+    if (drive.filesystem == OPENRFSFS_FILESYSTEM_UNKNOWN)
+        drive.filesystem = backend == &ext4_backend_ops ?
+            OPENRFSFS_FILESYSTEM_EXT4PLUS :
+            OPENRFSFS_FILESYSTEM_FAT32;
     return drive;
 }
 

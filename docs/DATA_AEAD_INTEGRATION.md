@@ -1,196 +1,95 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 
-# Data AEAD integration boundary (design, not enabled)
+# Encrypted Data storage
 
-## Production path and authority
+Ordinary boot installs the encrypted Data backend before starting the shell.
+Shell commands, desktop Files, native file handles, and package file operations
+reach Data through the same VFS mount. The fixed `OPENRFS` credential paths use
+the physical backend so an account can be read before login. All other Data
+paths stay locked until the account password authenticates, migration finishes,
+and the namespace loads with the account's random Data key. There is no
+plaintext read or write fallback. Logout and storage errors revoke handles and
+wipe the in-memory key and namespace.
 
-`openrfsfs_open_options`, `read`, `pread`, `write`, `seek`, `fstat`,
-`ftruncate`, `truncate`, `rename`, `rename_replace`, `stat_path`, directory
-iteration, and `sync` enter `src/kernel/vfs.c`. VFS delegates regular files to
-the FAT32 or ext4 backend. Shell file commands, native syscalls, package
-recovery, uploads, and the installed-package launcher share this path. The
-ordinary boot now enables a monotonic VFS Data login lock before the shell
-starts. It admits only the exact credential record paths and their parent
-metadata until `account_authenticate` succeeds. Directory enumeration is
-refused, and existing file descriptions are checked again for reads and
-writes. The normal QEMU test still runs its legacy package recovery before
-enabling the same lock; ordinary boot does not run that recovery. This is
-pre-login access control, not at-rest encryption or migration. A change
-confined to a shell command or an unused crypto module would leave production
-writes in plaintext.
+## Disk format
 
-`logout` clears the in-memory Data key. File and directory handles from the
-previous session are rejected after a later login. A failed desktop start and
-the reboot command also clear the key. These checks do not encrypt Data.
+The v2 account record wraps a random 32-byte Data key. It stores a migration
+state and a generation. Password changes rewrap the same key. The account
+record, its fixed path, the username, KDF parameters, and record generations
+are visible on the Data volume. The password and unwrapped Data key are not
+stored there.
 
-The v2 account record wraps a random 32-byte Data key. Only successful
-`account_authenticate` makes it available in RAM. The record is on the Data
-volume in plaintext, so credential paths need a narrow raw-file exception
-before login. No key stored on that medium can establish freshness against
-an offline attacker. Boot verification, operator enrollment, and an external
-rollback floor are separate prerequisites for a complete claim.
+An encrypted namespace event log stores file and directory names, stable
+object IDs, mode, owner, attributes, and timestamps. It is sealed in the
+versioned Data AEAD format. FAT32 lookup folds ASCII case and displays names
+in lowercase; ext4 preserves case. Physical storage paths are keyed opaque
+8.3 names on both filesystems. Renaming a file or directory keeps its object
+ID and does not move its ciphertext.
 
-The record now has distinct migration-in-progress and encrypted-complete
-flags. The account helper can advance those states while preserving the same
-wrapped Data key, then revokes the current session. This kernel refuses login
-from either state until encrypted-tree recovery is connected; setting a flag
-alone does not activate encryption. Password rotation can rewrap the same key
-in either state without unlocking Data. Account deletion still refuses those
-states because it cannot yet verify that the encrypted tree is empty.
+Regular file content uses Monocypher XChaCha20-Poly1305. A version 2 envelope
+authenticates the stable file ID, chunk binding, length, generation, and fresh
+nonce. A manifest authenticates the logical length and up to eight 8 MiB
+segments. Every rewrite creates fresh revision IDs and nonces, verifies its
+shadow, syncs it, and publishes one of two authenticated manifest slots.
+Readers verify the manifest and ciphertext before returning plaintext. Failed
+reads clear the caller's output. The maximum logical file size is 64 MiB.
 
-## Attacker input, ownership, and failure
+The format leaves physical file sizes, the count and layout of opaque files,
+access patterns, and old encrypted revisions visible. It does not encrypt the
+System volume or the account record's public fields.
 
-Treat every file header, ciphertext chunk, FAT/ext4 directory entry, length,
-generation, and persisted transaction record as attacker controlled. Paths,
-flags, offsets, mode, and file bytes also arrive from native applications.
-VFS owns public descriptions and mount/vnode pins; the backend owns raw file
-handles. A transparent layer must avoid recursing through public VFS calls or
-holding metadata locks over storage and cryptography. It must give open file
-descriptions a defined behavior across rename, replacement, and unlink.
+## Migration and recovery
 
-The bounded envelope in `data_aead.c` authenticates a canonical path and
-declared length in its header, then XChaCha20-Poly1305 protects each fixed
-4 KiB plaintext chunk. Version 2 authenticates a stable file ID and a
-generation. Each content revision uses a new random revision ID and nonce for
-every chunk. Version 1 remains readable for the existing host fixtures. A
-complete old file or disk snapshot can still be rolled back. Names, directory
-layout, physical sizes, freed plaintext clusters, and SSD remanence remain
-visible.
+After a successful password check, an account with legacy Data advances to
+`MIGRATING`. A keyed, authenticated inventory records each source path,
+content digest, and supported metadata before any source is removed. Each
+regular file is copied to authenticated storage and checked before a namespace
+event makes it visible. Only then is the plaintext source removed and synced.
+Directories are removed after their contents. The account advances to
+`ENCRYPTED` only after the inventory and final physical root census pass.
+Login never publishes the key while this work is incomplete.
 
-`data_aead_rewrite.c` can stream an authenticated old file into a distinct
-shadow with a partial write, sparse extension or truncate. It verifies every
-old chunk, including truncated-away chunks, allocates a new random file ID
-and nonces, and wipes its caller-owned bounded workspace. Host fault tests
-exercise tampering, wrong keys, entropy refusal, and disk-full writes. It
-also offers a bounded full-shadow readback verifier for use after the caller's
-storage barrier and before publication; host negatives cover changed bytes,
-wrong keys, wrong paths, and short reads. Readback cannot establish future
-durability or freshness. The helper does not publish or recover the shadow,
-preserve filesystem metadata, migrate
-plaintext, or intercept the production VFS. Those remain required before
-the Data namespace is encrypted.
-For a rename it can authenticate the old path and seal a fresh revision bound
-to the destination path. The caller still has to handle directory descendants,
-open descriptions, metadata and interrupted namespace replacement.
-The bounded logical range reader authenticates the header and each requested
-chunk before copying plaintext; an error in a later chunk wipes the prefix it
-copied during that call. It requires a stable held backend object across reads
-and does not yet replace production `openrfsfs_read` or `pread`.
-The plaintext conversion helper reads a stable legacy source into a distinct
-encrypted shadow with bounded workspace and refuses short reads, disk-full
-writes and entropy failure. It leaves the source untouched. The caller still
-owns the durable publish/recovery protocol and must not set the authenticated
-migration-complete record bit until every Data file is converted and verified.
+On restart, migration authenticates the inventory and namespace, verifies
+remaining sources or completed ciphertext, and resumes. Disk full, damaged
+records, wrong keys, unexpected files, and authentication failures stop login.
+The old credential slot stays available until a newer account generation is
+durable. Host tests cut every modeled write, sync, rename, and source removal
+boundary on FAT32 and ext4 adapters.
 
-`data_aead_slots.c` checks two authenticated index records and selects the
-highest complete encrypted revision. It syncs and verifies a candidate before
-writing the inactive index. A one-file conversion helper retires the plaintext
-source only after the encrypted revision is published. Host tests cut the data
-flush, index write, index flush, source removal, and source flush. The module
-is not connected to the production VFS, directory traversal, account state,
-or either filesystem backend. These tests do not show that normal Data files
-are encrypted.
+Migration currently accepts regular files and directories with paths of at
+most 255 bytes, at most 384 entries, and files of at most 64 MiB. FAT32's
+physical backend can enumerate at most 64 entries in one directory. Symlinks,
+hard-linked files, extended attributes, special files, and larger files are
+refused before their source is retired. The large ext4 fixture exercises this
+refusal. Link, symlink, and xattr mutations through the encrypted VFS are
+refused. A supported file remains accessible through read, write, append,
+offset write, truncate, rename, and delete after migration.
 
-A malformed inactive index can be the result of a cut during its write. A raw
-media attacker can make the same bytes and cause selection of the older
-revision. The helper refuses an index whose complete shape has a bad MAC, and
-it refuses conflicting authenticated generations, but it cannot distinguish
-a torn write from a deliberate erasure. Detecting that rollback needs a
-freshness value held outside the Data volume.
+Account deletion requires an empty logical Data tree. It removes the current
+credential wrap, leaving inaccessible ciphertext on the volume. A saved copy
+of an old account record can restore an old wrap. A complete older volume can
+also be replayed: detecting whole-volume rollback needs a freshness value
+held outside the Data volume.
 
-The current envelope caps each physical file at 16 MiB. A 16 MiB FAT32 file
-and a 64 MiB ext4 mutable file cannot be represented as one encrypted file
-within the respective backend limits. `data_aead_manifest.c` seals an
-encrypted descriptor for up to eight 8 MiB plaintext segments, enough for a
-64 MiB logical file. It authenticates the file identity, logical length,
-segment revision IDs, lengths, generations, and segment binding paths. It
-derives an opaque 8.3 physical path from the Data key and each revision ID.
-The slot selector chooses the highest adjacent authenticated generation and
-refuses a shaped record with a bad tag. It cannot detect erasure of a newer
-slot without an external freshness value. Its publication helper syncs and
-verifies each segment, writes and reads back a temporary manifest, removes the inactive
-slot, renames the temp into that slot, then syncs and selects the result.
-Host tests cut each of those callbacks and retry. `data_aead_backend.c` maps
-them to FAT32 and ext4 backend operations, keeps segment handles open through
-verification, and uses 8.3 storage paths. It also migrates one held plaintext
-file: it derives repeatable staging IDs, writes each encrypted segment with
-fresh random chunk nonces, syncs, verifies and publishes the manifest, then
-removes the plaintext source. A retry checks the published manifest first;
-if it is complete, it compares the source with the authenticated encrypted
-file before source removal. A second helper publishes under a stable ID
-binding and keeps the plaintext source for a later namespace commit. Host
-tests cut each simulated
-write, directory creation, sync, rename and removal boundary on both backend
-styles, plus disk full, tampering, and a wrong key. Its read helper verifies
-the manifest and segments, decrypts the requested range, and clears output
-after an error. No production caller uses the adapter yet. It has not been
-tested against raw FAT32 or ext4 images.
-File and directory names in the legacy tree remain visible until a namespace
-migration removes them. The helper alone does not protect Data.
+In-place migration cannot erase old plaintext blocks, directory slack,
+journal copies, snapshots, or SSD remanence. A raw ext4 image can still contain
+an old filename or file content after the live namespace is encrypted. Use a
+freshly formatted medium and retire the old medium to remove those remnants
+from the new medium. Legacy plaintext changed before the first trusted
+inventory cannot be distinguished from original data without an earlier
+trusted digest or external trust root.
 
-`data_namespace.c` defines a versioned record for encrypted namespace events.
-It carries names, stable file and directory IDs, mode, owner, attributes, and
-times. Replay refuses duplicate names and IDs, missing parents, nonempty
-directory deletion, cycles, truncated records, and partial reads. A rename is
-one event, so descendant IDs do not change. These records must be stored only
-inside an authenticated Data file; the host test seals one record and checks
-that its name is absent from the raw ciphertext. No production namespace file
-or VFS route exists yet. Physical legacy names are still exposed.
+## Checks
 
-The namespace lookup folds ASCII case for FAT32 and preserves case for ext4.
-File manifests bind to a stable ID path, so renaming a directory does not
-rewrite descendant content. The backend append helper publishes one encrypted
-revision at a time. After an interrupted append, it checks the authenticated
-previous manifest and derived revision IDs before accepting a retry.
-The retained reader holds verified segment handles for one manifest revision.
-The namespace backend replays encrypted records through that reader and clears
-its entries if authentication, decoding, or a read fails. It can publish an
-empty namespace and append a validated event. These APIs still have no
-production VFS caller.
-
-The backend rewrite helper publishes a new manifest after sealing affected
-segments. It handles partial writes, sparse growth, and truncation, and leaves
-the prior manifest readable on disk-full errors before publication. A retry
-checks the prior authenticated manifest and derived revision IDs. Host tests
-cut its write, sync, and rename steps on FAT32 and ext4 adapters. Old segment
-revisions remain on disk until a separate collector can prove they are no
-longer referenced by any manifest or open handle.
-
-**Do not wire in-place encrypted writes.** A torn header or chunk can make a
-valid old file unreadable. For partial and sparse writes, truncate, metadata
-changes, and rename, build a bounded shadow file, seal and verify it, sync it,
-then publish it. The ext4 path can use its atomic replacement callback; FAT32
-needs an authenticated transaction record and source backup because it cannot
-replace an existing open file atomically. Recover the old or new complete
-version on reopen. Disk full before publication must leave the old file
-readable. A torn transaction must never fall back to interpreting ciphertext
-or a newly planted file as plaintext.
-
-Migration must enumerate the whole legacy Data tree after login, stage an
-encrypted replacement per file, verify it, publish it durably, then retire
-the plaintext entry. A cut at each transition must permit deterministic
-resume. A durable authenticated completion state must close the legacy
-plaintext acceptance window. Even after a successful migration, old clusters
-and storage snapshots can retain plaintext; a filesystem cannot promise
-secure erase. Account deletion must refuse while any data remains unencrypted
-or a transaction is pending. Once encrypted, deletion can destroy the wraps,
-but physical rollback of old wraps remains possible without external state.
-Legacy plaintext has no authentication; a change made before the first trusted
-inventory cannot be distinguished from the user's original bytes without a
-prior trusted digest or an external trust root.
-The current `userdel` allows removal only after a bounded scan finds no
-noncredential files. It does not quiesce concurrent native writes, erase
-freed plaintext, or authorize deletion of an encrypted but nonempty Data tree.
-
-## Required proof before activation
-
-Host and QEMU cases must cover empty and maximum files, partial-block writes,
-sparse gaps, append, read and `pread`, concurrent descriptions, rename and
-replacement, directory rename, metadata and symlinks, truncate, fsync and
-reopen, changed header/chunk/path, wrong key, swapped and rolled-back
-revisions, all disk-full and power-cut transitions, interrupted migration,
-and raw-media inspection. Package recovery and native launch need an explicit
-post-login ordering. The full declared QEMU suite and affected integration
-scenarios must pass on the exact implementation tree. No claim of Data
-confidentiality is made by this design document or the envelope primitive
-alone.
+`make data-aead-backend-host-test` covers the format, namespace, migration
+replay, tampering, wrong keys, disk full, and modeled power cuts.
+`make encrypted-data-qemu-test` migrates a plaintext file, exercises shell and
+desktop access, changes the password, checks logout and login, and scans FAT32
+and ext4 raw images. `make encrypted-data-native-qemu-test` runs the native
+file-handle probe and package upload through the encrypted mount.
+`make encrypted-data-tamper-qemu-test` refuses altered ciphertext on both
+filesystems. `make encrypted-data-powercut-qemu-test` cuts power during
+migration and checks recovery. `make encrypted-data-diskfull-qemu-test` fills
+each filesystem, checks write refusal and key revocation, removes the filler,
+then reboots and checks the original file and raw image. The account migration
+refusal targets check unsupported ext4 entries and extended attributes.

@@ -1,153 +1,54 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
-# Account v2 boundary and migration design
 
-This records the implemented credential format and the remaining Data security
-work. The credential change alone makes no Data confidentiality claim.
+# Account v2 and Data unlock
 
-## Production v2 stage
+The 224-byte account record lives in `OPENRFS/LOGIN.V2A` or `LOGIN.V2B` on
+the Data volume. It records a username, generation, migration state, fixed
+Argon2id parameters, verifier, and an authenticated wrap of a random 32-byte
+Data key. The username, record paths, generation, and KDF parameters are
+visible on disk. The key is unwrapped only after password authentication.
 
-`account_create`, `account_authenticate`, and the shell's `useradd`/`starty`
-now use a 224-byte v2 record in `OPENRFS/LOGIN.V2A`. A `passwd` prompt calls
-`account_change_password`. The record encodes only the supported Argon2id
-v1.3, 64 MiB, three-pass, four-lane tuple. Parsing rejects malformed lengths,
-reserved fields, names and unsupported parameters before KDF work. A SHA-256
-checksum screens accidental corruption; it is explicitly not an attacker
-authenticator. Argon2id output is expanded under separate BLAKE2b labels for
-the verifier and the XChaCha20-Poly1305 Data-key wrap. The wrap authenticates
-the full header, verifier, nonce and generation. The random 32-byte Data key
-is held only after successful login and is wiped after a failed login.
+The only accepted KDF tuple is Argon2id v1.3 with 64 MiB, three passes, four
+lanes, a 16-byte salt, and a 32-byte result. Production uses the vendored
+Monocypher 4.0.3 implementation. The parser rejects malformed records and
+unsupported parameters before KDF work. Separate BLAKE2b labels derive the
+verifier and XChaCha20-Poly1305 wrapping key. The wrap authenticates the
+record header, verifier, nonce, and generation. A SHA-256 checksum detects
+accidental record damage; the AEAD tag authenticates the record. The 64 MiB
+single-owner KDF arena has guard pages and is wiped on release. Login refuses
+when that allocation or the monotonic clock is unavailable.
 
-A successful v1 login stages and syncs v2 before unlinking v1. If staging
-fails, login refuses and v1 remains for retry. Password change writes the
-inactive v2 slot at a higher generation, syncs it, reopens and authenticates
-it, then retires the previous slot. A cut before the new slot's rename leaves
-the old password usable; a cut after selects the new generation. The host
-test injects a pre-rename sync failure and a post-commit unlink failure,
-checking that the old password survives the first and the new password works
-after the second. The authenticated record format now reserves byte 6 bit 0
-as the Data migration-complete state. New records keep it clear, and password
-change preserves its value. The parser rejects other bits before invoking
-Argon2id; the host test shows that clearing a set bit while recomputing the
-unkeyed checksum still fails verifier authentication. No production path sets
-the bit yet, and production login refuses a valid set bit while the encrypted
-VFS path is unavailable. The encrypted VFS and durable migration transaction
-must be complete before any account may set it. Whole-volume rollback can still
-restore an older record without an external freshness root.
+Login holds the Data volume locked until the password, selected account slot,
+encrypted namespace, and any pending migration have been checked. The
+account flags advance from legacy plaintext to `MIGRATING` to `ENCRYPTED`.
+Each transition stages, syncs, reopens, and authenticates a newer record
+before retiring the previous slot. Migration keeps a keyed inventory and
+resumes after interruption. The Data key is published to the VFS only after
+the final account record and encrypted Data state verify. A damaged record,
+wrong password, tampered Data, I/O error, or incomplete migration refuses
+the unlock. Logout and storage errors revoke open handles and wipe the key.
 
-An additional host test injects a malformed or short inactive
-slot alongside a valid slot; login authenticates the intact wrap and removes
-the damaged peer before exposing the Data key. An I/O error, two malformed
-slots, or a single malformed slot still fail closed. This does not simulate a
-power cut during FAT32's rename itself or establish an external rollback floor.
-Any failed password change, including a committed new wrap whose old-slot
-retirement is pending, revokes the in-memory Data session. A later successful
-login must finish cleanup before the key is exposed again. The host fault
-cases assert this policy so a reported error never leaves an unlocked session.
-The shell and desktop capture exercised production v2 creation, password
-change and login in QEMU. `userdel` now authenticates the account, scans the
-Data tree with bounded depth and entry count, and refuses deletion if any
-noncredential file remains. On an empty file tree it removes a leftover
-credential staging file and the sole active v2 record, syncs Data, then wipes
-the in-memory key. Any error revokes the session. Host tests cover a wrong
-password, an unencrypted file, failed unlink and successful deletion. QEMU
-tests exercise refusal on the nonempty ext4 fixture and successful deletion
-on an empty ext4 image, including post-deletion Data refusal and `e2fsck`.
-The census is not an atomic barrier against concurrent native writes and does
-not find plaintext in deleted blocks or snapshots. It is a narrow guard until
-encrypted Data migration and a quiescent deletion protocol exist.
+A successful v1 login first stages an authenticated v2 record and retains
+the v1 credential until it is durable. Password change writes the inactive
+v2 slot with a higher generation and a new wrap of the same Data key. It
+verifies that slot on reopen before removing the old one. A failure revokes
+the current Data session, including when the newer record committed but old
+slot cleanup remains. The next login selects and cleans up the valid slot.
+Reusing the Data key lets existing files remain readable after a password
+change. Old record copies can still wrap that key.
 
-This is not crash-safe re-encryption of Data. Password change rewraps the same
-Data key; old wraps can remain in filesystem or media history. Whole-volume
-rollback can restore a retired password because no external generation floor
-is enforced. The record and names are plaintext metadata, and the current
-Data read/write path still stores content in plaintext. These limits must be
-closed before the milestone or a confidentiality claim.
+`userdel` authenticates the password and requires an empty logical Data
+namespace. It deletes the current credential record and wipes the session.
+Ciphertext and old record copies may remain on the medium. A saved account
+record can restore an earlier password wrap. Whole-volume rollback and
+password revocation need a trusted generation or freshness value outside the
+Data volume.
 
-## Online rate limit
+After three invalid attempts, online login delays grow from one second to
+at most 60 seconds. The counter is held in memory and resets on reboot. It
+does not prevent offline guessing of a stolen record.
 
-The production `useradd`, `starty`, and `passwd` prompts own bounded password
-buffers. The shell calls `account_create`, `account_authenticate`, and
-`account_change_password`; the v2 slots and any legacy v1 record live on the
-writable Data volume. Names, password input, filesystem bytes, and interrupted
-writes are attacker-controlled at this boundary. Legacy v1's checksum detects
-accidents but does not authenticate the record.
-
-`account_authenticate` applies an online throttle:
-after the third invalid attempt, delays grow from one second to at most 60
-seconds. It uses the monotonic clock and fails closed when that clock is not
-running. A successful login clears the count. The throttle spans username
-guesses, remains in kernel memory only, and resets on reboot. It cannot resist
-offline guessing of a stolen record or an attacker who can reboot at will.
-
-## v2 verifier and resource gate
-
-Production v2 uses the already vendored, unmodified Monocypher 4.0.3
-`crypto_argon2` with Argon2id. The sources are recorded as byte-for-byte upstream in
-`vendor/monocypher/OPENRFS-PORT.md` and are dual BSD-2-Clause/CC0 licensed in
-`vendor/monocypher/LICENCE.md`. The RFC 9106 memory-constrained profile is
-64 MiB, three passes, four lanes, a 16-byte salt and a 32-byte output:
-<https://datatracker.ietf.org/doc/html/rfc9106#section-7.4>. Monocypher's lanes are
-computed single-threaded. A v2 parser must accept only an explicitly encoded,
-supported parameter tuple; reject zero, noncanonical, overflowed and
-excessive values before any allocation or KDF work. Use published Argon2id
-vectors and an independent implementation for differential checks.
-
-The general-purpose heap is only 16 MiB (`HEAP_SIZE`), so production v2 uses
-the dedicated, guarded, single-owner arena described below. It refuses login
-when the promised 64 MiB allocation is unavailable; the parameters are not
-lowered for a QEMU fixture.
-
-### Bounded KDF dependency stage
-
-`account_kdf_v2_derive` now fixes the only supported tuple to Argon2id v1.3,
-64 MiB, three passes, four lanes, a 16-byte salt and a 32-byte output. It
-reuses the vendored Monocypher implementation. Its single-owner supervisor
-arena maps one 64 MiB contiguous frame allocation below 1 GiB at a separate
-virtual address, with unmapped guard pages and 16 MiB of frames left in
-reserve. It holds scheduler preemption while the mapping exists so a process
-address space cannot be built with a transient supervisor mapping, and it
-requires the live kernel address space on entry, while hardware interrupts
-remain enabled during the KDF. It wipes the entire work
-area before unmapping and refuses output if allocation, mapping, or cleanup
-fails. A partial map rollback or arena unmap failure is fail-stop so scheduling
-cannot copy a live supervisor mapping into a process address space. A
-frame-release failure keeps
-ownership rather than recycling reachable frames. Physical fragmentation or
-low memory causes an explicit refusal.
-
-The host test checks the published RFC 9106 Argon2id vector, compares the
-64 MiB profile with independent `libargon2`, and exercises parameter and
-resource refusal. The counted `account-kdf` QEMU scenario calls the real KDF in
-the 128 MiB guest, checks the independently derived output, and verifies arena
-cleanup. The production credential path now calls it. The desktop capture
-exercises v2 creation and login with the real KDF; host tests cover parser
-and sync-failure behavior. Power-cut media recovery remains open.
-
-Derive independent verifier and key-encryption material from the Argon2id
-result with distinct, versioned labels. Do not persist the raw result or use
-the stored verifier itself as a Data key. A new random Data encryption key is
-wrapped with authenticated encryption under the password-derived wrapping
-key; its nonce, record identity, parameter tuple and generation belong in the
-authenticated associated data. A keyed verifier and AEAD tag distinguish a
-wrong password from corrupted persistent state without returning a key.
-
-## Migration and crash boundary
-
-Do not silently replace a v1 record at login. First authenticate the v1
-credential through the production entry point, allocate and validate v2
-resources, and establish the encrypted Data-key state. Then write a staged v2
-record with generation and explicit migration state; sync it, atomically
-switch the active record, and sync the directory/volume. Password change
-should stage a second authenticated wrap for the same Data key so a power cut
-at every durable transition leaves at least one known credential able to
-unlock it. Only retire the old wrap after the new record and its Data-key wrap
-are durable and verified on reopen. Test disk full and power loss before and
-after each sync/rename, then boot and authenticate both expected credentials
-at each state. Deletion must define what happens to encrypted Data.
-
-The Data volume is currently plaintext. Migration needs its own resumable
-transaction and raw-media residue check before confidentiality at rest can be
-claimed. The same writable volume cannot provide freshness: whole-volume or
-record rollback can restore an old password wrap. Password revocation and a
-rollback floor require an operator-controlled external state root. FAT32,
-ext4, snapshots and SSD wear levelling cannot guarantee erasure by overwrite.
+`DATA_AEAD_INTEGRATION.md` describes the encrypted namespace, file format,
+migration limits, and raw-media residue. Host tests exercise account slot
+faults and modeled migration cuts. FAT32 and ext4 QEMU tests exercise login,
+Data access, password change, logout, and deletion.

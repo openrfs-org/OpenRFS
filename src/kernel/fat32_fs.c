@@ -38,6 +38,7 @@ struct openrfsfs_mount_state {
     struct fat32_fsinfo fsinfo;
     uint64_t generation;
     uint64_t free_clusters;
+    bool free_count_uncertain;
     uint64_t completion_count;
     uint32_t next_free;
     uint32_t controller_index;
@@ -418,6 +419,14 @@ static enum openrfsfs_status begin_operation(
     return OPENRFSFS_STATUS_OK;
 }
 
+static enum openrfsfs_status validate_fats(
+    struct nvme_volume_session *session,
+    const struct fat32_geometry *geometry,
+    uint64_t *free_clusters,
+    uint32_t *next_free
+);
+static enum openrfsfs_status write_fsinfo(struct openrfsfs_operation *operation);
+
 static enum openrfsfs_status end_operation(
     struct openrfsfs_operation *operation,
     bool commit
@@ -430,6 +439,26 @@ static enum openrfsfs_status end_operation(
 
     if (operation == NULL || !operation->active) {
         return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    }
+    if (!commit && operation->writable &&
+        operation->mount->free_count_uncertain) {
+        invalidate_cache(operation->volume);
+        result = validate_fats(&operation->nvme,
+            &operation->mount->geometry,
+            &operation->mount->free_clusters,
+            &operation->mount->next_free);
+        if (result == OPENRFSFS_STATUS_OK) {
+            result = write_fsinfo(operation);
+        }
+        if (result == OPENRFSFS_STATUS_OK) {
+            flush_status = nvme_volume_flush(&operation->nvme);
+            result = nvme_result(flush_status);
+        }
+        if (result == OPENRFSFS_STATUS_OK) {
+            operation->mount->free_count_uncertain = false;
+        } else {
+            operation->mount->healthy = false;
+        }
     }
     if (commit) {
         result = flush_cache(operation);
@@ -592,6 +621,7 @@ static enum openrfsfs_status allocate_cluster(
         return OPENRFSFS_STATUS_INVALID_ARGUMENT;
     }
     if (operation->mount->free_clusters == 0U) {
+        operation->mount->free_count_uncertain = true;
         return OPENRFSFS_STATUS_FULL;
     }
     start = operation->mount->next_free;
@@ -627,6 +657,7 @@ static enum openrfsfs_status allocate_cluster(
             status = set_fat(operation, cluster, FAT32_EOC);
             if (status != OPENRFSFS_STATUS_OK) {
                 (void)set_fat(operation, cluster, 0U);
+                operation->mount->free_count_uncertain = true;
                 return status;
             }
             --operation->mount->free_clusters;
@@ -638,6 +669,7 @@ static enum openrfsfs_status allocate_cluster(
         cluster = cluster == operation->mount->geometry.maximum_cluster ?
             2U : cluster + 1U;
     }
+    operation->mount->free_count_uncertain = true;
     return OPENRFSFS_STATUS_FULL;
 }
 
@@ -1703,6 +1735,15 @@ enum openrfsfs_status fat32_backend_sync(enum openrfsfs_volume volume)
         return status;
     }
     status = flush_cache(&operation);
+    if (status == OPENRFSFS_STATUS_OK && operation.mount->free_count_uncertain) {
+        status = validate_fats(&operation.nvme, &operation.mount->geometry,
+            &operation.mount->free_clusters, &operation.mount->next_free);
+        if (status == OPENRFSFS_STATUS_OK) {
+            operation.mount->free_count_uncertain = false;
+        } else {
+            operation.mount->healthy = false;
+        }
+    }
     if (status == OPENRFSFS_STATUS_OK) {
         status = write_fsinfo(&operation);
     }

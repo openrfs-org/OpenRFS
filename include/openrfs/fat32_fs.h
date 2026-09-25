@@ -90,6 +90,7 @@ struct openrfsfs_stat {
     uint32_t atime_nanos;
     uint32_t mtime_nanos;
     uint32_t ctime_nanos;
+    bool xattrs_present;
 };
 
 struct openrfsfs_times {

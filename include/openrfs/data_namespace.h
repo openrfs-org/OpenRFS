@@ -25,7 +25,8 @@ enum data_ns_operation {
     DATA_NS_CREATE = 1,
     DATA_NS_DELETE = 2,
     DATA_NS_RENAME = 3,
-    DATA_NS_SET_METADATA = 4
+    DATA_NS_SET_METADATA = 4,
+    DATA_NS_RENAME_REPLACE = 5
 };
 
 enum data_ns_kind {
