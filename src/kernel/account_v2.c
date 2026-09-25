@@ -121,7 +121,10 @@ enum account_v2_status account_v2_validate(
     if (record == NULL || record[0] != 'O' || record[1] != 'R' ||
             record[2] != 'A' || record[3] != '2' || record[4] != 2U ||
             record[5] == 0U || record[5] >= ACCOUNT_USERNAME_BYTES ||
-            (record[6] & (uint8_t)~ACCOUNT_V2_FLAG_DATA_ENCRYPTED) != 0U ||
+            (record[6] & (uint8_t)~(ACCOUNT_V2_FLAG_DATA_ENCRYPTED |
+                ACCOUNT_V2_FLAG_DATA_MIGRATING)) != 0U ||
+            record[6] == (ACCOUNT_V2_FLAG_DATA_ENCRYPTED |
+                ACCOUNT_V2_FLAG_DATA_MIGRATING) ||
             record[7] != 0U ||
             !account_kdf_v2_parameters_supported(read_u32(record + 8U),
                 record[12], read_u32(record + 16U), read_u32(record + 20U),
@@ -170,7 +173,10 @@ enum account_v2_status account_v2_seal_flags(const char *username,
     if (record == NULL || length >= ACCOUNT_USERNAME_BYTES ||
             password == NULL || password_bytes < ACCOUNT_PASSWORD_MIN_BYTES ||
             password_bytes > ACCOUNT_PASSWORD_MAX_BYTES || generation == 0U ||
-            (flags & (uint8_t)~ACCOUNT_V2_FLAG_DATA_ENCRYPTED) != 0U ||
+            (flags & (uint8_t)~(ACCOUNT_V2_FLAG_DATA_ENCRYPTED |
+                ACCOUNT_V2_FLAG_DATA_MIGRATING)) != 0U ||
+            flags == (ACCOUNT_V2_FLAG_DATA_ENCRYPTED |
+                ACCOUNT_V2_FLAG_DATA_MIGRATING) ||
             salt == NULL || nonce == NULL || data_key == NULL) {
         return ACCOUNT_V2_BAD_ARGUMENT;
     }

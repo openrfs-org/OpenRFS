@@ -66,8 +66,10 @@ enum data_aead_status data_aead_rewrite_shadow_paths(
 {
     enum data_aead_status result = DATA_AEAD_OK;
     uint8_t id[DATA_AEAD_ID_BYTES] = {0};
+    uint8_t stable_id[DATA_AEAD_ID_BYTES] = {0};
     uint8_t nonce[DATA_AEAD_NONCE_BYTES] = {0};
     uint64_t old_plaintext_bytes = 0U;
+    uint64_t generation = 1U;
     uint64_t output_size;
     uint8_t *old_header;
     uint8_t *new_header;
@@ -111,6 +113,19 @@ enum data_aead_status data_aead_rewrite_shadow_paths(
         result = data_aead_check_header(key, old_path, old_header,
             old_physical_bytes, &old_plaintext_bytes);
         if (result != DATA_AEAD_OK) goto done;
+        result = data_aead_file_identity(key, old_path, old_header,
+            old_physical_bytes, stable_id);
+        if (result != DATA_AEAD_OK) goto done;
+        result = data_aead_generation(key, old_path, old_header,
+            old_physical_bytes, &generation);
+        if (result != DATA_AEAD_OK || generation == UINT64_MAX) {
+            if (result == DATA_AEAD_OK) result = DATA_AEAD_RANGE;
+            goto done;
+        }
+        ++generation;
+    } else if (!io->random(io->context, stable_id, sizeof(stable_id))) {
+        result = DATA_AEAD_ENTROPY;
+        goto done;
     }
     if (!io->random(io->context, id, sizeof(id))) {
         result = DATA_AEAD_ENTROPY;
@@ -121,8 +136,8 @@ enum data_aead_status data_aead_rewrite_shadow_paths(
         result = DATA_AEAD_ENTROPY;
         goto done;
     }
-    result = data_aead_make_header(key, new_path, new_plaintext_bytes,
-        id, new_header);
+    result = data_aead_make_header_v2(key, new_path,
+        new_plaintext_bytes, stable_id, id, generation, new_header);
     if (result != DATA_AEAD_OK) goto done;
     if (!io->begin_shadow(io->context, output_size)) {
         result = DATA_AEAD_IO;
@@ -177,6 +192,7 @@ enum data_aead_status data_aead_rewrite_shadow_paths(
     *new_physical_bytes = output_size;
 done:
     crypto_wipe(id, sizeof(id));
+    crypto_wipe(stable_id, sizeof(stable_id));
     crypto_wipe(nonce, sizeof(nonce));
     crypto_wipe(workspace, DATA_AEAD_REWRITE_WORKSPACE_BYTES);
     return result;
@@ -203,6 +219,7 @@ enum data_aead_status data_aead_migrate_plain_shadow(
 {
     enum data_aead_status result = DATA_AEAD_OK;
     uint8_t id[DATA_AEAD_ID_BYTES] = {0};
+    uint8_t stable_id[DATA_AEAD_ID_BYTES] = {0};
     uint8_t nonce[DATA_AEAD_NONCE_BYTES] = {0};
     uint8_t *header;
     uint8_t *sealed;
@@ -230,12 +247,13 @@ enum data_aead_status data_aead_migrate_plain_shadow(
     sealed = header + DATA_AEAD_HEADER_BYTES;
     plain = sealed + DATA_AEAD_SEALED_CHUNK_BYTES;
     zero_bytes(workspace, DATA_AEAD_REWRITE_WORKSPACE_BYTES);
-    if (!io->random(io->context, id, sizeof(id))) {
+    if (!io->random(io->context, stable_id, sizeof(stable_id)) ||
+            !io->random(io->context, id, sizeof(id))) {
         result = DATA_AEAD_ENTROPY;
         goto done;
     }
-    result = data_aead_make_header(key, canonical_path, old_plaintext_bytes,
-        id, header);
+    result = data_aead_make_header_v2(key, canonical_path,
+        old_plaintext_bytes, stable_id, id, 1U, header);
     if (result != DATA_AEAD_OK) goto done;
     if (!io->begin_shadow(io->context, output_size) ||
             !io->write_shadow(io->context, 0U, header,
@@ -269,6 +287,7 @@ enum data_aead_status data_aead_migrate_plain_shadow(
     *new_physical_bytes = output_size;
 done:
     crypto_wipe(id, sizeof(id));
+    crypto_wipe(stable_id, sizeof(stable_id));
     crypto_wipe(nonce, sizeof(nonce));
     crypto_wipe(workspace, DATA_AEAD_REWRITE_WORKSPACE_BYTES);
     return result;

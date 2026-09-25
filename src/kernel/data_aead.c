@@ -7,14 +7,15 @@
 
 #include "../../vendor/monocypher/src/monocypher.h"
 
-/* Header: magic/version 0..4, reserved 5..7, chunk size 8..11,
- * plaintext length 12..19, random file ID 20..35, header MAC 36..67,
- * reserved 68..95. All integers are little endian. The MAC binds the
- * canonical path, but the path is not stored in the file. */
+/* V2 keeps the revision ID at 20..35 and authenticates a stable file ID at
+ * 68..83 and generation at 84..91. The MAC also binds path and length. */
 #define LENGTH_OFFSET 12U
 #define ID_OFFSET 20U
 #define MAC_OFFSET 36U
 #define RESERVED_OFFSET 68U
+#define STABLE_ID_OFFSET 68U
+#define GENERATION_OFFSET 84U
+#define V2_RESERVED_OFFSET 92U
 #define CHUNK_CIPHERTEXT_OFFSET 24U
 #define CHUNK_TAG_OFFSET 4120U
 
@@ -111,13 +112,17 @@ static bool shape_valid(const uint8_t header[DATA_AEAD_HEADER_BYTES],
     uint64_t physical_bytes)
 {
     if (header[0] != 'O' || header[1] != 'R' || header[2] != 'D' ||
-            header[3] != '1' || header[4] != 1U ||
+            header[3] != '1' || (header[4] != 1U && header[4] != 2U) ||
             read_u32(header + 8U) != DATA_AEAD_CHUNK_BYTES ||
             !valid_id(header + ID_OFFSET))
         return false;
     for (size_t index = 5U; index < 8U; ++index)
         if (header[index] != 0U) return false;
-    for (size_t index = RESERVED_OFFSET; index < DATA_AEAD_HEADER_BYTES;
+    if (header[4] == 2U && (!valid_id(header + STABLE_ID_OFFSET) ||
+            read_u64(header + GENERATION_OFFSET) == 0U))
+        return false;
+    for (size_t index = header[4] == 2U ? V2_RESERVED_OFFSET :
+            RESERVED_OFFSET; index < DATA_AEAD_HEADER_BYTES;
             ++index)
         if (header[index] != 0U) return false;
     const uint64_t size = data_aead_physical_size(read_u64(header + LENGTH_OFFSET));
@@ -135,6 +140,9 @@ static void header_mac(const uint8_t data_key[DATA_AEAD_KEY_BYTES],
     crypto_blake2b_ctx context;
     crypto_blake2b_keyed_init(&context, sizeof(key), key, sizeof(key));
     crypto_blake2b_update(&context, header, MAC_OFFSET);
+    if (header[4] == 2U)
+        crypto_blake2b_update(&context, header + STABLE_ID_OFFSET,
+            DATA_AEAD_ID_BYTES + 8U);
     crypto_blake2b_update(&context, length, sizeof(length));
     crypto_blake2b_update(&context, (const uint8_t *)path, path_bytes);
     crypto_blake2b_final(&context, mac);
@@ -163,6 +171,34 @@ enum data_aead_status data_aead_make_header(
     return DATA_AEAD_OK;
 }
 
+enum data_aead_status data_aead_make_header_v2(
+    const uint8_t data_key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
+    uint64_t plaintext_bytes,
+    const uint8_t stable_id[DATA_AEAD_ID_BYTES],
+    const uint8_t revision_id[DATA_AEAD_ID_BYTES],
+    uint64_t generation,
+    uint8_t header[DATA_AEAD_HEADER_BYTES])
+{
+    if (header == NULL) return DATA_AEAD_ARGUMENT;
+    zero_bytes(header, DATA_AEAD_HEADER_BYTES);
+    const size_t path_bytes = path_length(canonical_path);
+    if (data_key == NULL || path_bytes == 0U || stable_id == NULL ||
+            revision_id == NULL || !valid_id(stable_id) ||
+            !valid_id(revision_id) || generation == 0U ||
+            data_aead_physical_size(plaintext_bytes) == 0U)
+        return DATA_AEAD_ARGUMENT;
+    header[0] = 'O'; header[1] = 'R'; header[2] = 'D'; header[3] = '1';
+    header[4] = 2U;
+    write_u32(header + 8U, DATA_AEAD_CHUNK_BYTES);
+    write_u64(header + LENGTH_OFFSET, plaintext_bytes);
+    copy_bytes(header + ID_OFFSET, revision_id, DATA_AEAD_ID_BYTES);
+    copy_bytes(header + STABLE_ID_OFFSET, stable_id, DATA_AEAD_ID_BYTES);
+    write_u64(header + GENERATION_OFFSET, generation);
+    header_mac(data_key, canonical_path, path_bytes, header,
+        header + MAC_OFFSET);
+    return DATA_AEAD_OK;
+}
+
 enum data_aead_status data_aead_check_header(
     const uint8_t data_key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
     const uint8_t header[DATA_AEAD_HEADER_BYTES], uint64_t physical_bytes,
@@ -181,6 +217,37 @@ enum data_aead_status data_aead_check_header(
     if (!valid) return DATA_AEAD_AUTHENTICATION;
     *plaintext_bytes = read_u64(header + LENGTH_OFFSET);
     return DATA_AEAD_OK;
+}
+
+enum data_aead_status data_aead_file_identity(
+    const uint8_t data_key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
+    const uint8_t header[DATA_AEAD_HEADER_BYTES], uint64_t physical_bytes,
+    uint8_t stable_id[DATA_AEAD_ID_BYTES])
+{
+    if (stable_id == NULL) return DATA_AEAD_ARGUMENT;
+    zero_bytes(stable_id, DATA_AEAD_ID_BYTES);
+    uint64_t length = 0U;
+    const enum data_aead_status status = data_aead_check_header(data_key,
+        canonical_path, header, physical_bytes, &length);
+    if (status == DATA_AEAD_OK)
+        copy_bytes(stable_id, header + (header[4] == 2U ?
+            STABLE_ID_OFFSET : ID_OFFSET), DATA_AEAD_ID_BYTES);
+    return status;
+}
+
+enum data_aead_status data_aead_generation(
+    const uint8_t data_key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
+    const uint8_t header[DATA_AEAD_HEADER_BYTES], uint64_t physical_bytes,
+    uint64_t *generation)
+{
+    if (generation == NULL) return DATA_AEAD_ARGUMENT;
+    *generation = 0U;
+    uint64_t length = 0U;
+    const enum data_aead_status status = data_aead_check_header(data_key,
+        canonical_path, header, physical_bytes, &length);
+    if (status == DATA_AEAD_OK && header[4] == 2U)
+        *generation = read_u64(header + GENERATION_OFFSET);
+    return status;
 }
 
 enum data_aead_status data_aead_rebind_header(

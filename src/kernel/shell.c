@@ -213,6 +213,7 @@ static void command_help(void)
     console_write("  userdel    remove the account if Data has no files\n");
     console_write("  passwd    change the local account password\n");
     console_write("  starty    authenticate and start the OpenRFS desktop\n");
+    console_write("  logout    end the account session\n");
     console_write("  echo      print the rest of the line\n");
     console_write("  linux     run measured echo, uname, or bounded cat userspace\n");
     console_write("  native    launch one native application manifest\n");
@@ -954,6 +955,7 @@ static void command_sync(void)
 
 static void command_reboot(void)
 {
+    account_data_key_forget();
     const bool ext4_data = openrfsfs_has_atomic_replace(OPENRFSFS_VOLUME_DATA);
     enum openrfsfs_status status = openrfsfs_unmount(OPENRFSFS_VOLUME_DATA);
 
@@ -1511,7 +1513,7 @@ static void command_starty(const char *arguments)
         console_write("starty: this command takes no arguments\n");
         return;
     }
-    if (ui_is_active()) {
+    if (ui_is_active() && account_session_active()) {
         console_write("starty: the OpenRFS desktop is already active\n");
         return;
     }
@@ -1527,6 +1529,17 @@ static void command_starty(const char *arguments)
     authentication_reset();
     authentication.prompt = AUTHENTICATION_STARTY_USERNAME;
     console_write("Username: ");
+}
+
+static void command_logout(const char *arguments)
+{
+    if (arguments[0] != '\0') {
+        console_write("logout: this command takes no arguments\n");
+        return;
+    }
+    authentication_reset();
+    account_data_key_forget();
+    console_write("OpenRFS session ended. Run 'starty' to log in again.\n");
 }
 
 static void command_passwd(const char *arguments)
@@ -1769,14 +1782,20 @@ static bool authentication_feed(char character)
             authentication.username, authentication.input,
             authentication.input_bytes);
         bool started = false;
+        bool resumed = false;
 
         if (status == ACCOUNT_STATUS_OK) {
-            started = start_desktop();
+            resumed = ui_is_active();
+            started = resumed || start_desktop();
+            if (!started) account_data_key_forget();
         } else {
             authentication_error(status);
         }
         authentication_reset();
-        if (!started) {
+        if (resumed) {
+            console_write("OpenRFS session resumed.\n");
+            write_prompt_restored();
+        } else if (!started) {
             write_prompt_restored();
         }
         return true;
@@ -1814,6 +1833,7 @@ enum shell_status shell_execute(const char *text)
             !matches(text, "help") && !matches(text, "useradd") &&
             !matches(text, "userdel") && !matches(text, "passwd") &&
             !matches(text, "starty") &&
+            !matches(text, "logout") &&
             !matches(text, "reboot") && !matches(text, "clear") &&
             !matches(text, "mount") && !matches(text, "drives")) {
         bool configured = false;
@@ -1842,6 +1862,8 @@ enum shell_status shell_execute(const char *text)
         command_passwd(arguments_of(text));
     } else if (matches(text, "starty")) {
         command_starty(arguments_of(text));
+    } else if (matches(text, "logout")) {
+        command_logout(arguments_of(text));
     } else if (matches(text, "echo")) {
         command_echo(arguments_of(text));
     } else if (matches(text, "linux")) {

@@ -489,7 +489,133 @@ int main(void)
         return 1;
     }
     assert(account_data_key(key));
+    const uint64_t old_session = account_session_generation();
+    account_data_key_forget();
+    if (!check(!account_session_active() &&
+            account_session_generation() != old_session &&
+            !account_data_key(key), "logout must revoke the key and session") ||
+        !check(account_authenticate("alice", password,
+            sizeof(password) - 1U) == ACCOUNT_STATUS_OK,
+            "login after logout must work")) {
+        return 1;
+    }
+    assert(account_data_key(key));
     memcpy(saved, v2_a, sizeof(saved));
+    fail_sync_once = true;
+    if (!check(account_data_state_update("alice", password,
+            sizeof(password) - 1U,
+            ACCOUNT_V2_FLAG_DATA_MIGRATING) == ACCOUNT_STATUS_IO,
+            "failed intent sync must not retire the old wrap") ||
+        !check(account_authenticate("alice", password,
+            sizeof(password) - 1U) == ACCOUNT_STATUS_OK,
+            "old password must work after failed intent sync") ||
+        !check(account_data_key(after_change) &&
+            memcmp(after_change, key, sizeof(key)) == 0,
+            "failed intent sync must preserve the Data key")) {
+        return 1;
+    }
+    if (!check(account_data_state_update("alice", password,
+            sizeof(password) - 1U,
+            ACCOUNT_V2_FLAG_DATA_MIGRATING) == ACCOUNT_STATUS_OK,
+            "migration intent must retain the wrapped key") ||
+        !check(!account_session_active(),
+            "migration intent must revoke the plaintext session") ||
+        !check(account_authenticate("alice", password,
+            sizeof(password) - 1U) ==
+            ACCOUNT_STATUS_ENCRYPTED_DATA_UNAVAILABLE,
+            "migration intent must require recovery") ||
+        !check(account_data_state_update("alice", wrong,
+            sizeof(wrong) - 1U,
+            ACCOUNT_V2_FLAG_DATA_ENCRYPTED) ==
+            ACCOUNT_STATUS_AUTHENTICATION_FAILED,
+            "wrong password must not complete migration")) {
+        return 1;
+    }
+    if (!check(account_change_password("alice", password,
+            sizeof(password) - 1U, new_password,
+            sizeof(new_password) - 1U) == ACCOUNT_STATUS_OK,
+            "migration state must permit password rotation") ||
+        !check(v2_a[6] == ACCOUNT_V2_FLAG_DATA_MIGRATING &&
+            account_v2_open(v2_a, "alice", new_password,
+                sizeof(new_password) - 1U, after_change) == ACCOUNT_V2_OK &&
+            memcmp(after_change, key, sizeof(key)) == 0,
+            "migration rotation must preserve state and key") ||
+        !check(account_change_password("alice", new_password,
+            sizeof(new_password) - 1U, password,
+            sizeof(password) - 1U) == ACCOUNT_STATUS_OK,
+            "migration state must rotate back") ||
+        !check(!account_session_active(),
+            "migration rotation must leave Data locked")) {
+        return 1;
+    }
+    fail_sync_once = true;
+    if (!check(account_change_password("alice", password,
+            sizeof(password) - 1U, new_password,
+            sizeof(new_password) - 1U) == ACCOUNT_STATUS_IO,
+            "failed protected rotation sync must refuse") ||
+        !check(v2_b_present && !v2_a_present &&
+            account_v2_open(v2_b, "alice", password,
+                sizeof(password) - 1U, after_change) == ACCOUNT_V2_OK &&
+            memcmp(after_change, key, sizeof(key)) == 0,
+            "failed protected rotation must retain the old wrap")) {
+        return 1;
+    }
+    fail_unlink_v2_once = true;
+    if (!check(account_data_state_update("alice", password,
+            sizeof(password) - 1U,
+            ACCOUNT_V2_FLAG_DATA_ENCRYPTED) == ACCOUNT_STATUS_CLEANUP_PENDING,
+            "failed old-slot retirement must keep the new wrap") ||
+        !check(v2_a_present && v2_b_present,
+            "both wraps must survive failed retirement") ||
+        !check(account_data_state_update("alice", password,
+            sizeof(password) - 1U,
+            ACCOUNT_V2_FLAG_DATA_ENCRYPTED) == ACCOUNT_STATUS_OK,
+            "retry must retire the old wrap") ||
+        !check(account_authenticate("alice", password,
+            sizeof(password) - 1U) ==
+            ACCOUNT_STATUS_ENCRYPTED_DATA_UNAVAILABLE,
+            "completed state must require encrypted VFS")) {
+        return 1;
+    }
+    if (!check(account_change_password("alice", wrong,
+            sizeof(wrong) - 1U, new_password,
+            sizeof(new_password) - 1U) ==
+            ACCOUNT_STATUS_AUTHENTICATION_FAILED,
+            "protected state must refuse a wrong old password") ||
+        !check(account_change_password("alice", password,
+            sizeof(password) - 1U, new_password,
+            sizeof(new_password) - 1U) == ACCOUNT_STATUS_OK,
+            "protected state must permit password rotation") ||
+        !check(!account_session_active() && v2_b_present && !v2_a_present,
+            "protected rotation must keep Data locked and retire old wrap") ||
+        !check(account_v2_open(v2_b, "alice", new_password,
+            sizeof(new_password) - 1U, after_change) == ACCOUNT_V2_OK &&
+            memcmp(after_change, key, sizeof(key)) == 0 &&
+            v2_b[6] == ACCOUNT_V2_FLAG_DATA_ENCRYPTED,
+            "protected rotation must preserve the Data key and state") ||
+        !check(account_change_password("alice", new_password,
+            sizeof(new_password) - 1U, password,
+            sizeof(password) - 1U) == ACCOUNT_STATUS_OK,
+            "protected state must rotate again") ||
+        !check(account_v2_open(v2_a, "alice", password,
+            sizeof(password) - 1U, after_change) == ACCOUNT_V2_OK &&
+            memcmp(after_change, key, sizeof(key)) == 0 &&
+            v2_a[6] == ACCOUNT_V2_FLAG_DATA_ENCRYPTED,
+            "second protected rotation must preserve the Data key")) {
+        return 1;
+    }
+    memcpy(v2_a, saved, sizeof(v2_a));
+    v2_a_present = true;
+    v2_a_bytes = sizeof(v2_a);
+    v2_b_present = false;
+    v2_b_bytes = 0U;
+    if (!check(account_authenticate("alice", password,
+            sizeof(password) - 1U) == ACCOUNT_STATUS_OK,
+            "ordinary record must recover after migration-state test") ||
+        !check(account_data_key(key),
+            "restored account must keep its original Data key")) {
+        return 1;
+    }
     uint8_t migration_salt[16];
     uint8_t migration_nonce[ACCOUNT_V2_NONCE_BYTES];
     uint8_t record_flags = 0U;
@@ -507,6 +633,18 @@ int main(void)
             "protected Data state must refuse without encrypted VFS") ||
         !check(!account_session_active(),
             "unsupported protected Data must not expose the key")) {
+        return 1;
+    }
+    if (!check(account_v2_seal_flags("alice", password,
+            sizeof(password) - 1U, 2U, ACCOUNT_V2_FLAG_DATA_MIGRATING,
+            migration_salt, migration_nonce, key, v2_a) == ACCOUNT_V2_OK,
+            "authenticated migration progress fixture") ||
+        !check(account_authenticate("alice", password,
+            sizeof(password) - 1U) ==
+            ACCOUNT_STATUS_ENCRYPTED_DATA_UNAVAILABLE,
+            "migration in progress must refuse without recovery") ||
+        !check(!account_session_active(),
+            "unrecovered migration must not expose the key")) {
         return 1;
     }
     memcpy(v2_a, saved, sizeof(v2_a));

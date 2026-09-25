@@ -132,6 +132,8 @@ int main(void)
     uint8_t key[32];
     uint8_t wrong_key[32];
     uint8_t first_id[DATA_AEAD_ID_BYTES];
+    uint8_t stable_id[DATA_AEAD_ID_BYTES];
+    uint8_t rewritten_id[DATA_AEAD_ID_BYTES];
     uint64_t produced = 0U;
     struct memory_io io = {&old_file, &shadow_file, FILE_CAPACITY, 0U, 0U};
     const struct data_aead_rewrite_io callbacks = {
@@ -215,6 +217,12 @@ int main(void)
     ++shadow_file.length;
     expect_wiped();
     memcpy(first_id, shadow_file.bytes + 20U, sizeof(first_id));
+    CHECK(data_aead_file_identity(key, "HOME/NOTE.TXT",
+        shadow_file.bytes, shadow_file.length, stable_id) == DATA_AEAD_OK);
+    uint64_t generation = 0U;
+    CHECK(data_aead_generation(key, "HOME/NOTE.TXT",
+        shadow_file.bytes, shadow_file.length, &generation) == DATA_AEAD_OK &&
+        generation == 2U);
     expect_wiped();
     publish_shadow(&io);
 
@@ -223,6 +231,12 @@ int main(void)
         5000U, 100U, changed, sizeof(changed), &callbacks, workspace,
         sizeof(workspace), &produced) == DATA_AEAD_OK);
     CHECK(memcmp(first_id, shadow_file.bytes + 20U, sizeof(first_id)) != 0);
+    CHECK(data_aead_file_identity(key, "HOME/NOTE.TXT",
+        shadow_file.bytes, shadow_file.length, rewritten_id) == DATA_AEAD_OK);
+    CHECK(memcmp(stable_id, rewritten_id, sizeof(stable_id)) == 0);
+    CHECK(data_aead_generation(key, "HOME/NOTE.TXT",
+        shadow_file.bytes, shadow_file.length, &generation) == DATA_AEAD_OK &&
+        generation == 3U);
     memcpy(expected + 100U, changed, sizeof(changed));
     check_plaintext(key, &shadow_file, expected, 5000U);
     expect_wiped();

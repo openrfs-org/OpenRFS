@@ -178,7 +178,8 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
             installed_context.test_scenario == KERNEL_TEST_NORMAL) {
         /* Production does not run package recovery before login. The normal
          * test runs its legacy recovery first, then exercises this same gate. */
-        openrfsfs_data_login_lock_enable(account_session_active);
+        openrfsfs_data_login_lock_enable(account_session_active,
+            account_session_generation);
         shell_authorization_enable();
     }
     if (!native_process_self_test(&native_process_tests)) {

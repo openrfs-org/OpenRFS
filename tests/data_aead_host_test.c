@@ -25,6 +25,7 @@ int main(void)
     uint8_t wrong_key[DATA_AEAD_KEY_BYTES];
     uint8_t id[DATA_AEAD_ID_BYTES];
     uint8_t other_id[DATA_AEAD_ID_BYTES];
+    uint8_t recovered_id[DATA_AEAD_ID_BYTES];
     uint8_t nonce[DATA_AEAD_NONCE_BYTES];
     uint8_t header[DATA_AEAD_HEADER_BYTES];
     uint8_t other_header[DATA_AEAD_HEADER_BYTES];
@@ -140,6 +141,38 @@ int main(void)
     CHECK(data_aead_open_chunk(key, header, 0U, sealed, opened,
         &opened_bytes) == DATA_AEAD_RANGE);
 
-    puts("data AEAD parser, key/path binding, chunk and tamper controls passed");
+    CHECK(data_aead_make_header_v2(key, "HOME/NOTE.TXT", 4096U,
+        id, other_id, 7U, header) == DATA_AEAD_OK);
+    CHECK(header[4] == 2U);
+    uint64_t generation = 0U;
+    CHECK(data_aead_generation(key, "HOME/NOTE.TXT", header,
+        data_aead_physical_size(4096U), &generation) == DATA_AEAD_OK &&
+        generation == 7U);
+    CHECK(data_aead_file_identity(key, "HOME/NOTE.TXT", header,
+        data_aead_physical_size(4096U), recovered_id) == DATA_AEAD_OK);
+    CHECK(memcmp(recovered_id, id, sizeof(id)) == 0);
+    CHECK(data_aead_seal_chunk(key, header, 0U, nonce, plain,
+        DATA_AEAD_CHUNK_BYTES, sealed) == DATA_AEAD_OK);
+    memcpy(other_header, header, sizeof(header));
+    other_header[68] ^= 1U;
+    memset(recovered_id, 0xa5, sizeof(recovered_id));
+    CHECK(data_aead_file_identity(key, "HOME/NOTE.TXT", other_header,
+        data_aead_physical_size(4096U), recovered_id) ==
+        DATA_AEAD_AUTHENTICATION);
+    expect_zero(recovered_id, sizeof(recovered_id));
+    memcpy(other_header, header, sizeof(header));
+    other_header[84] ^= 1U;
+    CHECK(data_aead_generation(key, "HOME/NOTE.TXT", other_header,
+        data_aead_physical_size(4096U), &generation) ==
+        DATA_AEAD_AUTHENTICATION && generation == 0U);
+    memcpy(other_header, header, sizeof(header));
+    other_header[20] ^= 1U;
+    CHECK(data_aead_check_header(key, "HOME/NOTE.TXT", other_header,
+        data_aead_physical_size(4096U), &file_bytes) ==
+        DATA_AEAD_AUTHENTICATION);
+    CHECK(data_aead_open_chunk(key, other_header, 0U, sealed, opened,
+        &opened_bytes) == DATA_AEAD_AUTHENTICATION);
+
+    puts("data AEAD v1/v2 parser, stable identity, key/path binding, chunk and tamper controls passed");
     return 0;
 }

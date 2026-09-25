@@ -39,27 +39,40 @@ struct account_throttle {
 static struct account_throttle login_throttle;
 static uint8_t active_data_key[ACCOUNT_V2_KEY_BYTES];
 static bool active_data_key_present;
+static uint64_t active_data_epoch = 1U;
 
 bool account_session_active(void)
 {
-    return active_data_key_present;
+    return __atomic_load_n(&active_data_key_present, __ATOMIC_ACQUIRE);
+}
+
+uint64_t account_session_generation(void)
+{
+    return __atomic_load_n(&active_data_epoch, __ATOMIC_ACQUIRE);
 }
 
 bool account_data_key(uint8_t out[ACCOUNT_V2_KEY_BYTES])
 {
-    if (out == NULL || !active_data_key_present) {
+    const uint64_t generation = account_session_generation();
+    if (out == NULL || !account_session_active()) {
         return false;
     }
     for (size_t index = 0U; index < sizeof(active_data_key); ++index) {
         out[index] = active_data_key[index];
+    }
+    if (!account_session_active() ||
+            generation != account_session_generation()) {
+        crypto_wipe(out, ACCOUNT_V2_KEY_BYTES);
+        return false;
     }
     return true;
 }
 
 void account_data_key_forget(void)
 {
+    __atomic_store_n(&active_data_key_present, false, __ATOMIC_RELEASE);
     crypto_wipe(active_data_key, sizeof(active_data_key));
-    active_data_key_present = false;
+    __atomic_add_fetch(&active_data_epoch, 1U, __ATOMIC_ACQ_REL);
 }
 
 static const uint8_t account_magic[4] = { 'O', 'G', 'A', '1' };
@@ -517,18 +530,18 @@ static enum account_status v2_authenticate(
     const enum account_v2_status status = account_v2_open(record, username,
         password, password_bytes, data_key);
 
-    /* The format can authenticate the future migration bit, but this kernel
-     * has no encrypted production VFS yet. Never expose a key or a raw Data
-     * path from a record claiming that migration has completed. */
+    /* Until migration and the encrypted VFS are installed, these states must
+     * not unlock the raw Data path. */
     if (status == ACCOUNT_V2_OK &&
-            (record[6] & ACCOUNT_V2_FLAG_DATA_ENCRYPTED) != 0U) {
+            (record[6] & (ACCOUNT_V2_FLAG_DATA_ENCRYPTED |
+                ACCOUNT_V2_FLAG_DATA_MIGRATING)) != 0U) {
         zero_bytes(data_key, sizeof(data_key));
         return ACCOUNT_STATUS_ENCRYPTED_DATA_UNAVAILABLE;
     }
 
     if (status == ACCOUNT_V2_OK) {
         copy_bytes(active_data_key, data_key, sizeof(data_key));
-        active_data_key_present = true;
+        __atomic_store_n(&active_data_key_present, true, __ATOMIC_RELEASE);
     }
     zero_bytes(data_key, sizeof(data_key));
     if (status == ACCOUNT_V2_OK) {
@@ -866,6 +879,103 @@ finish:
     return status;
 }
 
+enum account_status account_data_state_update(const char *username,
+    const uint8_t *password, size_t password_bytes, uint8_t next_flags)
+{
+    uint8_t current[ACCOUNT_V2_RECORD_BYTES] = {0};
+    uint8_t replacement[ACCOUNT_V2_RECORD_BYTES] = {0};
+    uint8_t data_key[ACCOUNT_V2_KEY_BYTES] = {0};
+    uint8_t verified_key[ACCOUNT_V2_KEY_BYTES] = {0};
+    uint8_t salt[16] = {0};
+    uint8_t nonce[ACCOUNT_V2_NONCE_BYTES] = {0};
+    uint8_t flags = 0U;
+    const char *active_slot = NULL;
+    const char *inactive_slot;
+    enum account_status result;
+
+    if (username == NULL || password == NULL ||
+            (next_flags != ACCOUNT_V2_FLAG_DATA_MIGRATING &&
+             next_flags != ACCOUNT_V2_FLAG_DATA_ENCRYPTED)) {
+        result = ACCOUNT_STATUS_NULL_ARGUMENT;
+        goto done;
+    }
+    result = load_active_v2(current, &active_slot);
+    if (result != ACCOUNT_STATUS_OK || active_slot == NULL ||
+            account_v2_generation(current) == UINT64_MAX ||
+            account_v2_record_flags(current, &flags) != ACCOUNT_V2_OK) {
+        result = ACCOUNT_STATUS_STORAGE_CORRUPT;
+        goto done;
+    }
+    const enum account_v2_status opened = account_v2_open(current, username,
+        password, password_bytes, data_key);
+    if (opened != ACCOUNT_V2_OK) {
+        result = opened == ACCOUNT_V2_AUTHENTICATION_FAILED ?
+            ACCOUNT_STATUS_AUTHENTICATION_FAILED :
+            opened == ACCOUNT_V2_KDF_UNAVAILABLE ?
+            ACCOUNT_STATUS_KDF_UNAVAILABLE : ACCOUNT_STATUS_STORAGE_CORRUPT;
+        goto done;
+    }
+    if (flags == next_flags) {
+        result = retire_previous_slot(active_slot);
+        goto done;
+    }
+    if (!((flags == 0U &&
+            next_flags == ACCOUNT_V2_FLAG_DATA_MIGRATING) ||
+          (flags == ACCOUNT_V2_FLAG_DATA_MIGRATING &&
+            next_flags == ACCOUNT_V2_FLAG_DATA_ENCRYPTED))) {
+        result = ACCOUNT_STATUS_STORAGE_CORRUPT;
+        goto done;
+    }
+    inactive_slot = active_slot[sizeof(ACCOUNT_V2_A_PATH) - 2U] == 'A' ?
+        ACCOUNT_V2_B_PATH : ACCOUNT_V2_A_PATH;
+    const enum openrfsfs_status removed = openrfsfs_unlink(
+        OPENRFSFS_VOLUME_DATA, inactive_slot);
+    if ((removed != OPENRFSFS_STATUS_OK &&
+            removed != OPENRFSFS_STATUS_NOT_FOUND) ||
+            (removed == OPENRFSFS_STATUS_OK &&
+             openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK)) {
+        result = ACCOUNT_STATUS_IO;
+        goto done;
+    }
+    if (random_bytes(salt, sizeof(salt)) != RANDOM_STATUS_OK ||
+            random_bytes(nonce, sizeof(nonce)) != RANDOM_STATUS_OK) {
+        result = ACCOUNT_STATUS_RANDOM_UNAVAILABLE;
+        goto done;
+    }
+    const enum account_v2_status sealed = account_v2_seal_flags(username,
+        password, password_bytes, account_v2_generation(current) + 1U,
+        next_flags, salt, nonce, data_key, replacement);
+    if (sealed != ACCOUNT_V2_OK) {
+        result = sealed == ACCOUNT_V2_KDF_UNAVAILABLE ?
+            ACCOUNT_STATUS_KDF_UNAVAILABLE : ACCOUNT_STATUS_IO;
+        goto done;
+    }
+    result = persist_record(replacement, sizeof(replacement), inactive_slot);
+    if (result != ACCOUNT_STATUS_OK) goto done;
+    result = load_active_v2(current, NULL);
+    if (result != ACCOUNT_STATUS_OK ||
+            account_v2_generation(current) !=
+                account_v2_generation(replacement) ||
+            account_v2_record_flags(current, &flags) != ACCOUNT_V2_OK ||
+            flags != next_flags ||
+            account_v2_open(current, username, password, password_bytes,
+                verified_key) != ACCOUNT_V2_OK ||
+            !equal_bytes(data_key, verified_key, sizeof(data_key))) {
+        result = ACCOUNT_STATUS_STORAGE_CORRUPT;
+        goto done;
+    }
+    result = retire_previous_slot(inactive_slot);
+done:
+    zero_bytes(current, sizeof(current));
+    zero_bytes(replacement, sizeof(replacement));
+    zero_bytes(data_key, sizeof(data_key));
+    zero_bytes(verified_key, sizeof(verified_key));
+    zero_bytes(salt, sizeof(salt));
+    zero_bytes(nonce, sizeof(nonce));
+    account_data_key_forget();
+    return result;
+}
+
 enum account_status account_change_password(const char *username,
     const uint8_t *old_password, size_t old_password_bytes,
     const uint8_t *new_password, size_t new_password_bytes)
@@ -875,7 +985,9 @@ enum account_status account_change_password(const char *username,
     uint8_t salt[16];
     uint8_t nonce[ACCOUNT_V2_NONCE_BYTES];
     uint8_t authenticated_key[ACCOUNT_V2_KEY_BYTES];
+    uint8_t verified_key[ACCOUNT_V2_KEY_BYTES] = {0};
     uint8_t record_flags = 0U;
+    bool protected_state = false;
     const char *active_slot = NULL;
     const char *inactive_slot;
     enum account_status result;
@@ -889,28 +1001,43 @@ enum account_status account_change_password(const char *username,
         return ACCOUNT_STATUS_INVALID_PASSWORD;
     }
     result = account_authenticate(username, old_password, old_password_bytes);
-    if (result != ACCOUNT_STATUS_OK) {
+    protected_state = result == ACCOUNT_STATUS_ENCRYPTED_DATA_UNAVAILABLE;
+    if (result != ACCOUNT_STATUS_OK && !protected_state) {
         return result;
     }
     result = load_active_v2(current, &active_slot);
-    if (result != ACCOUNT_STATUS_OK || !active_data_key_present ||
+    if (result != ACCOUNT_STATUS_OK ||
+            (!protected_state && !account_session_active()) ||
             account_v2_generation(current) == UINT64_MAX ||
             account_v2_record_flags(current, &record_flags) !=
-                ACCOUNT_V2_OK) {
+                ACCOUNT_V2_OK ||
+            (protected_state && record_flags == 0U)) {
         result = ACCOUNT_STATUS_STORAGE_CORRUPT;
         goto done;
     }
-    copy_bytes(authenticated_key, active_data_key, sizeof(authenticated_key));
-    /* This second read occurs after authentication and may name bytes that
-     * changed on writable Data. Authenticate it before copying its migration
-     * state into a newly sealed generation. The checksum is not authority. */
-    result = v2_authenticate(current, username, old_password,
-        old_password_bytes);
-    if (result != ACCOUNT_STATUS_OK) goto done;
-    if (!equal_bytes(authenticated_key, active_data_key,
-            sizeof(authenticated_key))) {
-        result = ACCOUNT_STATUS_STORAGE_CORRUPT;
-        goto done;
+    if (protected_state) {
+        const enum account_v2_status opened = account_v2_open(current,
+            username, old_password, old_password_bytes, authenticated_key);
+        if (opened != ACCOUNT_V2_OK) {
+            result = opened == ACCOUNT_V2_AUTHENTICATION_FAILED ?
+                ACCOUNT_STATUS_AUTHENTICATION_FAILED :
+                opened == ACCOUNT_V2_KDF_UNAVAILABLE ?
+                ACCOUNT_STATUS_KDF_UNAVAILABLE : ACCOUNT_STATUS_STORAGE_CORRUPT;
+            goto done;
+        }
+    } else {
+        copy_bytes(authenticated_key, active_data_key,
+            sizeof(authenticated_key));
+        /* Authenticate the second read before copying its state into a new
+         * generation. The checksum is not authority. */
+        result = v2_authenticate(current, username, old_password,
+            old_password_bytes);
+        if (result != ACCOUNT_STATUS_OK) goto done;
+        if (!equal_bytes(authenticated_key, active_data_key,
+                sizeof(authenticated_key))) {
+            result = ACCOUNT_STATUS_STORAGE_CORRUPT;
+            goto done;
+        }
     }
     inactive_slot = active_slot[sizeof(ACCOUNT_V2_A_PATH) - 2U] == 'A' ?
         ACCOUNT_V2_B_PATH : ACCOUNT_V2_A_PATH;
@@ -921,7 +1048,7 @@ enum account_status account_change_password(const char *username,
     }
     const enum account_v2_status sealed = account_v2_seal_flags(username,
         new_password, new_password_bytes, account_v2_generation(current) + 1U,
-        record_flags, salt, nonce, active_data_key, replacement);
+        record_flags, salt, nonce, authenticated_key, replacement);
     if (sealed != ACCOUNT_V2_OK) {
         result = sealed == ACCOUNT_V2_KDF_UNAVAILABLE ?
             ACCOUNT_STATUS_KDF_UNAVAILABLE : ACCOUNT_STATUS_IO;
@@ -949,13 +1076,28 @@ enum account_status account_change_password(const char *username,
     result = load_active_v2(current, NULL);
     if (result != ACCOUNT_STATUS_OK ||
             account_v2_generation(current) !=
-                account_v2_generation(replacement)) {
+                account_v2_generation(replacement) ||
+            account_v2_record_flags(current, &record_flags) !=
+                ACCOUNT_V2_OK ||
+            record_flags != replacement[6]) {
         result = ACCOUNT_STATUS_STORAGE_CORRUPT;
         goto done;
     }
-    result = v2_authenticate(current, username, new_password,
-        new_password_bytes);
-    if (result != ACCOUNT_STATUS_OK) {
+    if (protected_state) {
+        const enum account_v2_status opened = account_v2_open(current,
+            username, new_password, new_password_bytes, verified_key);
+        result = opened == ACCOUNT_V2_OK ? ACCOUNT_STATUS_OK :
+            ACCOUNT_STATUS_STORAGE_CORRUPT;
+    } else {
+        result = v2_authenticate(current, username, new_password,
+            new_password_bytes);
+        if (result == ACCOUNT_STATUS_OK)
+            copy_bytes(verified_key, active_data_key, sizeof(verified_key));
+    }
+    if (result != ACCOUNT_STATUS_OK ||
+            !equal_bytes(authenticated_key, verified_key,
+                sizeof(authenticated_key))) {
+        result = ACCOUNT_STATUS_STORAGE_CORRUPT;
         goto done;
     }
     if (openrfsfs_unlink(OPENRFSFS_VOLUME_DATA, active_slot) !=
@@ -969,6 +1111,7 @@ done:
     zero_bytes(salt, sizeof(salt));
     zero_bytes(nonce, sizeof(nonce));
     zero_bytes(authenticated_key, sizeof(authenticated_key));
+    zero_bytes(verified_key, sizeof(verified_key));
     if (result != ACCOUNT_STATUS_OK) {
         account_data_key_forget();
     }
@@ -997,7 +1140,7 @@ enum account_status account_delete(const char *username,
         goto done;
     }
     result = load_active_v2(record, &active_slot);
-    if (result != ACCOUNT_STATUS_OK || !active_data_key_present ||
+    if (result != ACCOUNT_STATUS_OK || !account_session_active() ||
             active_slot == NULL) {
         result = ACCOUNT_STATUS_STORAGE_CORRUPT;
         goto done;

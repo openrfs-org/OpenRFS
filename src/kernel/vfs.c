@@ -46,6 +46,7 @@ struct vfs_open_file_state {
     const struct vfs_backend_ops *backend;
     uint64_t generation;
     uint64_t vnode_generation;
+    uint64_t data_session_generation;
     openrfsfs_handle backend_handle;
     uint16_t vnode_index;
     bool active;
@@ -59,6 +60,7 @@ struct vfs_directory_state {
     openrfsfs_handle backend_handle;
     uint64_t generation;
     uint64_t vnode_generation;
+    uint64_t data_session_generation;
     size_t count;
     size_t cursor;
     uint16_t vnode_index;
@@ -79,6 +81,7 @@ static bool vnode_metadata_owned;
  * during a session or after a mount transition. */
 static bool data_login_lock_enabled;
 static bool (*data_session_active)(void);
+static uint64_t (*data_session_generation)(void);
 static uint16_t vnode_buckets[VFS_VNODE_BUCKETS];
 static uint64_t next_mount_generation = UINT64_C(1);
 static uint64_t next_vnode_generation = UINT64_C(1);
@@ -222,15 +225,24 @@ static bool text_equal(const char *left, const char *right)
     return false;
 }
 
-void openrfsfs_data_login_lock_enable(bool (*session_active)(void))
+void openrfsfs_data_login_lock_enable(bool (*session_active)(void),
+    uint64_t (*session_generation)(void))
 {
     /* The callback is installed by the boot path before publishing the gate.
      * A missing callback keeps Data locked. Host VFS tests can link this
      * module without pulling in credential persistence or a fake login. */
     if (!__atomic_load_n(&data_login_lock_enabled, __ATOMIC_ACQUIRE)) {
         data_session_active = session_active;
+        data_session_generation = session_generation;
         __atomic_store_n(&data_login_lock_enabled, true, __ATOMIC_RELEASE);
     }
+}
+
+static uint64_t data_session_epoch(enum openrfsfs_volume volume)
+{
+    return volume == OPENRFSFS_VOLUME_DATA &&
+        __atomic_load_n(&data_login_lock_enabled, __ATOMIC_ACQUIRE) &&
+        data_session_generation != NULL ? data_session_generation() : 0U;
 }
 
 static bool data_login_locked(enum openrfsfs_volume volume)
@@ -788,7 +800,10 @@ static enum openrfsfs_status file_snapshot_pin(openrfsfs_handle handle,
     enum openrfsfs_status status = checked_open_file_state(handle, &state);
     if (status == OPENRFSFS_STATUS_OK) {
         const struct vfs_vnode_state *vnode = &vnodes[state->vnode_index];
-        if (!data_path_permitted(vnode->volume, vnode->path))
+        if (state->data_session_generation !=
+                data_session_epoch(vnode->volume))
+            status = OPENRFSFS_STATUS_STALE_HANDLE;
+        else if (!data_path_permitted(vnode->volume, vnode->path))
             status = OPENRFSFS_STATUS_ACCESS;
         else if (!mount_retain(vnode->volume)) status = OPENRFSFS_STATUS_BUSY;
         else {
@@ -1016,6 +1031,7 @@ enum openrfsfs_status openrfsfs_open_options(enum openrfsfs_volume volume, const
         mount_release(volume);
         return status;
     }
+    const uint64_t opening_epoch = data_session_epoch(volume);
     slot = openrfs_slot_claim(open_file_claims, VFS_MAX_OPEN_FILES);
     if (slot == VFS_MAX_OPEN_FILES) {
         mount_release(volume);
@@ -1083,12 +1099,19 @@ enum openrfsfs_status openrfsfs_open_options(enum openrfsfs_volume volume, const
             goto failed;
         }
     }
+    if (opening_epoch != data_session_epoch(volume) ||
+            !data_path_permitted(volume, canonical)) {
+        (void)backend->close(backend_handle);
+        status = OPENRFSFS_STATUS_STALE_HANDLE;
+        goto failed;
+    }
     const bool restore_interrupts = vnode_metadata_acquire();
     zero_bytes(&open_files[slot], sizeof(open_files[slot]));
     open_files[slot].generation = next_generation(
         &next_open_generation, UINT64_MAX >> 8U);
     open_files[slot].backend = mounts[volume].backend;
     open_files[slot].vnode_generation = vnodes[vnode_index].generation;
+    open_files[slot].data_session_generation = opening_epoch;
     open_files[slot].backend_handle = backend_handle;
     open_files[slot].vnode_index = (uint16_t)vnode_index;
     open_files[slot].active = true;
@@ -1405,6 +1428,7 @@ static enum openrfsfs_status vfs_directory_open_pinned(
         vnode_release(vnode_index, vnode_snapshot(vnode_index).generation);
         return refusal;
     }
+    const uint64_t opening_epoch = data_session_epoch(volume);
     slot = openrfs_slot_claim(directory_claims, VFS_MAX_DIRECTORY_ITERATORS);
     if (slot == VFS_MAX_DIRECTORY_ITERATORS) {
         vnode_release(vnode_index, vnode_snapshot(vnode_index).generation);
@@ -1438,7 +1462,13 @@ static enum openrfsfs_status vfs_directory_open_pinned(
             directories[slot].entries, OPENRFSFS_MAX_LIST_ENTRIES,
             &count);
     }
+    if (status == OPENRFSFS_STATUS_OK &&
+            (opening_epoch != data_session_epoch(volume) ||
+             data_login_locked(volume)))
+        status = OPENRFSFS_STATUS_STALE_HANDLE;
     if (status != OPENRFSFS_STATUS_OK) {
+        if (streaming && backend_handle != 0U)
+            (void)backend->directory_close(backend_handle);
         vnode_release(vnode_index, vnode_snapshot(vnode_index).generation);
         restore_interrupts = vnode_metadata_acquire();
         directories[slot].opening = false;
@@ -1465,6 +1495,7 @@ static enum openrfsfs_status vfs_directory_open_pinned(
     directories[slot].generation = next_generation(
         &next_directory_generation, UINT64_MAX >> 8U);
     directories[slot].vnode_generation = vnodes[vnode_index].generation;
+    directories[slot].data_session_generation = opening_epoch;
     directories[slot].vnode_index = (uint16_t)vnode_index;
     directories[slot].active = true;
     directories[slot].opening = false;
@@ -1496,6 +1527,10 @@ enum openrfsfs_status openrfsfs_directory_read(
     const struct vfs_vnode_state *vnode = &vnodes[state->vnode_index];
     if (!vnode->active || vnode->generation != state->vnode_generation ||
         !mounts[vnode->volume].active || vnode->mount_generation != mounts[vnode->volume].generation) {
+        vnode_metadata_release(restore_interrupts);
+        return OPENRFSFS_STATUS_STALE_HANDLE;
+    }
+    if (state->data_session_generation != data_session_epoch(vnode->volume)) {
         vnode_metadata_release(restore_interrupts);
         return OPENRFSFS_STATUS_STALE_HANDLE;
     }

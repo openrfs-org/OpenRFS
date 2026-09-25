@@ -351,6 +351,7 @@ def main():
     parser.add_argument("--data-filesystem", choices=("fat32", "ext4"), default="fat32")
     parser.add_argument("--output", required=True)
     parser.add_argument("--rotate-password", action="store_true")
+    parser.add_argument("--logout-test", action="store_true")
     deletion = parser.add_mutually_exclusive_group()
     deletion.add_argument("--delete-account", action="store_true")
     deletion.add_argument("--refuse-delete-account", action="store_true")
@@ -363,6 +364,8 @@ def main():
         parser.error("--system and --data must be provided together")
     if args.rotate_password and args.data is None:
         parser.error("--rotate-password requires --system and --data")
+    if args.logout_test and args.data is None:
+        parser.error("--logout-test requires --system and --data")
     if (args.delete_account or args.refuse_delete_account) and (
             args.data is None or args.data_filesystem != "ext4"):
         parser.error("account deletion gates require ext4 --system and --data")
@@ -420,6 +423,25 @@ def main():
         wait_serial_after(serial, DESKTOP_STARTED, TERMINAL_RESULT)
         time.sleep(0.20)
         terminal = capture(qmp, output, "openrfs-proof-terminal")
+        if args.logout_test:
+            send_text(qmp, "logout")
+            press(qmp, "ret", 0.10)
+            ended = b"OpenRFS session ended. Run 'starty' to log in again."
+            wait_serial_after(serial, TERMINAL_RESULT, ended)
+            send_text(qmp, "ls")
+            press(qmp, "ret", 0.10)
+            denied = b"account: login required; run 'starty'"
+            wait_serial_after(serial, ended, denied)
+            send_text(qmp, "starty")
+            press(qmp, "ret", 0.10)
+            wait_serial_after(serial, denied, USERNAME_PROMPT)
+            send_text(qmp, CAPTURE_USERNAME)
+            press(qmp, "ret", 0.10)
+            wait_serial_after(serial, denied, PASSWORD_PROMPT)
+            send_text(qmp, ROTATED_PASSWORD if args.rotate_password
+                      else CAPTURE_PASSWORD)
+            press(qmp, "ret", 0.10)
+            wait_serial_after(serial, denied, b"OpenRFS session resumed.")
         if durable_data is not None:
             root_frame = []
             files_frame = []

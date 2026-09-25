@@ -22,24 +22,38 @@ enum data_aead_status {
     DATA_AEAD_RANGE,
     DATA_AEAD_AUTHENTICATION,
     DATA_AEAD_IO,
-    DATA_AEAD_ENTROPY
+    DATA_AEAD_ENTROPY,
+    DATA_AEAD_NOT_FOUND,
+    DATA_AEAD_CONFLICT
 };
 
-/* The path must already be VFS-resolved and canonical. FAT32 callers must use
- * its uppercase canonical form, never raw user spelling. Each new content
- * revision needs a fresh random file ID and fresh random
- * nonce for every chunk. The caller must commit a complete shadow file before
- * replacing the old revision. Whole-file/media rollback remains undetectable
- * without an external freshness root. */
+/* The path is canonical; FAT32 uses uppercase. Each revision needs a fresh
+ * random revision ID and chunk nonces. Commit a complete shadow before
+ * publication. Media rollback needs an external freshness root. */
 uint64_t data_aead_physical_size(uint64_t plaintext_bytes);
 enum data_aead_status data_aead_make_header(
     const uint8_t data_key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
     uint64_t plaintext_bytes, const uint8_t file_id[DATA_AEAD_ID_BYTES],
     uint8_t header[DATA_AEAD_HEADER_BYTES]);
+enum data_aead_status data_aead_make_header_v2(
+    const uint8_t data_key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
+    uint64_t plaintext_bytes,
+    const uint8_t stable_id[DATA_AEAD_ID_BYTES],
+    const uint8_t revision_id[DATA_AEAD_ID_BYTES],
+    uint64_t generation,
+    uint8_t header[DATA_AEAD_HEADER_BYTES]);
 enum data_aead_status data_aead_check_header(
     const uint8_t data_key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
     const uint8_t header[DATA_AEAD_HEADER_BYTES], uint64_t physical_bytes,
     uint64_t *plaintext_bytes);
+enum data_aead_status data_aead_file_identity(
+    const uint8_t data_key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
+    const uint8_t header[DATA_AEAD_HEADER_BYTES], uint64_t physical_bytes,
+    uint8_t stable_id[DATA_AEAD_ID_BYTES]);
+enum data_aead_status data_aead_generation(
+    const uint8_t data_key[DATA_AEAD_KEY_BYTES], const char *canonical_path,
+    const uint8_t header[DATA_AEAD_HEADER_BYTES], uint64_t physical_bytes,
+    uint64_t *generation);
 enum data_aead_status data_aead_rebind_header(
     const uint8_t data_key[DATA_AEAD_KEY_BYTES], const char *old_path,
     const char *new_path, uint8_t header[DATA_AEAD_HEADER_BYTES],

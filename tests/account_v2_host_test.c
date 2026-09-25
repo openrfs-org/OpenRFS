@@ -99,14 +99,22 @@ int main(void)
     assert(account_v2_open(altered, "alice", password,
         sizeof(password) - 1U, recovered) ==
         ACCOUNT_V2_AUTHENTICATION_FAILED);
-    altered[6] = 2U;
+    assert(account_v2_seal_flags("alice", password, sizeof(password) - 1U,
+        8U, ACCOUNT_V2_FLAG_DATA_MIGRATING, salt, nonce, data_key,
+        altered) == ACCOUNT_V2_OK);
+    assert(account_v2_record_flags(altered, &flags) == ACCOUNT_V2_OK &&
+        flags == ACCOUNT_V2_FLAG_DATA_MIGRATING);
+    assert(account_v2_open(altered, "alice", password,
+        sizeof(password) - 1U, recovered) == ACCOUNT_V2_OK &&
+        memcmp(recovered, data_key, sizeof(data_key)) == 0);
+    altered[6] = 3U;
     recalculate_checksum(altered);
     kdf_calls = 0U;
     assert(account_v2_open(altered, "alice", password,
         sizeof(password) - 1U, recovered) == ACCOUNT_V2_MALFORMED &&
         kdf_calls == 0U);
     assert(account_v2_seal_flags("alice", password, sizeof(password) - 1U,
-        8U, 2U, salt, nonce, data_key, altered) == ACCOUNT_V2_BAD_ARGUMENT);
+        8U, 3U, salt, nonce, data_key, altered) == ACCOUNT_V2_BAD_ARGUMENT);
 
     memcpy(altered, record, sizeof(record));
     altered[16] = 1U; /* unsupported work factor must not start the KDF */
