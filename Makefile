@@ -1982,18 +1982,44 @@ DATA_AEAD_BACKEND_HOST_TEST := $(TEST_BUILD_DIR)/data-aead-backend-host-test$(HO
 $(DATA_AEAD_BACKEND_HOST_TEST): tests/data_aead_backend_host_test.c \
 		src/kernel/data_aead_backend.c src/kernel/data_aead_manifest.c \
 		src/kernel/data_aead_rewrite.c src/kernel/data_aead.c \
+		src/kernel/data_namespace.c src/kernel/data_namespace_backend.c \
 		include/openrfs/data_aead_backend.h \
 		include/openrfs/data_aead_manifest.h \
+		include/openrfs/data_namespace.h \
+		include/openrfs/data_namespace_backend.h \
 		vendor/monocypher/src/monocypher.c
 	mkdir -p $(dir $@)
 	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
 		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
 		tests/data_aead_backend_host_test.c src/kernel/data_aead_backend.c \
 		src/kernel/data_aead_manifest.c src/kernel/data_aead_rewrite.c \
-		src/kernel/data_aead.c vendor/monocypher/src/monocypher.c -o $@
+		src/kernel/data_aead.c src/kernel/data_namespace.c \
+		src/kernel/data_namespace_backend.c \
+		vendor/monocypher/src/monocypher.c -o $@
 
 data-aead-backend-host-test: $(DATA_AEAD_BACKEND_HOST_TEST)
 	$(DATA_AEAD_BACKEND_HOST_TEST)
+
+DATA_AEAD_BOUNDARY_HOST_TEST := $(TEST_BUILD_DIR)/data-aead-boundary-host-test$(HOST_EXEEXT)
+
+$(DATA_AEAD_BOUNDARY_HOST_TEST): tests/data_aead_backend_host_test.c \
+		src/kernel/data_aead_backend.c src/kernel/data_aead_manifest.c \
+		src/kernel/data_aead_rewrite.c src/kernel/data_aead.c \
+		src/kernel/data_namespace.c src/kernel/data_namespace_backend.c \
+		include/openrfs/data_aead_manifest.h \
+		vendor/monocypher/src/monocypher.c
+	mkdir -p $(dir $@)
+	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
+		-DDATA_AEAD_SEGMENT_BYTES=4096U \
+		tests/data_aead_backend_host_test.c src/kernel/data_aead_backend.c \
+		src/kernel/data_aead_manifest.c src/kernel/data_aead_rewrite.c \
+		src/kernel/data_aead.c src/kernel/data_namespace.c \
+		src/kernel/data_namespace_backend.c \
+		vendor/monocypher/src/monocypher.c -o $@
+
+data-aead-boundary-host-test: $(DATA_AEAD_BOUNDARY_HOST_TEST)
+	$(DATA_AEAD_BOUNDARY_HOST_TEST)
 
 DATA_NAMESPACE_HOST_TEST := $(TEST_BUILD_DIR)/data-namespace-host-test$(HOST_EXEEXT)
 
@@ -2018,6 +2044,7 @@ verify: toolchain lint installer-port-test minimal-de-host-test \
 		random-host-test account-host-test account-kdf-host-test account-v2-host-test \
 		data-aead-host-test data-aead-rewrite-host-test data-aead-slots-host-test \
 		data-aead-manifest-host-test data-aead-backend-host-test \
+		data-aead-boundary-host-test \
 		data-namespace-host-test \
 		boot-artifact-signature-test
 ifneq ($(VERIFY_CLEAN),0)

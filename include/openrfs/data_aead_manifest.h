@@ -9,7 +9,9 @@
 #include <openrfs/data_aead.h>
 #include <openrfs/data_aead_rewrite.h>
 
+#ifndef DATA_AEAD_SEGMENT_BYTES
 #define DATA_AEAD_SEGMENT_BYTES UINT64_C(8388608)
+#endif
 #define DATA_AEAD_SEGMENTS_MAX 8U
 #define DATA_AEAD_MANIFEST_BYTES 344U
 

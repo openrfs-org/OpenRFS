@@ -116,7 +116,10 @@ verification, and uses 8.3 storage paths. It also migrates one held plaintext
 file: it derives repeatable staging IDs, writes each encrypted segment with
 fresh random chunk nonces, syncs, verifies and publishes the manifest, then
 removes the plaintext source. A retry checks the published manifest first;
-if it is complete, it finishes source removal. Host tests cut each simulated
+if it is complete, it compares the source with the authenticated encrypted
+file before source removal. A second helper publishes under a stable ID
+binding and keeps the plaintext source for a later namespace commit. Host
+tests cut each simulated
 write, directory creation, sync, rename and removal boundary on both backend
 styles, plus disk full, tampering, and a wrong key. Its read helper verifies
 the manifest and segments, decrypts the requested range, and clears output
@@ -139,6 +142,19 @@ File manifests bind to a stable ID path, so renaming a directory does not
 rewrite descendant content. The backend append helper publishes one encrypted
 revision at a time. After an interrupted append, it checks the authenticated
 previous manifest and derived revision IDs before accepting a retry.
+The retained reader holds verified segment handles for one manifest revision.
+The namespace backend replays encrypted records through that reader and clears
+its entries if authentication, decoding, or a read fails. It can publish an
+empty namespace and append a validated event. These APIs still have no
+production VFS caller.
+
+The backend rewrite helper publishes a new manifest after sealing affected
+segments. It handles partial writes, sparse growth, and truncation, and leaves
+the prior manifest readable on disk-full errors before publication. A retry
+checks the prior authenticated manifest and derived revision IDs. Host tests
+cut its write, sync, and rename steps on FAT32 and ext4 adapters. Old segment
+revisions remain on disk until a separate collector can prove they are no
+longer referenced by any manifest or open handle.
 
 **Do not wire in-place encrypted writes.** A torn header or chunk can make a
 valid old file unreadable. For partial and sparse writes, truncate, metadata
