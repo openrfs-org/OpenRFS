@@ -2,7 +2,7 @@
 
 # Security port status
 
-This page records the state of an **unfinished draft**. It is not a release
+This page records beta security groundwork. It is not a production security
 claim. The reference code came from the private
 `saudaljuaid/openrfssecurity` tree at
 `b95fd76559ca5ce277920c6f29506a7d4c4f5ac1`; this branch started from
@@ -12,26 +12,27 @@ current OpenRFS. No reference README or descriptive page was copied here.
 
 ## Source and target ledger
 
-| Area | Reference | OpenRFS at branch base | State in this draft |
+| Area | Reference | OpenRFS at branch base | State in this branch |
 | --- | --- | --- | --- |
 | SHA-256 | Standalone GPL-3.0-only implementation | `package_state_sha256*` already linked | Existing implementation reused |
 | HMAC, HKDF, HMAC_DRBG, health tests | GPL-3.0-only reference and published vectors | Xoshiro/splitmix for ordinary random output | Adapted into the production `random.c` path |
 | AEAD | Vendored Monocypher 4.0.3, BSD-2-Clause OR CC0-1.0 | Monocypher already linked | No duplicate copied |
-| Credential records and Argon2id | Reference v2 design and parsers | v1 iterated SHA-256 account record | Production v2 verifier and wrapped random Data key, v1 migration, and `passwd` rewrap added; media power-cut and deletion gates open |
+| Credential records and Argon2id | Reference v2 design and parsers | v1 iterated SHA-256 account record | Production v2 verifier and wrapped random Data key, v1 migration, `passwd` rewrap, and bounded `userdel` for an otherwise empty Data volume; credential media power-cut proof remains open |
 | Vault and Data file migration | Reference design and tests | Plaintext FAT32/ext4 Data paths through VFS | **Not ported** |
 | Kernel authenticity | Reference acknowledges no image verification | Unsigned GRUB Multiboot2 image and configuration | Detached host verifier added; **not enforcing at boot** |
 | TPM and rollback | Reference measurement model | No external freshness authority | **Not integrated** |
 | Process and package controls | Reference proposals | Current native and package paths | **Not audited to completion** |
 
-The v1 login backoff starts after three failed attempts, caps at 60 seconds,
+The login backoff starts after three failed attempts, caps at 60 seconds,
 and requires the monotonic clock. It resets on reboot and cannot slow offline
 guessing of a stolen record. `docs/ACCOUNT_V2_DESIGN.md` records the v2 memory,
 key, persistence and migration gates. The 64 MiB Argon2id work arena has an
 independent host result and a counted 128 MiB QEMU scenario. Production account
 creation and login now call it, and the desktop capture confirms the live v2
 path. Password change preserves the random Data key through a new authenticated
-wrap. The VFS does not consume this key yet, deletion is unavailable, and
-power-cut media recovery is unproved.
+wrap. The VFS does not consume this key yet. `userdel` refuses a Data volume
+with noncredential files; it does not erase freed plaintext or prevent raw
+volume rollback. Credential media power-cut recovery remains unproved.
 
 The branch now also contains OpenRFS's driver-layer merge at
 `f78d25d4ac43f05875bce17d80fbba738428d61e`. Its network device selector
@@ -97,8 +98,11 @@ reseed. The QEMU gate boots the same image with `-cpu max`,
 It requires normal guest completion and the corresponding initialization or refusal
 marker. A timeout is a failure.
 
-The wider `make verify`, `make qemu-tests`, migration, power-cut, media
-inspection, hardware, and independent-review gates remain open.
+At predecessor head `2c2bf39b737f4fb7164535f673c509be94c864b6`, the required
+`build-and-boot` workflow passed `make verify` and all 116 declared QEMU
+scenarios. Its retained account, desktop, and ten ext4 power-cut artifacts
+were inspected. Production Data encryption and migration, credential media
+power-cut proof, hardware trust evidence, and independent review remain open.
 
 ## Boot and storage decisions still required
 
@@ -116,7 +120,7 @@ package upload paths call those production file operations. File content
 encryption needs a versioned abstraction shared by all those operations, with
 stable file identity, authenticated metadata, crash transactions, and a
 resumable plaintext migration. No production file path is encrypted by this
-draft. Existing deleted or rewritten plaintext can remain on physical media.
+branch. Existing deleted or rewritten plaintext can remain on physical media.
 Whole-volume rollback remains possible without an external freshness root.
 
 No qualified independent cryptography or OS-security review has occurred.
