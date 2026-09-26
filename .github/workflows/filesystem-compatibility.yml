@@ -67,11 +67,6 @@ jobs:
                   result=0
                   special=(journal-wrap admission-refusals geometry dense-file)
                   operations=(unlink replace rename rename-errors rename-device rename-cross rename-cross-errors rename-cross-device rename-wrap-device truncate truncate-errors truncate-device grow grow-errors grow-device append append-errors append-device overwrite overwrite-errors overwrite-device chmod chmod-errors chmod-device times times-errors times-device create create-errors create-device mkdir mkdir-errors rmdir rmdir-errors xattr xattr-errors xattr-device xattr-remove xattr-remove-errors xattr-remove-device link link-errors symlink symlink-errors symlink-long symlink-long-errors unlink-device replace-device mkdir-device rmdir-device link-device symlink-device symlink-long-device)
-                  if (( CUT_GROUP < ${#special[@]} )); then
-                      target="qemu-test-ext4-${special[CUT_GROUP]}"
-                      make "$target" QEMU_ACCEL=tcg 2>&1 \
-                          | tee "evidence/ext4/${special[CUT_GROUP]}.log" || result=1
-                  fi
                   for index in "${!operations[@]}"; do
                       if (( index % 8 != CUT_GROUP )); then
                           continue
@@ -80,6 +75,11 @@ jobs:
                       make "qemu-test-ext4-${operation}-powercuts" QEMU_ACCEL=tcg \
                           2>&1 | tee "evidence/ext4/${operation}-powercuts.log" || result=1
                   done
+                  if (( CUT_GROUP < ${#special[@]} )); then
+                      target="qemu-test-ext4-${special[CUT_GROUP]}"
+                      make "$target" QEMU_ACCEL=tcg 2>&1 \
+                          | tee "evidence/ext4/${special[CUT_GROUP]}.log" || result=1
+                  fi
                   exit "$result"
             - name: Hash the ext4 power-cut evidence
               if: always()
