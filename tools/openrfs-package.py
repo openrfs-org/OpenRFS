@@ -1021,6 +1021,8 @@ def command_install(args: argparse.Namespace) -> None:
     legacy_paths = (args.echo, args.uname, args.cat)
     if any(legacy_paths) and not all(legacy_paths):
         raise PackageError("legacy echo, uname, and cat inputs are all-or-none")
+    if not any(legacy_paths) and not args.packages:
+        raise PackageError("at least one package or the three BusyBox inputs is required")
     busyboxes = tuple(read_regular(Path(path)) for path in legacy_paths if path)
     extras: list[tuple[str, bytes]] = []
     identifiers: set[str] = set()
@@ -1069,7 +1071,7 @@ def parser() -> argparse.ArgumentParser:
     installer.add_argument("--cat")
     installer.add_argument("--trusted-key", action="append", default=[])
     installer.add_argument("--output", required=True)
-    installer.add_argument("packages", nargs="+")
+    installer.add_argument("packages", nargs="*")
     installer.set_defaults(function=command_install)
     return result
 
