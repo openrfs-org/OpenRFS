@@ -128,8 +128,9 @@ enum kernel_test_scenario {
     KERNEL_TEST_NATIVE_HTTPS,
     KERNEL_TEST_NATIVE_OPENRFS,
     KERNEL_TEST_EXT4_RECOVERY,
+    KERNEL_TEST_ACCOUNT_KDF,
     /*
-     * The upstream driver suite. It is deliberately outside the 115-scenario
+     * The upstream driver suite. It is deliberately outside the 116-scenario
      * matrix: tools/run_driver_tests.py drives it with its own device
      * profiles, one QEMU boot per openrfs.drvtest= plan.
      */
@@ -157,6 +158,7 @@ void kernel_test_run(
     const struct kernel_test_context *context
 );
 _Noreturn void kernel_test_complete_normal(void);
+_Noreturn void kernel_test_complete_account_kdf(void);
 struct boot_context;
 _Noreturn void kernel_test_complete_boot_ledger(
     const struct boot_context *context

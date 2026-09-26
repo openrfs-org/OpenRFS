@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include <openrfs/boot_ledger.h>
+#include <openrfs/account.h>
 #include <openrfs/clock.h>
 #include <openrfs/de/files.h>
 #include <openrfs/de/menu.h>
@@ -17,6 +18,7 @@
 #include <openrfs/de/theme.h>
 #include <openrfs/de/window.h>
 #include <openrfs/framebuffer.h>
+#include <openrfs/fat32_fs.h>
 #include <openrfs/heap.h>
 #include <openrfs/hwdrv.h>
 #include <openrfs/minimal_de.h>
@@ -26,6 +28,9 @@
 #include <openrfs/ui.h>
 #include <openrfs/ui_font.h>
 #include <openrfs/wallpaper.h>
+#include <trait/files.h>
+#include <trait/menu.h>
+#include <trait/shell.h>
 
 #define UI_MIN_WIDTH 800U
 #define UI_MIN_HEIGHT 600U
@@ -58,7 +63,133 @@ static const char *self_test_failure = "OpenRFS desktop self-test has not run";
 static const char *installed_failure = "OpenRFS desktop proof has not run";
 static struct native_window_record native_windows[UI_NATIVE_WINDOW_COUNT];
 static int32_t native_focus = -1;
-static bool minimal_desktop_selected;
+/* Compile out the old desktop path: every entry point starts WVRM. */
+static const bool minimal_desktop_selected = true;
+static bool wvrm_files_session_known;
+static bool wvrm_files_authorized;
+static bool wvrm_last_click_valid;
+static uint64_t wvrm_last_click_ns;
+static struct ui_point wvrm_last_click_point;
+static struct openrfsfs_list_entry wvrm_directory_entries[OPENRFSFS_MAX_LIST_ENTRIES];
+static bool wvrm_files_load(uint32_t folder);
+static void zero_bytes(void *pointer, size_t bytes);
+
+/* Rebuild the Files snapshot when the account session changes. In particular,
+ * a failed reauthentication revokes any names already loaded into the view. */
+static bool wvrm_files_sync_session(void)
+{
+    const bool authorized = account_session_active();
+    const uint32_t root = trait_files_root();
+
+    if (wvrm_files_session_known && authorized == wvrm_files_authorized) {
+        return false;
+    }
+    for (uint32_t slot = 0U; slot < TRAIT_SHELL_MAX_WINDOWS; ++slot) {
+        if (trait_shell_app_of(slot) == TRAIT_APP_FILES) {
+            (void)trait_shell_close(slot);
+        }
+    }
+    trait_files_reset();
+    zero_bytes(wvrm_directory_entries, sizeof(wvrm_directory_entries));
+    trait_files_set_read_only(true);
+    trait_shell_set_desktop_folder(root);
+    wvrm_last_click_valid = false;
+    wvrm_files_session_known = true;
+    wvrm_files_authorized = false;
+    if (authorized) {
+        if ((openrfsfs_drive(OPENRFSFS_VOLUME_SYSTEM).mounted &&
+                trait_files_add(root, "System", true, 0U) >=
+                    TRAIT_FILES_MAX_NODES) ||
+                (openrfsfs_drive(OPENRFSFS_VOLUME_DATA).mounted &&
+                trait_files_add(root, "Data", true, 0U) >=
+                    TRAIT_FILES_MAX_NODES)) {
+            trait_files_reset();
+            trait_files_set_read_only(true);
+        } else {
+            trait_files_set_loader(wvrm_files_load);
+            wvrm_files_authorized = true;
+        }
+    }
+    redraw_pending = true;
+    return true;
+}
+
+/* WVRM Files is an authenticated, read-only snapshot of mounted volumes. */
+static bool wvrm_files_load(uint32_t folder)
+{
+    char path[TRAIT_FILES_PATH_BYTES];
+    const char *relative;
+    enum openrfsfs_volume volume;
+    size_t count = 0U;
+    size_t at;
+
+    if (!account_session_active()) {
+        trait_shell_notify("WVRM Files", "Sign in to browse files");
+        return false;
+    }
+    trait_files_path(folder, path, sizeof(path));
+    if (path[0] != '/') {
+        return false;
+    }
+    if (path[1] == 'S' && path[2] == 'y' && path[3] == 's' &&
+            path[4] == 't' && path[5] == 'e' && path[6] == 'm' &&
+            (path[7] == '/' || path[7] == '\0')) {
+        volume = OPENRFSFS_VOLUME_SYSTEM;
+        relative = path + 7U;
+    } else if (path[1] == 'D' && path[2] == 'a' && path[3] == 't' &&
+            path[4] == 'a' && (path[5] == '/' || path[5] == '\0')) {
+        volume = OPENRFSFS_VOLUME_DATA;
+        relative = path + 5U;
+    } else {
+        return false;
+    }
+    if (*relative == '/') {
+        ++relative;
+    }
+    if (*relative == '\0') {
+        relative = ".";
+    }
+    if (openrfsfs_list(volume, relative, wvrm_directory_entries,
+            OPENRFSFS_MAX_LIST_ENTRIES, &count) != OPENRFSFS_STATUS_OK) {
+        trait_shell_notify("WVRM Files", "Directory unavailable");
+        return false;
+    }
+    if (count > TRAIT_FILES_MAX_CHILDREN ||
+            count > trait_files_free_slots()) {
+        trait_shell_notify("WVRM Files", "Directory exceeds view limit");
+        return false;
+    }
+    for (at = 0U; at < count; ++at) {
+        const char *name = wvrm_directory_entries[at].name;
+        size_t length = 0U;
+
+        while (length < OPENRFSFS_MAX_COMPONENT_BYTES &&
+                name[length] != '\0') {
+            if (name[length] == '/') {
+                return false;
+            }
+            ++length;
+        }
+        if (length == 0U || length >= TRAIT_FILES_NAME_BYTES ||
+                (name[0] == '.' && (name[1] == '\0' ||
+                (name[1] == '.' && name[2] == '\0')))) {
+            trait_shell_notify("WVRM Files", "Invalid directory entry");
+            return false;
+        }
+    }
+    for (at = 0U; at < count; ++at) {
+        const struct openrfsfs_list_entry *entry = &wvrm_directory_entries[at];
+        const uint32_t bytes = entry->size > UINT32_MAX ?
+            UINT32_MAX : (uint32_t)entry->size;
+
+        if (trait_files_add(folder, entry->name, entry->directory, bytes) >=
+                TRAIT_FILES_MAX_NODES) {
+            trait_shell_notify("WVRM Files", "Directory exceeds view limit");
+            return false;
+        }
+    }
+    return true;
+}
 
 static void zero_bytes(void *pointer, size_t bytes)
 {
@@ -476,6 +607,7 @@ static enum ui_status render_desktop(void)
     const struct openrfs_rect whole = { 0U, 0U, desktop.width, desktop.height };
 
     if (minimal_desktop_selected) {
+        (void)wvrm_files_sync_session();
         minimal_de_draw();
     } else {
         if (openrfs_wallpaper_decode(0U, desktop.pixels,
@@ -597,6 +729,9 @@ enum ui_status ui_construct(bool pointer_present)
             desktop = (struct openrfs_surface){ NULL, 0U, 0U };
             return UI_STATUS_SURFACE_FAILURE;
         }
+        wvrm_last_click_valid = false;
+        wvrm_files_session_known = false;
+        (void)wvrm_files_sync_session();
     } else {
         if (openrfs_panel_attach(&desktop) != OPENRFS_PANEL_STATUS_OK ||
                 openrfs_panel_initialize() != OPENRFS_PANEL_STATUS_OK) {
@@ -643,7 +778,6 @@ bool ui_select_minimal_desktop(void)
     if (state.initialized || state.active) {
         return false;
     }
-    minimal_desktop_selected = true;
     return true;
 }
 
@@ -851,8 +985,25 @@ static bool process_one(const struct ui_event *event)
     struct openrfs_event translated;
 
     if (minimal_desktop_selected) {
+        struct ui_event wvrm_event = *event;
+        const struct ui_event *delivered = &wvrm_event;
+        const bool session_changed = wvrm_files_sync_session();
         bool changed;
         bool overlay_dispatched = false;
+
+        if (event->type == UI_EVENT_POINTER_BUTTON_PRESS &&
+                event->button == UI_POINTER_BUTTON_LEFT) {
+            const uint64_t now = clock_monotonic_ns();
+
+            wvrm_event.double_click = wvrm_last_click_valid &&
+                now >= wvrm_last_click_ns &&
+                now - wvrm_last_click_ns <= UINT64_C(500000000) &&
+                event->point.x == wvrm_last_click_point.x &&
+                event->point.y == wvrm_last_click_point.y;
+            wvrm_last_click_ns = now;
+            wvrm_last_click_point = event->point;
+            wvrm_last_click_valid = true;
+        }
 
         if (event->type == UI_EVENT_POINTER_MOVEMENT ||
                 event->type == UI_EVENT_POINTER_BUTTON_PRESS ||
@@ -866,7 +1017,7 @@ static bool process_one(const struct ui_event *event)
             }
             if (minimal_de_overlay_open()) {
                 overlay_dispatched = true;
-                if (minimal_de_event(event)) {
+                if (minimal_de_event(delivered)) {
                     sync_state();
                     return true;
                 }
@@ -888,9 +1039,13 @@ static bool process_one(const struct ui_event *event)
             sync_state();
             return true;
         }
-        changed = minimal_de_event(event);
+        changed = minimal_de_event(delivered);
+        if (wvrm_files_sync_session()) {
+            changed = true;
+        }
         sync_state();
-        return changed || event->type == UI_EVENT_POINTER_MOVEMENT;
+        return changed || session_changed ||
+            event->type == UI_EVENT_POINTER_MOVEMENT;
     }
     if (event->type == UI_EVENT_KEYBOARD_FOCUS_NEXT ||
             event->type == UI_EVENT_KEYBOARD_FOCUS_PREVIOUS) {
@@ -1004,6 +1159,9 @@ enum ui_status ui_flush(void)
 
     if (!state.active) {
         return UI_STATUS_NOT_ACTIVE;
+    }
+    if (minimal_desktop_selected) {
+        (void)wvrm_files_sync_session();
     }
     if (!redraw_pending) {
         return UI_STATUS_OK;
@@ -1195,10 +1353,11 @@ enum ui_status ui_verify_installed(struct ui_proof *proof)
     if (proof == NULL) {
         return UI_STATUS_NULL_ARGUMENT;
     }
-    if (!state.active || canvas == NULL || !openrfs_panel_is_initialized() ||
+    if (!state.active || canvas == NULL || !minimal_desktop_selected ||
             ui_layout_validate(&state.layout) != UI_STATUS_OK ||
-            openrfs_shell_window_count() == 0U || !ui_font_is_verified()) {
-        installed_failure = "OpenRFS installed desktop state is incomplete";
+            trait_shell_window_count() == 0U ||
+            trait_menu_row_count() != 4U || !ui_font_is_verified()) {
+        installed_failure = "WVRM installed desktop state is incomplete";
         return UI_STATUS_INSTALLED_PROOF_FAILURE;
     }
     redraw_pending = true;
@@ -1223,7 +1382,7 @@ enum ui_status ui_verify_installed(struct ui_proof *proof)
     *proof = (struct ui_proof){
         .width = canvas->width,
         .height = canvas->height,
-        .dock_items = UI_DOCK_ITEM_COUNT,
+        .root_menu_rows = trait_menu_row_count(),
         .events = state.events.drained,
         .panels = state.renders.panel_transitions,
         .cursor_moves = state.renders.cursor_moves,
@@ -1232,7 +1391,7 @@ enum ui_status ui_verify_installed(struct ui_proof *proof)
         .ledger_fingerprint = ledger == NULL ? 0U : ledger->fingerprint,
         .render_hash = second
     };
-    installed_failure = "OpenRFS installed desktop proof passed";
+    installed_failure = "WVRM installed desktop proof passed";
     return UI_STATUS_OK;
 }
 
@@ -1304,5 +1463,8 @@ const char *ui_element_name(enum ui_element_id element)
 bool ui_events_pending(void)
 {
     hwdrv_poll_input();
+    if (state.active && minimal_desktop_selected) {
+        (void)wvrm_files_sync_session();
+    }
     return state.active && redraw_pending;
 }

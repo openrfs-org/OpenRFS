@@ -20,7 +20,7 @@ rejects warnings, unresolved symbols, unexpected sections, W+X mappings,
 floating-point or SIMD instructions in the kernel, modified pinned assets, and
 non-reproducible filesystem images.
 
-`make qemu-tests` runs the complete 115-scenario guest suite. The Makefile is
+`make qemu-tests` runs the complete 116-scenario guest suite. The Makefile is
 the source of truth for scenario names and expected results.
 
 The `native-sdl` scenario launches the SDL 2 proof application twice. It
@@ -105,8 +105,8 @@ reference pixel. These temporary mutations are never committed.
 ## Visual captures
 
 ```sh
-make capture-openrfs
-make capture-openrfs-proof
+make capture-openrfs       # ext4plus writable Data, FAT32 read-only System
+make capture-openrfs-proof # historical FAT32 Data screenshot baseline
 make screenshot-proof
 make capture-boot-video
 python3 tools/capture-networking.py --iso build/openrfs.iso \

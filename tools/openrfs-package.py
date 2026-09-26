@@ -288,6 +288,8 @@ def encode_manifest(spec: dict[str, Any], executable: bytes,
     app_id = identifier(spec.get("identifier"), "identifier")
     executable_path = short_path(spec.get("executable"), "executable", required=True)
     data_namespace = identifier(spec.get("data_namespace"), "data_namespace")
+    if data_namespace in {"OPENRFS", "PKGSTATE", "PKGSTAGE"}:
+        raise PackageError("data_namespace is reserved for kernel state")
     resource_directory = spec.get("resource_directory", "")
     if resource_directory:
         resource_directory = identifier(resource_directory, "resource_directory")
@@ -1019,6 +1021,8 @@ def command_install(args: argparse.Namespace) -> None:
     legacy_paths = (args.echo, args.uname, args.cat)
     if any(legacy_paths) and not all(legacy_paths):
         raise PackageError("legacy echo, uname, and cat inputs are all-or-none")
+    if not any(legacy_paths) and not args.packages:
+        raise PackageError("at least one package or the three BusyBox inputs is required")
     busyboxes = tuple(read_regular(Path(path)) for path in legacy_paths if path)
     extras: list[tuple[str, bytes]] = []
     identifiers: set[str] = set()
@@ -1067,7 +1071,7 @@ def parser() -> argparse.ArgumentParser:
     installer.add_argument("--cat")
     installer.add_argument("--trusted-key", action="append", default=[])
     installer.add_argument("--output", required=True)
-    installer.add_argument("packages", nargs="+")
+    installer.add_argument("packages", nargs="*")
     installer.set_defaults(function=command_install)
     return result
 

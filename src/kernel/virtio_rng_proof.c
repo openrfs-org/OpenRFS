@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <openrfs/apic.h>
 #include <openrfs/clock.h>
 #include <openrfs/cpu.h>
 #include <openrfs/device_substrate.h>
@@ -50,6 +51,8 @@
 #define VIRTQ_DESC_SIZE UINT64_C(16)
 #define VIRTQ_DESC_FLAG_WRITE UINT16_C(2)
 #define VIRTIO_PROOF_TIMEOUT_NS UINT64_C(2000000000)
+#define APIC_ICR_LOW UINT32_C(0x0300)
+#define APIC_ICR_DESTINATION_SELF UINT32_C(0x00040000)
 
 struct virtio_capability_region {
     uint8_t type;
@@ -347,7 +350,9 @@ enum device_substrate_status device_substrate_prove(
     uint64_t available_offset;
     uint64_t used_offset;
     uint64_t deadline;
+    size_t drained_before = 0U;
     bool bus_master_enabled = false;
+    bool pending_probe_armed = false;
 
     if (proof == NULL) {
         return DEVICE_SUBSTRATE_STATUS_CAPABILITY_FAILURE;
@@ -602,8 +607,24 @@ cleanup:
         dma_transfer_to_cpu(&buffer_dma) != DMA_STATUS_OK) {
         result = DEVICE_SUBSTRATE_STATUS_TEARDOWN_FAILURE;
     }
+    if (result == DEVICE_SUBSTRATE_STATUS_OK && binding.active) {
+        /* A real local APIC request remains queued while IF is clear. The
+         * production unbind must service it before recycling the vector.
+         */
+        drained_before = msix_get_state().drained_pending;
+        apic_register_write(APIC_ICR_LOW,
+            APIC_ICR_DESTINATION_SELF | binding.vector.vector);
+        pending_probe_armed = true;
+    }
     if (binding.active && msix_unbind(&binding) != MSIX_STATUS_OK) {
         result = DEVICE_SUBSTRATE_STATUS_TEARDOWN_FAILURE;
+    }
+    if (pending_probe_armed) {
+        if (msix_get_state().drained_pending <= drained_before) {
+            result = DEVICE_SUBSTRATE_STATUS_MSIX_NEGATIVE_CONTROL_FAILURE;
+        } else {
+            ++proof->negative_controls;
+        }
     }
     if (buffer_dma.active && dma_release(&buffer_dma) != DMA_STATUS_OK) {
         result = DEVICE_SUBSTRATE_STATUS_TEARDOWN_FAILURE;

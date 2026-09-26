@@ -90,7 +90,7 @@ is immutable; writable Data paths are rooted below the application namespace.
 | `0x020b PATH_TRUNCATE(*path, length)` | `0` | K | Resizes one Data file subject to the backend's admitted size and manifest limits; no handle or buffer ownership changes. |
 | `0x020c VOLUME_SYNC(volume)` | `0` | K | Completes pending filesystem and device synchronization for the authorized volume; owns no object after return. |
 | `0x020d VOLUME_SPACE(volume, *space)` | `0` | K | Writes one all-or-nothing free-space record and retains no pointer or resource. |
-| `0x020e PATH_SYMLINK(*path, target, length)` | `0` | K | Creates an ext4 Data link with a nonempty literal target shorter than 128 bytes; requires Data write capability. Target bytes are copied before mutation and no pointer is retained. |
+| `0x020e PATH_SYMLINK(*path, target, length)` | Refused | K | Native link creation returns `EACCES` until an atomic beneath-namespace resolver is available. The kernel VFS still supports ext4 symlinks for other callers. |
 | `0x020f PATH_READLINK(*path, output, capacity)` | Bytes copied | K | Copies literal target bytes without a NUL, including dangling/looping final links. A nonzero output buffer may truncate the target; at most 4096 bytes are copied. No handle is allocated. |
 | `0x0210 PATH_CHMOD(*path, mode)` | `0` | K | Replaces permission/special mode bits (0000–07777) on ext4 Data with write capability. Immutable inodes and access ACLs are refused. |
 | `0x0211 PATH_XATTR(*request)` | Value length for get, otherwise `0` | K | Versioned 56-byte request selects get/set/remove of admitted user attributes. Name length is 1–255, value/capacity at most 4096; get with zero capacity queries size. Inputs are copied before mutation. Set/remove require Data write capability. Ext4 packs attributes in the inode and at most one external block; external value inodes are refused. |
@@ -103,6 +103,14 @@ is immutable; writable Data paths are rooted below the application namespace.
 | `0x0218 FILE_METADATA(handle, *metadata)` | `0` | K | Copies versioned metadata for the inode held by a file handle, including after rename or unlink. The handle remains caller-owned. |
 | `0x0219 FILE_PUBLISH(handle, *request)` | `0` | K | With Data write capability, atomically replaces the named ext4 destination only if the source still names the inode held by the writable handle. Copies both paths; the handle remains owned. |
 | `0x021a FILE_UNLINK(handle, *path)` | `0` | K | With Data write capability, unlinks the named Data file only if it is the inode held by the writable handle. Copies the path; the handle remains owned. |
+
+Native Data operations preflight each existing path component with `lstat` and
+refuse symlinks. `PATH_READLINK` and `PATH_METADATA` with `NOFOLLOW` may inspect
+a final link, and `PATH_UNLINK` may remove one. The preflight and later ext4
+operation are not atomic: an independent kernel writer or direct disk mutation
+can still race them. Hard links and unauthenticated on-disk metadata also remain
+outside this policy. This is a fail-closed mitigation, not authenticated Data
+or a complete app namespace boundary.
 
 ### Time, waiting, and entropy
 

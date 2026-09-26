@@ -111,7 +111,7 @@
 
 <p align="center"><samp><strong>make verify</strong> checks source policy, generated contracts, host-side parsers, deterministic assets, the kernel build, and the repository's local acceptance rules.</samp></p>
 
-<p align="center"><samp><strong>make run</strong> builds the bootable image and starts the normal QEMU configuration.</samp></p>
+<p align="center"><samp><strong>make run</strong> builds the bootable image and starts the normal QEMU configuration with a FAT32 read-only System volume and an ext4 Data volume served by ext4plus. The run uses a fresh copy of the deterministic Data fixture.</samp></p>
 
 <p align="center"><samp>Additional QEMU scenarios cover normal boot, deliberate faults, storage persistence, network behavior, native applications, and selected recovery cases. See the verification documentation before interpreting a scenario as proof of a larger claim.</samp></p>
 

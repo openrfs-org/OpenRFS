@@ -27,8 +27,81 @@ concurrency:
     cancel-in-progress: true
 
 jobs:
+    held-file-cuts:
+        name: ext4-held-file-powercuts (${{ matrix.group }})
+        if: ${{ !inputs.ext4_boot_probe }}
+        runs-on: ubuntu-24.04
+        timeout-minutes: 360
+        strategy:
+            fail-fast: false
+            matrix:
+                group: [0, 1, 2, 3, 4, 5, 6, 7]
+        env:
+            RUST_TEST_THREADS: "2"
+            OPENRFS_EXT4_KERNEL_INTEROP: "1"
+            OPENRFS_E2FSPROGS_VERSION: "1.47.0-2.4~exp1ubuntu4.1"
+        steps:
+            - name: Check out source
+              uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+              with:
+                  persist-credentials: false
+            - name: Install build tools
+              run: |
+                  sudo sed -i '\|azure.archive.ubuntu.com|d' /etc/apt/apt-mirrors.txt
+                  sudo apt-get update
+                  sudo apt-get install --yes --no-install-recommends \
+                      binutils bzip2 clang "e2fsprogs=$OPENRFS_E2FSPROGS_VERSION" ffmpeg file gcc grub-common \
+                      grub-pc-bin lld make \
+                      mtools qemu-system-x86 xorriso
+            - name: Install the Rust bare-metal target
+              run: rustup target add x86_64-unknown-none
+            - name: Exercise ext4 held-file mutation power cuts
+              shell: bash
+              env:
+                  CUT_GROUP: ${{ matrix.group }}
+              run: |
+                  set -euo pipefail
+                  mkdir -p evidence/ext4
+                  test "$(dpkg-query -W -f='${Version}' e2fsprogs)" = "$OPENRFS_E2FSPROGS_VERSION"
+                  git rev-parse HEAD >evidence/ext4/head.txt
+                  result=0
+                  special=(journal-wrap admission-refusals geometry dense-file)
+                  operations=(unlink replace rename rename-errors rename-device rename-cross rename-cross-errors rename-cross-device rename-wrap-device truncate truncate-errors truncate-device grow grow-errors grow-device append append-errors append-device overwrite overwrite-errors overwrite-device chmod chmod-errors chmod-device times times-errors times-device create create-errors create-device mkdir mkdir-errors rmdir rmdir-errors xattr xattr-errors xattr-device xattr-remove xattr-remove-errors xattr-remove-device link link-errors symlink symlink-errors symlink-long symlink-long-errors unlink-device replace-device mkdir-device rmdir-device link-device symlink-device symlink-long-device)
+                  for index in "${!operations[@]}"; do
+                      if (( index % 8 != CUT_GROUP )); then
+                          continue
+                      fi
+                      operation="${operations[index]}"
+                      make "qemu-test-ext4-${operation}-powercuts" QEMU_ACCEL=tcg \
+                          2>&1 | tee "evidence/ext4/${operation}-powercuts.log" || result=1
+                  done
+                  if (( CUT_GROUP < ${#special[@]} )); then
+                      target="qemu-test-ext4-${special[CUT_GROUP]}"
+                      make "$target" QEMU_ACCEL=tcg 2>&1 \
+                          | tee "evidence/ext4/${special[CUT_GROUP]}.log" || result=1
+                  fi
+                  exit "$result"
+            - name: Hash the ext4 power-cut evidence
+              if: always()
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  mkdir -p evidence/ext4
+                  python3 tools/filesystem_evidence.py manifest evidence/ext4/artifact-manifest.json
+            - name: Retain exact-head ext4 power-cut evidence
+              if: always()
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: openrfs-ext4-held-file-cuts-${{ github.sha }}-${{ matrix.group }}
+                  path: |
+                      evidence/ext4
+                      build/tests/ext4-unlink-powercuts
+                      build/*.e2fsck.txt
+                      build/*.sha256.txt
+                  if-no-files-found: error
+                  retention-days: 30
     bounded-evidence:
-        name: filesystem-compatibility-evidence
+        name: filesystem-compatibility-core
         runs-on: ubuntu-24.04
         timeout-minutes: 360
         env:
@@ -217,25 +290,6 @@ jobs:
               run: |
                   set -euo pipefail
                   make qemu-test-ext4-inodes QEMU_ACCEL=tcg 2>&1 | tee evidence/ext4/inodes.log
-            - name: Exercise ordinary ext4 held-file mutation power cuts
-              if: ${{ !cancelled() && !inputs.ext4_boot_probe }}
-              shell: bash
-              run: |
-                  set -euo pipefail
-                  result=0
-                  make qemu-test-ext4-journal-wrap QEMU_ACCEL=tcg \
-                      2>&1 | tee evidence/ext4/journal-wrap.log || result=1
-                  make qemu-test-ext4-admission-refusals QEMU_ACCEL=tcg \
-                      2>&1 | tee evidence/ext4/admission-refusals.log || result=1
-                  make qemu-test-ext4-geometry QEMU_ACCEL=tcg \
-                      2>&1 | tee evidence/ext4/geometry.log || result=1
-                  make qemu-test-ext4-dense-file QEMU_ACCEL=tcg \
-                      2>&1 | tee evidence/ext4/dense-file.log || result=1
-                  for operation in unlink replace rename rename-errors rename-device rename-cross rename-cross-errors rename-cross-device rename-wrap-device truncate truncate-errors truncate-device grow grow-errors grow-device append append-errors append-device overwrite overwrite-errors overwrite-device chmod chmod-errors chmod-device times times-errors times-device create create-errors create-device mkdir mkdir-errors rmdir rmdir-errors xattr xattr-errors xattr-device xattr-remove xattr-remove-errors xattr-remove-device link link-errors symlink symlink-errors symlink-long symlink-long-errors unlink-device replace-device mkdir-device rmdir-device link-device symlink-device symlink-long-device; do
-                      make "qemu-test-ext4-${operation}-powercuts" QEMU_ACCEL=tcg \
-                          2>&1 | tee "evidence/ext4/${operation}-powercuts.log" || result=1
-                  done
-                  exit "$result"
             - name: Hash the ext4 evidence
               if: always()
               shell: bash
@@ -407,3 +461,20 @@ jobs:
                   path: evidence/filesystem
                   if-no-files-found: error
                   retention-days: 30
+    filesystem-gate:
+        name: filesystem-compatibility-evidence
+        needs: [bounded-evidence, held-file-cuts]
+        if: ${{ always() && !cancelled() }}
+        runs-on: ubuntu-24.04
+        steps:
+            - name: Require complete filesystem evidence
+              env:
+                  CORE_RESULT: ${{ needs.bounded-evidence.result }}
+                  CUTS_RESULT: ${{ needs.held-file-cuts.result }}
+                  BOOT_PROBE: ${{ inputs.ext4_boot_probe }}
+              shell: bash
+              run: |
+                  test "$CORE_RESULT" = success
+                  if [[ "$BOOT_PROBE" != true ]]; then
+                      test "$CUTS_RESULT" = success
+                  fi

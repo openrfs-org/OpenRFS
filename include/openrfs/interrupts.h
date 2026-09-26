@@ -112,6 +112,11 @@ enum interrupt_status interrupt_register_handler(
     interrupt_handler_t handler,
     void *context
 );
+enum interrupt_status interrupt_replace_handler(
+    uint8_t vector,
+    interrupt_handler_t handler,
+    void *context
+);
 enum interrupt_status interrupt_unregister_handler(uint8_t vector);
 enum interrupt_status interrupt_process_gate_arm(
     interrupt_handler_t handler,

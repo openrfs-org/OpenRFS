@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 
-EXPECTED_SCENARIOS = 115
+EXPECTED_SCENARIOS = 116
 EXPECTED_NETWORK_SCENARIOS = 36
 EXPECTED_SWEEPS = 2
 REQUIRED_AUDITS = ("network-http-length", "native-https", "native-openrfs")
@@ -322,7 +322,7 @@ def inspect_directory(root: Path, expected_head: str) -> None:
         fail("artifact head does not match the expected head")
     counts = read_json(root / "scenario-counts.json")
     if counts != {
-        "declared": 115, "completed": 115, "declared_network": 36,
+        "declared": 116, "completed": 116, "declared_network": 36,
         "completed_network": 36, "additional_sweeps": 2,
         "sweep_scenarios_each": 37, "sweep_results": 74,
     }:

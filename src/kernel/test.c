@@ -5,6 +5,7 @@
 
 #include <openrfs/acpi.h>
 #include <openrfs/acpi_util.h>
+#include <openrfs/account_kdf.h>
 #include <openrfs/abi/base.h>
 #include <openrfs/apic.h>
 #include <openrfs/apic_timer.h>
@@ -60,6 +61,9 @@
 #include <openrfs/ui.h>
 #include <openrfs/ui_font.h>
 #include <openrfs/xhci.h>
+#include <trait/files.h>
+#include <trait/menu.h>
+#include <trait/shell.h>
 
 #define QEMU_EXIT_PORT UINT16_C(0x00F4)
 #define QEMU_FAILURE_VALUE UINT8_C(0x7F)
@@ -616,6 +620,9 @@ static enum kernel_test_scenario scenario_from_value(
     if (token_equals(value, length, "drivers")) {
         return KERNEL_TEST_DRIVERS;
     }
+    if (token_equals(value, length, "account-kdf")) {
+        return KERNEL_TEST_ACCOUNT_KDF;
+    }
 
     return KERNEL_TEST_INVALID;
 }
@@ -808,6 +815,7 @@ static uint8_t scenario_exit_value(enum kernel_test_scenario scenario)
     case KERNEL_TEST_EXT4_RECOVERY: return UINT8_C(0x86);
     case KERNEL_TEST_NATIVE_OPENRFS: return UINT8_C(0x87);
     case KERNEL_TEST_DRIVERS: return UINT8_C(0x88);
+    case KERNEL_TEST_ACCOUNT_KDF: return UINT8_C(0x35);
     default:
         return QEMU_FAILURE_VALUE;
     }
@@ -4777,6 +4785,7 @@ void kernel_test_run(
     case KERNEL_TEST_NATIVE_HTTPS:
     case KERNEL_TEST_NATIVE_OPENRFS:
     case KERNEL_TEST_EXT4_RECOVERY:
+    case KERNEL_TEST_ACCOUNT_KDF:
     case KERNEL_TEST_DRIVERS:
         /* Deferred until OpenRFS and the Boot Ledger are published. */
         return;
@@ -4801,6 +4810,51 @@ _Noreturn void kernel_test_complete_normal(void)
         kernel_test_fail("normal completion used outside the normal scenario");
     }
 
+    kernel_test_pass();
+}
+
+_Noreturn void kernel_test_complete_account_kdf(void)
+{
+    static const uint8_t password[] = "correct horse battery staple";
+    static const uint8_t salt[ACCOUNT_KDF_V2_SALT_BYTES] = {
+        0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U,
+        8U, 9U, 10U, 11U, 12U, 13U, 14U, 15U
+    };
+    static const uint8_t expected[ACCOUNT_KDF_V2_OUTPUT_BYTES] = {
+        0x85U, 0x3bU, 0x27U, 0x2aU, 0x44U, 0xdbU, 0x14U, 0x21U,
+        0xc0U, 0x29U, 0x62U, 0x66U, 0x9aU, 0x55U, 0xebU, 0x09U,
+        0x94U, 0xf3U, 0xcaU, 0xb3U, 0x85U, 0xedU, 0x1cU, 0x4cU,
+        0x79U, 0x25U, 0x3eU, 0xeeU, 0x19U, 0xbaU, 0xb4U, 0x9eU
+    };
+    uint8_t output[ACCOUNT_KDF_V2_OUTPUT_BYTES];
+    struct paging_translation guard;
+    const struct frame_allocator_stats before = frame_allocator_get_stats();
+    const bool preemption_before = thread_preemption_enabled();
+
+    /* The shell's input loop returns from STI/HLT with IF set before it
+     * dispatches account operations. Recreate that caller state here. */
+    cpu_interrupt_enable();
+    if (active_scenario != KERNEL_TEST_ACCOUNT_KDF ||
+        !cpu_interrupts_enabled()) {
+        kernel_test_fail("account KDF guest preconditions missing");
+    }
+    if (account_kdf_v2_derive(salt, password, sizeof(password) - 1U,
+            output) != ACCOUNT_KDF_STATUS_OK) {
+        kernel_test_fail("account KDF refused its 64 MiB guest profile");
+    }
+    for (size_t index = 0U; index < sizeof(output); ++index) {
+        if (output[index] != expected[index]) {
+            kernel_test_fail("account KDF guest result differs from independent Argon2id");
+        }
+    }
+    if (frame_allocator_get_stats().free_frames != before.free_frames ||
+        !cpu_interrupts_enabled() ||
+        thread_preemption_enabled() != preemption_before ||
+        paging_translate(UINT64_C(0x0000000402000000), &guard) !=
+            PAGING_STATUS_NOT_MAPPED) {
+        kernel_test_fail("account KDF guest arena resources not released");
+    }
+    console_write("ST ACCOUNT_KDF Argon2id 64MiB t3 p4 independent output and arena cleanup exact\n");
     kernel_test_pass();
 }
 
@@ -6226,7 +6280,7 @@ static _Noreturn void ext4_vfs_metadata_powercut(bool changing_times)
     struct openrfsfs_times invalid = times;
     invalid.mtime_nanos = 1000000000U;
     if (openrfsfs_set_times(volume, name, &invalid) != OPENRFSFS_STATUS_INVALID_ARGUMENT ||
-        openrfsfs_chmod(volume, name, 0100640U) != OPENRFSFS_STATUS_OK)
+        openrfsfs_chmod(volume, name, changing_times ? 0100644U : 0100640U) != OPENRFSFS_STATUS_OK)
         kernel_test_fail("ext4 metadata cut invalid fields or stat mode round-trip failed");
     const openrfsfs_handle held[] = { file, reader };
     for (size_t index = 0U; index < 2U; ++index) {
@@ -7503,6 +7557,15 @@ static bool native_openrfs_authority_is_canonical(
         manifest.owner_index == 0U && manifest.length == UINT64_C(1024);
 }
 
+static bool native_openrfs_link_probe(void)
+{
+    struct native_process_result probe = {0};
+
+    return native_process_launch("RFSPROBE.MAN", &probe) == NATIVE_PROCESS_OK &&
+        probe.exited && !probe.faulted && probe.exit_status == 0 &&
+        probe.resources_released && native_process_resources_released();
+}
+
 _Noreturn void kernel_test_complete_native_openrfs(void)
 {
     static const uint8_t expected[] = "SDL chess release-2.32.10\n";
@@ -7510,6 +7573,8 @@ _Noreturn void kernel_test_complete_native_openrfs(void)
         "pkgstate/gen/00000000/00000002/root/bin/CHESS.MAN";
     static const char repaired_manifest[] =
         "pkgstate/gen/00000000/00000003/root/bin/CHESS.MAN";
+    static const char noncanonical_manifest[] =
+        "pkgstate/gen/00000000/00000003/root/bin/../bin/CHESS.MAN";
     static const char state_path[] =
         "SDLCHESS/SDL/DF4F1BB4/STATE.TXT";
     static uint8_t database[4096U];
@@ -7520,8 +7585,10 @@ _Noreturn void kernel_test_complete_native_openrfs(void)
     struct openrfsfs_stat output;
     openrfsfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
+    uint8_t capability_high_byte = 0U;
     size_t read_bytes = 0U;
     size_t database_bytes = 0U;
+    uint64_t position = 0U;
     bool matches = true;
     struct network_state network;
     enum openrfsfs_status authority_status;
@@ -7541,6 +7608,9 @@ _Noreturn void kernel_test_complete_native_openrfs(void)
     authority_status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA,
         PACKAGE_SERVICE_AUTHORITY_PATH, &authority);
     if (authority_status == OPENRFSFS_STATUS_NOT_FOUND) {
+        if (!native_openrfs_link_probe()) {
+            kernel_test_fail("native openrfs namespace link probe failed");
+        }
         launch_status = native_process_launch("OPENRFS.MAN", &proof);
         if (launch_status != NATIVE_PROCESS_OK ||
             !proof.exited || proof.faulted || proof.exit_status != 0 ||
@@ -7606,6 +7676,9 @@ _Noreturn void kernel_test_complete_native_openrfs(void)
         kernel_test_fail("native openrfs reboot authority is not canonical");
     }
     if (service.generation == 1U) {
+        if (!native_openrfs_link_probe()) {
+            kernel_test_fail("native openrfs update namespace link probe failed");
+        }
         if (native_process_launch("OPENRFS.MAN", &proof) != NATIVE_PROCESS_OK ||
             !proof.exited || proof.faulted || proof.exit_status != 0 ||
             !proof.resources_released || proof.peak_handles < 3U ||
@@ -7623,6 +7696,9 @@ _Noreturn void kernel_test_complete_native_openrfs(void)
             "OpenRFS: signed HTTPS package update synchronized reboot phase\n");
         cpu_out8(UINT16_C(0x0064), UINT8_C(0xFE));
         kernel_test_fail("platform reset did not restart QEMU");
+    }
+    if (!native_openrfs_link_probe()) {
+        kernel_test_fail("native openrfs rollback namespace link probe failed");
     }
     if (service.generation != 2U ||
         native_process_launch("OPENRFS.MAN", &proof) != NATIVE_PROCESS_OK ||
@@ -7643,13 +7719,18 @@ _Noreturn void kernel_test_complete_native_openrfs(void)
     }
     console_write(
         "OpenRFS: damaged package generation quarantined before repair passed\n");
+    if (!native_openrfs_link_probe()) {
+        kernel_test_fail("native openrfs repair namespace link probe failed");
+    }
     if (native_process_launch("OPENRFSR.MAN", &proof) != NATIVE_PROCESS_OK ||
         !proof.exited || proof.faulted || proof.exit_status != 0 ||
         !proof.resources_released || proof.peak_handles < 3U ||
         proof.syscall_count < 20U || proof.thread_switches == 0U ||
         !native_process_resources_released() ||
         !native_openrfs_authority_is_canonical(database, sizeof(database),
-            &service) || service.generation != 3U ||
+                &service) || service.generation != 3U ||
+        native_process_launch_installed(noncanonical_manifest, &proof) !=
+            NATIVE_PROCESS_IMAGE_REFUSED ||
         native_process_launch_installed(repaired_manifest, &proof) !=
             NATIVE_PROCESS_OK ||
         !proof.exited || proof.faulted || proof.exit_status != 0 ||
@@ -7668,14 +7749,45 @@ _Noreturn void kernel_test_complete_native_openrfs(void)
         matches = matches && bytes[index] == expected[index];
     }
     if (openrfsfs_close(file) != OPENRFSFS_STATUS_OK || !matches ||
+        openrfsfs_open(OPENRFSFS_VOLUME_DATA, repaired_manifest,
+            OPENRFSFS_ACCESS_READ_WRITE, &file) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_seek(file, 29, OPENRFSFS_SEEK_START, &position) !=
+            OPENRFSFS_STATUS_OK || position != 29U ||
+        openrfsfs_read(file, &capability_high_byte, 1U, &read_bytes) !=
+            OPENRFSFS_STATUS_OK || read_bytes != 1U ||
+        capability_high_byte != 0U ||
+        openrfsfs_seek(file, 29, OPENRFSFS_SEEK_START, &position) !=
+            OPENRFSFS_STATUS_OK || position != 29U ||
+        openrfsfs_write(file, (const uint8_t *)"\x01", 1U, &read_bytes) !=
+            OPENRFSFS_STATUS_OK || read_bytes != 1U ||
+        openrfsfs_close(file) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK ||
+        native_process_launch_installed(repaired_manifest, &proof) !=
+            NATIVE_PROCESS_IMAGE_REFUSED ||
+        !native_process_resources_released()) {
+        kernel_test_fail("native openrfs writable capability edit was not refused");
+    }
+    if (openrfsfs_open(OPENRFSFS_VOLUME_DATA, repaired_manifest,
+            OPENRFSFS_ACCESS_WRITE, &file) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_seek(file, 29, OPENRFSFS_SEEK_START, &position) !=
+            OPENRFSFS_STATUS_OK || position != 29U ||
+        openrfsfs_write(file, &capability_high_byte, 1U, &read_bytes) !=
+            OPENRFSFS_STATUS_OK || read_bytes != 1U ||
+        openrfsfs_close(file) != OPENRFSFS_STATUS_OK ||
+        openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK ||
+        package_service_recover(&service) != PACKAGE_SERVICE_STATUS_OK ||
+        service.generation != 3U || service.live_file_handles != 0U ||
+        service.live_allocations != 0U ||
+        !native_process_resources_released() ||
         openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK ||
         openrfsfs_unmount(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK ||
         !nvme_filesystem_session_resources_released()) {
-        kernel_test_fail("native openrfs upstream SDL launch did not cleanly sync");
+        kernel_test_fail("native openrfs restored generation did not verify cleanly");
     }
     network_native_teardown_census();
     console_write(
         "OpenRFS: damaged SDL package repaired authenticated and launched from writable ext4 passed\n");
+    console_write("OpenRFS: installed manifest capability edit refused\n");
     console_write("ST NETWORK production path bounded and recoverable\n");
     kernel_test_pass();
 }
@@ -7934,10 +8046,7 @@ _Noreturn void kernel_test_complete_openrfs_proof(void)
     const struct ui_render_counters initial_renders = ui->renders;
     struct ui_proof proof;
     enum ui_status proof_status;
-    struct keyboard_event keyboard = {
-        .scancode = 0x01U, .pressed = true, .shift = false,
-        .control = false, .alt = false, .character = '\0'
-    };
+    struct trait_rect menu;
 
     if (active_scenario != KERNEL_TEST_OPENRFS_PROOF) {
         kernel_test_fail("OpenRFS completion used outside its scenario");
@@ -7985,47 +8094,48 @@ _Noreturn void kernel_test_complete_openrfs_proof(void)
             ui_layout_validate(&ui->layout) != UI_STATUS_OK) {
         kernel_test_fail("OpenRFS installed desktop state is incomplete");
     }
-    if (openrfs_proof_pixel(512U, 250U) == 0U ||
-            openrfs_proof_pixel(512U, 767U) == 0U) {
-        kernel_test_fail("OpenRFS wallpaper or panel is not integrated");
+    if (ui->active_panel != UI_PANEL_TERMINAL ||
+            trait_shell_window_count() != 1U ||
+            trait_shell_app_of(trait_shell_focused()) != TRAIT_APP_TERMINAL ||
+            openrfs_proof_pixel(80U, 80U) ==
+                openrfs_proof_pixel(512U, 767U)) {
+        kernel_test_fail("WVRM terminal and pixel desktop are not installed");
     }
 
-    openrfs_proof_move_pointer(200U, 160U,
-        "OpenRFS cursor did not move over the new desktop");
+    openrfs_proof_move_pointer(720U, 480U,
+        "WVRM cursor did not move over the desktop root");
     if (ui_get_state()->renders.cursor_moves <= initial_renders.cursor_moves) {
-        kernel_test_fail("OpenRFS cursor movement was not recorded");
+        kernel_test_fail("WVRM cursor movement was not recorded");
     }
-
-    if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("OpenRFS focused window did not close");
+    if (trait_menu_row_count() != 4U ||
+            !token_equals(trait_menu_row_label(0U), 5U, "xterm") ||
+            !token_equals(trait_menu_row_label(1U), 5U, "Files") ||
+            !trait_menu_row_is_rule(2U) ||
+            !token_equals(trait_menu_row_label(3U), 6U, "Run...")) {
+        kernel_test_fail("WVRM root menu is not xterm, Files, Run");
     }
-    openrfs_proof_process_ui("OpenRFS close redraw failed");
-    keyboard.scancode = 0x0FU;
-    if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("OpenRFS keyboard focus-next failed");
+    openrfs_proof_inject_pointer(2U, 0, 0,
+        "WVRM root right-click injection failed");
+    if (!trait_shell_root_menu_open() ||
+            !trait_shell_root_menu_bounds(&menu)) {
+        kernel_test_fail("WVRM right-click did not open the root menu");
     }
-    openrfs_proof_process_ui("OpenRFS focus-next redraw failed");
-    if (ui_get_state()->focus != UI_ELEMENT_DOCK_TERMINAL) {
-        kernel_test_fail("OpenRFS keyboard focus-next chose wrong app");
+    openrfs_proof_inject_pointer(0U, 0, 0,
+        "WVRM root right-click release failed");
+    openrfs_proof_move_pointer(menu.x + 20U,
+        menu.y + TRAIT_MENU_TITLE_HEIGHT + 4U + 20U + 10U,
+        "WVRM cursor did not reach Files in root menu");
+    openrfs_proof_inject_pointer(1U, 0, 0,
+        "WVRM Files root-menu click failed");
+    openrfs_proof_inject_pointer(0U, 0, 0,
+        "WVRM Files root-menu release failed");
+    if (trait_shell_root_menu_open() ||
+            trait_shell_window_count() != 2U ||
+            trait_shell_app_of(trait_shell_focused()) != TRAIT_APP_FILES ||
+            trait_files_child_count(trait_files_root()) != 0U) {
+        kernel_test_fail("WVRM Files did not open safely from the root menu");
     }
-    keyboard.shift = true;
-    if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("OpenRFS keyboard focus-previous failed");
-    }
-    openrfs_proof_process_ui("OpenRFS focus-previous redraw failed");
-    if (ui_get_state()->focus != UI_ELEMENT_DOCK_FILES) {
-        kernel_test_fail("OpenRFS keyboard focus-previous chose wrong app");
-    }
-    keyboard.scancode = 0x1CU;
-    keyboard.shift = false;
-    if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("OpenRFS keyboard activation failed");
-    }
-    openrfs_proof_process_ui("OpenRFS application redraw failed");
-    if (ui_get_state()->active_panel != UI_PANEL_FILES) {
-        kernel_test_fail("OpenRFS Files window did not open");
-    }
-    console_serial_write("ST OPENRFS DE keyboard and pointer passed\n");
+    console_serial_write("ST WVRM terminal, right-click Files, and pre-login isolation passed\n");
 
     if (!boot_plan_pointer_absence_self_test()) {
         kernel_test_fail("OpenRFS pointer-absence synthetic plan failed");
@@ -8035,7 +8145,7 @@ _Noreturn void kernel_test_complete_openrfs_proof(void)
         kernel_test_fail(ui_installed_proof_failure());
     }
     if (proof.width != 1024U || proof.height != 768U ||
-            proof.dock_items != UI_DOCK_ITEM_COUNT ||
+            proof.root_menu_rows != 4U ||
             proof.ledger_fingerprint != ledger->fingerprint ||
             proof.render_hash == 0U || proof.events == 0U ||
             proof.panels == 0U || proof.cursor_moves == 0U ||
@@ -8047,8 +8157,8 @@ _Noreturn void kernel_test_complete_openrfs_proof(void)
     console_write_u64(proof.width);
     console_putc('x');
     console_write_u64(proof.height);
-    console_write(" apps ");
-    console_write_u64(proof.dock_items);
+    console_write(" menu-rows ");
+    console_write_u64(proof.root_menu_rows);
     console_write(" events ");
     console_write_u64(proof.events);
     console_write(" windows ");
@@ -8095,7 +8205,7 @@ _Noreturn void kernel_test_complete_device_substrate(void)
         proof.nonzero_bytes == 0U ||
         !proof.dma_device_written || !proof.msix_delivered ||
         !proof.ownership_round_trip || !proof.teardown_complete ||
-        proof.negative_controls != 2U || negative_controls != 14U) {
+        proof.negative_controls != 3U || negative_controls != 15U) {
         kernel_test_fail("device-substrate installed proof is inconsistent");
     }
 
@@ -11545,6 +11655,8 @@ const char *kernel_test_scenario_name(enum kernel_test_scenario scenario)
         return "native-openrfs";
     case KERNEL_TEST_EXT4_RECOVERY:
         return "ext4-recovery";
+    case KERNEL_TEST_ACCOUNT_KDF:
+        return "account-kdf";
     case KERNEL_TEST_DRIVERS:
         return "drivers";
     case KERNEL_TEST_INVALID:

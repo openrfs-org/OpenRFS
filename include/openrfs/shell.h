@@ -46,6 +46,9 @@ struct shell_state {
 
 enum shell_status shell_initialize(void);
 bool shell_is_active(void);
+/* Turn on credential checks after the boot self-test and Data mount setup.
+ * This transition is one-way until reboot. */
+void shell_authorization_enable(void);
 
 /*
  * Feed one character as though it were typed. Printable characters are echoed

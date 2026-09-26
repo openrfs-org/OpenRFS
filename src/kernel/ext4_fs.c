@@ -835,6 +835,7 @@ static void fill_stat(
     destination->atime_nanos = source->atime_nanos;
     destination->mtime_nanos = source->mtime_nanos;
     destination->ctime_nanos = source->ctime_nanos;
+    destination->xattrs_present = source->reserved[0] != 0U;
     destination->directory = source->file_type == OPENRFS_EXT4_FILE_DIRECTORY;
     destination->read_only = false;
 }

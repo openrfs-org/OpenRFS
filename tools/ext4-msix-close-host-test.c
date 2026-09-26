@@ -13,6 +13,20 @@ static uint16_t control;
 
 bool cpu_interrupts_enabled(void) { return false; }
 void cpu_store_fence(void) {}
+bool apic_is_online(void) { return true; }
+uint32_t apic_register_read(uint32_t offset) { (void)offset; return 0U; }
+bool clock_is_started(void) { return false; }
+uint64_t clock_monotonic_ns(void) { return 0U; }
+bool thread_preemption_enabled(void) { return false; }
+enum thread_status thread_disable_preemption(void) { return THREAD_STATUS_OK; }
+enum thread_status thread_enable_preemption(void) { return THREAD_STATUS_OK; }
+enum interrupt_status interrupt_replace_handler(uint8_t vector,
+    interrupt_handler_t handler, void *context)
+{
+    assert(vector == 64U && handler != NULL && context == NULL &&
+        handlers == 1U);
+    return INTERRUPT_STATUS_OK;
+}
 enum pci_status pci_config_write_port(struct pci_address address, uint16_t offset,
     size_t width, uint32_t value)
 {

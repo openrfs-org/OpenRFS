@@ -32,10 +32,10 @@ TEST_SCENARIOS := normal breakpoint invalid-opcode page-fault ist pit unexpected
 	nvidia nvidia-builtin native native-lua native-sqlite \
 	native-rust native-crash native-elf-refusal native-digest-refusal \
 	native-abi-refusal native-relaunch native-audio native-sdl native-dynamic \
-	native-https native-openrfs
+	native-https native-openrfs account-kdf
 TEST_TARGETS := $(addprefix qemu-test-,$(TEST_SCENARIOS))
-EXPECTED_TEST_SCENARIO_COUNT := 115
-EXPECTED_SHELL_ASSERTION_COUNT := 459
+EXPECTED_TEST_SCENARIO_COUNT := 116
+EXPECTED_SHELL_ASSERTION_COUNT := 460
 
 CC := gcc
 LD := ld
@@ -145,6 +145,10 @@ HTTPS_HOST_TEST := $(TEST_BUILD_DIR)/https-client-host-test$(HOST_EXEEXT)
 HTTPS_HOST_OBJECT := $(TEST_BUILD_DIR)/https-client-host.o
 ZLIB_HOST_TEST := $(TEST_BUILD_DIR)/zlib-host-test$(HOST_EXEEXT)
 EXT4_FIXTURE := $(TEST_BUILD_DIR)/ext4/openrfs-ext4.raw
+EXT4_EMPTY_FIXTURE := $(TEST_BUILD_DIR)/ext4/openrfs-empty-ext4.raw
+EXT4_PLAINTEXT_FIXTURE := $(TEST_BUILD_DIR)/encrypted-data-fixtures/ext4.raw
+EXT4_XATTR_FIXTURE := $(TEST_BUILD_DIR)/encrypted-data-fixtures/ext4-xattr.raw
+FAT32_PLAINTEXT_FIXTURE := $(TEST_BUILD_DIR)/encrypted-data-fixtures/fat32.raw
 EXT4_RECOVERY_FIXTURE := $(TEST_BUILD_DIR)/ext4-recovery/data.raw
 RUST_SOURCES := $(wildcard src/rust/*.rs)
 RUST_MANIFEST := src/rust/Cargo.toml
@@ -197,6 +201,7 @@ FAT32_SYSTEM_IMAGE := $(BUILD_DIR)/userspace/openrfs-system-fat32.raw
 DESKTOP_SYSTEM_IMAGE := $(BUILD_DIR)/userspace/openrfs-desktop-system-fat32.raw
 FAT32_DATA_IMAGE := $(BUILD_DIR)/userspace/openrfs-data-fat32.raw
 FAT32_RUN_DATA_IMAGE := $(BUILD_DIR)/run-data-fat32.raw
+EXT4_RUN_DATA_IMAGE := $(BUILD_DIR)/run-data-ext4.raw
 FAT32_FULL_IMAGE := $(BUILD_DIR)/userspace/openrfs-data-full-fat32.raw
 FAT32_CORRUPT_IMAGE := $(BUILD_DIR)/userspace/openrfs-data-corrupt-fat32.raw
 SDK_BUILD_DIR ?= $(BUILD_DIR)/sdk
@@ -272,6 +277,9 @@ NATIVE_TEST_APP := $(NATIVE_APP_DIR)/NATIVET.APP
 NATIVE_TEST_PACKAGE := $(NATIVE_APP_DIR)/NATIVET.SPK
 NATIVE_SYSTEM_IMAGE := $(NATIVE_APP_DIR)/system.raw
 NATIVE_DATA_IMAGE := $(NATIVE_APP_DIR)/data.raw
+ENCRYPTED_UPLOAD_APP := $(NATIVE_APP_DIR)/ENCUPL.APP
+ENCRYPTED_UPLOAD_PACKAGE := $(NATIVE_APP_DIR)/ENCUPL.SPK
+ENCRYPTED_SYSTEM_IMAGE := $(NATIVE_APP_DIR)/encrypted-system.raw
 LUA_PORT_DIR := $(BUILD_DIR)/ports/lua
 LUA_PORT_WORK_DIR := $(BUILD_DIR)/ports/lua-work
 LUA_APP := $(LUA_PORT_DIR)/LUA.APP
@@ -299,6 +307,7 @@ OPENRFSAPP_DIR := $(BUILD_DIR)/native-openrfs
 OPENRFSAPP_APP := $(OPENRFSAPP_DIR)/OPENRFS.APP
 OPENRFSAPP_PACKAGE := $(OPENRFSAPP_DIR)/OPENRFS.SPK
 OPENRFSAPP_REPAIR_PACKAGE := $(OPENRFSAPP_DIR)/OPENRFSREP.SPK
+OPENRFSAPP_PROBE_PACKAGE := $(OPENRFSAPP_DIR)/RFSPROBE.SPK
 OPENRFSAPP_SYSTEM_IMAGE := $(OPENRFSAPP_DIR)/system.raw
 OPENRFSAPP_DATA_IMAGE := $(OPENRFSAPP_DIR)/data.raw
 OPENRFSAPP_REPOSITORY := $(OPENRFSAPP_DIR)/repository/repository.sri
@@ -508,7 +517,7 @@ DEPENDENCIES := $(C_OBJECTS:.o=.d) $(MONOCYPHER_OBJECTS:.o=.d) \
 # implicit and pattern rule search for a phony target, so declaring them phony
 # makes every scenario resolve to "nothing to be done" and pass without booting.
 # They never create a file of their own name, so they rerun regardless.
-.PHONY: all installer-port-test audio-wav-tests capture-boot-video capture-openrfs capture-openrfs-proof capture-networking clean contract-counts contract-scenarios dynamic-elf-tests ext4-images ext4-tests ext4-fsync-test ext4-sparse-truncate-test fat32-images force-package-trust hooks https-tests \
+.PHONY: all installer-port-test audio-wav-tests capture-boot-video capture-openrfs capture-openrfs-proof capture-networking clean contract-counts contract-scenarios dynamic-elf-tests ext4-images ext4-tests ext4-fsync-test ext4-sparse-truncate-test fat32-images force-package-trust hooks https-tests account-host-test account-kdf-host-test account-v2-host-test account-delete-qemu-test account-delete-refusal-qemu-test account-migration-refusal-qemu-test account-migration-xattr-refusal-qemu-test encrypted-data-qemu-test encrypted-data-native-qemu-test encrypted-data-tamper-qemu-test encrypted-data-powercut-qemu-test encrypted-data-diskfull-qemu-test random-host-test entropy-qemu-test boot-artifact-signature-test \
 	iso kernel lint native-apps native-audio-proof native-dynamic-proof native-https-proof native-openrfs-proof native-sdl-proof sdl-preference-tests port-tests qemu-port-tests reproducible-sdk run \
 	package-control-tests package-fetch-tests package-manager-tests package-repository-tests package-service-tests package-state-tests package-transaction-tests package-trust-asset-tests package-trust-tests package-upload-tests qemu-test-ext4-powercuts screenshot-proof sdk sdk-once smoke tls-tests toolchain verify wall-clock-tests zlib-tests
 
@@ -660,6 +669,20 @@ $(NATIVE_TEST_PACKAGE): $(NATIVE_TEST_APP) apps/native-test/manifest.json \
 	$(PYTHON) tools/openrfs-package.py build \
 		--spec apps/native-test/manifest.json --executable $< --output $@
 
+$(NATIVE_APP_DIR)/encrypted-upload-test.o: apps/encrypted-upload-test/main.c \
+		$(SDK_BUILD_DIR)/.installed | $(NATIVE_APP_DIR)
+	$(SDK_CC) $(SDK_CFLAGS) -c $< -o $@
+
+$(ENCRYPTED_UPLOAD_APP): $(NATIVE_APP_DIR)/encrypted-upload-test.o \
+		$(SDK_BUILD_DIR)/.installed
+	$(SDK_LD) $(SDK_LDFLAGS) -o $@ $(SDK_CRT) $< $(SDK_LIB)
+
+$(ENCRYPTED_UPLOAD_PACKAGE): $(ENCRYPTED_UPLOAD_APP) \
+		apps/encrypted-upload-test/manifest.json
+	$(PYTHON) tools/openrfs-package.py build \
+		--spec apps/encrypted-upload-test/manifest.json \
+		--executable $< --output $@
+
 $(CRASH_APP_DIR)/main.o: apps/native-crash/main.c \
 		$(SDK_BUILD_DIR)/.installed | $(CRASH_APP_DIR)
 	$(SDK_CC) $(SDK_CFLAGS) -c $< -o $@
@@ -772,14 +795,31 @@ $(OPENRFSAPP_REPAIR_PACKAGE): $(OPENRFSAPP_APP) apps/openrfs/repair-manifest.jso
 	$(PYTHON) tools/openrfs-package.py build \
 		--spec apps/openrfs/repair-manifest.json --executable $< --output $@
 
+$(OPENRFSAPP_PROBE_PACKAGE): $(OPENRFSAPP_APP) apps/openrfs/probe-manifest.json
+	$(PYTHON) tools/openrfs-package.py build \
+		--spec apps/openrfs/probe-manifest.json --executable $< --output $@
+
 $(OPENRFSAPP_SYSTEM_IMAGE): $(OPENRFSAPP_PACKAGE) $(OPENRFSAPP_REPAIR_PACKAGE) \
+		$(OPENRFSAPP_PROBE_PACKAGE) \
 		tools/openrfs-package.py \
 		tools/fat32_image.py
 	$(PYTHON) tools/openrfs-package.py install-system \
-		--output $@ $(OPENRFSAPP_PACKAGE) $(OPENRFSAPP_REPAIR_PACKAGE)
+		--output $@ $(OPENRFSAPP_PACKAGE) $(OPENRFSAPP_REPAIR_PACKAGE) \
+		$(OPENRFSAPP_PROBE_PACKAGE)
 
-$(OPENRFSAPP_DATA_IMAGE): $(EXT4_FIXTURE) | $(OPENRFSAPP_DIR)
-	cp $< $@
+$(OPENRFSAPP_DATA_IMAGE): $(EXT4_FIXTURE) Makefile | $(OPENRFSAPP_DIR)
+	@command -v debugfs >/dev/null 2>&1 || { echo 'missing tool: debugfs'; exit 1; }
+	@command -v e2fsck >/dev/null 2>&1 || { echo 'missing tool: e2fsck'; exit 1; }
+	@set -e; \
+		image="$$(mktemp '$(OPENRFSAPP_DIR)/data.raw.tmp.XXXXXX')"; \
+		trap 'rm -f "$$image"' EXIT HUP INT TERM; \
+		cp '$<' "$$image"; \
+		E2FSPROGS_FAKE_TIME=1704067200 debugfs -w -R 'mkdir /RFSCLI' "$$image" >/dev/null; \
+		E2FSPROGS_FAKE_TIME=1704067200 debugfs -w -R 'symlink /RFSCLI/ESCAPE ../system' "$$image" >/dev/null; \
+		debugfs -R 'stat /RFSCLI/ESCAPE' "$$image" 2>/dev/null | grep -q 'Type: symlink'; \
+		e2fsck -fn "$$image" >/dev/null; \
+		mv -f "$$image" '$@'; \
+		trap - EXIT HUP INT TERM
 
 $(OPENRFSAPP_REPOSITORY): $(SDL_CHESS_RELEASE_APP) \
 		apps/upstream-sdl-chess/manifest.json \
@@ -909,6 +949,11 @@ $(NATIVE_SYSTEM_IMAGE): $(NATIVE_TEST_PACKAGE) tools/openrfs-package.py \
 		tools/fat32_image.py
 	$(PYTHON) tools/openrfs-package.py install-system \
 		--output $@ $(NATIVE_TEST_PACKAGE)
+
+$(ENCRYPTED_SYSTEM_IMAGE): $(NATIVE_TEST_PACKAGE) \
+		$(ENCRYPTED_UPLOAD_PACKAGE) tools/openrfs-package.py tools/fat32_image.py
+	$(PYTHON) tools/openrfs-package.py install-system \
+		--output $@ $(NATIVE_TEST_PACKAGE) $(ENCRYPTED_UPLOAD_PACKAGE)
 
 $(NATIVE_DATA_IMAGE): tools/fat32_image.py | $(NATIVE_APP_DIR)
 	$(PYTHON) tools/fat32_image.py format data $@
@@ -1282,7 +1327,7 @@ $(KERNEL): $(OBJECTS) $(RUST_LIB) linker.ld
 
 toolchain:
 	@missing_tools=; \
-	for tool in bash bzip2 gcc gzip ld grub-file readelf nm objdump rustc python3 sha256sum strings tar; do \
+	for tool in bash bzip2 gcc gzip ld grub-file openssl readelf nm objdump rustc python3 sha256sum strings tar; do \
 		if ! command -v $$tool >/dev/null 2>&1; then \
 			missing_tools="$$missing_tools $$tool"; \
 		fi; \
@@ -1797,6 +1842,10 @@ $(EXT4_FIXTURE): tools/ext4_image.py
 	mkdir -p $(dir $@)
 	$(PYTHON) tools/ext4_image.py build $@ --report $@.json
 
+$(EXT4_EMPTY_FIXTURE): tools/ext4_image.py
+	mkdir -p $(dir $@)
+	$(PYTHON) tools/ext4_image.py build-empty $@ --report $@.json
+
 ext4-images: $(EXT4_FIXTURE)
 
 INSTALLER_PORT_TEST := $(BUILD_DIR)/tools/installer-port-test
@@ -1831,7 +1880,206 @@ $(MINIMAL_DE_HOST_TEST): tools/minimal-de-host-test.c \
 minimal-de-host-test: $(MINIMAL_DE_HOST_TEST)
 	$(MINIMAL_DE_HOST_TEST)
 
-verify: toolchain lint installer-port-test minimal-de-host-test
+RANDOM_HOST_TEST := $(TEST_BUILD_DIR)/random-host-test$(HOST_EXEEXT)
+
+$(RANDOM_HOST_TEST): tests/random_host_test.c src/kernel/random.c \
+		src/kernel/package_state.c include/openrfs/random.h \
+		include/openrfs/package_state.h
+	mkdir -p $(dir $@)
+	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
+		tests/random_host_test.c src/kernel/package_state.c -o $@
+
+random-host-test: $(RANDOM_HOST_TEST)
+	$(RANDOM_HOST_TEST)
+
+ACCOUNT_HOST_TEST := $(TEST_BUILD_DIR)/account-host-test$(HOST_EXEEXT)
+
+$(ACCOUNT_HOST_TEST): tests/account_host_test.c src/kernel/account.c \
+		src/kernel/account_v2.c vendor/monocypher/src/monocypher.c \
+		src/kernel/package_state.c include/openrfs/account.h \
+		include/openrfs/clock.h include/openrfs/fat32_fs.h
+	mkdir -p $(dir $@)
+	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
+		tests/account_host_test.c src/kernel/account.c src/kernel/account_v2.c \
+		src/kernel/package_state.c vendor/monocypher/src/monocypher.c -o $@
+
+account-host-test: $(ACCOUNT_HOST_TEST)
+	$(ACCOUNT_HOST_TEST)
+
+ACCOUNT_KDF_HOST_TEST := $(TEST_BUILD_DIR)/account-kdf-host-test$(HOST_EXEEXT)
+
+$(ACCOUNT_KDF_HOST_TEST): tests/account_kdf_host_test.c \
+		src/kernel/account_kdf.c include/openrfs/account_kdf.h \
+		vendor/monocypher/src/monocypher.c \
+		vendor/monocypher/src/monocypher.h
+	mkdir -p $(dir $@)
+	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
+		tests/account_kdf_host_test.c src/kernel/account_kdf.c \
+		vendor/monocypher/src/monocypher.c -o $@
+
+account-kdf-host-test: $(ACCOUNT_KDF_HOST_TEST)
+	$(ACCOUNT_KDF_HOST_TEST)
+	$(ACCOUNT_KDF_HOST_TEST) --partial-map
+
+ACCOUNT_V2_HOST_TEST := $(TEST_BUILD_DIR)/account-v2-host-test$(HOST_EXEEXT)
+
+$(ACCOUNT_V2_HOST_TEST): tests/account_v2_host_test.c \
+		src/kernel/account_v2.c src/kernel/package_state.c \
+		include/openrfs/account_v2.h include/openrfs/account_kdf.h \
+		vendor/monocypher/src/monocypher.c
+	mkdir -p $(dir $@)
+	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
+		tests/account_v2_host_test.c src/kernel/account_v2.c \
+		src/kernel/package_state.c vendor/monocypher/src/monocypher.c -o $@
+
+account-v2-host-test: $(ACCOUNT_V2_HOST_TEST)
+	$(ACCOUNT_V2_HOST_TEST)
+
+DATA_AEAD_HOST_TEST := $(TEST_BUILD_DIR)/data-aead-host-test$(HOST_EXEEXT)
+
+$(DATA_AEAD_HOST_TEST): tests/data_aead_host_test.c src/kernel/data_aead.c \
+		include/openrfs/data_aead.h vendor/monocypher/src/monocypher.c
+	mkdir -p $(dir $@)
+	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
+		tests/data_aead_host_test.c src/kernel/data_aead.c \
+		vendor/monocypher/src/monocypher.c -o $@
+
+data-aead-host-test: $(DATA_AEAD_HOST_TEST)
+	$(DATA_AEAD_HOST_TEST)
+
+DATA_AEAD_REWRITE_HOST_TEST := $(TEST_BUILD_DIR)/data-aead-rewrite-host-test$(HOST_EXEEXT)
+
+$(DATA_AEAD_REWRITE_HOST_TEST): tests/data_aead_rewrite_host_test.c \
+		src/kernel/data_aead_rewrite.c src/kernel/data_aead.c \
+		include/openrfs/data_aead_rewrite.h include/openrfs/data_aead.h \
+		vendor/monocypher/src/monocypher.c
+	mkdir -p $(dir $@)
+	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
+		tests/data_aead_rewrite_host_test.c src/kernel/data_aead_rewrite.c \
+		src/kernel/data_aead.c vendor/monocypher/src/monocypher.c -o $@
+
+data-aead-rewrite-host-test: $(DATA_AEAD_REWRITE_HOST_TEST)
+	$(DATA_AEAD_REWRITE_HOST_TEST)
+
+DATA_AEAD_SLOTS_HOST_TEST := $(TEST_BUILD_DIR)/data-aead-slots-host-test$(HOST_EXEEXT)
+
+$(DATA_AEAD_SLOTS_HOST_TEST): tests/data_aead_slots_host_test.c \
+		src/kernel/data_aead_slots.c src/kernel/data_aead_rewrite.c \
+		src/kernel/data_aead.c include/openrfs/data_aead_slots.h \
+		include/openrfs/data_aead_rewrite.h include/openrfs/data_aead.h \
+		vendor/monocypher/src/monocypher.c
+	mkdir -p $(dir $@)
+	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
+		tests/data_aead_slots_host_test.c src/kernel/data_aead_slots.c \
+		src/kernel/data_aead_rewrite.c src/kernel/data_aead.c \
+		vendor/monocypher/src/monocypher.c -o $@
+
+data-aead-slots-host-test: $(DATA_AEAD_SLOTS_HOST_TEST)
+	$(DATA_AEAD_SLOTS_HOST_TEST)
+
+DATA_AEAD_MANIFEST_HOST_TEST := $(TEST_BUILD_DIR)/data-aead-manifest-host-test$(HOST_EXEEXT)
+
+$(DATA_AEAD_MANIFEST_HOST_TEST): tests/data_aead_manifest_host_test.c \
+		src/kernel/data_aead_manifest.c src/kernel/data_aead_rewrite.c \
+		src/kernel/data_aead.c \
+		include/openrfs/data_aead_manifest.h \
+		include/openrfs/data_aead_rewrite.h \
+		include/openrfs/data_aead.h vendor/monocypher/src/monocypher.c
+	mkdir -p $(dir $@)
+	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
+		tests/data_aead_manifest_host_test.c src/kernel/data_aead_manifest.c \
+		src/kernel/data_aead_rewrite.c src/kernel/data_aead.c \
+		vendor/monocypher/src/monocypher.c -o $@
+
+data-aead-manifest-host-test: $(DATA_AEAD_MANIFEST_HOST_TEST)
+	$(DATA_AEAD_MANIFEST_HOST_TEST)
+
+DATA_AEAD_BACKEND_HOST_TEST := $(TEST_BUILD_DIR)/data-aead-backend-host-test$(HOST_EXEEXT)
+
+$(DATA_AEAD_BACKEND_HOST_TEST): tests/data_aead_backend_host_test.c \
+		src/kernel/data_encrypted_backend.c \
+		src/kernel/data_encrypted_migration.c \
+		src/kernel/data_aead_backend.c src/kernel/data_aead_manifest.c \
+		src/kernel/data_aead_rewrite.c src/kernel/data_aead.c \
+		src/kernel/data_namespace.c src/kernel/data_namespace_backend.c \
+		include/openrfs/data_aead_backend.h \
+		include/openrfs/data_aead_manifest.h \
+		include/openrfs/data_namespace.h \
+		include/openrfs/data_namespace_backend.h \
+		vendor/monocypher/src/monocypher.c
+	mkdir -p $(dir $@)
+	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
+		tests/data_aead_backend_host_test.c \
+		src/kernel/data_encrypted_backend.c \
+		src/kernel/data_encrypted_migration.c src/kernel/data_aead_backend.c \
+		src/kernel/data_aead_manifest.c src/kernel/data_aead_rewrite.c \
+		src/kernel/data_aead.c src/kernel/data_namespace.c \
+		src/kernel/data_namespace_backend.c \
+		vendor/monocypher/src/monocypher.c -o $@
+
+data-aead-backend-host-test: $(DATA_AEAD_BACKEND_HOST_TEST)
+	$(DATA_AEAD_BACKEND_HOST_TEST)
+
+DATA_AEAD_BOUNDARY_HOST_TEST := $(TEST_BUILD_DIR)/data-aead-boundary-host-test$(HOST_EXEEXT)
+
+$(DATA_AEAD_BOUNDARY_HOST_TEST): tests/data_aead_backend_host_test.c \
+		src/kernel/data_encrypted_backend.c \
+		src/kernel/data_encrypted_migration.c \
+		src/kernel/data_aead_backend.c src/kernel/data_aead_manifest.c \
+		src/kernel/data_aead_rewrite.c src/kernel/data_aead.c \
+		src/kernel/data_namespace.c src/kernel/data_namespace_backend.c \
+		include/openrfs/data_aead_manifest.h \
+		vendor/monocypher/src/monocypher.c
+	mkdir -p $(dir $@)
+	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
+		-DDATA_AEAD_SEGMENT_BYTES=4096U \
+		tests/data_aead_backend_host_test.c \
+		src/kernel/data_encrypted_backend.c \
+		src/kernel/data_encrypted_migration.c src/kernel/data_aead_backend.c \
+		src/kernel/data_aead_manifest.c src/kernel/data_aead_rewrite.c \
+		src/kernel/data_aead.c src/kernel/data_namespace.c \
+		src/kernel/data_namespace_backend.c \
+		vendor/monocypher/src/monocypher.c -o $@
+
+data-aead-boundary-host-test: $(DATA_AEAD_BOUNDARY_HOST_TEST)
+	$(DATA_AEAD_BOUNDARY_HOST_TEST)
+
+DATA_NAMESPACE_HOST_TEST := $(TEST_BUILD_DIR)/data-namespace-host-test$(HOST_EXEEXT)
+
+$(DATA_NAMESPACE_HOST_TEST): tests/data_namespace_host_test.c \
+		src/kernel/data_namespace.c src/kernel/data_aead.c \
+		include/openrfs/data_namespace.h include/openrfs/data_aead.h \
+		vendor/monocypher/src/monocypher.c
+	mkdir -p $(dir $@)
+	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
+		tests/data_namespace_host_test.c src/kernel/data_namespace.c \
+		src/kernel/data_aead.c \
+		vendor/monocypher/src/monocypher.c -o $@
+
+data-namespace-host-test: $(DATA_NAMESPACE_HOST_TEST)
+	$(DATA_NAMESPACE_HOST_TEST)
+
+boot-artifact-signature-test:
+	$(PYTHON) tools/test_boot_artifact_signature.py
+
+verify: toolchain lint installer-port-test minimal-de-host-test \
+		random-host-test account-host-test account-kdf-host-test account-v2-host-test \
+		data-aead-host-test data-aead-rewrite-host-test data-aead-slots-host-test \
+		data-aead-manifest-host-test data-aead-backend-host-test \
+		data-aead-boundary-host-test \
+		data-namespace-host-test \
+		boot-artifact-signature-test
 ifneq ($(VERIFY_CLEAN),0)
 	$(MAKE) clean
 endif
@@ -2553,6 +2801,8 @@ endif
 	@grep -Fq 'OpenRFS: installed proof passed' \
 		src/kernel/boot_plan.c
 	$(MAKE) screenshot-proof
+	$(MAKE) account-delete-qemu-test
+	$(MAKE) account-delete-refusal-qemu-test
 
 screenshot-proof:
 	$(PYTHON) tools/compare-openrfs-proof-screenshot.py --mode clean \
@@ -2576,11 +2826,198 @@ capture-openrfs-proof: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 		$(OPENRFS_PROOF_TERMINAL_IMAGE) \
 		$(OPENRFS_PROOF_CAPTURE_DIR)/openrfs-proof-terminal.png
 
-capture-openrfs: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
+$(EXT4_PLAINTEXT_FIXTURE): $(EXT4_EMPTY_FIXTURE) tools/encrypted_data_fixture.py
+	$(PYTHON) tools/encrypted_data_fixture.py --filesystem ext4 \
+		--base $(EXT4_EMPTY_FIXTURE) --output $@
+
+$(EXT4_XATTR_FIXTURE): $(EXT4_EMPTY_FIXTURE) tools/encrypted_data_fixture.py
+	$(PYTHON) tools/encrypted_data_fixture.py --filesystem ext4 \
+		--base $(EXT4_EMPTY_FIXTURE) --output $@ --xattr
+
+$(FAT32_PLAINTEXT_FIXTURE): $(FAT32_DATA_IMAGE) tools/encrypted_data_fixture.py
+	$(PYTHON) tools/encrypted_data_fixture.py --filesystem fat32 \
+		--base $(FAT32_DATA_IMAGE) --output $@
+
+capture-openrfs: iso $(FAT32_SYSTEM_IMAGE) $(EXT4_PLAINTEXT_FIXTURE)
 	rm -rf $(OPENRFS_CAPTURE_DIR)
 	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_PLAINTEXT_FIXTURE) \
+		--data-filesystem ext4 --output $(OPENRFS_CAPTURE_DIR)
+
+account-delete-qemu-test: iso $(FAT32_SYSTEM_IMAGE) $(EXT4_EMPTY_FIXTURE)
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_EMPTY_FIXTURE) \
+		--data-filesystem ext4 --delete-account \
+		--output $(TEST_BUILD_DIR)/account-delete-qemu
+
+account-logout-fat32-qemu-test: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
 		--system $(FAT32_SYSTEM_IMAGE) --data $(FAT32_DATA_IMAGE) \
-		--output $(OPENRFS_CAPTURE_DIR)
+		--logout-test --output $(TEST_BUILD_DIR)/account-logout-fat32-qemu
+
+account-logout-ext4-qemu-test: iso $(FAT32_SYSTEM_IMAGE) $(EXT4_EMPTY_FIXTURE)
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_EMPTY_FIXTURE) \
+		--data-filesystem ext4 --logout-test \
+		--output $(TEST_BUILD_DIR)/account-logout-ext4-qemu
+
+account-delete-refusal-qemu-test: iso $(FAT32_SYSTEM_IMAGE) $(EXT4_PLAINTEXT_FIXTURE)
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_PLAINTEXT_FIXTURE) \
+		--data-filesystem ext4 --refuse-delete-account \
+		--output $(TEST_BUILD_DIR)/account-delete-refusal-qemu
+
+account-migration-refusal-qemu-test: iso $(FAT32_SYSTEM_IMAGE) $(EXT4_FIXTURE)
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_FIXTURE) \
+		--data-filesystem ext4 --expect-migration-refusal \
+		--output $(TEST_BUILD_DIR)/account-migration-refusal-qemu
+
+account-migration-xattr-refusal-qemu-test: iso $(FAT32_SYSTEM_IMAGE) $(EXT4_XATTR_FIXTURE)
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_XATTR_FIXTURE) \
+		--data-filesystem ext4 --expect-migration-refusal \
+		--output $(TEST_BUILD_DIR)/account-migration-xattr-refusal-qemu
+
+encrypted-data-qemu-test: iso $(FAT32_SYSTEM_IMAGE) \
+		$(FAT32_PLAINTEXT_FIXTURE) $(EXT4_PLAINTEXT_FIXTURE) \
+		tools/check_encrypted_data_image.py
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(FAT32_PLAINTEXT_FIXTURE) \
+		--encrypted-data-test --rotate-after-login --logout-test \
+		--output $(TEST_BUILD_DIR)/encrypted-data-fat32-qemu
+	$(PYTHON) tools/check_encrypted_data_image.py --filesystem fat32 \
+		--image $(TEST_BUILD_DIR)/encrypted-data-fat32-qemu/openrfs-proof-data.raw \
+		--report $(TEST_BUILD_DIR)/encrypted-data-fat32-qemu/raw-check.json
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_PLAINTEXT_FIXTURE) \
+		--data-filesystem ext4 --encrypted-data-test \
+		--rotate-after-login --logout-test \
+		--output $(TEST_BUILD_DIR)/encrypted-data-ext4-qemu
+	$(PYTHON) tools/check_encrypted_data_image.py --filesystem ext4 \
+		--image $(TEST_BUILD_DIR)/encrypted-data-ext4-qemu/openrfs-proof-data.raw \
+		--report $(TEST_BUILD_DIR)/encrypted-data-ext4-qemu/raw-check.json
+
+encrypted-data-native-qemu-test: iso $(ENCRYPTED_SYSTEM_IMAGE) \
+		$(FAT32_PLAINTEXT_FIXTURE) $(EXT4_PLAINTEXT_FIXTURE) \
+		tools/check_encrypted_data_image.py
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(ENCRYPTED_SYSTEM_IMAGE) --data $(FAT32_PLAINTEXT_FIXTURE) \
+		--encrypted-data-test --native-data-test --upload-data-test \
+		--output $(TEST_BUILD_DIR)/encrypted-data-native-fat32-qemu
+	$(PYTHON) tools/check_encrypted_data_image.py --filesystem fat32 \
+		--image $(TEST_BUILD_DIR)/encrypted-data-native-fat32-qemu/openrfs-proof-data.raw \
+		--report $(TEST_BUILD_DIR)/encrypted-data-native-fat32-qemu/raw-check.json
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(ENCRYPTED_SYSTEM_IMAGE) --data $(EXT4_PLAINTEXT_FIXTURE) \
+		--data-filesystem ext4 --encrypted-data-test \
+		--upload-data-test \
+		--output $(TEST_BUILD_DIR)/encrypted-data-native-ext4-qemu
+	$(PYTHON) tools/check_encrypted_data_image.py --filesystem ext4 \
+		--image $(TEST_BUILD_DIR)/encrypted-data-native-ext4-qemu/openrfs-proof-data.raw \
+		--report $(TEST_BUILD_DIR)/encrypted-data-native-ext4-qemu/raw-check.json
+
+encrypted-data-tamper-qemu-test: iso $(FAT32_SYSTEM_IMAGE) \
+		$(FAT32_PLAINTEXT_FIXTURE) $(EXT4_PLAINTEXT_FIXTURE) \
+		tools/tamper_encrypted_data_image.py
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(FAT32_PLAINTEXT_FIXTURE) \
+		--output $(TEST_BUILD_DIR)/encrypted-data-tamper-fat32-source
+	$(PYTHON) tools/tamper_encrypted_data_image.py --filesystem fat32 \
+		--source $(TEST_BUILD_DIR)/encrypted-data-tamper-fat32-source/openrfs-proof-data.raw \
+		--output $(TEST_BUILD_DIR)/encrypted-data-tamper-fat32.raw
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) \
+		--data $(TEST_BUILD_DIR)/encrypted-data-tamper-fat32.raw \
+		--existing-account --expect-unlock-refusal \
+		--output $(TEST_BUILD_DIR)/encrypted-data-tamper-fat32-refused
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_PLAINTEXT_FIXTURE) \
+		--data-filesystem ext4 \
+		--output $(TEST_BUILD_DIR)/encrypted-data-tamper-ext4-source
+	$(PYTHON) tools/tamper_encrypted_data_image.py --filesystem ext4 \
+		--source $(TEST_BUILD_DIR)/encrypted-data-tamper-ext4-source/openrfs-proof-data.raw \
+		--output $(TEST_BUILD_DIR)/encrypted-data-tamper-ext4.raw
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) \
+		--data $(TEST_BUILD_DIR)/encrypted-data-tamper-ext4.raw \
+		--data-filesystem ext4 --existing-account --expect-unlock-refusal \
+		--output $(TEST_BUILD_DIR)/encrypted-data-tamper-ext4-refused
+
+encrypted-data-powercut-qemu-test: iso $(FAT32_SYSTEM_IMAGE) \
+		$(FAT32_PLAINTEXT_FIXTURE) $(EXT4_PLAINTEXT_FIXTURE) \
+		tools/check_encrypted_data_image.py
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(FAT32_PLAINTEXT_FIXTURE) \
+		--power-cut-migrating \
+		--output $(TEST_BUILD_DIR)/encrypted-data-cut-fat32-qemu
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) \
+		--data $(TEST_BUILD_DIR)/encrypted-data-cut-fat32-qemu/openrfs-proof-data.raw \
+		--existing-account --encrypted-data-test \
+		--output $(TEST_BUILD_DIR)/encrypted-data-recover-fat32-qemu
+	$(PYTHON) tools/check_encrypted_data_image.py --filesystem fat32 \
+		--image $(TEST_BUILD_DIR)/encrypted-data-recover-fat32-qemu/openrfs-proof-data.raw \
+		--report $(TEST_BUILD_DIR)/encrypted-data-recover-fat32-qemu/raw-check.json
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_PLAINTEXT_FIXTURE) \
+		--data-filesystem ext4 --power-cut-migrating \
+		--output $(TEST_BUILD_DIR)/encrypted-data-cut-ext4-qemu
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) \
+		--data $(TEST_BUILD_DIR)/encrypted-data-cut-ext4-qemu/openrfs-proof-data.raw \
+		--data-filesystem ext4 --existing-account --encrypted-data-test \
+		--output $(TEST_BUILD_DIR)/encrypted-data-recover-ext4-qemu
+	$(PYTHON) tools/check_encrypted_data_image.py --filesystem ext4 \
+		--image $(TEST_BUILD_DIR)/encrypted-data-recover-ext4-qemu/openrfs-proof-data.raw \
+		--report $(TEST_BUILD_DIR)/encrypted-data-recover-ext4-qemu/raw-check.json
+
+encrypted-data-diskfull-qemu-test: iso $(FAT32_SYSTEM_IMAGE) \
+		$(FAT32_PLAINTEXT_FIXTURE) $(EXT4_PLAINTEXT_FIXTURE) \
+		tools/fill_encrypted_data_image.py tools/check_encrypted_data_image.py
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(FAT32_PLAINTEXT_FIXTURE) \
+		--output $(TEST_BUILD_DIR)/encrypted-data-full-fat32-base
+	$(PYTHON) tools/fill_encrypted_data_image.py --filesystem fat32 \
+		--source $(TEST_BUILD_DIR)/encrypted-data-full-fat32-base/openrfs-proof-data.raw \
+		--output $(TEST_BUILD_DIR)/encrypted-data-full-fat32.raw
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(TEST_BUILD_DIR)/encrypted-data-full-fat32.raw \
+		--existing-account --disk-full-test \
+		--output $(TEST_BUILD_DIR)/encrypted-data-full-fat32-error
+	$(PYTHON) tools/fill_encrypted_data_image.py --filesystem fat32 --remove \
+		--source $(TEST_BUILD_DIR)/encrypted-data-full-fat32-error/openrfs-proof-data.raw \
+		--output $(TEST_BUILD_DIR)/encrypted-data-full-fat32-recovered.raw
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) \
+		--data $(TEST_BUILD_DIR)/encrypted-data-full-fat32-recovered.raw \
+		--existing-account --encrypted-data-test \
+		--output $(TEST_BUILD_DIR)/encrypted-data-full-fat32-reboot
+	$(PYTHON) tools/check_encrypted_data_image.py --filesystem fat32 \
+		--image $(TEST_BUILD_DIR)/encrypted-data-full-fat32-reboot/openrfs-proof-data.raw \
+		--report $(TEST_BUILD_DIR)/encrypted-data-full-fat32-reboot/raw-check.json
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(EXT4_PLAINTEXT_FIXTURE) \
+		--data-filesystem ext4 \
+		--output $(TEST_BUILD_DIR)/encrypted-data-full-ext4-base
+	$(PYTHON) tools/fill_encrypted_data_image.py --filesystem ext4 \
+		--source $(TEST_BUILD_DIR)/encrypted-data-full-ext4-base/openrfs-proof-data.raw \
+		--output $(TEST_BUILD_DIR)/encrypted-data-full-ext4.raw
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) --data $(TEST_BUILD_DIR)/encrypted-data-full-ext4.raw \
+		--data-filesystem ext4 --existing-account --disk-full-test \
+		--output $(TEST_BUILD_DIR)/encrypted-data-full-ext4-error
+	$(PYTHON) tools/fill_encrypted_data_image.py --filesystem ext4 --remove \
+		--source $(TEST_BUILD_DIR)/encrypted-data-full-ext4-error/openrfs-proof-data.raw \
+		--output $(TEST_BUILD_DIR)/encrypted-data-full-ext4-recovered.raw
+	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+		--system $(FAT32_SYSTEM_IMAGE) \
+		--data $(TEST_BUILD_DIR)/encrypted-data-full-ext4-recovered.raw \
+		--data-filesystem ext4 --existing-account --encrypted-data-test \
+		--output $(TEST_BUILD_DIR)/encrypted-data-full-ext4-reboot
+	$(PYTHON) tools/check_encrypted_data_image.py --filesystem ext4 \
+		--image $(TEST_BUILD_DIR)/encrypted-data-full-ext4-reboot/openrfs-proof-data.raw \
+		--report $(TEST_BUILD_DIR)/encrypted-data-full-ext4-reboot/raw-check.json
 
 capture-networking: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 	rm -rf $(NETWORK_CAPTURE_DIR)
@@ -2957,6 +3394,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 		filesystem) expected=103 ;; \
 		process) expected=105 ;; \
 		linux-abi) expected=109 ;; \
+		account-kdf) expected=107 ;; \
 		linux-abi-uname) expected=111 ;; \
 		openrfs-proof-userland) expected=113 ;; \
 		openrfs-proof-userland-absent) expected=115 ;; \
@@ -3146,6 +3584,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 		native-sdl) timeout_seconds=240 ;; \
 		native-dynamic) timeout_seconds=120 ;; \
 		native-rust|native-*-refusal) timeout_seconds=120 ;; \
+		account-kdf) timeout_seconds=120 ;; \
 	esac; \
 	if test '$*' = fat32-persistence -o '$*' = native-sqlite; then reboot_control=''; fi; \
 	monitor_argument='-monitor none'; injector=''; injection_result=0; \
@@ -3173,7 +3612,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 	fi; \
 	set +e; \
 	timeout "$${timeout_seconds}s" qemu-system-x86_64 \
-		-machine accel=$(QEMU_ACCEL) -m 128M -smp 1 $$hardware \
+		-machine accel=$(QEMU_ACCEL) -cpu max -m 128M -smp 1 $$hardware \
 		-cdrom '$<' -display none $$monitor_argument -serial stdio \
 		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
 		$$reboot_control >"$$log" 2>&1; result=$$?; \
@@ -3361,11 +3800,11 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 			grep -Fxq 'OpenRFS: BT11 Boot Ledger installed proof passed' "$$log" || \
 				diagnostics_ok=false ;; \
 		openrfs-proof) \
-		grep -Eq '^ST OPENRFS_PROOF geometry 1024x768 apps 5 events [1-9][0-9]* windows [1-9][0-9]* cursor [1-9][0-9]* damage [1-9][0-9]* fingerprint 0x[0-9A-F]{16}$$' "$$log" && \
+		grep -Eq '^ST OPENRFS_PROOF geometry 1024x768 menu-rows 4 events [1-9][0-9]* windows [1-9][0-9]* cursor [1-9][0-9]* damage [1-9][0-9]* fingerprint 0x[0-9A-F]{16}$$' "$$log" && \
 			grep -Fxq 'OpenRFS: installed proof passed' "$$log" || \
 				diagnostics_ok=false ;; \
 		device-substrate) \
-			grep -Fxq 'ST DEVICE_SUBSTRATE dma 64 msix 1 used 0->1 ownership CPU-DEVICE-CPU teardown clean negatives 14' "$$log" && \
+			grep -Fxq 'ST DEVICE_SUBSTRATE dma 64 msix 1 used 0->1 ownership CPU-DEVICE-CPU teardown clean negatives 15' "$$log" && \
 			grep -Fxq 'OpenRFS: device substrate teardown complete' "$$log" && \
 			grep -Eq '^OpenRFS: VirtIO RNG device DMA wrote 64 bytes; nonzero [1-9][0-9]*$$' "$$log" && \
 			grep -Fxq 'OpenRFS: MSI-X delivered 1 interrupt; used ring 0 -> 1' "$$log" || \
@@ -3490,11 +3929,11 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 			grep -Fxq 'write: volume has no free cluster' "$$log" || diagnostics_ok=false ;; \
 		fat32-corrupt) \
 			grep -Fxq 'ST FAT32 CORRUPT refused session usable system executable valid' "$$log" && \
-			grep -Fxq 'data    fat32  unavailable' "$$log" && \
+			grep -Fxq 'data    fat32     unavailable' "$$log" && \
 			grep -Fqx 'OPENRFS' "$$log" || diagnostics_ok=false ;; \
 		fat32-missing) \
 			grep -Fxq 'ST FAT32 MISSING session usable system executable valid' "$$log" && \
-			grep -Fxq 'data    fat32  absent' "$$log" && \
+			grep -Fxq 'data    fat32     absent' "$$log" && \
 			grep -Fqx 'OPENRFS' "$$log" || diagnostics_ok=false ;; \
 		fat32-persistence) \
 			grep -Fxq 'ST FAT32 PERSISTENCE synchronized reboot phase' "$$log" && \
@@ -3514,6 +3953,9 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 				--report '$(EXT4_RECOVERY_FIXTURE).after.json' && \
 			$(PYTHON) tools/ext4_kernel_read.py '$(EXT4_RECOVERY_FIXTURE)' \
 				'$(TEST_BUILD_DIR)/ext4-recovery/linux-kernel' || diagnostics_ok=false ;; \
+		account-kdf) \
+			grep -Fxq 'ST ACCOUNT_KDF Argon2id 64MiB t3 p4 independent output and arena cleanup exact' "$$log" || \
+				diagnostics_ok=false ;; \
 		thread-guard) \
 			grep -Fq 'ST THREAD guard 0x0000000800005000' "$$log" && \
 			grep -Fq '  vector=14 name=page fault' "$$log" && \
@@ -3602,26 +4044,36 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 		--output '$(TEST_BUILD_DIR)/$*/scenario-result.json'; \
 	echo 'QEMU scenario $* passed'
 
-qemu-tests: $(TEST_TARGETS)
+entropy-qemu-test: $(TEST_BUILD_DIR)/normal/openrfs.iso
+	$(PYTHON) tools/test_entropy_qemu.py --iso '$<' \
+		--output '$(TEST_BUILD_DIR)/entropy'
+
+qemu-tests: $(TEST_TARGETS) entropy-qemu-test driver-entropy-qemu-test
 	@echo "all deterministic QEMU scenarios passed"
 
 smoke: qemu-test-normal
 	@echo "strict boot smoke test passed"
 
 # The upstream driver suite: one QEMU boot per device profile, outside the
-# 115-scenario matrix. See tools/run_driver_tests.py for what each requires.
+# 116-scenario matrix. See tools/run_driver_tests.py for what each requires.
 DRIVER_TEST_DIR := $(TEST_BUILD_DIR)/drivers
-.PHONY: qemu-test-drivers qemu-test-drivers-list run-drivers driver-provenance
+DRIVER_CPU ?= max
+.PHONY: qemu-test-drivers qemu-test-drivers-list run-drivers driver-provenance driver-entropy-qemu-test
 # Every vendored upstream driver file still matches its pinned upstream bytes.
 driver-provenance:
 	cd vendor/ipxe && sha256sum --check --quiet SOURCE-MANIFEST.sha256
 	cd vendor/seabios && sha256sum --check --quiet SOURCE-MANIFEST.sha256
 	cd vendor/minix && sha256sum --check --quiet SOURCE-MANIFEST.sha256
 
+driver-entropy-qemu-test: $(KERNEL) driver-provenance
+	$(PYTHON) tools/test_driver_entropy_qemu.py --kernel '$(KERNEL)' \
+		--output '$(TEST_BUILD_DIR)/driver-entropy' \
+		--qemu qemu-system-x86_64 --grub-mkrescue '$(GRUB_MKRESCUE)'
 qemu-test-drivers: $(KERNEL) driver-provenance
 	$(PYTHON) tools/run_driver_tests.py --kernel '$(KERNEL)' \
 		--output '$(DRIVER_TEST_DIR)' --qemu qemu-system-x86_64 \
 		--grub-mkrescue '$(GRUB_MKRESCUE)' --accel '$(QEMU_ACCEL)' \
+		--cpu '$(DRIVER_CPU)' \
 		$(foreach scenario,$(DRIVER_SCENARIOS),--scenario $(scenario))
 
 qemu-test-drivers-list:
@@ -3642,7 +4094,7 @@ $(DRIVER_ISO): $(KERNEL)
 
 run-drivers: $(DRIVER_ISO) $(DESKTOP_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 	cp $(FAT32_DATA_IMAGE) $(FAT32_RUN_DATA_IMAGE)
-	qemu-system-x86_64 -m 256M -smp 1 -boot order=d -cdrom $(DRIVER_ISO) \
+	qemu-system-x86_64 -cpu max -m 256M -smp 1 -boot order=d -cdrom $(DRIVER_ISO) \
 		-blockdev driver=file,filename=$(DESKTOP_SYSTEM_IMAGE),node-name=system-file,read-only=on,auto-read-only=off \
 		-blockdev driver=raw,file=system-file,node-name=system-raw,read-only=on \
 		-device nvme,serial=openrfs-system-fat32,drive=system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
@@ -3651,15 +4103,15 @@ run-drivers: $(DRIVER_ISO) $(DESKTOP_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 		-device nvme,serial=openrfs-data-fat32,drive=data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
 		-nic user,model=e1000 -serial stdio -no-reboot -no-shutdown
 
-run: iso $(DESKTOP_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
-	cp $(FAT32_DATA_IMAGE) $(FAT32_RUN_DATA_IMAGE)
-	qemu-system-x86_64 -m 128M -smp 1 -boot order=d -cdrom $(ISO) \
+run: iso $(DESKTOP_SYSTEM_IMAGE) $(EXT4_FIXTURE)
+	cp $(EXT4_FIXTURE) $(EXT4_RUN_DATA_IMAGE)
+	qemu-system-x86_64 -cpu max -m 128M -smp 1 -boot order=d -cdrom $(ISO) \
 		-blockdev driver=file,filename=$(DESKTOP_SYSTEM_IMAGE),node-name=system-file,read-only=on,auto-read-only=off \
 		-blockdev driver=raw,file=system-file,node-name=system-raw,read-only=on \
 		-device nvme,serial=openrfs-system-fat32,drive=system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
-		-blockdev driver=file,filename=$(FAT32_RUN_DATA_IMAGE),node-name=data-file,read-only=off,auto-read-only=off \
+		-blockdev driver=file,filename=$(EXT4_RUN_DATA_IMAGE),node-name=data-file,read-only=off,auto-read-only=off \
 		-blockdev driver=raw,file=data-file,node-name=data-raw,read-only=off \
-		-device nvme,serial=openrfs-data-fat32,drive=data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
+		-device nvme,serial=openrfs-data-ext4plus,drive=data-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1 \
 		-serial stdio -no-reboot -no-shutdown
 
 hooks:

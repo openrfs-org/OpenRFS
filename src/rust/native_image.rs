@@ -292,6 +292,12 @@ fn text_valid(text: &[u8], required: bool, identifier: bool) -> bool {
     true
 }
 
+fn protected_data_namespace(namespace: &[u8; 16]) -> bool {
+    let end = namespace.iter().position(|byte| *byte == 0).unwrap_or(namespace.len());
+    [b"OPENRFS".as_slice(), b"PKGSTATE", b"PKGSTAGE"].iter()
+        .any(|protected| namespace[..end].eq_ignore_ascii_case(protected))
+}
+
 fn argument_valid(argument: &[u8], required: bool) -> bool {
     let mut end = argument.len();
     for (index, byte) in argument.iter().enumerate() {
@@ -349,8 +355,10 @@ pub fn parse_manifest(input: &[u8]) -> Result<Manifest, Status> {
     let icon = copy_field::<16>(input, 192)?;
     if !text_valid(&name, true, false) || !text_valid(&identifier, true, true)
         || !text_valid(&executable, true, false)
-        || !text_valid(&resource_directory, false, false)
-        || !text_valid(&data_namespace, true, true) || !text_valid(&icon, false, false) {
+        || !text_valid(&resource_directory, false, true)
+        || !text_valid(&data_namespace, true, true)
+        || protected_data_namespace(&data_namespace)
+        || !text_valid(&icon, false, false) {
         return Err(Status::ManifestText);
     }
     let mut arguments = [[0u8; 32]; 8];
@@ -609,6 +617,35 @@ mod tests {
     #[test]
     fn manifest_accepts_exact_shape() {
         assert_eq!(parse_manifest(&manifest()).unwrap().argument_count, 1);
+    }
+
+    #[test]
+    fn manifest_refuses_kernel_data_namespaces_without_rejecting_prefixes() {
+        for namespace in ["OPENRFS", "openrfs", "PKGSTATE", "pkgstage"] {
+            let mut bytes = manifest();
+            bytes[176..192].fill(0);
+            bytes[176..176 + namespace.len()].copy_from_slice(namespace.as_bytes());
+            assert!(matches!(parse_manifest(&bytes), Err(Status::ManifestText)),
+                "reserved namespace {namespace} was admitted");
+        }
+        let mut bytes = manifest();
+        bytes[176..192].fill(0);
+        bytes[176..186].copy_from_slice(b"OPENRFSAPP");
+        assert!(parse_manifest(&bytes).is_ok());
+    }
+
+    #[test]
+    fn manifest_refuses_resource_scope_traversal() {
+        for resource in ["RES/..", "RES/../", ".."] {
+            let mut bytes = manifest();
+            bytes[160..176].fill(0);
+            bytes[160..160 + resource.len()].copy_from_slice(resource.as_bytes());
+            assert!(matches!(parse_manifest(&bytes), Err(Status::ManifestText)),
+                "resource scope {resource} was admitted");
+        }
+        let mut bytes = manifest();
+        bytes[160..167].copy_from_slice(b"NATRES\0");
+        assert!(parse_manifest(&bytes).is_ok());
     }
 
     #[test]

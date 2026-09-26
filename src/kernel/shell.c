@@ -56,6 +56,12 @@ static bool is_separator(char character)
 }
 
 static struct shell_state state;
+static bool shell_authorization_enabled;
+
+void shell_authorization_enable(void)
+{
+    shell_authorization_enabled = true;
+}
 static char line[SHELL_LINE_LIMIT + 1U];
 static bool linux_prompt_evidence_pending;
 static bool ui_keyboard_operational;
@@ -67,7 +73,13 @@ enum authentication_prompt {
     AUTHENTICATION_CREATE_PASSWORD,
     AUTHENTICATION_CONFIRM_PASSWORD,
     AUTHENTICATION_STARTY_USERNAME,
-    AUTHENTICATION_STARTY_PASSWORD
+    AUTHENTICATION_STARTY_PASSWORD,
+    AUTHENTICATION_PASSWD_USERNAME,
+    AUTHENTICATION_PASSWD_OLD,
+    AUTHENTICATION_PASSWD_NEW,
+    AUTHENTICATION_PASSWD_CONFIRM,
+    AUTHENTICATION_DELETE_USERNAME,
+    AUTHENTICATION_DELETE_PASSWORD
 };
 
 struct authentication_state {
@@ -75,6 +87,8 @@ struct authentication_state {
     char username[ACCOUNT_USERNAME_BYTES];
     uint8_t first_password[ACCOUNT_PASSWORD_MAX_BYTES];
     size_t first_password_bytes;
+    uint8_t old_password[ACCOUNT_PASSWORD_MAX_BYTES];
+    size_t old_password_bytes;
     uint8_t input[ACCOUNT_PASSWORD_MAX_BYTES + 1U];
     size_t input_bytes;
 };
@@ -196,7 +210,10 @@ static void command_help(void)
     console_write("  help      this list\n");
     console_write("  install   open the installer configuration preview\n");
     console_write("  useradd NAME  create the first local user\n");
+    console_write("  userdel    remove the account if Data has no files\n");
+    console_write("  passwd    change the local account password\n");
     console_write("  starty    authenticate and start the OpenRFS desktop\n");
+    console_write("  logout    end the account session\n");
     console_write("  echo      print the rest of the line\n");
     console_write("  linux     run measured echo, uname, or bounded cat userspace\n");
     console_write("  native    launch one native application manifest\n");
@@ -522,12 +539,12 @@ static bool line_content(
 static void print_drive(const char *name, struct openrfsfs_drive_info drive)
 {
     console_write(name);
-    if (drive.volume == OPENRFSFS_VOLUME_DATA &&
-            openrfsfs_has_atomic_replace(OPENRFSFS_VOLUME_DATA)) {
-        console_write("  ext4   ");
-    } else {
-        console_write("  fat32  ");
-    }
+    if (drive.filesystem == OPENRFSFS_FILESYSTEM_EXT4PLUS)
+        console_write("  ext4plus  ");
+    else if (drive.filesystem == OPENRFSFS_FILESYSTEM_FAT32)
+        console_write("  fat32     ");
+    else
+        console_write("  unknown   ");
     if (!drive.present) {
         console_write("absent\n");
     } else if (!drive.healthy || !drive.mounted) {
@@ -938,6 +955,7 @@ static void command_sync(void)
 
 static void command_reboot(void)
 {
+    account_data_key_forget();
     const bool ext4_data = openrfsfs_has_atomic_replace(OPENRFSFS_VOLUME_DATA);
     enum openrfsfs_status status = openrfsfs_unmount(OPENRFSFS_VOLUME_DATA);
 
@@ -1064,7 +1082,7 @@ static void command_version(void)
 {
     const struct screen_state screen = screen_get_state();
 
-    console_write("OpenRFS 2.4.0, a proof-driven x86_64 operating system.\n");
+    console_write("OpenRFS 2.5 beta, an experimental x86_64 operating system.\n");
     console_write("console ");
     console_write_u64(screen.columns);
     console_putc('x');
@@ -1077,12 +1095,12 @@ static void print_fetch_drive(struct openrfsfs_drive_info drive)
     if (!drive.present || !drive.healthy || !drive.mounted) {
         console_write("unavailable");
     } else {
-        const bool ext4 = drive.volume == OPENRFSFS_VOLUME_DATA &&
-            openrfsfs_has_atomic_replace(OPENRFSFS_VOLUME_DATA);
-        if (ext4) {
-            console_write(drive.read_only ? "ext4 ro" : "ext4 rw");
-        } else {
+        if (drive.filesystem == OPENRFSFS_FILESYSTEM_EXT4PLUS) {
+            console_write(drive.read_only ? "ext4plus ro" : "ext4plus rw");
+        } else if (drive.filesystem == OPENRFSFS_FILESYSTEM_FAT32) {
             console_write(drive.read_only ? "fat32 ro" : "fat32 rw");
+        } else {
+            console_write("unknown");
         }
     }
 }
@@ -1123,7 +1141,7 @@ static void command_gfetch(void)
     }
     console_write("\n");
     console_write("  OpenRFS\n");
-    console_write("  kernel      OpenRFS 2.4.0 / x86_64\n");
+    console_write("  kernel      OpenRFS 2.5 beta / x86_64\n");
     console_write("  terminal    ");
     console_write_u64(screen.columns);
     console_putc('x');
@@ -1495,7 +1513,7 @@ static void command_starty(const char *arguments)
         console_write("starty: this command takes no arguments\n");
         return;
     }
-    if (ui_is_active()) {
+    if (ui_is_active() && account_session_active()) {
         console_write("starty: the OpenRFS desktop is already active\n");
         return;
     }
@@ -1510,6 +1528,61 @@ static void command_starty(const char *arguments)
     }
     authentication_reset();
     authentication.prompt = AUTHENTICATION_STARTY_USERNAME;
+    console_write("Username: ");
+}
+
+static void command_logout(const char *arguments)
+{
+    if (arguments[0] != '\0') {
+        console_write("logout: this command takes no arguments\n");
+        return;
+    }
+    authentication_reset();
+    account_data_key_forget();
+    console_write("OpenRFS session ended. Run 'starty' to log in again.\n");
+}
+
+static void command_passwd(const char *arguments)
+{
+    bool configured = false;
+    if (arguments[0] != '\0') {
+        console_write("passwd: this command takes no arguments\n");
+        return;
+    }
+    const enum account_status status = account_configured(&configured);
+    if (status != ACCOUNT_STATUS_OK) {
+        authentication_error(status);
+        return;
+    }
+    if (!configured) {
+        authentication_error(ACCOUNT_STATUS_NOT_CONFIGURED);
+        return;
+    }
+    authentication_reset();
+    authentication.prompt = AUTHENTICATION_PASSWD_USERNAME;
+    console_write("Username: ");
+}
+
+static void command_userdel(const char *arguments)
+{
+    bool configured = false;
+
+    if (arguments[0] != '\0') {
+        console_write("userdel: this command takes no arguments\n");
+        return;
+    }
+    const enum account_status status = account_configured(&configured);
+
+    if (status != ACCOUNT_STATUS_OK) {
+        authentication_error(status);
+        return;
+    }
+    if (!configured) {
+        authentication_error(ACCOUNT_STATUS_NOT_CONFIGURED);
+        return;
+    }
+    authentication_reset();
+    authentication.prompt = AUTHENTICATION_DELETE_USERNAME;
     console_write("Username: ");
 }
 
@@ -1539,7 +1612,11 @@ static bool authentication_feed(char character)
     const bool password_prompt =
         authentication.prompt == AUTHENTICATION_CREATE_PASSWORD ||
         authentication.prompt == AUTHENTICATION_CONFIRM_PASSWORD ||
-        authentication.prompt == AUTHENTICATION_STARTY_PASSWORD;
+        authentication.prompt == AUTHENTICATION_STARTY_PASSWORD ||
+        authentication.prompt == AUTHENTICATION_PASSWD_OLD ||
+        authentication.prompt == AUTHENTICATION_PASSWD_NEW ||
+        authentication.prompt == AUTHENTICATION_PASSWD_CONFIRM ||
+        authentication.prompt == AUTHENTICATION_DELETE_PASSWORD;
 
     if (authentication.prompt == AUTHENTICATION_NONE) {
         return false;
@@ -1613,7 +1690,13 @@ static bool authentication_feed(char character)
         write_prompt_restored();
         return true;
     }
-    if (authentication.prompt == AUTHENTICATION_STARTY_USERNAME) {
+    if (authentication.prompt == AUTHENTICATION_STARTY_USERNAME ||
+            authentication.prompt == AUTHENTICATION_PASSWD_USERNAME ||
+            authentication.prompt == AUTHENTICATION_DELETE_USERNAME) {
+        const bool changing_password =
+            authentication.prompt == AUTHENTICATION_PASSWD_USERNAME;
+        const bool deleting_account =
+            authentication.prompt == AUTHENTICATION_DELETE_USERNAME;
         size_t length = authentication.input_bytes;
 
         if (length >= ACCOUNT_USERNAME_BYTES) {
@@ -1623,8 +1706,75 @@ static bool authentication_feed(char character)
             length);
         authentication.username[length] = '\0';
         authentication_clear_input();
-        authentication.prompt = AUTHENTICATION_STARTY_PASSWORD;
-        console_write("Password: ");
+        authentication.prompt = changing_password ? AUTHENTICATION_PASSWD_OLD :
+            deleting_account ? AUTHENTICATION_DELETE_PASSWORD :
+            AUTHENTICATION_STARTY_PASSWORD;
+        console_write(changing_password ? "Current password: " : "Password: ");
+        return true;
+    }
+    if (authentication.prompt == AUTHENTICATION_DELETE_PASSWORD) {
+        const enum account_status status = account_delete(
+            authentication.username, authentication.input,
+            authentication.input_bytes);
+
+        authentication_reset();
+        if (status == ACCOUNT_STATUS_OK) {
+            console_write("OpenRFS account removed; Data directories remain.\n");
+        } else {
+            authentication_error(status);
+        }
+        write_prompt_restored();
+        return true;
+    }
+    if (authentication.prompt == AUTHENTICATION_PASSWD_OLD) {
+        copy_bytes(authentication.old_password, authentication.input,
+            authentication.input_bytes);
+        authentication.old_password_bytes = authentication.input_bytes;
+        authentication_clear_input();
+        authentication.prompt = AUTHENTICATION_PASSWD_NEW;
+        console_write("New password (8-64 characters): ");
+        return true;
+    }
+    if (authentication.prompt == AUTHENTICATION_PASSWD_NEW) {
+        if (authentication.input_bytes < ACCOUNT_PASSWORD_MIN_BYTES) {
+            authentication_clear_input();
+            console_write("Password must contain 8-64 printable characters.\n");
+            console_write("New password (8-64 characters): ");
+            return true;
+        }
+        copy_bytes(authentication.first_password, authentication.input,
+            authentication.input_bytes);
+        authentication.first_password_bytes = authentication.input_bytes;
+        authentication_clear_input();
+        authentication.prompt = AUTHENTICATION_PASSWD_CONFIRM;
+        console_write("Confirm new password: ");
+        return true;
+    }
+    if (authentication.prompt == AUTHENTICATION_PASSWD_CONFIRM) {
+        if (authentication.input_bytes != authentication.first_password_bytes ||
+                !authentication_equal(authentication.input,
+                    authentication.first_password,
+                    authentication.first_password_bytes)) {
+            secure_zero(authentication.first_password,
+                sizeof(authentication.first_password));
+            authentication.first_password_bytes = 0U;
+            authentication_clear_input();
+            authentication.prompt = AUTHENTICATION_PASSWD_NEW;
+            console_write("Passwords do not match.\n");
+            console_write("New password (8-64 characters): ");
+            return true;
+        }
+        const enum account_status status = account_change_password(
+            authentication.username, authentication.old_password,
+            authentication.old_password_bytes, authentication.input,
+            authentication.input_bytes);
+        authentication_reset();
+        if (status == ACCOUNT_STATUS_OK) {
+            console_write("OpenRFS password changed.\n");
+        } else {
+            authentication_error(status);
+        }
+        write_prompt_restored();
         return true;
     }
     if (authentication.prompt == AUTHENTICATION_STARTY_PASSWORD) {
@@ -1632,14 +1782,20 @@ static bool authentication_feed(char character)
             authentication.username, authentication.input,
             authentication.input_bytes);
         bool started = false;
+        bool resumed = false;
 
         if (status == ACCOUNT_STATUS_OK) {
-            started = start_desktop();
+            resumed = ui_is_active();
+            started = resumed || start_desktop();
+            if (!started) account_data_key_forget();
         } else {
             authentication_error(status);
         }
         authentication_reset();
-        if (!started) {
+        if (resumed) {
+            console_write("OpenRFS session resumed.\n");
+            write_prompt_restored();
+        } else if (!started) {
             write_prompt_restored();
         }
         return true;
@@ -1670,14 +1826,44 @@ enum shell_status shell_execute(const char *text)
         return SHELL_STATUS_OK;
     }
 
+    /* The shell exists before the desktop login prompt. A configured account
+     * must guard its Data and native entry points there too; otherwise a user
+     * can read or change Data with shell commands before running starty. */
+    if (shell_authorization_enabled &&
+            !matches(text, "help") && !matches(text, "useradd") &&
+            !matches(text, "userdel") && !matches(text, "passwd") &&
+            !matches(text, "starty") &&
+            !matches(text, "logout") &&
+            !matches(text, "reboot") && !matches(text, "clear") &&
+            !matches(text, "mount") && !matches(text, "drives")) {
+        bool configured = false;
+        const enum account_status status = account_configured(&configured);
+        if (status != ACCOUNT_STATUS_OK) {
+            authentication_error(status);
+            return SHELL_STATUS_OK;
+        }
+        if (!account_session_active()) {
+            console_write(configured ?
+                "account: login required; run 'starty'\n" :
+                "account: create a user first with 'useradd NAME'\n");
+            return SHELL_STATUS_OK;
+        }
+    }
+
     if (matches(text, "help")) {
         command_help();
     } else if (matches(text, "install")) {
         command_install(arguments_of(text));
     } else if (matches(text, "useradd")) {
         command_useradd(arguments_of(text));
+    } else if (matches(text, "userdel")) {
+        command_userdel(arguments_of(text));
+    } else if (matches(text, "passwd")) {
+        command_passwd(arguments_of(text));
     } else if (matches(text, "starty")) {
         command_starty(arguments_of(text));
+    } else if (matches(text, "logout")) {
+        command_logout(arguments_of(text));
     } else if (matches(text, "echo")) {
         command_echo(arguments_of(text));
     } else if (matches(text, "linux")) {

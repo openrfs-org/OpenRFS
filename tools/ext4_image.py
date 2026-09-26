@@ -509,7 +509,8 @@ def _write_debugfs_script(path: Path, payloads: dict[str, Path]) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
 
 
-def _format_image(image: Path, tools: dict[str, str], temporary: Path) -> None:
+def _format_image(image: Path, tools: dict[str, str], temporary: Path,
+                  populate: bool = True) -> None:
     with image.open("wb") as stream:
         stream.truncate(BLOCK_COUNT * BLOCK_BYTES)
 
@@ -588,6 +589,18 @@ features = has_journal,extent,huge_file,metadata_csum,metadata_csum_seed,64bit,d
         extra_env={"MKE2FS_CONFIG": str(mke2fs_config)},
     )
 
+    if not populate:
+        command_file = temporary / "debugfs.commands"
+        command_file.write_text(
+            f"set_super_value mkfs_time @{FIXED_EPOCH}\n"
+            f"set_super_value wtime @{FIXED_EPOCH}\n"
+            f"set_super_value lastcheck @{FIXED_EPOCH}\nquit\n",
+            encoding="utf-8", newline="\n")
+        _run((tools["debugfs"], "-w", "-f", command_file, image))
+        _run((tools["e2fsck"], "-f", "-y", "-D", image), accepted=(0, 1))
+        _upgrade_journal_superblock(image, tools)
+        return
+
     payloads = {
         "readme": temporary / "README.TXT",
         "app": temporary / "APP.BIN",
@@ -621,6 +634,24 @@ def build_image(output: Path) -> dict[str, object]:
         candidate = temporary / "openrfs-ext4.img"
         _format_image(candidate, tools, temporary)
         report = inspect_image(candidate, tools=tools)
+        os.replace(candidate, output)
+    report["sha256"] = hashlib.sha256(output.read_bytes()).hexdigest()
+    return report
+
+
+def build_empty_image(output: Path) -> dict[str, object]:
+    """Build an ext4 Data volume with no user files for deletion proofs."""
+    tools = require_tools()
+    output = output.resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="openrfs-ext4-empty-",
+                                     dir=output.parent) as raw:
+        temporary = Path(raw)
+        candidate = temporary / "openrfs-empty-ext4.img"
+        _format_image(candidate, tools, temporary, populate=False)
+        _e2fsck_read_only(candidate, tools)
+        report = parse_superblock(candidate.read_bytes())
+        report["empty_user_tree"] = True
         os.replace(candidate, output)
     report["sha256"] = hashlib.sha256(output.read_bytes()).hexdigest()
     return report
@@ -874,6 +905,9 @@ def _parser() -> argparse.ArgumentParser:
     build = subparsers.add_parser("build", help="build and verify the deterministic fixture")
     build.add_argument("output", type=Path)
     build.add_argument("--report", type=Path)
+    empty = subparsers.add_parser("build-empty", help="build a Data volume with no user files")
+    empty.add_argument("output", type=Path)
+    empty.add_argument("--report", type=Path)
     inspect = subparsers.add_parser("inspect", help="inspect and verify a fixture")
     inspect.add_argument("image", type=Path)
     inspect.add_argument("--report", type=Path)
@@ -898,6 +932,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "build":
             _write_report(build_image(args.output), args.report)
+        elif args.command == "build-empty":
+            _write_report(build_empty_image(args.output), args.report)
         elif args.command == "inspect":
             _write_report(inspect_image(args.image), args.report)
         elif args.command == "verify":

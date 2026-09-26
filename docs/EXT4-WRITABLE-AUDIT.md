@@ -153,10 +153,11 @@ for changed behavior; inspect bytes, fsck, allocator and journal state.
 
 The full remote workflow adds every ext4 operation's crash/refusal matrix,
 admission/geometry, journal wrap, dense 64 MiB allocation/reclaim, exhaustion,
-and **ten complete serial TCG sweeps**. Main currently declares **115 scenarios**
-and 459 shell assertions: its intentional app removals account for the older
-writable branch's 117. This port does not change main's scenario list or expected
-counts. Each sweep must match `make contract-scenarios` and `contract-counts`,
+and **ten complete serial TCG sweeps**. The ext4 port's main baseline declared
+**115 scenarios** and 459 shell assertions: its intentional app removals
+accounted for the older writable branch's 117. The current security branch
+adds an Argon2id guest scenario and declares 116 scenarios and 460 assertions.
+Each sweep must match `make contract-scenarios` and `contract-counts`,
 contain every success receipt and every fresh nonempty serial log, and stop on
 the first failed command. No previous sweep's stale log supplies evidence.
 

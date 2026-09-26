@@ -17,10 +17,14 @@ jobs:
     build-and-boot:
         name: build-and-boot
         runs-on: ubuntu-24.04
-        timeout-minutes: 60
+        timeout-minutes: 90
         steps:
             - name: Check out source
               uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+              with:
+                  ref: ${{ github.event.pull_request.head.sha || github.sha }}
+            - name: Confirm source commit
+              run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
             - name: Install build tools
               run: |
                   sudo sed -i '\|azure.archive.ubuntu.com|d' /etc/apt/apt-mirrors.txt
@@ -38,6 +42,8 @@ jobs:
                   qemu-system-x86_64 -device nvme,help
             - name: Verify the kernel artifact
               run: make verify
+            - name: Exercise the driver NIC under the entropy policy
+              run: make driver-entropy-qemu-test
             - name: Capture the authenticated minimal desktop from QEMU
               run: |
                   make iso
@@ -84,6 +90,59 @@ jobs:
                   name: openrfs-desktop-captures
                   path: build/openrfs-captures
                   if-no-files-found: error
+            - name: Capture the normal ext4plus Data desktop from QEMU
+              run: |
+                  make ext4-images
+                  make build/tests/encrypted-data-fixtures/ext4.raw
+                  python3 tools/capture-openrfs-proof.py \
+                      --iso build/openrfs.iso \
+                      --system build/userspace/openrfs-system-fat32.raw \
+                      --data build/tests/encrypted-data-fixtures/ext4.raw \
+                      --data-filesystem ext4 \
+                      --output build/openrfs-ext4-captures
+                  python3 - <<'PY'
+                  import json
+                  from pathlib import Path
+
+                  captures = Path("build/openrfs-ext4-captures")
+                  report = json.loads((captures / "report.json").read_text())
+                  if (report["format"] != "ext4" or
+                          report["label"] != "OPENRFSEXT4" or
+                          report["account_path"] != "/OPENRFS/LOGIN.V2A" or
+                          report["account_size"] != 224 or
+                          not report["e2fsck_clean"]):
+                      raise SystemExit("ext4plus desktop Data audit failed")
+                  for name in ("openrfs-proof.png", "openrfs-proof-focus.png",
+                               "openrfs-proof-terminal.png", "capture-serial.log"):
+                      if not (captures / name).is_file():
+                          raise SystemExit(f"missing ext4plus desktop evidence: {name}")
+                  if b"filesystem  system fat32 ro / data ext4plus rw" not in (
+                          captures / "capture-serial.log").read_bytes():
+                      raise SystemExit("gfetch omitted the mounted ext4plus Data volume")
+                  PY
+            - name: Upload ext4plus desktop captures
+              if: always()
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: openrfs-ext4plus-desktop-captures
+                  path: build/openrfs-ext4-captures
+                  if-no-files-found: error
+            - name: Refuse unauthenticated shell and altered v2 credentials in QEMU
+              run: |
+                  python3 tools/test_account_v2_qemu.py \
+                      --iso build/openrfs.iso \
+                      --system build/userspace/openrfs-system-fat32.raw \
+                      --data build/openrfs-captures/openrfs-proof-data.raw \
+                      --output build/account-v2-negative
+            - name: Upload account v2 negative evidence
+              if: always()
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: openrfs-account-v2-negative
+                  path: |
+                      build/account-v2-negative/report.json
+                      build/account-v2-negative/*.serial.log
+                  if-no-files-found: error
             - name: Prove faults and interrupts in QEMU
               run: |
                   make qemu-test-ext4-recovery
@@ -104,4 +163,49 @@ jobs:
               with:
                   name: openrfs-ext4-powercuts
                   path: build/tests/ext4-powercuts
+                  if-no-files-found: error
+
+    encrypted-data:
+        name: encrypted-data
+        runs-on: ubuntu-24.04
+        timeout-minutes: 90
+        steps:
+            - name: Check out PR head
+              uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+              with:
+                  ref: ${{ github.event.pull_request.head.sha || github.sha }}
+            - name: Confirm source commit
+              run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+            - name: Install build tools
+              run: |
+                  sudo sed -i '\|azure.archive.ubuntu.com|d' /etc/apt/apt-mirrors.txt
+                  sudo apt-get update
+                  sudo apt-get install --yes --no-install-recommends \
+                      binutils clang e2fsprogs ffmpeg gcc grub-common grub-pc-bin lld make mtools \
+                      python3-cryptography qemu-system-x86 xorriso
+            - name: Install the Rust bare-metal target
+              run: rustup target add x86_64-unknown-none
+            - name: Check encrypted Data on FAT32 and ext4
+              run: |
+                  test "$(make -s contract-counts)" = "116 460"
+                  make data-aead-backend-host-test account-host-test
+                  make encrypted-data-qemu-test
+                  make encrypted-data-native-qemu-test
+                  make encrypted-data-tamper-qemu-test
+                  make encrypted-data-powercut-qemu-test
+                  make encrypted-data-diskfull-qemu-test
+                  make account-migration-refusal-qemu-test
+                  make account-migration-xattr-refusal-qemu-test
+                  make account-delete-qemu-test account-delete-refusal-qemu-test
+            - name: Upload encrypted Data evidence
+              if: always()
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: openrfs-encrypted-data
+                  path: |
+                      build/tests/encrypted-data-*-qemu/capture-serial.log
+                      build/tests/encrypted-data-*-qemu/raw-check.json
+                      build/tests/encrypted-data-*-qemu/report.json
+                      build/tests/account-migration-*-qemu/capture-serial.log
+                      build/tests/account-delete-*-qemu/capture-serial.log
                   if-no-files-found: error

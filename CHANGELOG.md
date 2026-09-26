@@ -4,6 +4,13 @@
 
 ## Unreleased
 
+The development build identifies itself as **OpenRFS 2.5 beta**. This beta
+adds the security groundwork described in PR #91 and makes WVRM the normal
+desktop after sign-in. Data files are still stored in plaintext. Boot does
+not enforce verified startup, TPM measurements do not form a complete trust
+chain, and native launches do not authenticate a publisher. The published
+v2.4.0 release and its assets remain unchanged.
+
 ## 2.4.0
 
 - Renamed the operating system, public interfaces, SDK, tools, packages,

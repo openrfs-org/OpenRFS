@@ -6,9 +6,11 @@
  */
 #include <stdint.h>
 
+#include <openrfs/account.h>
 #include <openrfs/boot_ledger.h>
 #include <openrfs/boot_plan.h>
 #include <openrfs/console.h>
+#include <openrfs/data_encrypted_backend.h>
 #include <openrfs/ext4_fs.h>
 #include <openrfs/fat32_fs.h>
 #include <openrfs/native_process.h>
@@ -173,6 +175,29 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
         recover_package_state();
         initialize_package_uploads();
     }
+    if (installed_context.test_scenario == KERNEL_TEST_NONE ||
+            installed_context.test_scenario == KERNEL_TEST_NORMAL) {
+        /* Production does not run package recovery before login. The normal
+         * test runs its legacy recovery first, then exercises this same gate. */
+        openrfsfs_data_login_lock_enable(account_session_active,
+            account_session_generation);
+        const struct vfs_backend_ops *physical =
+            openrfsfs_data_backend_current();
+        data_encrypted_backend_bind(physical,
+            account_data_key_forget);
+        if (openrfsfs_data_backend_replace(physical,
+                data_encrypted_backend_ops()) !=
+                OPENRFSFS_STATUS_OK)
+            console_panic("Data backend installation failed");
+        const struct account_data_storage_hooks storage_hooks = {
+            .preflight = data_encrypted_backend_migration_preflight,
+            .migrate = data_encrypted_backend_migrate,
+            .activate = data_encrypted_backend_activate,
+            .deactivate = data_encrypted_backend_deactivate,
+        };
+        account_data_storage_install(&storage_hooks);
+        shell_authorization_enable();
+    }
     if (!native_process_self_test(&native_process_tests)) {
         console_panic("native userspace foundation self-test failed");
     }
@@ -184,7 +209,25 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
     }
 
     if (installed_context.test_scenario == KERNEL_TEST_NORMAL) {
+        /* Direct VFS controls, independently of shell command dispatch. */
+        if (openrfsfs_drive(OPENRFSFS_VOLUME_DATA).mounted) {
+            struct openrfsfs_stat stat;
+            openrfsfs_handle handle;
+            if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, ".", &stat) !=
+                    OPENRFSFS_STATUS_OK ||
+                    openrfsfs_open(OPENRFSFS_VOLUME_DATA, "NOAUTH.TXT",
+                        OPENRFSFS_ACCESS_READ, &handle) !=
+                    OPENRFSFS_STATUS_ACCESS ||
+                    openrfsfs_list(OPENRFSFS_VOLUME_DATA, ".", NULL, 0U,
+                        NULL) != OPENRFSFS_STATUS_ACCESS) {
+                console_panic("pre-login Data VFS gate failed");
+            }
+        }
         kernel_test_complete_normal();
+    }
+
+    if (installed_context.test_scenario == KERNEL_TEST_ACCOUNT_KDF) {
+        kernel_test_complete_account_kdf();
     }
 
     if (installed_context.test_scenario == KERNEL_TEST_BOOT_LEDGER) {

@@ -326,7 +326,7 @@ def main() -> int:
             support.send_text(qmp, "gfetch")
             support.press(qmp, "ret", 0.30)
             support.wait_serial_after(serial, support.DESKTOP_STARTED,
-                                      b"kernel      OpenRFS 2.4.0 / x86_64")
+                                      b"kernel      OpenRFS 2.5 beta / x86_64")
             support.capture(qmp, output, "OpenRFS-networking")
             encode(args.ffmpeg, frames, capture_times, args.fps,
                    args.seconds, video)

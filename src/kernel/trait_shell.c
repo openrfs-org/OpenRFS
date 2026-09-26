@@ -57,8 +57,9 @@ static char run_error[64];
 static const struct {
     const char *name;
     enum trait_shell_app app;
-} RUNNABLE[2] = {
+} RUNNABLE[3] = {
     { "lxterminal", TRAIT_APP_TERMINAL },
+    { "Files", TRAIT_APP_FILES },
     { "glxgears", TRAIT_APP_GEARS }
 };
 
@@ -136,7 +137,7 @@ static bool dragging_entry;
 static uint32_t drag_node;
 
 static const char *const TITLES[TRAIT_APP_COUNT] = {
-    "user", "user@openrfs: ~", "Task Manager", "Desktop Preferences",
+    "WVRM Files", "user@openrfs: ~", "Task Manager", "Desktop Preferences",
     "Package Manager", "glxgears"
 };
 
@@ -330,12 +331,13 @@ bool trait_shell_context_open(void)
 
 uint32_t trait_shell_context_row_count(void)
 {
-    return CONTEXT_ROWS;
+    return trait_files_read_only() ? 1U : CONTEXT_ROWS;
 }
 
 const char *trait_shell_context_row(uint32_t at)
 {
-    return at < CONTEXT_ROWS ? CONTEXT_LABELS[at] : "";
+    return at < trait_shell_context_row_count() ?
+        CONTEXT_LABELS[at] : "";
 }
 
 struct trait_rect trait_shell_context_bounds(void)
@@ -343,7 +345,7 @@ struct trait_rect trait_shell_context_bounds(void)
     struct trait_rect box;
 
     box.width = CONTEXT_W;
-    box.height = CONTEXT_ROWS * CONTEXT_ROW_H + 8U;
+    box.height = trait_shell_context_row_count() * CONTEXT_ROW_H + 8U;
     box.x = context_x;
     box.y = context_y;
     /* Kept on the screen: a menu opened near the right edge would run
@@ -1137,12 +1139,6 @@ static bool shell_menu_pick(uint32_t row)
         return trait_shell_open(TRAIT_APP_PACKAGES, where) <
             TRAIT_SHELL_MAX_WINDOWS;
     }
-    if (label_is(label, "glxgears")) {
-        struct trait_rect square = { 300U, 220U, 320U, 320U };
-
-        return trait_shell_open(TRAIT_APP_GEARS, square) <
-            TRAIT_SHELL_MAX_WINDOWS;
-    }
     if (label_is(label, "Task Manager")) {
         return trait_shell_open(TRAIT_APP_TASKMGR, where) <
             TRAIT_SHELL_MAX_WINDOWS;
@@ -1275,7 +1271,8 @@ static void resize_to(uint32_t x, uint32_t y)
  */
 static bool shell_context_pick(uint32_t row)
 {
-    if (context_node >= TRAIT_FILES_MAX_NODES) {
+    if (context_node >= TRAIT_FILES_MAX_NODES ||
+            row >= trait_shell_context_row_count()) {
         return false;
     }
     switch (row) {
@@ -1698,6 +1695,9 @@ bool trait_shell_handle(const struct trait_event *event)
                 return true;
             }
         }
+        if (apps[slot] == TRAIT_APP_FILES && event->key == '\b') {
+            return trait_files_up();
+        }
         if (apps[slot] == TRAIT_APP_TERMINAL) {
             if (event->special == TRAIT_KEY_ENTER) {
                 trait_terminal_enter();
@@ -2114,7 +2114,7 @@ void trait_shell_draw_overlays(void)
             trait_surface_plot(canvas, box, box.x + box.width - 1U,
                                box.y + at, TRAIT_LINE);
         }
-        for (at = 0U; at < CONTEXT_ROWS; ++at) {
+        for (at = 0U; at < trait_shell_context_row_count(); ++at) {
             /* Properties is DIMMED rather than left out: the menu keeps
              * pcmanfm's shape and nothing in it pretends to work. */
             trait_font_draw(canvas, box, box.x + 10U,

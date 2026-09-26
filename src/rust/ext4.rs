@@ -528,7 +528,8 @@ fn classify(file_type: FileType) -> Result<u8, Status> {
     }
 }
 
-fn inode_metadata(inode: &ext4plus::inode::Inode) -> Result<Metadata, Status> {
+fn inode_metadata(inode: &ext4plus::inode::Inode,
+    filesystem: &Ext4) -> Result<Metadata, Status> {
     let [(atime_seconds, atime_nanos), (mtime_seconds, mtime_nanos), (ctime_seconds, ctime_nanos)] =
         inode.unix_times().map_err(map_error)?;
     Ok(Metadata {
@@ -539,7 +540,8 @@ fn inode_metadata(inode: &ext4plus::inode::Inode) -> Result<Metadata, Status> {
         mode: inode.mode().bits(),
         links: inode.links_count(),
         file_type: classify(inode.file_type())?,
-        reserved: [0; 7],
+        reserved: [u8::from(!inode.list_xattrs(filesystem)
+            .map_err(map_error)?.is_empty()), 0, 0, 0, 0, 0, 0],
         atime_seconds, mtime_seconds, ctime_seconds, atime_nanos, mtime_nanos, ctime_nanos,
     })
 }
@@ -2710,13 +2712,13 @@ fn metadata_at(mounted: &Mounted, path: &[u8], follow: FollowSymlinks) -> Result
         .readable_filesystem()?
         .path_to_inode(checked, follow)
         .map_err(map_error)?;
-    inode_metadata(&inode)
+    inode_metadata(&inode, mounted.readable_filesystem()?)
 }
 
 /// Read bytes at a 64-bit offset without changing any shared cursor.
 pub(crate) fn stat_inode(mounted: &Mounted, number: u64) -> Result<Metadata, Status> {
     let inode = allocated_inode(mounted.readable_filesystem()?, number)?;
-    inode_metadata(&inode)
+    inode_metadata(&inode, mounted.readable_filesystem()?)
 }
 
 pub(crate) fn pread_inode(mounted: &Mounted, number: u64, offset: u64, destination: &mut [u8]) -> Result<usize, Status> {
@@ -2782,7 +2784,7 @@ pub(crate) fn directory_snapshot(mounted: &Mounted, path: &[u8]) -> Result<Box<D
         let bytes = name.as_ref();
         let inode = Inode::read(filesystem, entry.inode).map_err(map_error)?;
         let mut output = DirectoryEntry {
-            metadata: inode_metadata(&inode)?,
+            metadata: inode_metadata(&inode, filesystem)?,
             name_length: u16::try_from(bytes.len()).map_err(|_| Status::Range)?,
             ..DirectoryEntry::default()
         };
@@ -2816,7 +2818,7 @@ pub(crate) fn directory_entry(
             let inode = ext4plus::inode::Inode::read(mounted.readable_filesystem()?, entry.inode)
                 .map_err(map_error)?;
             let mut output = DirectoryEntry {
-                metadata: inode_metadata(&inode)?,
+                metadata: inode_metadata(&inode, mounted.readable_filesystem()?)?,
                 name_length: u16::try_from(bytes.len()).map_err(|_| Status::Range)?,
                 ..DirectoryEntry::default()
             };

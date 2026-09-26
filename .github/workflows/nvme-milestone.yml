@@ -16,7 +16,7 @@ jobs:
     bounded-evidence:
         name: bounded-nvme-evidence
         runs-on: ubuntu-24.04
-        # The complete 115-scenario matrix now includes the four-boot signed
+        # The complete 116-scenario matrix now includes the four-boot signed
         # package lifecycle. Keep the full hosted-runner allowance so all ten
         # serial TCG sweeps and evidence assembly can complete.
         timeout-minutes: 360

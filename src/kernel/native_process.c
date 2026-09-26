@@ -23,6 +23,7 @@
 #include <openrfs/keyboard.h>
 #include <openrfs/paging.h>
 #include <openrfs/package_control.h>
+#include <openrfs/package_service.h>
 #include <openrfs/package_upload.h>
 #include <openrfs/process.h>
 #include <openrfs/random.h>
@@ -259,6 +260,16 @@ static void zero_bytes(void *pointer, size_t length)
 
     for (size_t index = 0U; index < length; ++index) {
         bytes[index] = 0U;
+    }
+}
+
+static void wipe_bytes(void *pointer, size_t length)
+{
+    volatile uint8_t *bytes = pointer;
+
+    while (length != 0U) {
+        *bytes++ = 0U;
+        --length;
     }
 }
 
@@ -1172,11 +1183,72 @@ static bool safe_relative_path(const char *path, size_t length)
     return true;
 }
 
-static bool path_from_user(
+/* ext4 follows symlinks after the lexical namespace prefix is applied.
+ * Refuse every existing link component before passing native Data paths to
+ * VFS. Native link creation is disabled below until the backend has an atomic
+ * beneath-root resolver; this preflight is not a defense against independent
+ * on-disk mutation or another kernel actor changing the path concurrently. */
+static enum openrfsfs_status native_data_path_no_symlink(
+    const char *path, bool allow_final_link)
+{
+    char prefix[OPENRFSFS_MAX_PATH];
+    const size_t length = bounded_length((const uint8_t *)path,
+        OPENRFSFS_MAX_PATH);
+    const bool interrupts_were_enabled = cpu_interrupts_enabled();
+    enum openrfsfs_status result = OPENRFSFS_STATUS_PATH;
+
+    if (length == 0U || length >= sizeof(prefix)) {
+        return OPENRFSFS_STATUS_PATH;
+    }
+    zero_bytes(prefix, sizeof(prefix));
+    if (!interrupts_were_enabled) {
+        cpu_interrupt_enable();
+    }
+    for (size_t index = 0U; index <= length; ++index) {
+        struct openrfsfs_stat stat;
+        enum openrfsfs_status status;
+
+        if (index != length && path[index] != '/') {
+            prefix[index] = path[index];
+            continue;
+        }
+        prefix[index] = '\0';
+        status = openrfsfs_lstat_path(OPENRFSFS_VOLUME_DATA, prefix, &stat);
+        if (status == OPENRFSFS_STATUS_NOT_FOUND) {
+            result = OPENRFSFS_STATUS_OK;
+            break;
+        }
+        if (status != OPENRFSFS_STATUS_OK) {
+            result = status;
+            break;
+        }
+        if (((stat.mode & 0170000U) == 0120000U) &&
+            (index != length || !allow_final_link)) {
+            result = OPENRFSFS_STATUS_PATH;
+            break;
+        }
+        if (index != length && !stat.directory) {
+            result = OPENRFSFS_STATUS_NOT_DIRECTORY;
+            break;
+        }
+        if (index == length) {
+            result = OPENRFSFS_STATUS_OK;
+            break;
+        }
+        prefix[index] = '/';
+    }
+    if (!interrupts_were_enabled) {
+        cpu_interrupt_disable();
+    }
+    return result;
+}
+
+static int64_t path_from_user_checked(
     struct native_process *process,
     const struct openrfs_path *path,
     char output[OPENRFSFS_MAX_PATH],
-    enum openrfsfs_volume *volume
+    enum openrfsfs_volume *volume,
+    bool allow_final_link
 )
 {
     char relative[OPENRFSFS_MAX_PATH];
@@ -1187,7 +1259,7 @@ static bool path_from_user(
         path->length >= sizeof(relative) ||
         !copy_from_user(process, relative, path->address, path->length) ||
         !safe_relative_path(relative, path->length)) {
-        return false;
+        return -OPENRFS_EINVAL;
     }
     relative[path->length] = '\0';
     zero_bytes(output, OPENRFSFS_MAX_PATH);
@@ -1195,7 +1267,7 @@ static bool path_from_user(
         size_t resource_length;
 
         if ((process->manifest.capabilities & OPENRFS_CAP_SYSTEM_READ) == 0U) {
-            return false;
+            return -OPENRFS_EINVAL;
         }
         resource_length = bounded_length(process->manifest.resource_directory,
             sizeof(process->manifest.resource_directory));
@@ -1206,7 +1278,7 @@ static bool path_from_user(
                 resource_length + 1U);
         } else {
             if (resource_length + 1U + path->length >= OPENRFSFS_MAX_PATH) {
-                return false;
+                return -OPENRFS_EINVAL;
             }
             copy_bytes(output, process->manifest.resource_directory,
                 resource_length);
@@ -1215,18 +1287,18 @@ static bool path_from_user(
                 path->length + 1U);
         }
         *volume = OPENRFSFS_VOLUME_SYSTEM;
-        return true;
+        return 0;
     }
     if (path->volume != OPENRFS_VOLUME_DATA ||
         (process->manifest.capabilities &
             (OPENRFS_CAP_DATA_READ | OPENRFS_CAP_DATA_WRITE)) == 0U) {
-        return false;
+        return -OPENRFS_EINVAL;
     }
     namespace_length = bounded_length(process->manifest.data_namespace,
         sizeof(process->manifest.data_namespace));
     if (namespace_length == 0U ||
         namespace_length + 1U + path->length >= OPENRFSFS_MAX_PATH) {
-        return false;
+        return -OPENRFS_EINVAL;
     }
     copy_bytes(output, process->manifest.data_namespace, namespace_length);
     if (path->length == 1U && relative[0] == '.') {
@@ -1236,8 +1308,23 @@ static bool path_from_user(
         copy_bytes(output + namespace_length + 1U, relative,
             path->length + 1U);
     }
+    const enum openrfsfs_status path_status =
+        native_data_path_no_symlink(output, allow_final_link);
+    if (path_status != OPENRFSFS_STATUS_OK) {
+        return filesystem_error(path_status);
+    }
     *volume = OPENRFSFS_VOLUME_DATA;
-    return true;
+    return 0;
+}
+
+static int64_t path_from_user(
+    struct native_process *process,
+    const struct openrfs_path *path,
+    char output[OPENRFSFS_MAX_PATH],
+    enum openrfsfs_volume *volume
+)
+{
+    return path_from_user_checked(process, path, output, volume, false);
 }
 
 static bool read_volume_file(
@@ -1330,14 +1417,15 @@ static bool sibling_image_path(
     return true;
 }
 
-static bool installed_manifest_path(const char *path)
+static bool installed_manifest_path(const char *path, uint64_t *generation)
 {
     static const char prefix[] = "pkgstate/gen/";
     static const char root[] = "/root/";
     size_t length;
     size_t offset = sizeof(prefix) - 1U;
+    uint64_t parsed_generation = 0U;
 
-    if (path == NULL) {
+    if (path == NULL || generation == NULL) {
         return false;
     }
     length = bounded_length((const uint8_t *)path, OPENRFSFS_MAX_PATH);
@@ -1358,6 +1446,8 @@ static bool installed_manifest_path(const char *path)
                     (value >= 'a' && value <= 'f'))) {
                 return false;
             }
+            parsed_generation = (parsed_generation << 4U) |
+                (uint64_t)(value <= '9' ? value - '0' : value - 'a' + 10);
         }
         offset += 8U;
         if (path[offset++] != '/') {
@@ -1370,7 +1460,58 @@ static bool installed_manifest_path(const char *path)
             return false;
         }
     }
+    offset += sizeof(root) - 1U;
+    size_t component_start = offset;
+    size_t components = 0U;
+
+    for (size_t index = offset; index <= length; ++index) {
+        if (index == length || path[index] == '/') {
+            const size_t component_length = index - component_start;
+
+            if (component_length == 0U ||
+                (component_length == 1U && path[component_start] == '.') ||
+                (component_length == 2U && path[component_start] == '.' &&
+                    path[component_start + 1U] == '.') ||
+                ++components > OPENRFSFS_MAX_DEPTH - 5U) {
+                return false;
+            }
+            component_start = index + 1U;
+        } else {
+            const char value = path[index];
+            const bool alphanumeric =
+                (value >= '0' && value <= '9') ||
+                (value >= 'A' && value <= 'Z') ||
+                (value >= 'a' && value <= 'z');
+
+            if (!alphanumeric && value != '.' && value != '_' &&
+                value != '+' && value != '-') {
+                return false;
+            }
+        }
+    }
+    *generation = parsed_generation;
     return true;
+}
+
+static bool installed_manifest_path_self_test(void)
+{
+    uint64_t generation = 0U;
+
+    return installed_manifest_path(
+            "pkgstate/gen/00000000/00000003/root/bin/CHESS.MAN",
+            &generation) && generation == 3U &&
+        !installed_manifest_path(
+            "pkgstate/gen/00000000/00000003/root/../bin/CHESS.MAN",
+            &generation) &&
+        !installed_manifest_path(
+            "pkgstate/gen/00000000/00000003/root/bin//CHESS.MAN",
+            &generation) &&
+        !installed_manifest_path(
+            "pkgstate/gen/00000000/00000003/root/bin\\CHESS.MAN",
+            &generation) &&
+        !installed_manifest_path(
+            "pkgstate/gen/00000000/00000003/root/bin/./CHESS.MAN",
+            &generation);
 }
 
 static bool allocate_page(
@@ -3520,10 +3661,11 @@ static int64_t syscall_file_open(
             ((request.flags & OPENRFS_OPEN_CREATE) == 0U || (request.reserved & ~07777U) != 0U)) ||
         (request.flags & ~OPENRFS_OPEN_FLAGS_V1) != 0U ||
         ((request.flags & OPENRFS_OPEN_EXCLUSIVE) != 0U && (request.flags & OPENRFS_OPEN_CREATE) == 0U) ||
-        (request.flags & (OPENRFS_OPEN_READ | OPENRFS_OPEN_WRITE)) == 0U ||
-        !path_from_user(process, &request.path, path, &volume)) {
+        (request.flags & (OPENRFS_OPEN_READ | OPENRFS_OPEN_WRITE)) == 0U) {
         return -OPENRFS_EINVAL;
     }
+    const int64_t path_error = path_from_user(process, &request.path, path, &volume);
+    if (path_error != 0) return path_error;
     if (volume == OPENRFSFS_VOLUME_SYSTEM &&
         (request.flags & (OPENRFS_OPEN_WRITE | OPENRFS_OPEN_CREATE |
             OPENRFS_OPEN_TRUNCATE)) != 0U) {
@@ -3721,9 +3863,8 @@ static int64_t syscall_path_stat(
         !validate_user_range(process, output_address, sizeof(output), true)) {
         return -OPENRFS_EFAULT;
     }
-    if (!path_from_user(process, &path_request, path, &volume)) {
-        return -OPENRFS_EINVAL;
-    }
+    const int64_t path_error = path_from_user(process, &path_request, path, &volume);
+    if (path_error != 0) return path_error;
     cpu_interrupt_enable();
     status = openrfsfs_stat_path(volume, path, &stat);
     cpu_interrupt_disable();
@@ -3789,7 +3930,9 @@ static int64_t syscall_path_metadata(struct native_process *process,
     if ((flags & ~(uint64_t)OPENRFS_METADATA_NOFOLLOW) != 0U) return -OPENRFS_EINVAL;
     if (!copy_from_user(process, &request, path_address, sizeof(request)) ||
         !validate_user_range(process, output_address, sizeof(output), true)) return -OPENRFS_EFAULT;
-    if (!path_from_user(process, &request, path, &volume)) return -OPENRFS_EINVAL;
+    const int64_t path_error = path_from_user_checked(process, &request, path, &volume,
+        (flags & OPENRFS_METADATA_NOFOLLOW) != 0U);
+    if (path_error != 0) return path_error;
     cpu_interrupt_enable();
     const enum openrfsfs_status status = (flags & OPENRFS_METADATA_NOFOLLOW) != 0U ?
         openrfsfs_lstat_path(volume, path, &stat) : openrfsfs_stat_path(volume, path, &stat);
@@ -3817,9 +3960,8 @@ static int64_t syscall_directory_open(
             sizeof(path_request))) {
         return -OPENRFS_EFAULT;
     }
-    if (!path_from_user(process, &path_request, path, &volume)) {
-        return -OPENRFS_EINVAL;
-    }
+    const int64_t path_error = path_from_user(process, &path_request, path, &volume);
+    if (path_error != 0) return path_error;
     for (size_t index = 0U; index < NATIVE_HANDLE_LIMIT; ++index) {
         if (!process->directories[index].active) {
             slot = index;
@@ -3941,9 +4083,9 @@ static int64_t syscall_single_path_mutation(
             sizeof(path_request))) {
         return -OPENRFS_EFAULT;
     }
-    if (!path_from_user(process, &path_request, path, &volume)) {
-        return -OPENRFS_EINVAL;
-    }
+    const int64_t path_error = path_from_user_checked(process, &path_request, path, &volume,
+        number == OPENRFS_SYS_PATH_UNLINK && value == OPENRFS_UNLINK_FILE);
+    if (path_error != 0) return path_error;
     if (volume != OPENRFSFS_VOLUME_DATA ||
         (process->manifest.capabilities & OPENRFS_CAP_DATA_WRITE) == 0U) {
         return -OPENRFS_EACCES;
@@ -3976,39 +4118,31 @@ static int64_t syscall_symlink(
     enum openrfsfs_status status;
     size_t count = 0U;
 
-    if (length == 0U || (create && length >= OPENRFSFS_MAX_PATH)) {
+    /* A native link target can otherwise escape the manifest's Data root.
+     * Keep readlink for diagnosis; link creation needs an atomic backend
+     * beneath-root resolver before it can be safely exposed again. */
+    if (create) {
+        return -OPENRFS_EACCES;
+    }
+    if (length == 0U) {
         return -OPENRFS_EINVAL;
     }
     const size_t capacity = length < sizeof(bytes) ? (size_t)length : sizeof(bytes);
     if (!copy_from_user(process, &request, path_address, sizeof(request))) {
         return -OPENRFS_EFAULT;
     }
-    if (!path_from_user(process, &request, path, &volume)) {
-        return -OPENRFS_EINVAL;
-    }
-    if (create) {
-        if (volume != OPENRFSFS_VOLUME_DATA ||
-            (process->manifest.capabilities & OPENRFS_CAP_DATA_WRITE) == 0U) {
-            return -OPENRFS_EACCES;
-        }
-        if (!copy_from_user(process, bytes, bytes_address, capacity)) {
-            return -OPENRFS_EFAULT;
-        }
-        if (bounded_length(bytes, capacity) != capacity) {
-            return -OPENRFS_EINVAL;
-        }
-        bytes[capacity] = 0U;
-    } else if (!validate_user_range(process, bytes_address, capacity, true)) {
+    const int64_t path_error = path_from_user_checked(process, &request, path, &volume, true);
+    if (path_error != 0) return path_error;
+    if (!validate_user_range(process, bytes_address, capacity, true)) {
         return -OPENRFS_EFAULT;
     }
     cpu_interrupt_enable();
-    status = create ? openrfsfs_symlink(volume, path, (const char *)bytes) :
-        openrfsfs_readlink(volume, path, bytes, capacity, &count);
+    status = openrfsfs_readlink(volume, path, bytes, capacity, &count);
     cpu_interrupt_disable();
     if (status != OPENRFSFS_STATUS_OK) {
         return filesystem_error(status);
     }
-    if (!create && (count > capacity || !copy_to_user(process, bytes_address, bytes, count))) {
+    if (count > capacity || !copy_to_user(process, bytes_address, bytes, count)) {
         return -OPENRFS_EFAULT;
     }
     return (int64_t)count;
@@ -4046,7 +4180,8 @@ static int64_t syscall_chmod(struct native_process *process, uint64_t path_addre
     enum openrfsfs_volume volume;
     if (mode > 07777U) return -OPENRFS_EINVAL;
     if (!copy_from_user(process, &request, path_address, sizeof(request))) return -OPENRFS_EFAULT;
-    if (!path_from_user(process, &request, path, &volume)) return -OPENRFS_EINVAL;
+    const int64_t path_error = path_from_user(process, &request, path, &volume);
+    if (path_error != 0) return path_error;
     if (volume != OPENRFSFS_VOLUME_DATA ||
         (process->manifest.capabilities & OPENRFS_CAP_DATA_WRITE) == 0U) return -OPENRFS_EACCES;
     cpu_interrupt_enable();
@@ -4061,8 +4196,10 @@ static int64_t syscall_set_times(struct native_process *process, uint64_t addres
     char path[OPENRFSFS_MAX_PATH];
     enum openrfsfs_volume volume;
     if (!copy_from_user(process, &request, address, sizeof(request))) return -OPENRFS_EFAULT;
-    if (request.size != sizeof(request) || request.version != OPENRFS_ABI_VERSION ||
-        !path_from_user(process, &request.path, path, &volume)) return -OPENRFS_EINVAL;
+    if (request.size != sizeof(request) || request.version != OPENRFS_ABI_VERSION)
+        return -OPENRFS_EINVAL;
+    const int64_t path_error = path_from_user(process, &request.path, path, &volume);
+    if (path_error != 0) return path_error;
     if (volume != OPENRFSFS_VOLUME_DATA ||
         (process->manifest.capabilities & OPENRFS_CAP_DATA_WRITE) == 0U) return -OPENRFS_EACCES;
     const struct openrfsfs_times times = { request.times.atime_seconds, request.times.mtime_seconds,
@@ -4088,7 +4225,8 @@ static int64_t syscall_xattr(struct native_process *process, uint64_t address)
         request.name_length == 0U || request.name_length >= sizeof(name) ||
         request.value_length > sizeof(bytes) ||
         (request.operation == OPENRFS_XATTR_REMOVE && request.value_length != 0U)) return -OPENRFS_EINVAL;
-    if (!path_from_user(process, &request.path, path, &volume)) return -OPENRFS_EINVAL;
+    const int64_t path_error = path_from_user(process, &request.path, path, &volume);
+    if (path_error != 0) return path_error;
     if (request.operation != OPENRFS_XATTR_GET && (volume != OPENRFSFS_VOLUME_DATA ||
         (process->manifest.capabilities & OPENRFS_CAP_DATA_WRITE) == 0U)) return -OPENRFS_EACCES;
     if (!copy_from_user(process, name, request.name, request.name_length)) return -OPENRFS_EFAULT;
@@ -4167,12 +4305,14 @@ static int64_t syscall_rename(
     }
     if (request.size != sizeof(request) ||
         request.version != OPENRFS_ABI_VERSION || request.flags != 0U ||
-        request.reserved != 0U ||
-        !path_from_user(process, &request.source, source, &source_volume) ||
-        !path_from_user(process, &request.destination, destination,
-            &destination_volume)) {
+        request.reserved != 0U) {
         return -OPENRFS_EINVAL;
     }
+    int64_t path_error = path_from_user(process, &request.source, source, &source_volume);
+    if (path_error != 0) return path_error;
+    path_error = path_from_user(process, &request.destination, destination,
+        &destination_volume);
+    if (path_error != 0) return path_error;
     if (source_volume != OPENRFSFS_VOLUME_DATA ||
         destination_volume != OPENRFSFS_VOLUME_DATA ||
         (process->manifest.capabilities & OPENRFS_CAP_DATA_WRITE) == 0U) {
@@ -4227,10 +4367,14 @@ static int64_t syscall_file_publication(struct native_process *process,
         if (request.size != sizeof(request) || request.version != OPENRFS_ABI_VERSION ||
             request.flags != 0U || request.reserved != 0U) return -OPENRFS_EINVAL;
         source_request = request.source;
-        if (!path_from_user(process, &request.destination, destination, &destination_volume)) return -OPENRFS_EINVAL;
+        const int64_t path_error = path_from_user(process, &request.destination,
+            destination, &destination_volume);
+        if (path_error != 0) return path_error;
         if (destination_volume != OPENRFSFS_VOLUME_DATA) return -OPENRFS_EACCES;
     }
-    if (!path_from_user(process, &source_request, source, &source_volume)) return -OPENRFS_EINVAL;
+    const int64_t source_path_error = path_from_user(process, &source_request,
+        source, &source_volume);
+    if (source_path_error != 0) return source_path_error;
     if (source_volume != OPENRFSFS_VOLUME_DATA ||
         (process->manifest.capabilities & OPENRFS_CAP_DATA_WRITE) == 0U) return -OPENRFS_EACCES;
     const enum native_handle_status handle_status = native_handle_resolve(
@@ -4425,11 +4569,16 @@ static int64_t syscall_random(
             random_strong_bytes(process->transfer, chunk) :
             random_bytes(process->transfer, chunk);
 
-        if (status != RANDOM_STATUS_OK ||
-            !copy_to_user(process, address + completed, process->transfer,
-                chunk)) {
+        if (status != RANDOM_STATUS_OK) {
+            wipe_bytes(process->transfer, chunk);
             return completed == 0U ? -OPENRFS_EIO : (int64_t)completed;
         }
+        if (!copy_to_user(process, address + completed, process->transfer,
+                chunk)) {
+            wipe_bytes(process->transfer, chunk);
+            return completed == 0U ? -OPENRFS_EIO : (int64_t)completed;
+        }
+        wipe_bytes(process->transfer, chunk);
         completed += chunk;
     }
     return (int64_t)completed;
@@ -7222,12 +7371,27 @@ enum native_process_status native_process_launch_installed(
 )
 {
     uint64_t generation;
+    uint64_t installed_generation;
     enum native_process_status status;
+    struct package_service_report service;
 
     if (result == NULL) {
         return NATIVE_PROCESS_NULL_ARGUMENT;
     }
-    if (!installed_manifest_path(manifest_path)) {
+    if (!installed_manifest_path(manifest_path, &installed_generation)) {
+        return NATIVE_PROCESS_IMAGE_REFUSED;
+    }
+    if (scheduler_active) {
+        return NATIVE_PROCESS_BUSY;
+    }
+    /*
+     * Recovery verifies every file in the authority-selected generation.
+     * Refuse stale paths and single-file edits before using a Data manifest.
+     * The authority record is on writable Data, so this is not publisher
+     * authentication or protection against a whole-volume rollback.
+     */
+    if (package_service_recover(&service) != PACKAGE_SERVICE_STATUS_OK ||
+        service.generation != installed_generation) {
         return NATIVE_PROCESS_IMAGE_REFUSED;
     }
     status = native_process_spawn_from_volume(manifest_path,
@@ -7278,6 +7442,10 @@ bool native_process_self_test(size_t *completed_tests)
         return false;
     }
     *completed_tests += dynamic_tests;
+    if (!installed_manifest_path_self_test()) {
+        return false;
+    }
+    ++*completed_tests;
     if (!native_handle_self_test(&handle_tests)) {
         return false;
     }

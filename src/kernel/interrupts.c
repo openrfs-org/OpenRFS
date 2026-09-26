@@ -441,6 +441,35 @@ enum interrupt_status interrupt_register_handler(
     return INTERRUPT_STATUS_OK;
 }
 
+enum interrupt_status interrupt_replace_handler(
+    uint8_t vector,
+    interrupt_handler_t handler,
+    void *context
+)
+{
+    if (!initialized) {
+        return INTERRUPT_STATUS_NOT_INITIALIZED;
+    }
+    if (handler == NULL) {
+        return INTERRUPT_STATUS_NULL_HANDLER;
+    }
+    if (cpu_interrupts_enabled()) {
+        return INTERRUPT_STATUS_INTERRUPTS_ENABLED;
+    }
+    if (vector == 2U || vector == 8U || vector == 18U ||
+        vector == INTERRUPT_PROCESS_PROOF_VECTOR) {
+        return INTERRUPT_STATUS_RESERVED_VECTOR;
+    }
+    if (handlers[vector].handler == NULL) {
+        return INTERRUPT_STATUS_HANDLER_MISSING;
+    }
+
+    handlers[vector].context = context;
+    __asm__ volatile ("" : : : "memory");
+    handlers[vector].handler = handler;
+    return INTERRUPT_STATUS_OK;
+}
+
 enum interrupt_status interrupt_unregister_handler(uint8_t vector)
 {
     if (!initialized) {

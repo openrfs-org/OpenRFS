@@ -90,6 +90,7 @@ struct openrfsfs_stat {
     uint32_t atime_nanos;
     uint32_t mtime_nanos;
     uint32_t ctime_nanos;
+    bool xattrs_present;
 };
 
 struct openrfsfs_times {
@@ -108,8 +109,15 @@ struct openrfsfs_list_entry {
     bool directory;
 };
 
+enum openrfsfs_filesystem {
+    OPENRFSFS_FILESYSTEM_UNKNOWN = 0,
+    OPENRFSFS_FILESYSTEM_FAT32,
+    OPENRFSFS_FILESYSTEM_EXT4PLUS
+};
+
 struct openrfsfs_drive_info {
     enum openrfsfs_volume volume;
+    enum openrfsfs_filesystem filesystem;
     uint32_t volume_id;
     uint64_t total_bytes;
     uint64_t free_bytes;
@@ -121,6 +129,9 @@ struct openrfsfs_drive_info {
 
 bool openrfsfs_self_test(size_t *completed_tests);
 void openrfsfs_initialize(void);
+/* Monotonic ordinary-boot Data gate; credential records remain reachable. */
+void openrfsfs_data_login_lock_enable(bool (*session_active)(void),
+    uint64_t (*session_generation)(void));
 /* Quiescent VFS census after all mounts have been cleanly released. */
 bool openrfsfs_resources_released(void);
 enum openrfsfs_status openrfsfs_mount(enum openrfsfs_volume volume);
