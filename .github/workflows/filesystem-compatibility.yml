@@ -464,7 +464,7 @@ jobs:
     filesystem-gate:
         name: filesystem-compatibility-evidence
         needs: [bounded-evidence, held-file-cuts]
-        if: always()
+        if: ${{ always() && !cancelled() }}
         runs-on: ubuntu-24.04
         steps:
             - name: Require complete filesystem evidence
