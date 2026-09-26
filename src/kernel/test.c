@@ -6280,7 +6280,7 @@ static _Noreturn void ext4_vfs_metadata_powercut(bool changing_times)
     struct openrfsfs_times invalid = times;
     invalid.mtime_nanos = 1000000000U;
     if (openrfsfs_set_times(volume, name, &invalid) != OPENRFSFS_STATUS_INVALID_ARGUMENT ||
-        openrfsfs_chmod(volume, name, 0100640U) != OPENRFSFS_STATUS_OK)
+        openrfsfs_chmod(volume, name, changing_times ? 0100644U : 0100640U) != OPENRFSFS_STATUS_OK)
         kernel_test_fail("ext4 metadata cut invalid fields or stat mode round-trip failed");
     const openrfsfs_handle held[] = { file, reader };
     for (size_t index = 0U; index < 2U; ++index) {
