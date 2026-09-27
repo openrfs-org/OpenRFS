@@ -111,6 +111,7 @@ enum native_thread_state {
     NATIVE_THREAD_JOIN_WAIT,
     NATIVE_THREAD_FUTEX_WAIT,
     NATIVE_THREAD_CONSOLE_WAIT,
+    NATIVE_THREAD_CHILD_WAIT,
     NATIVE_THREAD_HANDLE_WAIT,
     NATIVE_THREAD_AUDIO_DRAIN_WAIT,
     NATIVE_THREAD_EXITED,
@@ -140,6 +141,8 @@ struct native_thread {
     uint64_t console_address;
     uint64_t wait_items_address;
     uint64_t audio_token;
+    uint64_t wait_status_address;
+    int32_t wait_pid;
     size_t console_length;
     size_t wait_item_count;
     struct openrfs_wait_item wait_items[OPENRFS_WAIT_MAX];
@@ -187,6 +190,7 @@ struct native_process {
     uint64_t executable_frames[PAGING_PROCESS_ALIAS_MAX_PAGES];
     uint8_t transfer[NATIVE_COPY_CHUNK];
     uint64_t generation;
+    uint64_t parent_generation;
     size_t page_count;
     size_t executable_count;
     size_t thread_count;
@@ -206,6 +210,7 @@ struct native_process {
     uint32_t context_transition_samples;
     int32_t exit_status;
     bool active;
+    bool zombie;
     bool exiting;
     bool faulted;
     bool dynamic_fini_started;
@@ -300,6 +305,15 @@ static bool add_u64(uint64_t left, uint64_t right, uint64_t *result)
     }
     *result = left + right;
     return true;
+}
+
+static uint64_t claim_process_id(void)
+{
+    if (next_process_generation == 0U ||
+        next_process_generation > INT32_MAX) {
+        return 0U;
+    }
+    return next_process_generation++;
 }
 
 static void record_context_transition(
@@ -3321,10 +3335,9 @@ static enum native_process_status native_process_spawn_from_volume(
         return NATIVE_PROCESS_NO_SLOT;
     }
     zero_bytes(process, sizeof(*process));
-    process->generation = next_process_generation++;
-    if (next_process_generation == 0U ||
-        next_process_generation > NETWORK_OWNER_GENERATION_MAX) {
-        next_process_generation = 1U;
+    process->generation = claim_process_id();
+    if (process->generation == 0U) {
+        return NATIVE_PROCESS_NO_SLOT;
     }
     status = load_process(process, manifest_path, image_volume);
     if (status != NATIVE_PROCESS_OK) {
@@ -6374,6 +6387,20 @@ static void save_interrupt_context(
 
 static void terminate_process(struct native_process *process, int32_t status)
 {
+    if (!process->exiting) {
+        for (size_t index = 0U; index < NATIVE_PROCESS_LIMIT; ++index) {
+            struct native_process *child = &processes[index];
+
+            if (child->parent_generation != process->generation) {
+                continue;
+            }
+            if (child->zombie) {
+                zero_bytes(child, sizeof(*child));
+            } else {
+                child->parent_generation = 0U;
+            }
+        }
+    }
     process->exit_status = status;
     process->exiting = true;
     for (size_t index = 0U; index < process->thread_count; ++index) {
@@ -6443,6 +6470,209 @@ static int64_t syscall_handle_duplicate(
     return (int64_t)duplicate;
 }
 
+static int64_t fork_file_handles(
+    struct native_process *child,
+    const struct native_process *parent
+)
+{
+    openrfsfs_handle retained[NATIVE_HANDLE_LIMIT];
+    size_t retained_count = 0U;
+    int64_t error = 0;
+
+    for (size_t index = 0U; index < parent->handles.limit; ++index) {
+        const struct native_handle_object *object =
+            &parent->handles.objects[index];
+
+        if (!object->active || object->type != OPENRFS_HANDLE_FILE) {
+            continue;
+        }
+        const openrfsfs_handle file = (openrfsfs_handle)object->resource.words[0];
+        const enum openrfsfs_status status = openrfsfs_retain(file);
+
+        if (status != OPENRFSFS_STATUS_OK) {
+            error = filesystem_error(status);
+            break;
+        }
+        retained[retained_count++] = file;
+    }
+    if (error != 0) {
+        for (size_t index = retained_count; index > 0U; --index) {
+            (void)openrfsfs_close(retained[index - 1U]);
+        }
+        return error;
+    }
+    child->handles = parent->handles;
+    for (size_t index = 0U; index < child->handles.limit; ++index) {
+        struct native_handle_slot *slot = &child->handles.slots[index];
+        struct native_handle_object *object = &child->handles.objects[index];
+
+        if (slot->active && slot->type != OPENRFS_HANDLE_FILE) {
+            slot->active = false;
+            slot->type = 0U;
+            slot->object_index = 0U;
+            if (++slot->generation == 0U) {
+                slot->generation = 1U;
+            }
+            --child->handles.active_handles;
+        }
+        if (object->active && object->type != OPENRFS_HANDLE_FILE) {
+            zero_bytes(object, sizeof(*object));
+            --child->handles.active_objects;
+        }
+    }
+    child->peak_handles = child->handles.active_handles;
+    return 0;
+}
+
+static int64_t syscall_process_fork(
+    struct native_process *parent,
+    const struct native_thread *caller
+)
+{
+    struct native_process *child = NULL;
+    int64_t error = -OPENRFS_ENOMEM;
+
+    for (size_t index = 0U; index < NATIVE_PROCESS_LIMIT; ++index) {
+        if (!processes[index].active && processes[index].generation == 0U) {
+            child = &processes[index];
+            break;
+        }
+    }
+    if (child == NULL) {
+        return -OPENRFS_EAGAIN;
+    }
+    const uint64_t pid = claim_process_id();
+
+    if (pid == 0U) {
+        return -OPENRFS_EAGAIN;
+    }
+    zero_bytes(child, sizeof(*child));
+    child->generation = pid;
+    child->parent_generation = parent->generation;
+    child->manifest = parent->manifest;
+    child->image = parent->image;
+    child->dynamic_fini_entry = parent->dynamic_fini_entry;
+    child->dynamic_fini_started = parent->dynamic_fini_started;
+    for (size_t index = 0U; index < parent->page_count; ++index) {
+        const struct native_page *source = &parent->pages[index];
+        uintptr_t frame;
+
+        if (!allocate_page(child, source->virtual_address,
+                source->permissions, source->kind, &frame)) {
+            goto failed;
+        }
+        copy_bytes((void *)frame, (const void *)source->physical_address,
+            PAGING_PAGE_SIZE);
+        if ((source->permissions & PAGING_EXECUTE) != 0U) {
+            if (child->executable_count == PAGING_PROCESS_ALIAS_MAX_PAGES) {
+                goto failed;
+            }
+            child->executable_frames[child->executable_count++] = frame;
+        }
+    }
+    if (!map_prepared_pages(child)) {
+        goto failed;
+    }
+    error = fork_file_handles(child, parent);
+    if (error != 0) {
+        goto failed;
+    }
+    child->thread_count = 1U;
+    child->current_thread = 0U;
+    child->threads[0].context = caller->context;
+    child->threads[0].context.rax = 0U;
+    child->threads[0].fpu = caller->fpu;
+    child->threads[0].fs_base = caller->fs_base;
+    child->threads[0].stack_base = caller->stack_base;
+    child->threads[0].stack_end = caller->stack_end;
+    child->threads[0].generation = next_thread_generation++;
+    if (next_thread_generation == 0U) {
+        next_thread_generation = 1U;
+    }
+    child->threads[0].state = NATIVE_THREAD_RUNNABLE;
+    child->active = true;
+    return (int64_t)pid;
+failed:
+    if (!process_cleanup(child, NULL)) {
+        return -OPENRFS_EIO;
+    }
+    return error;
+}
+
+static int64_t process_wait_child(
+    struct native_process *parent,
+    int32_t requested_pid,
+    uint64_t status_address,
+    bool nohang,
+    bool *complete
+)
+{
+    bool has_child = false;
+
+    *complete = true;
+    for (size_t index = 0U; index < NATIVE_PROCESS_LIMIT; ++index) {
+        struct native_process *child = &processes[index];
+
+        if (child->generation == 0U ||
+            child->parent_generation != parent->generation ||
+            (requested_pid != -1 && child->generation !=
+                (uint64_t)requested_pid)) {
+            continue;
+        }
+        has_child = true;
+        if (child->zombie) {
+            const int status = child->faulted ? 11 :
+                (int)((uint32_t)child->exit_status & 0xFFU) << 8U;
+            const int64_t pid = (int64_t)child->generation;
+
+            if (status_address != 0U && !copy_to_user(parent,
+                    status_address, &status, sizeof(status))) {
+                return -OPENRFS_EFAULT;
+            }
+            zero_bytes(child, sizeof(*child));
+            return pid;
+        }
+    }
+    if (!has_child) {
+        return -OPENRFS_ECHILD;
+    }
+    if (nohang) {
+        return 0;
+    }
+    *complete = false;
+    return 0;
+}
+
+static int64_t syscall_process_wait(
+    struct native_process *process,
+    struct native_thread *thread,
+    int64_t requested_pid,
+    uint64_t status_address,
+    uint64_t options
+)
+{
+    bool complete;
+    int64_t result;
+
+    if ((requested_pid != -1 &&
+            (requested_pid <= 0 || requested_pid > INT32_MAX)) ||
+        (options & ~UINT64_C(1)) != 0U) {
+        return -OPENRFS_EINVAL;
+    }
+    if (status_address != 0U &&
+        !validate_user_range(process, status_address, sizeof(int), true)) {
+        return -OPENRFS_EFAULT;
+    }
+    result = process_wait_child(process, (int32_t)requested_pid,
+        status_address, (options & 1U) != 0U, &complete);
+    if (!complete) {
+        thread->wait_pid = (int32_t)requested_pid;
+        thread->wait_status_address = status_address;
+        thread->state = NATIVE_THREAD_CHILD_WAIT;
+    }
+    return result;
+}
+
 static int64_t dispatch_syscall(
     struct native_process *process,
     struct native_thread *thread,
@@ -6452,6 +6682,18 @@ static int64_t dispatch_syscall(
     switch (frame->rax) {
     case OPENRFS_SYS_ABI_VERSION:
         return OPENRFS_ABI_VERSION;
+    case OPENRFS_SYS_PROCESS_ID:
+        return (int64_t)process->generation;
+    case OPENRFS_SYS_PARENT_ID:
+        return (int64_t)process->parent_generation;
+    case OPENRFS_SYS_PROCESS_FORK:
+        return syscall_process_fork(process, thread);
+    case OPENRFS_SYS_PROCESS_WAIT:
+        return syscall_process_wait(process, thread, (int64_t)frame->rdi,
+            frame->rsi, frame->rdx);
+    case OPENRFS_SYS_PROCESS_EXIT_IMMEDIATE:
+        terminate_process(process, (int32_t)frame->rdi);
+        return 0;
     case OPENRFS_SYS_EXIT:
         if (!begin_dynamic_finalizers(process, thread,
                 (int32_t)frame->rdi)) {
@@ -6838,6 +7080,18 @@ static void update_waiting_threads(
                     break;
                 }
             }
+        } else if (thread->state == NATIVE_THREAD_CHILD_WAIT) {
+            bool complete;
+            const int64_t result = process_wait_child(process,
+                thread->wait_pid, thread->wait_status_address, false,
+                &complete);
+
+            if (complete) {
+                thread->wait_pid = 0;
+                thread->wait_status_address = 0U;
+                thread->context.rax = (uint64_t)result;
+                thread->state = NATIVE_THREAD_RUNNABLE;
+            }
         } else if (thread->state == NATIVE_THREAD_HANDLE_WAIT) {
             int64_t ready = poll_wait_items(process, thread->wait_items,
                 thread->wait_item_count);
@@ -7178,6 +7432,7 @@ static bool service_native_devices(void)
 enum native_process_status native_process_run(struct native_process_result *result)
 {
     struct native_process_result selected_result;
+    uint64_t root_generation;
     bool have_result = false;
     bool cleanup_ok = true;
     bool cleanup_blocked = false;
@@ -7190,6 +7445,7 @@ enum native_process_status native_process_run(struct native_process_result *resu
     if (scheduler_active || !any_active_process()) {
         return NATIVE_PROCESS_BUSY;
     }
+    root_generation = processes[newest_active_process()].generation;
     cpu_interrupt_disable();
     if (interrupt_process_gate_arm(native_process_on_interrupt, &native_gate,
             &native_gate) != INTERRUPT_STATUS_OK) {
@@ -7307,10 +7563,35 @@ enum native_process_status native_process_run(struct native_process_result *resu
                 break;
             }
             capture_result(&processes[newest], &completed);
+            const uint64_t parent_generation =
+                processes[newest].parent_generation;
+            const bool keep_zombie = parent_generation != 0U &&
+                parent_generation != completed.generation &&
+                processes[newest].active &&
+                !processes[newest].zombie;
             const bool process_retired = process_cleanup(&processes[newest],
                 &completed.teardown_report);
-            if (!have_result || completed.generation >
-                    selected_result.generation) {
+            if (process_retired && keep_zombie) {
+                bool parent_live = false;
+
+                for (size_t index = 0U; index < NATIVE_PROCESS_LIMIT;
+                     ++index) {
+                    if (processes[index].active &&
+                        !processes[index].exiting &&
+                        processes[index].generation == parent_generation) {
+                        parent_live = true;
+                        break;
+                    }
+                }
+                if (parent_live) {
+                    processes[newest].generation = completed.generation;
+                    processes[newest].parent_generation = parent_generation;
+                    processes[newest].exit_status = completed.exit_status;
+                    processes[newest].faulted = completed.faulted;
+                    processes[newest].zombie = true;
+                }
+            }
+            if (completed.generation == root_generation) {
                 selected_result = completed;
                 have_result = true;
             }

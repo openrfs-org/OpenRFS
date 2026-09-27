@@ -514,6 +514,13 @@ _Noreturn void exit(int status)
     __builtin_unreachable();
 }
 
+_Noreturn void _Exit(int status)
+{
+    (void)openrfs_syscall1(OPENRFS_SYS_PROCESS_EXIT_IMMEDIATE,
+        (uint64_t)(int64_t)status);
+    __builtin_unreachable();
+}
+
 _Noreturn void abort(void)
 {
     static const char message[] = "abort\n";

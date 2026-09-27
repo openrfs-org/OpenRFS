@@ -2,6 +2,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <errno.h>
@@ -15,21 +16,35 @@
 
 #define DESCRIPTOR_MAX 32
 
+enum descriptor_kind {
+    DESCRIPTOR_NONE = 0,
+    DESCRIPTOR_FILE,
+    DESCRIPTOR_CONSOLE_IN,
+    DESCRIPTOR_CONSOLE_OUT
+};
+
 struct descriptor_record {
     openrfs_handle_t handle;
     uint16_t volume;
     char path[OPENRFS_PATH_MAX + 1U];
+    int open_flags;
+    int descriptor_flags;
+    enum descriptor_kind kind;
     int active;
 };
 
-static struct descriptor_record descriptors[DESCRIPTOR_MAX];
+static struct descriptor_record descriptors[DESCRIPTOR_MAX] = {
+    [0] = {.kind = DESCRIPTOR_CONSOLE_IN, .active = 1},
+    [1] = {.kind = DESCRIPTOR_CONSOLE_OUT, .active = 1},
+    [2] = {.kind = DESCRIPTOR_CONSOLE_OUT, .active = 1}
+};
 static volatile uint32_t descriptor_lock;
 
 static int descriptor_snapshot(int number, struct descriptor_record *record, int retire)
 {
     int found = 0;
     openrfs_runtime_lock(&descriptor_lock);
-    if (number >= 3 && number < DESCRIPTOR_MAX && descriptors[number].active == 1) {
+    if (number >= 0 && number < DESCRIPTOR_MAX && descriptors[number].active == 1) {
         *record = descriptors[number];
         if (retire) (void)memset(&descriptors[number], 0, sizeof(descriptors[number]));
         found = 1;
@@ -46,6 +61,8 @@ int open(const char *path, int flags, ...)
     int number = -1;
 
     if (openrfs_runtime_path(path, &parsed) != 0) return -1;
+    if ((flags & ~(O_RDWR | O_CREAT | O_TRUNC | O_APPEND | O_EXCL |
+            O_CLOEXEC | O_CLOFORK)) != 0) { errno = EINVAL; return -1; }
     if ((flags & O_EXCL) != 0 && (flags & O_CREAT) == 0) { errno = EINVAL; return -1; }
     if ((flags & O_RDWR) == O_RDWR) native |= OPENRFS_OPEN_READ | OPENRFS_OPEN_WRITE;
     else if ((flags & O_WRONLY) != 0) native |= OPENRFS_OPEN_WRITE;
@@ -57,7 +74,7 @@ int open(const char *path, int flags, ...)
     // Reserve the descriptor before a native create/truncate can mutate disk.
     // State 2 is private to this open and is not a usable descriptor.
     openrfs_runtime_lock(&descriptor_lock);
-    for (int index = 3; index < DESCRIPTOR_MAX; ++index) {
+    for (int index = 0; index < DESCRIPTOR_MAX; ++index) {
         if (!descriptors[index].active) { number = index; descriptors[index].active = 2; break; }
     }
     openrfs_runtime_unlock(&descriptor_lock);
@@ -76,6 +93,12 @@ int open(const char *path, int flags, ...)
         descriptors[number].handle = (openrfs_handle_t)handle;
         descriptors[number].volume = parsed.volume;
         (void)memcpy(descriptors[number].path, parsed.text, parsed.length + 1U);
+        descriptors[number].open_flags = flags &
+            (O_RDWR | O_APPEND);
+        descriptors[number].descriptor_flags =
+            ((flags & O_CLOEXEC) != 0 ? FD_CLOEXEC : 0) |
+            ((flags & O_CLOFORK) != 0 ? FD_CLOFORK : 0);
+        descriptors[number].kind = DESCRIPTOR_FILE;
         descriptors[number].active = 1;
     } else { (void)memset(&descriptors[number], 0, sizeof(descriptors[number])); }
     openrfs_runtime_unlock(&descriptor_lock);
@@ -89,11 +112,14 @@ ssize_t read(int number, void *buffer, size_t length)
 {
     struct descriptor_record record;
     long result;
-    if (number == STDIN_FILENO) { if (length == 0U) return 0; errno = EAGAIN; return -1; }
     if (buffer == NULL && length != 0U) { errno = EFAULT; return -1; }
     if (!descriptor_snapshot(number, &record, 0)) { errno = EBADF; return -1; }
     if (length == 0U) return 0;
-    result = openrfs_file_read(record.handle, buffer, length);
+    if (record.kind == DESCRIPTOR_CONSOLE_IN) {
+        result = openrfs_console_read(buffer, length);
+    } else if (record.kind == DESCRIPTOR_FILE) {
+        result = openrfs_file_read(record.handle, buffer, length);
+    } else { errno = EBADF; return -1; }
     if (result < 0) { errno = (int)-result; return -1; }
     return (ssize_t)result;
 }
@@ -103,11 +129,12 @@ ssize_t write(int number, const void *buffer, size_t length)
     struct descriptor_record record;
     long result;
     if (buffer == NULL && length != 0U) { errno = EFAULT; return -1; }
-    if (number == STDOUT_FILENO || number == STDERR_FILENO) {
+    if (!descriptor_snapshot(number, &record, 0)) { errno = EBADF; return -1; }
+    if (record.kind == DESCRIPTOR_CONSOLE_OUT) {
         if (length == 0U) return 0;
         result = openrfs_syscall2(OPENRFS_SYS_CONSOLE_WRITE,
             (uint64_t)(uintptr_t)buffer, length);
-    } else if (descriptor_snapshot(number, &record, 0)) {
+    } else if (record.kind == DESCRIPTOR_FILE) {
         if (length == 0U) return 0;
         result = openrfs_file_write(record.handle, buffer, length);
     } else { errno = EBADF; return -1; }
@@ -121,6 +148,7 @@ off_t lseek(int number, off_t offset, int origin)
     long result;
     if (origin != SEEK_SET && origin != SEEK_CUR && origin != SEEK_END) { errno = EINVAL; return -1; }
     if (!descriptor_snapshot(number, &record, 0)) { errno = EBADF; return -1; }
+    if (record.kind != DESCRIPTOR_FILE) { errno = ESPIPE; return -1; }
     result = openrfs_file_seek(record.handle, offset, (uint32_t)origin);
     if (result < 0) { errno = (int)-result; return -1; }
     return (off_t)result;
@@ -133,8 +161,164 @@ int close(int number)
     // Retire before entering native teardown: a nested/concurrent open may
     // reuse the number, and this close must never erase that replacement.
     if (!descriptor_snapshot(number, &record, 1)) { errno = EBADF; return -1; }
+    if (record.kind != DESCRIPTOR_FILE) return 0;
     result = openrfs_handle_close(record.handle);
     return openrfs_result(result);
+}
+
+static int duplicate_from(int source, int minimum, int descriptor_flags)
+{
+    struct descriptor_record record;
+    int destination = -1;
+
+    if (minimum < 0 || minimum >= DESCRIPTOR_MAX) {
+        errno = EINVAL;
+        return -1;
+    }
+    openrfs_runtime_lock(&descriptor_lock);
+    if (source < 0 || source >= DESCRIPTOR_MAX ||
+        descriptors[source].active != 1) {
+        openrfs_runtime_unlock(&descriptor_lock);
+        errno = EBADF;
+        return -1;
+    }
+    for (int index = minimum; index < DESCRIPTOR_MAX; ++index) {
+        if (descriptors[index].active == 0) {
+            destination = index;
+            break;
+        }
+    }
+    if (destination < 0) {
+        openrfs_runtime_unlock(&descriptor_lock);
+        errno = EMFILE;
+        return -1;
+    }
+    record = descriptors[source];
+    if (record.kind == DESCRIPTOR_FILE) {
+        const long duplicate = openrfs_handle_duplicate(record.handle);
+
+        if (duplicate < 0) {
+            openrfs_runtime_unlock(&descriptor_lock);
+            errno = duplicate == -OPENRFS_ENOMEM ? EMFILE : (int)-duplicate;
+            return -1;
+        }
+        record.handle = (openrfs_handle_t)duplicate;
+    }
+    record.descriptor_flags = descriptor_flags;
+    descriptors[destination] = record;
+    openrfs_runtime_unlock(&descriptor_lock);
+    return destination;
+}
+
+int dup(int source) { return duplicate_from(source, 0, 0); }
+
+static int duplicate_exact(int source, int destination, int flags, int same_ok)
+{
+    struct descriptor_record replacement;
+    struct descriptor_record previous = {0};
+
+    if (source < 0 || source >= DESCRIPTOR_MAX ||
+        destination < 0 || destination >= DESCRIPTOR_MAX) {
+        errno = EBADF;
+        return -1;
+    }
+    if ((flags & ~(O_CLOEXEC | O_CLOFORK)) != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    openrfs_runtime_lock(&descriptor_lock);
+    if (descriptors[source].active != 1) {
+        openrfs_runtime_unlock(&descriptor_lock);
+        errno = EBADF;
+        return -1;
+    }
+    if (source == destination) {
+        openrfs_runtime_unlock(&descriptor_lock);
+        if (!same_ok) { errno = EINVAL; return -1; }
+        return destination;
+    }
+    if (descriptors[destination].active == 2) {
+        openrfs_runtime_unlock(&descriptor_lock);
+        errno = EBUSY;
+        return -1;
+    }
+    replacement = descriptors[source];
+    if (replacement.kind == DESCRIPTOR_FILE) {
+        const long duplicate = openrfs_handle_duplicate(replacement.handle);
+
+        if (duplicate < 0) {
+            openrfs_runtime_unlock(&descriptor_lock);
+            errno = duplicate == -OPENRFS_ENOMEM ? EMFILE : (int)-duplicate;
+            return -1;
+        }
+        replacement.handle = (openrfs_handle_t)duplicate;
+    }
+    previous = descriptors[destination];
+    replacement.descriptor_flags =
+        ((flags & O_CLOEXEC) != 0 ? FD_CLOEXEC : 0) |
+        ((flags & O_CLOFORK) != 0 ? FD_CLOFORK : 0);
+    descriptors[destination] = replacement;
+    openrfs_runtime_unlock(&descriptor_lock);
+    if (previous.active == 1 && previous.kind == DESCRIPTOR_FILE) {
+        (void)openrfs_handle_close(previous.handle);
+    }
+    return destination;
+}
+
+int dup2(int source, int destination)
+{
+    return duplicate_exact(source, destination, 0, 1);
+}
+
+int dup3(int source, int destination, int flags)
+{
+    return duplicate_exact(source, destination, flags, 0);
+}
+
+int fcntl(int number, int command, ...)
+{
+    int argument = 0;
+    struct descriptor_record record;
+
+    if (command == F_DUPFD || command == F_DUPFD_CLOEXEC ||
+        command == F_DUPFD_CLOFORK || command == F_SETFD ||
+        command == F_SETFL) {
+        va_list arguments;
+        va_start(arguments, command);
+        argument = va_arg(arguments, int);
+        va_end(arguments);
+    }
+    if (command == F_DUPFD || command == F_DUPFD_CLOEXEC ||
+        command == F_DUPFD_CLOFORK) {
+        return duplicate_from(number, argument,
+            command == F_DUPFD_CLOEXEC ? FD_CLOEXEC :
+                (command == F_DUPFD_CLOFORK ? FD_CLOFORK : 0));
+    }
+    openrfs_runtime_lock(&descriptor_lock);
+    if (number < 0 || number >= DESCRIPTOR_MAX ||
+        descriptors[number].active != 1) {
+        openrfs_runtime_unlock(&descriptor_lock);
+        errno = EBADF;
+        return -1;
+    }
+    record = descriptors[number];
+    if (command == F_SETFD) {
+        if ((argument & ~(FD_CLOEXEC | FD_CLOFORK)) != 0) {
+            openrfs_runtime_unlock(&descriptor_lock);
+            errno = EINVAL;
+            return -1;
+        }
+        descriptors[number].descriptor_flags = argument;
+    }
+    openrfs_runtime_unlock(&descriptor_lock);
+    if (command == F_GETFD) return record.descriptor_flags;
+    if (command == F_SETFD) return 0;
+    if (command == F_GETFL) {
+        return record.kind == DESCRIPTOR_FILE ? record.open_flags :
+            (record.kind == DESCRIPTOR_CONSOLE_IN ? O_RDONLY : O_WRONLY);
+    }
+    errno = command == F_SETFL ? ENOSYS : EINVAL;
+    return -1;
 }
 
 static int finish_metadata(long status, struct openrfs_path_metadata native, struct stat *result)
@@ -172,6 +356,7 @@ int fstat(int number, struct stat *result)
     struct openrfs_path_metadata native = {0};
     if (result == NULL) { errno = EFAULT; return -1; }
     if (!descriptor_snapshot(number, &record, 0)) { errno = EBADF; return -1; }
+    if (record.kind != DESCRIPTOR_FILE) { errno = EBADF; return -1; }
     const long status = openrfs_file_metadata(record.handle, &native);
     return finish_metadata(status, native, result);
 }
@@ -232,6 +417,7 @@ int ftruncate(int number, int64_t length)
 {
     struct descriptor_record record;
     if (!descriptor_snapshot(number, &record, 0)) { errno = EBADF; return -1; }
+    if (record.kind != DESCRIPTOR_FILE) { errno = EBADF; return -1; }
     if (length < 0) { errno = EINVAL; return -1; }
     return openrfs_result(openrfs_file_truncate(record.handle, (uint64_t)length));
 }
@@ -239,6 +425,7 @@ int fsync(int number)
 {
     struct descriptor_record record;
     if (!descriptor_snapshot(number, &record, 0)) { errno = EBADF; return -1; }
+    if (record.kind != DESCRIPTOR_FILE) { errno = EBADF; return -1; }
     return openrfs_result(openrfs_file_sync(record.handle));
 }
 unsigned int sleep(unsigned int seconds)
@@ -252,7 +439,54 @@ int usleep(unsigned int microseconds)
         (long)(microseconds % 1000000U) * 1000L};
     return nanosleep(&request, NULL);
 }
-int getpid(void) { return 1; }
+int getpid(void) { return openrfs_result(openrfs_syscall0(OPENRFS_SYS_PROCESS_ID)); }
+int getppid(void) { return openrfs_result(openrfs_syscall0(OPENRFS_SYS_PARENT_ID)); }
+int fork(void)
+{
+    const int result = openrfs_result(openrfs_syscall0(OPENRFS_SYS_PROCESS_FORK));
+
+    if (result == 0) {
+        __atomic_store_n(&descriptor_lock, 0U, __ATOMIC_RELEASE);
+        for (int index = 0; index < DESCRIPTOR_MAX; ++index) {
+            if (descriptors[index].active == 2) {
+                (void)memset(&descriptors[index], 0,
+                    sizeof(descriptors[index]));
+            } else if (descriptors[index].active == 1 &&
+                (descriptors[index].descriptor_flags & FD_CLOFORK) != 0) {
+                (void)close(index);
+            }
+        }
+    }
+    return result;
+}
+pid_t waitpid(pid_t pid, int *status, int options)
+{
+    return openrfs_result(openrfs_syscall3(OPENRFS_SYS_PROCESS_WAIT,
+        (uint64_t)(int64_t)pid, (uint64_t)(uintptr_t)status,
+        (uint64_t)(unsigned)options));
+}
+pid_t wait(int *status) { return waitpid(-1, status, 0); }
+int execve(const char *path, char *const argv[], char *const envp[])
+{
+    (void)path;
+    (void)argv;
+    (void)envp;
+    errno = ENOSYS;
+    return -1;
+}
+int pipe(int pair[2])
+{
+    (void)pair;
+    errno = ENOSYS;
+    return -1;
+}
+int pipe2(int pair[2], int flags)
+{
+    (void)pair;
+    (void)flags;
+    errno = ENOSYS;
+    return -1;
+}
 
 DIR *opendir(const char *path)
 {

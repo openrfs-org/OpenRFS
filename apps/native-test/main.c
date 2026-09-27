@@ -1,10 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include <pthread.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <openrfs/event.h>
 #include <openrfs/runtime.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 static _Thread_local unsigned long tls_value = 17U;
 
@@ -296,6 +300,181 @@ static int timer_probe(void)
     return 0;
 }
 
+static int process_probe(void)
+{
+    volatile int private_value = 7;
+    char byte = 0;
+    int status = 0;
+    const int parent_pid = getpid();
+    const int descriptor = open("System:RESOURCE.TXT", O_RDONLY);
+
+    if (parent_pid <= 0 || getppid() != 0 || descriptor < 3) return 41;
+    if (fflush(NULL) != 0) return 42;
+    const int child_pid = fork();
+
+    if (child_pid < 0) return 43;
+    if (child_pid == 0) {
+        private_value = 19;
+        if (getpid() == parent_pid || getppid() != parent_pid ||
+            read(descriptor, &byte, 1U) != 1 || byte != 'O') {
+            _Exit(44);
+        }
+        _Exit(23);
+    }
+    if (child_pid == parent_pid || waitpid(child_pid, &status, 0) != child_pid ||
+        !WIFEXITED(status) || WEXITSTATUS(status) != 23 ||
+        private_value != 7 || read(descriptor, &byte, 1U) != 1 ||
+        byte != 'p' || close(descriptor) != 0 ||
+        waitpid(child_pid, NULL, WNOHANG) != -1 || errno != ECHILD) {
+        return 45;
+    }
+    const int data_descriptor = open("FOUND.TXT", O_RDONLY);
+
+    if (data_descriptor < 3) return 63;
+    const int data_child = fork();
+
+    if (data_child < 0) return 64;
+    if (data_child == 0) {
+        _Exit(read(data_descriptor, &byte, 1U) == 1 && byte == 'n' ? 0 : 65);
+    }
+    if (waitpid(data_child, &status, 0) != data_child ||
+        !WIFEXITED(status) || WEXITSTATUS(status) != 0 ||
+        read(data_descriptor, &byte, 1U) != 1 || byte != 'a' ||
+        close(data_descriptor) != 0) {
+        return 66;
+    }
+    puts("OPENRFS PROCESS fork wait private-memory shared-offset PASS");
+    return 0;
+}
+
+static int descriptor_probe(void)
+{
+    static const char message[] = "native descriptor redirection\n";
+    char received[sizeof(message)] = {0};
+    int status;
+    const int saved_stdout = dup(STDOUT_FILENO);
+    const int file = open("REDIR.TXT", O_CREAT | O_TRUNC | O_RDWR, 0600);
+
+    if (saved_stdout < 3 || file < 3 ||
+        fcntl(file, F_SETFD, FD_CLOEXEC) != 0 ||
+        fcntl(file, F_GETFD) != FD_CLOEXEC ||
+        dup2(file, STDOUT_FILENO) != STDOUT_FILENO ||
+        fcntl(STDOUT_FILENO, F_GETFD) != 0 ||
+        fputs(message, stdout) == EOF || fflush(stdout) != 0 ||
+        dup2(saved_stdout, STDOUT_FILENO) != STDOUT_FILENO ||
+        close(saved_stdout) != 0 ||
+        lseek(file, 0, SEEK_SET) != 0 ||
+        read(file, received, sizeof(message) - 1U) !=
+            (ssize_t)(sizeof(message) - 1U) ||
+        memcmp(received, message, sizeof(message) - 1U) != 0) {
+        return 58;
+    }
+    const int duplicate = fcntl(file, F_DUPFD_CLOFORK, 3);
+
+    if (duplicate < 3 || fcntl(duplicate, F_GETFD) != FD_CLOFORK) {
+        return 59;
+    }
+    const int child = fork();
+
+    if (child < 0) return 60;
+    if (child == 0) {
+        if (fcntl(duplicate, F_GETFD) != -1 || errno != EBADF ||
+            fcntl(file, F_GETFD) != FD_CLOEXEC) {
+            _Exit(61);
+        }
+        _Exit(0);
+    }
+    if (waitpid(child, &status, 0) != child || !WIFEXITED(status) ||
+        WEXITSTATUS(status) != 0 || close(duplicate) != 0 ||
+        close(file) != 0) {
+        return 62;
+    }
+    puts("OPENRFS DESCRIPTOR dup redirection flags fork inheritance PASS");
+    return 0;
+}
+
+static int process_limits_probe(void)
+{
+    int children[3];
+    int status;
+
+    for (int index = 0; index < 3; ++index) {
+        children[index] = fork();
+        if (children[index] < 0) return 46;
+        if (children[index] == 0) {
+            volatile unsigned long progress = 0U;
+
+            for (unsigned long step = 0U; step < 1000000U; ++step) {
+                progress += step & 1U;
+            }
+            _Exit(progress == 500000U ? 30 + index : 49);
+        }
+    }
+    if (fork() != -1 || errno != EAGAIN) return 47;
+    for (int index = 0; index < 3; ++index) {
+        if (waitpid(children[index], &status, 0) != children[index] ||
+            !WIFEXITED(status) || WEXITSTATUS(status) != 30 + index) {
+            return 48;
+        }
+    }
+    if (wait(NULL) != -1 || errno != ECHILD) return 50;
+    puts("OPENRFS PROCESS slot exhaustion rollback and three children PASS");
+    return 0;
+}
+
+static int process_fault_probe(void)
+{
+    int status;
+    const int child = fork();
+
+    if (child < 0) return 51;
+    if (child == 0) {
+        volatile unsigned char *guard =
+            (volatile unsigned char *)(uintptr_t)UINT64_C(0x0000000600000000);
+        *guard = 1U;
+        _Exit(52);
+    }
+    if (waitpid(child, (int *)(uintptr_t)1U, 0) != -1 || errno != EFAULT ||
+        waitpid(child, &status, 0) != child ||
+        !WIFSIGNALED(status) || WTERMSIG(status) != 11) {
+        return 53;
+    }
+    puts("OPENRFS PROCESS child fault status and wait pointer refusal PASS");
+    return 0;
+}
+
+static void *sleeping_thread(void *unused)
+{
+    (void)unused;
+    (void)usleep(100000U);
+    return NULL;
+}
+
+static int multithread_fork_probe(void)
+{
+    pthread_t worker;
+    int status;
+
+    if (pthread_create(&worker, NULL, sleeping_thread, NULL) != 0) return 54;
+    const int child = fork();
+
+    if (child < 0) return 55;
+    if (child == 0) {
+        if (openrfs_syscall1(OPENRFS_SYS_THREAD_JOIN, worker) !=
+                -OPENRFS_ESTALE) {
+            _Exit(56);
+        }
+        _Exit(0);
+    }
+    if (waitpid(child, &status, 0) != child ||
+        !WIFEXITED(status) || WEXITSTATUS(status) != 0 ||
+        pthread_join(worker, NULL) != 0) {
+        return 57;
+    }
+    puts("OPENRFS PROCESS fork retains only calling thread PASS");
+    return 0;
+}
+
 int main(int argc, char **argv, char **environment)
 {
     static const char expected_resource[] = "OpenRFS immutable resource\n";
@@ -380,6 +559,16 @@ int main(int argc, char **argv, char **environment)
         return 40;
     }
     puts("OPENRFS THREAD second-joined");
+    probe = process_probe();
+    if (probe != 0) return probe;
+    probe = descriptor_probe();
+    if (probe != 0) return probe;
+    probe = process_limits_probe();
+    if (probe != 0) return probe;
+    probe = process_fault_probe();
+    if (probe != 0) return probe;
+    probe = multithread_fork_probe();
+    if (probe != 0) return probe;
     printf("OPENRFS REFUSAL capability EACCES stale ESTALE pointer EFAULT "
         "traversal EINVAL exhaustion ENOMEM\n");
     printf("OPENRFS FILE create seek truncate rename replace sync unlink PASS\n");

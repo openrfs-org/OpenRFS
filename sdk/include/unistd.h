@@ -22,6 +22,9 @@ ssize_t read(int descriptor, void *buffer, size_t length);
 ssize_t write(int descriptor, const void *buffer, size_t length);
 off_t lseek(int descriptor, off_t offset, int origin);
 int close(int descriptor);
+int dup(int descriptor);
+int dup2(int source, int destination);
+int dup3(int source, int destination, int flags);
 int access(const char *path, int mode);
 int unlink(const char *path);
 int symlink(const char *target, const char *path);
@@ -32,5 +35,10 @@ int fsync(int descriptor);
 unsigned int sleep(unsigned int seconds);
 int usleep(unsigned int microseconds);
 int getpid(void);
+int getppid(void);
+int fork(void);
+int execve(const char *path, char *const argv[], char *const envp[]);
+int pipe(int descriptors[2]);
+int pipe2(int descriptors[2], int flags);
 
 #endif

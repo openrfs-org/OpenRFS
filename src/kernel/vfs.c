@@ -48,6 +48,7 @@ struct vfs_open_file_state {
     uint64_t vnode_generation;
     uint64_t data_session_generation;
     openrfsfs_handle backend_handle;
+    uint32_t references;
     uint16_t vnode_index;
     bool active;
     bool opening;
@@ -1158,6 +1159,7 @@ enum openrfsfs_status openrfsfs_open_options(enum openrfsfs_volume volume, const
     open_files[slot].vnode_generation = vnodes[vnode_index].generation;
     open_files[slot].data_session_generation = opening_epoch;
     open_files[slot].backend_handle = backend_handle;
+    open_files[slot].references = 1U;
     open_files[slot].vnode_index = (uint16_t)vnode_index;
     open_files[slot].active = true;
     *handle = encode_handle(slot, open_files[slot].generation);
@@ -1182,6 +1184,29 @@ enum openrfsfs_status openrfsfs_close(openrfsfs_handle handle)
     return openrfsfs_close_report(handle, &consumed);
 }
 
+enum openrfsfs_status openrfsfs_retain(openrfsfs_handle handle)
+{
+    const bool restore_interrupts = vnode_metadata_acquire();
+    struct vfs_open_file_state *state;
+    enum openrfsfs_status status = checked_open_file_state(handle, &state);
+
+    if (status == OPENRFSFS_STATUS_OK) {
+        const struct vfs_vnode_state *vnode = &vnodes[state->vnode_index];
+
+        if (state->data_session_generation != data_session_epoch(vnode->volume)) {
+            status = OPENRFSFS_STATUS_STALE_HANDLE;
+        } else if (!data_path_permitted(vnode->volume, vnode->path)) {
+            status = OPENRFSFS_STATUS_ACCESS;
+        } else if (state->references == UINT32_MAX) {
+            status = OPENRFSFS_STATUS_NO_HANDLES;
+        } else {
+            ++state->references;
+        }
+    }
+    vnode_metadata_release(restore_interrupts);
+    return status;
+}
+
 enum openrfsfs_status openrfsfs_close_report(openrfsfs_handle handle, bool *consumed)
 {
     if (consumed == NULL) return OPENRFSFS_STATUS_INVALID_ARGUMENT;
@@ -1197,6 +1222,12 @@ enum openrfsfs_status openrfsfs_close_report(openrfsfs_handle handle, bool *cons
     if (status != OPENRFSFS_STATUS_OK) {
         vnode_metadata_release(restore_interrupts);
         return status;
+    }
+    if (state->references > 1U) {
+        --state->references;
+        *consumed = true;
+        vnode_metadata_release(restore_interrupts);
+        return OPENRFSFS_STATUS_OK;
     }
     backend_handle = state->backend_handle;
     backend = state->backend;

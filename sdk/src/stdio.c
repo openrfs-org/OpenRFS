@@ -5,6 +5,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "internal.h"
 
@@ -53,16 +54,15 @@ static int flush_locked(FILE *stream)
         long result;
 
         if ((stream->flags & FILE_CONSOLE) != 0U) {
-            result = openrfs_syscall2(OPENRFS_SYS_CONSOLE_WRITE,
-                (uint64_t)(uintptr_t)(stream->buffer + offset),
-                stream->length - offset);
+            result = write(stream == stderr ? STDERR_FILENO : STDOUT_FILENO,
+                stream->buffer + offset, stream->length - offset);
         } else {
             result = openrfs_file_write(stream->handle,
                 stream->buffer + offset, stream->length - offset);
         }
         if (result <= 0) {
             stream->error = 1U;
-            if (result < 0) {
+            if (result < 0 && (stream->flags & FILE_CONSOLE) == 0U) {
                 errno = (int)-result;
             }
             return EOF;
@@ -204,12 +204,11 @@ static size_t read_locked(void *pointer, size_t bytes, FILE *stream)
         stream->pushed = -1;
     }
     if ((stream->flags & FILE_CONSOLE) != 0U && completed < bytes) {
-        const long result = openrfs_console_read(output + completed,
+        const long result = read(STDIN_FILENO, output + completed,
             bytes - completed);
 
         if (result < 0) {
             stream->error = 1U;
-            errno = (int)-result;
             return completed;
         }
         return completed + (size_t)result;

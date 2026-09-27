@@ -519,7 +519,7 @@ DEPENDENCIES := $(C_OBJECTS:.o=.d) $(MONOCYPHER_OBJECTS:.o=.d) \
 # They never create a file of their own name, so they rerun regardless.
 .PHONY: all installer-port-test audio-wav-tests capture-boot-video capture-openrfs capture-openrfs-proof capture-networking clean contract-counts contract-scenarios dynamic-elf-tests ext4-images ext4-tests ext4-fsync-test ext4-sparse-truncate-test fat32-images force-package-trust hooks https-tests account-host-test account-kdf-host-test account-v2-host-test account-delete-qemu-test account-delete-refusal-qemu-test account-migration-refusal-qemu-test account-migration-xattr-refusal-qemu-test encrypted-data-qemu-test encrypted-data-native-qemu-test encrypted-data-tamper-qemu-test encrypted-data-powercut-qemu-test encrypted-data-diskfull-qemu-test random-host-test entropy-qemu-test boot-artifact-signature-test \
 	iso kernel lint native-apps native-audio-proof native-dynamic-proof native-https-proof native-openrfs-proof native-sdl-proof sdl-preference-tests port-tests qemu-port-tests reproducible-sdk run \
-	package-control-tests package-fetch-tests package-manager-tests package-repository-tests package-service-tests package-state-tests package-transaction-tests package-trust-asset-tests package-trust-tests package-upload-tests qemu-test-ext4-powercuts screenshot-proof sdk sdk-once smoke tls-tests toolchain verify wall-clock-tests zlib-tests
+	package-control-tests package-fetch-tests package-manager-tests package-repository-tests package-service-tests package-state-tests package-transaction-tests package-trust-asset-tests package-trust-tests package-upload-tests process-host-test qemu-test-ext4-powercuts screenshot-proof sdk sdk-once smoke tls-tests toolchain verify wall-clock-tests zlib-tests
 
 all: kernel
 
@@ -1446,6 +1446,16 @@ $(BUILD_DIR)/vfs-mutation-host-test: tools/vfs-mutation-host-test.c \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
 		tools/vfs-mutation-host-test.c -Wl,--gc-sections -o $@
 
+$(BUILD_DIR)/native-process-host-test: tools/native-process-host-test.c \
+		src/kernel/native_process.c include/openrfs/native_process.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Iinclude \
+		tools/native-process-host-test.c -Wl,--gc-sections -o $@
+
+process-host-test: $(BUILD_DIR)/native-process-host-test
+	$(BUILD_DIR)/native-process-host-test
+
 $(BUILD_DIR)/vfs-vnode-host-test: tools/vfs-vnode-host-test.c src/kernel/vfs.c \
 		include/openrfs/vfs_backend.h include/openrfs/fat32_fs.h include/openrfs/slot_claim.h include/openrfs/cpu.h
 	mkdir -p $(dir $@)
@@ -2074,6 +2084,7 @@ boot-artifact-signature-test:
 	$(PYTHON) tools/test_boot_artifact_signature.py
 
 verify: toolchain lint installer-port-test minimal-de-host-test \
+		process-host-test \
 		random-host-test account-host-test account-kdf-host-test account-v2-host-test \
 		data-aead-host-test data-aead-rewrite-host-test data-aead-slots-host-test \
 		data-aead-manifest-host-test data-aead-backend-host-test \
@@ -3963,6 +3974,11 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 			grep -Fq '  page-fault bits: P=0 W=1 U=0 RSVD=0 I=0' "$$log" || \
 				diagnostics_ok=false ;; \
 		native) \
+			grep -Fxq 'OPENRFS PROCESS fork wait private-memory shared-offset PASS' "$$log" && \
+			grep -Fxq 'OPENRFS DESCRIPTOR dup redirection flags fork inheritance PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PROCESS slot exhaustion rollback and three children PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PROCESS child fault status and wait pointer refusal PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PROCESS fork retains only calling thread PASS' "$$log" && \
 			grep -Eq '^OPENRFS PERF syscall iterations=1024 total_ns=[1-9][0-9]* average_ns=[1-9][0-9]*$$' "$$log" && \
 			grep -Eq '^OPENRFS PERF file sequential_bytes=65536 write_ns=[1-9][0-9]* read_ns=[1-9][0-9]*$$' "$$log" && \
 			grep -Eq '^OPENRFS PERF context-switch transitions=[1-9][0-9]* without_fpu_cycles=[1-9][0-9]* with_fpu_cycles=[1-9][0-9]*$$' "$$log" && \

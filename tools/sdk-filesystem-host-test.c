@@ -14,6 +14,7 @@ static long syscall_result;
 static unsigned calls;
 static unsigned open_calls;
 static unsigned close_calls;
+static unsigned duplicate_calls;
 static int invalid_request;
 static uint32_t expected_metadata_flags;
 static struct openrfs_path_metadata returned_metadata;
@@ -36,8 +37,13 @@ long openrfs_syscall1(uint64_t number, uint64_t address)
         ++file_sync_calls;
         return sync_result;
     }
-    if (number == OPENRFS_SYS_HANDLE_CLOSE) {
+    if (number == OPENRFS_SYS_HANDLE_DUPLICATE) {
         if (address != 42U) invalid_request = 1;
+        ++duplicate_calls;
+        return 43;
+    }
+    if (number == OPENRFS_SYS_HANDLE_CLOSE) {
+        if (address != 42U && address != 43U) invalid_request = 1;
         ++close_calls;
         if (reenter_close) {
             reenter_close = 0;
@@ -193,7 +199,8 @@ int main(void)
     }
     const unsigned before_full = open_calls;
     if (open("nested", O_CREAT | O_TRUNC | O_WRONLY, 0600) != -1 || errno != EMFILE ||
-        open_calls != before_full) return 27;
+        open_calls != before_full || dup(held[0]) != -1 ||
+        errno != EMFILE || duplicate_calls != 0U) return 27;
     for (unsigned index = 0U; index < 29U; ++index) if (close(held[index]) != 0) return 28;
     if (open_calls != 43U || close_calls != 38U || invalid_request) return 29;
     closing_descriptor = open("nested", O_RDONLY);
@@ -246,5 +253,23 @@ int main(void)
         openrfs_file_publish(42U, OPENRFS_VOLUME_DATA, "nested", NULL) != -OPENRFS_EFAULT ||
         openrfs_file_unlink(42U, OPENRFS_VOLUME_DATA, NULL) != -OPENRFS_EFAULT) return 48;
     if (publication_calls != 10U || invalid_request || close_calls != 44U) return 49;
+    expected_open_flags = OPENRFS_OPEN_READ;
+    syscall_result = 42;
+    descriptor = open("nested", O_RDONLY | O_CLOEXEC);
+    if (descriptor != 3 || fcntl(descriptor, F_GETFD) != FD_CLOEXEC ||
+        fcntl(descriptor, F_GETFL) != O_RDONLY) return 50;
+    int copied = dup(descriptor);
+    if (copied != 4 || fcntl(copied, F_GETFD) != 0 ||
+        fcntl(copied, F_SETFD, FD_CLOFORK) != 0 ||
+        fcntl(copied, F_GETFD) != FD_CLOFORK ||
+        dup2(descriptor, copied) != copied || fcntl(copied, F_GETFD) != 0) return 51;
+    if (dup3(descriptor, descriptor, 0) != -1 || errno != EINVAL ||
+        fcntl(descriptor, F_SETFL, O_APPEND) != -1 || errno != ENOSYS) return 52;
+    if (close(copied) != 0 || close(descriptor) != 0 ||
+        duplicate_calls != 2U || close_calls != 47U || invalid_request) return 53;
+    int pair[2] = {11, 12};
+    if (execve("nested", NULL, NULL) != -1 || errno != ENOSYS ||
+        pipe(pair) != -1 || errno != ENOSYS ||
+        pair[0] != 11 || pair[1] != 12) return 54;
     return 0;
 }

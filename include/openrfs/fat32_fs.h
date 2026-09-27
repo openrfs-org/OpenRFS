@@ -148,6 +148,8 @@ enum openrfsfs_status openrfsfs_open(
 enum openrfsfs_status openrfsfs_open_options(enum openrfsfs_volume volume, const char *path,
     enum openrfsfs_access access, uint8_t flags, uint16_t mode, openrfsfs_handle *handle);
 enum openrfsfs_status openrfsfs_close(openrfsfs_handle handle);
+/* Retain the same open file description, including its shared cursor. */
+enum openrfsfs_status openrfsfs_retain(openrfsfs_handle handle);
 /* Report ownership separately from writeback status for enclosing registries. */
 enum openrfsfs_status openrfsfs_close_report(openrfsfs_handle handle, bool *consumed);
 enum openrfsfs_status openrfsfs_fsync(openrfsfs_handle handle);
