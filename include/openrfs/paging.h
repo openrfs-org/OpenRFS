@@ -385,6 +385,10 @@ enum paging_status paging_process_image_alias_narrow(
     uint64_t physical_address,
     struct paging_process_image_alias *alias
 );
+enum paging_status paging_process_image_alias_restore_any_order(
+    const struct paging_process_space *space,
+    struct paging_process_image_alias *alias
+);
 enum paging_status paging_process_alias_set_narrow(
     const struct paging_process_space *space,
     const uint64_t *physical_addresses,
@@ -432,6 +436,10 @@ enum paging_status paging_process_image_alias_restore(
     struct paging_process_image_alias *alias
 );
 enum paging_status paging_process_alias_set_restore(
+    const struct paging_process_space *space,
+    struct paging_process_alias_set *alias
+);
+enum paging_status paging_process_alias_set_restore_any_order(
     const struct paging_process_space *space,
     struct paging_process_alias_set *alias
 );

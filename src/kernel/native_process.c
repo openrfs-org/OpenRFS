@@ -3234,7 +3234,8 @@ static bool process_cleanup_with_callback(
     struct native_process *process,
     native_handle_close_fn close_callback,
     void *close_context,
-    struct native_process_teardown_report *output
+    struct native_process_teardown_report *output,
+    bool retire_older_alias
 )
 {
     bool success = true;
@@ -3309,8 +3310,11 @@ static bool process_cleanup_with_callback(
         }
     }
     if (process->aliases.active &&
-        paging_process_alias_set_restore(&process->address_space,
-            &process->aliases) != PAGING_STATUS_OK) {
+        (retire_older_alias ?
+            paging_process_alias_set_restore_any_order(
+                &process->address_space, &process->aliases) :
+            paging_process_alias_set_restore(&process->address_space,
+                &process->aliases)) != PAGING_STATUS_OK) {
         success = false;
     }
     if (process->address_space.state != PAGING_PROCESS_SPACE_INVALID &&
@@ -3337,7 +3341,13 @@ static bool process_cleanup(
 )
 {
     return process_cleanup_with_callback(process, close_resource, process,
-        output);
+        output, false);
+}
+
+static bool process_cleanup_exec_retired(struct native_process *process)
+{
+    return process_cleanup_with_callback(process, close_resource, process,
+        NULL, true);
 }
 
 struct process_cleanup_test_script {
@@ -3382,7 +3392,7 @@ static bool process_cleanup_retry_self_test(void)
             &(const struct native_resource){{77U, 0U, 0U, 0U}}, &handle) !=
             NATIVE_HANDLE_OK ||
         process_cleanup_with_callback(&process, process_cleanup_test_close,
-            &script, &refusal_report) || !process.active ||
+            &script, &refusal_report, false) || !process.active ||
         process.handles.active_handles != 1U || refusal_report.attempts != 1U ||
         !refusal_report.blocked || refusal_report.retired ||
         refusal_report.handles.attempted_handles != 1U ||
@@ -3410,7 +3420,7 @@ static bool process_cleanup_retry_self_test(void)
     }
     script.result = NATIVE_RESOURCE_CLOSED;
     if (!process_cleanup_with_callback(&process, process_cleanup_test_close,
-            &script, &success_report) || process.active ||
+            &script, &success_report, false) || process.active ||
         process.handles.active_handles != 0U || script.calls != 2U ||
         success_report.attempts != 2U || success_report.blocked ||
         !success_report.retired ||
@@ -3451,7 +3461,7 @@ static bool process_cleanup_retry_self_test(void)
             &(const struct native_resource){{77U, 0U, 0U, 0U}}, &handle) !=
             NATIVE_HANDLE_OK ||
         process_cleanup_with_callback(&process, process_cleanup_test_close,
-            &script, &consumed_report) || process.active ||
+            &script, &consumed_report, false) || process.active ||
         process.handles.active_handles != 0U || script.calls != 1U ||
         consumed_report.attempts != 1U || consumed_report.blocked ||
         !consumed_report.retired ||
@@ -7214,7 +7224,7 @@ static int64_t syscall_process_exec(struct native_process *process,
     int64_t error;
 
     if (exec_retired.handles.active_handles != 0U &&
-        !process_cleanup(&exec_retired, NULL))
+        !process_cleanup_exec_retired(&exec_retired))
         return -OPENRFS_EBUSY;
     if (exec_staging.page_count != 0U ||
         exec_staging.handles.active_handles != 0U) {
@@ -7266,14 +7276,6 @@ static int64_t syscall_process_exec(struct native_process *process,
         error = -OPENRFS_E2BIG;
         goto rollback;
     }
-    /* The paging alias stack cannot retire distinct older RX pages. */
-    if (exec_staging.executable_count != process->executable_count ||
-        !bytes_equal((const uint8_t *)exec_staging.executable_frames,
-            (const uint8_t *)process->executable_frames,
-            process->executable_count * sizeof(uint64_t))) {
-        error = -OPENRFS_ENOTSUP;
-        goto rollback;
-    }
     exec_staging.generation = process->generation;
     exec_staging.parent_generation = process->parent_generation;
     exec_staging.file_creation_mask = process->file_creation_mask;
@@ -7288,7 +7290,7 @@ static int64_t syscall_process_exec(struct native_process *process,
     network_process_terminated(NETWORK_OWNER_NATIVE(process->generation));
     audio_native_process_terminated(process->generation);
     exec_retired.generation = 0U;
-    if (!process_cleanup(&exec_retired, NULL))
+    if (!process_cleanup_exec_retired(&exec_retired))
         console_write("OpenRFS: exec retired image cleanup deferred\n");
     return 0;
 

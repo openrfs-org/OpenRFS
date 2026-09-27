@@ -173,6 +173,7 @@ _Static_assert(
 #define PAGING_GLOBAL_ALIAS_EMPTY UINT8_C(0)
 #define PAGING_GLOBAL_ALIAS_LIVE UINT8_C(1)
 #define PAGING_GLOBAL_ALIAS_TOMBSTONE UINT8_C(2)
+#define PAGING_GLOBAL_ALIAS_DEFERRED UINT8_C(3)
 
 _Static_assert(
     (PAGING_GLOBAL_ALIAS_CAPACITY & (PAGING_GLOBAL_ALIAS_CAPACITY - 1U)) == 0U,
@@ -2113,9 +2114,8 @@ static bool any_process_alias_owned(void)
 }
 
 /*
- * The newest narrowing still owned. Restoring anything older would free or
- * rewrite a split table a newer narrowing still depends on, so this is the
- * only alias a restore may name.
+ * The newest narrowing still owned. An ordinary restore may only name this
+ * alias; retiring an older exec image uses the deferred split-table path.
  */
 static size_t newest_owned_alias_order(void)
 {
@@ -2530,6 +2530,8 @@ static size_t global_alias_find(
             if (tombstone == SIZE_MAX) {
                 tombstone = index;
             }
+        } else if (entry->state == PAGING_GLOBAL_ALIAS_DEFERRED) {
+            continue;
         } else {
             return tombstone == SIZE_MAX ? index : tombstone;
         }
@@ -2612,10 +2614,60 @@ static enum paging_status acquire_global_alias(
     return PAGING_STATUS_OK;
 }
 
-static enum paging_status release_global_alias(size_t alias_index)
+static bool global_alias_region_has_live(uint64_t physical_address,
+    size_t excluded)
+{
+    const uint64_t region = physical_address &
+        ~(PAGING_HUGE_PAGE_SIZE - 1U);
+
+    for (size_t index = 0U; index < PAGING_GLOBAL_ALIAS_CAPACITY;
+         ++index)
+        if (index != excluded &&
+            global_aliases[index].state == PAGING_GLOBAL_ALIAS_LIVE &&
+            (global_aliases[index].physical_address &
+                ~(PAGING_HUGE_PAGE_SIZE - 1U)) == region)
+            return true;
+    return false;
+}
+
+static enum paging_status finalize_deferred_alias(uint64_t physical_address)
+{
+    const uint64_t region = physical_address &
+        ~(PAGING_HUGE_PAGE_SIZE - 1U);
+
+    if (global_alias_region_has_live(physical_address, SIZE_MAX))
+        return PAGING_STATUS_OK;
+    for (size_t index = 0U; index < PAGING_GLOBAL_ALIAS_CAPACITY;
+         ++index) {
+        struct global_alias_runtime *entry = &global_aliases[index];
+
+        if (entry->state != PAGING_GLOBAL_ALIAS_DEFERRED ||
+            (entry->physical_address &
+                ~(PAGING_HUGE_PAGE_SIZE - 1U)) != region)
+            continue;
+        if (restore_identity_alias(&live_hierarchy,
+                entry->physical_address, entry->saved_entry,
+                entry->split_table, true) != PAGING_STATUS_OK)
+            return PAGING_STATUS_PROCESS_ALIAS_STATE;
+        entry->state = PAGING_GLOBAL_ALIAS_TOMBSTONE;
+        entry->physical_address = 0U;
+        entry->saved_entry = 0U;
+        entry->split_table = 0U;
+        entry->order = 0U;
+        entry->split = false;
+        --global_alias_live_count;
+        state.table_frames = live_hierarchy.table_frames;
+        break;
+    }
+    return PAGING_STATUS_OK;
+}
+
+static enum paging_status release_global_alias(size_t alias_index,
+    bool allow_out_of_order)
 {
     struct global_alias_runtime *entry;
     enum paging_status status;
+    uint64_t physical_address;
 
     if (alias_index >= PAGING_GLOBAL_ALIAS_CAPACITY) {
         return PAGING_STATUS_PROCESS_ALIAS_STATE;
@@ -2629,8 +2681,32 @@ static enum paging_status release_global_alias(size_t alias_index)
         --entry->references;
         return PAGING_STATUS_OK;
     }
-    if (entry->order != newest_global_alias_order()) {
+    if (!allow_out_of_order &&
+        entry->order != newest_global_alias_order()) {
         return PAGING_STATUS_PROCESS_ALIAS_STATE;
+    }
+    physical_address = entry->physical_address;
+    if (allow_out_of_order && entry->split &&
+        global_alias_region_has_live(physical_address, alias_index)) {
+        const uint64_t original = entry->saved_entry;
+        const uint64_t base = original & PAGE_FRAME_MASK &
+            ~(PAGING_HUGE_PAGE_SIZE - 1U);
+        const uint64_t leaf_flags = original &
+            (PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER |
+                PAGE_WRITE_THROUGH | PAGE_CACHE_DISABLE |
+                PAGE_ACCESSED | PAGE_DIRTY | PAGE_GLOBAL |
+                PAGE_NO_EXECUTE);
+        const uint64_t leaf = (base +
+            (physical_address & (PAGING_HUGE_PAGE_SIZE - 1U))) |
+            leaf_flags;
+
+        status = restore_identity_alias(&live_hierarchy,
+            physical_address, leaf, 0U, false);
+        if (status != PAGING_STATUS_OK) return status;
+        entry->references = 0U;
+        entry->state = PAGING_GLOBAL_ALIAS_DEFERRED;
+        state.table_frames = live_hierarchy.table_frames;
+        return PAGING_STATUS_OK;
     }
     status = restore_identity_alias(&live_hierarchy,
         entry->physical_address, entry->saved_entry, entry->split_table,
@@ -2647,6 +2723,8 @@ static enum paging_status release_global_alias(size_t alias_index)
     entry->split = false;
     --global_alias_live_count;
     state.table_frames = live_hierarchy.table_frames;
+    if (finalize_deferred_alias(physical_address) != PAGING_STATUS_OK)
+        return PAGING_STATUS_PROCESS_ALIAS_STATE;
     if (global_alias_live_count == 0U) {
         reset_global_aliases();
     }
@@ -2783,7 +2861,8 @@ bool paging_process_table_failure_armed(void)
 static enum paging_status restore_alias_page(
     struct process_space_runtime *slot,
     struct process_alias_page_runtime *page,
-    bool private_hierarchy
+    bool private_hierarchy,
+    bool allow_out_of_order
 )
 {
     if (private_hierarchy) {
@@ -2797,7 +2876,8 @@ static enum paging_status restore_alias_page(
     if (page->global_alias_index == SIZE_MAX) {
         return PAGING_STATUS_OK;
     }
-    return release_global_alias(page->global_alias_index);
+    return release_global_alias(page->global_alias_index,
+        allow_out_of_order);
 }
 
 static enum paging_status rollback_alias_pages(
@@ -2810,7 +2890,7 @@ static enum paging_status rollback_alias_pages(
 
     for (size_t remaining = count; remaining > 0U; --remaining) {
         if (restore_alias_page(slot, &alias->pages[remaining - 1U],
-                true) != PAGING_STATUS_OK) {
+                true, false) != PAGING_STATUS_OK) {
             result = PAGING_STATUS_PROCESS_ALIAS_STATE;
         }
     }
@@ -2818,7 +2898,7 @@ static enum paging_status rollback_alias_pages(
         struct process_alias_page_runtime *page =
             &alias->pages[remaining - 1U];
 
-        if (restore_alias_page(slot, page, false) != PAGING_STATUS_OK) {
+        if (restore_alias_page(slot, page, false, false) != PAGING_STATUS_OK) {
             result = PAGING_STATUS_PROCESS_ALIAS_STATE;
         } else {
             page->global_alias_index = SIZE_MAX;
@@ -2886,8 +2966,9 @@ static enum paging_status narrow_alias_pages(
             page->physical_address, &page->private_saved_entry,
             &page->private_split_table, &page->private_split);
         if (status != PAGING_STATUS_OK) {
-            (void)restore_alias_page(slot, page, true);
-            if (restore_alias_page(slot, page, false) == PAGING_STATUS_OK) {
+            (void)restore_alias_page(slot, page, true, false);
+            if (restore_alias_page(slot, page, false, false) ==
+                    PAGING_STATUS_OK) {
                 page->global_alias_index = SIZE_MAX;
             }
             if (rollback_alias_pages(slot, index) != PAGING_STATUS_OK) {
@@ -3416,7 +3497,8 @@ enum paging_status paging_process_restore_kernel(
 }
 
 static enum paging_status restore_active_aliases(
-    const struct paging_process_space *space
+    const struct paging_process_space *space,
+    bool allow_out_of_order
 )
 {
     struct process_space_runtime *slot = resolve_process_space(space);
@@ -3429,7 +3511,7 @@ static enum paging_status restore_active_aliases(
     }
     alias = process_space_alias(slot);
     newest = alias->order == newest_owned_alias_order();
-    if (!newest) {
+    if (!newest && !allow_out_of_order) {
         /* A shared alias can lose a reference without restoring its split. */
         for (size_t index = 0U; index < alias->count; ++index) {
             const size_t global_index = alias->pages[index].global_alias_index;
@@ -3448,7 +3530,8 @@ static enum paging_status restore_active_aliases(
         return PAGING_STATUS_PROCESS_ALIAS_STATE;
     }
     for (size_t remaining = alias->count; remaining > 0U; --remaining) {
-        if (restore_alias_page(slot, &alias->pages[remaining - 1U], false) !=
+        if (restore_alias_page(slot, &alias->pages[remaining - 1U], false,
+                allow_out_of_order) !=
                 PAGING_STATUS_OK) {
             state.table_frames = live_hierarchy.table_frames;
             return PAGING_STATUS_PROCESS_ALIAS_STATE;
@@ -3461,9 +3544,10 @@ static enum paging_status restore_active_aliases(
     return PAGING_STATUS_OK;
 }
 
-enum paging_status paging_process_image_alias_restore(
+static enum paging_status restore_image_alias(
     const struct paging_process_space *space,
-    struct paging_process_image_alias *alias
+    struct paging_process_image_alias *alias,
+    bool allow_out_of_order
 )
 {
     const struct process_space_runtime *held;
@@ -3483,7 +3567,7 @@ enum paging_status paging_process_image_alias_restore(
         alias->physical_address != narrowed->pages[0].physical_address) {
         return PAGING_STATUS_PROCESS_BAD_TOKEN;
     }
-    status = restore_active_aliases(space);
+    status = restore_active_aliases(space, allow_out_of_order);
     if (status != PAGING_STATUS_OK) {
         return status;
     }
@@ -3491,9 +3575,26 @@ enum paging_status paging_process_image_alias_restore(
     return PAGING_STATUS_OK;
 }
 
-enum paging_status paging_process_alias_set_restore(
+enum paging_status paging_process_image_alias_restore(
     const struct paging_process_space *space,
-    struct paging_process_alias_set *alias
+    struct paging_process_image_alias *alias
+)
+{
+    return restore_image_alias(space, alias, false);
+}
+
+enum paging_status paging_process_image_alias_restore_any_order(
+    const struct paging_process_space *space,
+    struct paging_process_image_alias *alias
+)
+{
+    return restore_image_alias(space, alias, true);
+}
+
+static enum paging_status restore_alias_set(
+    const struct paging_process_space *space,
+    struct paging_process_alias_set *alias,
+    bool allow_out_of_order
 )
 {
     const struct process_space_runtime *held;
@@ -3519,12 +3620,28 @@ enum paging_status paging_process_alias_set_restore(
             return PAGING_STATUS_PROCESS_BAD_TOKEN;
         }
     }
-    status = restore_active_aliases(space);
+    status = restore_active_aliases(space, allow_out_of_order);
     if (status != PAGING_STATUS_OK) {
         return status;
     }
     zero_process_alias_set(alias);
     return PAGING_STATUS_OK;
+}
+
+enum paging_status paging_process_alias_set_restore(
+    const struct paging_process_space *space,
+    struct paging_process_alias_set *alias
+)
+{
+    return restore_alias_set(space, alias, false);
+}
+
+enum paging_status paging_process_alias_set_restore_any_order(
+    const struct paging_process_space *space,
+    struct paging_process_alias_set *alias
+)
+{
+    return restore_alias_set(space, alias, true);
 }
 
 enum paging_status paging_process_space_release(

@@ -29,6 +29,7 @@ static unsigned file_stat_calls;
 static long metadata_result;
 static unsigned publication_calls;
 static unsigned pipe_calls;
+static unsigned exec_calls;
 static long pipe_result;
 static uint32_t pipe_reader_flags;
 static uint32_t pipe_writer_flags;
@@ -37,6 +38,40 @@ static uint32_t file_status_flags;
 long openrfs_syscall1(uint64_t number, uint64_t address)
 {
     if (number == OPENRFS_SYS_FUTEX_WAKE) return 0;
+    if (number == OPENRFS_SYS_PROCESS_EXEC) {
+        const struct openrfs_exec_request *request =
+            (const struct openrfs_exec_request *)(uintptr_t)address;
+        const struct openrfs_exec_descriptor *descriptors =
+            (const struct openrfs_exec_descriptor *)(uintptr_t)
+                request->descriptors_address;
+        char *const *arguments =
+            (char *const *)(uintptr_t)request->argv_address;
+        char *const *environment =
+            (char *const *)(uintptr_t)request->envp_address;
+
+        ++exec_calls;
+        if (request->size != sizeof(*request) ||
+            request->version != OPENRFS_ABI_VERSION ||
+            request->descriptor_count != OPENRFS_EXEC_DESCRIPTOR_COUNT ||
+            request->reserved != 0U ||
+            strcmp((const char *)(uintptr_t)request->path_address,
+                "nested") != 0 ||
+            strcmp(arguments[0], "nested") != 0 || arguments[1] != NULL ||
+            strcmp(environment[0], "CHECK=1") != 0 ||
+            environment[1] != NULL ||
+            descriptors[0].active != 1U ||
+            descriptors[0].kind != OPENRFS_EXEC_DESCRIPTOR_CONSOLE_IN ||
+            descriptors[1].active != 1U ||
+            descriptors[1].kind != OPENRFS_EXEC_DESCRIPTOR_CONSOLE_OUT ||
+            descriptors[2].active != 1U ||
+            descriptors[2].kind != OPENRFS_EXEC_DESCRIPTOR_CONSOLE_OUT)
+            invalid_request = 1;
+        for (size_t index = 3U; index < OPENRFS_EXEC_DESCRIPTOR_COUNT;
+             ++index)
+            if (descriptors[index].active != 0U)
+                invalid_request = 1;
+        return -OPENRFS_ENOENT;
+    }
     if (number == OPENRFS_SYS_FILE_SYNC) {
         if (address != 42U) invalid_request = 1;
         ++file_sync_calls;
@@ -317,8 +352,12 @@ int main(void)
     if (close(copied) != 0 || close(descriptor) != 0 ||
         duplicate_calls != 2U || close_calls != 47U || invalid_request) return 53;
     int pair[2] = {11, 12};
+    char *arguments[] = {"nested", NULL};
+    char *environment[] = {"CHECK=1", NULL};
     pipe_result = -OPENRFS_ENFILE;
-    if (execve("nested", NULL, NULL) != -1 || errno != ENOSYS ||
+    if (execve("nested", NULL, NULL) != -1 || errno != EFAULT ||
+        execve("nested", arguments, environment) != -1 ||
+        errno != ENOENT || exec_calls != 1U || invalid_request ||
         pipe(pair) != -1 || errno != ENFILE ||
         pair[0] != 11 || pair[1] != 12 ||
         pipe2(pair, O_TRUNC) != -1 || errno != EINVAL ||
