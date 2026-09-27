@@ -58,7 +58,7 @@ and still changing; stacking that unreviewed work would make the quality branch
 hard to attribute. Main has 115 Makefile QEMU scenarios and 459 shell assertions.
 The earlier 116/460 inventory described another branch, not this starting SHA.
 
-The latest dirty-tree fast run at 2026-09-27 14:10 UTC passed nine targets on
+The initial dirty-tree fast run at 2026-09-27 14:10 UTC passed nine targets on
 that base plus uncommitted platform changes. It executed 25,000 inputs in each
 C campaign and 200 Hypothesis examples. Saved seed replay reached 711/1180
 regions in `package_state.c` (320/882 branches), 139/499 regions in
@@ -78,8 +78,11 @@ scanners passed in that attempt. The repair pins `cryptography` and its
 dependencies in the venv and gives zizmor a 2 GiB address-space limit.
 GitHub's first fast job also exposed a profile-validation variable shadowing
 bug; a runner regression now simulates an extended-only tool gap while
-validating the fast profile. A subsequent clean-HEAD run is required before
-claiming the full extended suite passed.
+validating the fast profile. GitHub's clean-HEAD fast and extended jobs both
+passed on `3b9ce151d489e3eed16cab3dd990d3195ea9a0a9`, including the
+unchanged `make verify` recipe. The subsequent native network finding has its
+own failing and fixed exact commits and serial digests in
+`verification/findings/native-network-wait-slot.md`.
 
 An exploratory Clang Static Analyzer pass across `src/kernel/*.c` found
 candidate stack-lifetime and uninitialized-value warnings, and one missing
@@ -122,7 +125,7 @@ turn installed but unused tools into green checks.
 | Clang Static Analyzer | Integrated | 18.1.3, three file gate; broad candidate findings retained for triage. |
 | clang-tidy | Integrated | 18.1.3, targeted correctness checks on the same three production files. |
 | Cppcheck | Integrated | 2.13.0, independent three file warning/performance/portability gate. |
-| Rust Clippy | Not yet evaluated | Check every tracked Cargo crate with compatible toolchain. |
+| Rust Clippy | Integrated | Rust 1.98.1 correctness gate over all four first-party Cargo crates, with an inventory assertion. |
 | RustSec cargo-audit | Not yet evaluated | Audit tracked locks with advisory data timestamp and applicability. |
 | cargo-deny | Not yet evaluated | Develop researched policy for vendored Rust dependencies. |
 | OSV-Scanner | Not yet evaluated | Determine attribution for vendored C and Rust components. |
@@ -140,8 +143,9 @@ turn installed but unused tools into green checks.
 
 Pin sources: `tools/verification/install_action_scanners.py` verifies archive
 SHA-256 for actionlint and zizmor; `tools/verification/requirements.txt` pins
-Hypothesis, sortedcontainers, and Ruff; CI pins Ubuntu apt package versions and
-GitHub actions by immutable commit. The platform's scanner inventory and exact
+Hypothesis, sortedcontainers, and Ruff; CI pins Rust/Clippy 1.98.1 for the
+extended gate, Ubuntu apt package versions, and GitHub actions by immutable
+commit. The platform's scanner inventory and exact
 command lines live in the manifest and each run receipt.
 
 ## Findings and repair

@@ -100,7 +100,9 @@ jobs:
                       mtools python3-cryptography python3-venv \
                       qemu-system-x86 shellcheck=0.9.0-1 \
                       valgrind=1:3.22.0-0ubuntu3 xorriso
-                  rustup target add x86_64-unknown-none
+                  rustup toolchain install 1.98.1 --profile minimal \
+                      --component clippy --target x86_64-unknown-none
+                  rustup default 1.98.1
                   python3 tools/verification/install_action_scanners.py \
                       --output "$RUNNER_TEMP/openrfs-scanners"
                   echo "$RUNNER_TEMP/openrfs-scanners" >>"$GITHUB_PATH"
