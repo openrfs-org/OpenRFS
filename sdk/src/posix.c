@@ -17,6 +17,9 @@
 
 #define DESCRIPTOR_MAX 32
 
+_Static_assert(DESCRIPTOR_MAX == OPENRFS_EXEC_DESCRIPTOR_COUNT,
+    "exec descriptor count differs from the SDK");
+
 enum descriptor_kind {
     DESCRIPTOR_NONE = 0,
     DESCRIPTOR_FILE,
@@ -42,6 +45,33 @@ static struct descriptor_record descriptors[DESCRIPTOR_MAX] = {
     [2] = {.kind = DESCRIPTOR_CONSOLE_OUT, .active = 1}
 };
 static volatile uint32_t descriptor_lock;
+
+int openrfs_posix_exec_restore(const struct openrfs_exec_descriptor *records,
+    uint64_t count)
+{
+    if (records == NULL || count != DESCRIPTOR_MAX) return -1;
+    for (size_t index = 0U; index < count; ++index) {
+        const struct openrfs_exec_descriptor *source = &records[index];
+        struct descriptor_record *target = &descriptors[index];
+
+        if (source->active > 1U || source->reserved != 0U ||
+                (source->descriptor_flags &
+                    ~(OPENRFS_EXEC_FD_CLOEXEC |
+                        OPENRFS_EXEC_FD_CLOFORK)) != 0U ||
+                source->kind > OPENRFS_EXEC_DESCRIPTOR_PIPE_WRITE)
+            return -1;
+        (void)memset(target, 0, sizeof(*target));
+        if (source->active == 0U) continue;
+        if (source->kind == OPENRFS_EXEC_DESCRIPTOR_NONE) return -1;
+        target->handle = source->handle;
+        target->volume = source->volume;
+        target->open_flags = (int)source->open_flags;
+        target->descriptor_flags = (int)source->descriptor_flags;
+        target->kind = (enum descriptor_kind)source->kind;
+        target->active = 1;
+    }
+    return 0;
+}
 
 static int descriptor_snapshot(int number, struct descriptor_record *record, int retire)
 {
@@ -550,10 +580,43 @@ int kill(int pid, int signal_number)
 }
 int execve(const char *path, char *const argv[], char *const envp[])
 {
-    (void)path;
-    (void)argv;
-    (void)envp;
-    errno = ENOSYS;
+    struct openrfs_exec_descriptor inherited[DESCRIPTOR_MAX] = {{0}};
+    struct openrfs_exec_request request;
+
+    if (path == NULL || argv == NULL) { errno = EFAULT; return -1; }
+    if (strncmp(path, "System:", 7U) == 0) path += 7U;
+    else if (strncmp(path, "Data:", 5U) == 0) {
+        errno = ENOTSUP;
+        return -1;
+    }
+    openrfs_runtime_lock(&descriptor_lock);
+    for (size_t index = 0U; index < DESCRIPTOR_MAX; ++index) {
+        const struct descriptor_record *source = &descriptors[index];
+        struct openrfs_exec_descriptor *target = &inherited[index];
+
+        if (source->active == 2) {
+            openrfs_runtime_unlock(&descriptor_lock);
+            errno = EBUSY;
+            return -1;
+        }
+        if (source->active != 1) continue;
+        target->handle = source->handle;
+        target->open_flags = (uint32_t)source->open_flags;
+        target->descriptor_flags = (uint32_t)source->descriptor_flags;
+        target->volume = source->volume;
+        target->kind = (uint8_t)source->kind;
+        target->active = 1U;
+    }
+    request = (struct openrfs_exec_request){
+        sizeof(request), OPENRFS_ABI_VERSION,
+        (uint64_t)(uintptr_t)path, (uint64_t)(uintptr_t)argv,
+        (uint64_t)(uintptr_t)envp, (uint64_t)(uintptr_t)inherited,
+        DESCRIPTOR_MAX, 0U
+    };
+    const long result = openrfs_syscall1(OPENRFS_SYS_PROCESS_EXEC,
+        (uint64_t)(uintptr_t)&request);
+    openrfs_runtime_unlock(&descriptor_lock);
+    errno = result < 0 ? (int)-result : EIO;
     return -1;
 }
 int pipe(int pair[2])

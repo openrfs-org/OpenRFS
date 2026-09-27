@@ -73,6 +73,8 @@ _Static_assert(OPENRFS_NETWORK_IO_MAX_BYTES <= NATIVE_COPY_CHUNK,
     "native network transfer bound exceeds the syscall copy buffer");
 _Static_assert(NATIVE_PIPE_CAPACITY <= NATIVE_COPY_CHUNK,
     "native pipe buffer exceeds the syscall copy buffer");
+_Static_assert(PAGING_PAGE_SIZE <= NATIVE_COPY_CHUNK,
+    "native image preparation exceeds the transfer buffer");
 _Static_assert(
     (NATIVE_SHARED_CODE_CACHE_CAPACITY &
         (NATIVE_SHARED_CODE_CACHE_CAPACITY - 1U)) == 0U,
@@ -228,6 +230,18 @@ struct native_process {
     bool dynamic_fini_started;
 };
 
+struct native_exec_payload {
+    char manifest_path[OPENRFS_EXEC_PATH_MAX + 1U];
+    char strings[OPENRFS_EXEC_STRING_BYTES];
+    uint16_t argument_offsets[OPENRFS_EXEC_VECTOR_MAX];
+    uint16_t environment_offsets[OPENRFS_EXEC_VECTOR_MAX];
+    struct openrfs_exec_descriptor descriptors[
+        OPENRFS_EXEC_DESCRIPTOR_COUNT];
+    size_t string_bytes;
+    size_t argument_count;
+    size_t environment_count;
+};
+
 struct native_dynamic_load {
     struct elf64_dynamic_catalog catalog;
     struct elf64_dynamic_image images[ELF64_DYNAMIC_MAX_OBJECTS];
@@ -269,6 +283,10 @@ struct native_pipe {
 };
 
 static struct native_process processes[NATIVE_PROCESS_LIMIT];
+static struct native_process exec_staging;
+static struct native_process exec_retired;
+static struct native_exec_payload exec_payload;
+static bool safe_relative_path(const char *path, size_t length);
 static struct native_pipe pipes[NATIVE_PIPE_LIMIT];
 static uint64_t next_pipe_id = UINT64_C(1);
 static struct native_shared_code_page
@@ -857,6 +875,139 @@ static bool copy_to_user(
         remaining -= chunk;
     }
     return true;
+}
+
+static int64_t copy_exec_text(struct native_process *process,
+    uint64_t address, char *output, size_t capacity, size_t *length,
+    int64_t too_long)
+{
+    if (address == 0U || output == NULL || length == NULL)
+        return -OPENRFS_EFAULT;
+    for (size_t index = 0U; index < capacity; ++index) {
+        uint64_t at;
+
+        if (!add_u64(address, index, &at) ||
+                !copy_from_user(process, &output[index], at, 1U))
+            return -OPENRFS_EFAULT;
+        if (output[index] == '\0') {
+            *length = index + 1U;
+            return 0;
+        }
+    }
+    return too_long;
+}
+
+static int64_t copy_exec_vector(struct native_process *process,
+    uint64_t address, struct native_exec_payload *payload,
+    uint16_t offsets[OPENRFS_EXEC_VECTOR_MAX], size_t *count)
+{
+    if (address == 0U) {
+        *count = 0U;
+        return 0;
+    }
+    for (size_t index = 0U; index <= OPENRFS_EXEC_VECTOR_MAX; ++index) {
+        uint64_t pointer_address;
+        uint64_t string_address;
+        size_t length = 0U;
+        int64_t result;
+
+        if (!add_u64(address, index * sizeof(uint64_t),
+                &pointer_address) ||
+            !copy_from_user(process, &string_address, pointer_address,
+                sizeof(string_address)))
+            return -OPENRFS_EFAULT;
+        if (string_address == 0U) {
+            *count = index;
+            return 0;
+        }
+        if (index == OPENRFS_EXEC_VECTOR_MAX ||
+                payload->string_bytes == OPENRFS_EXEC_STRING_BYTES)
+            return -OPENRFS_E2BIG;
+        offsets[index] = (uint16_t)payload->string_bytes;
+        result = copy_exec_text(process, string_address,
+            payload->strings + payload->string_bytes,
+            OPENRFS_EXEC_STRING_BYTES - payload->string_bytes,
+            &length, -OPENRFS_E2BIG);
+        if (result != 0) return result;
+        payload->string_bytes += length;
+    }
+    return -OPENRFS_E2BIG;
+}
+
+static int64_t copy_exec_payload(struct native_process *process,
+    uint64_t request_address, struct native_exec_payload *payload)
+{
+    struct openrfs_exec_request request;
+    size_t path_length = 0U;
+    int64_t result;
+
+    if (!copy_from_user(process, &request, request_address,
+            sizeof(request)))
+        return -OPENRFS_EFAULT;
+    if (request.size != sizeof(request) ||
+            request.version != OPENRFS_ABI_VERSION ||
+            request.reserved != 0U ||
+            request.descriptor_count != OPENRFS_EXEC_DESCRIPTOR_COUNT ||
+            request.argv_address == 0U)
+        return -OPENRFS_EINVAL;
+    result = copy_exec_text(process, request.path_address,
+        payload->manifest_path, sizeof(payload->manifest_path),
+        &path_length, -OPENRFS_ENAMETOOLONG);
+    if (result != 0) return result;
+    if (path_length == 1U ||
+            !safe_relative_path(payload->manifest_path,
+                path_length - 1U))
+        return -OPENRFS_EINVAL;
+    result = copy_exec_vector(process, request.argv_address, payload,
+        payload->argument_offsets, &payload->argument_count);
+    if (result != 0) return result;
+    result = copy_exec_vector(process, request.envp_address, payload,
+        payload->environment_offsets, &payload->environment_count);
+    if (result != 0) return result;
+    if (!copy_from_user(process, payload->descriptors,
+            request.descriptors_address, sizeof(payload->descriptors)))
+        return -OPENRFS_EFAULT;
+    for (size_t index = 0U; index < OPENRFS_EXEC_DESCRIPTOR_COUNT;
+         ++index) {
+        const struct openrfs_exec_descriptor *descriptor =
+            &payload->descriptors[index];
+        struct native_resource *resource;
+
+        if (descriptor->active == 0U) {
+            if (!bytes_are_zero(descriptor, sizeof(*descriptor)))
+                return -OPENRFS_EINVAL;
+            continue;
+        }
+        if (descriptor->active != 1U || descriptor->reserved != 0U ||
+                (descriptor->descriptor_flags &
+                    ~(OPENRFS_EXEC_FD_CLOEXEC |
+                        OPENRFS_EXEC_FD_CLOFORK)) != 0U)
+            return -OPENRFS_EINVAL;
+        if (descriptor->kind == OPENRFS_EXEC_DESCRIPTOR_CONSOLE_IN ||
+                descriptor->kind == OPENRFS_EXEC_DESCRIPTOR_CONSOLE_OUT) {
+            if (descriptor->handle != 0U) return -OPENRFS_EINVAL;
+            continue;
+        }
+        if (descriptor->kind != OPENRFS_EXEC_DESCRIPTOR_FILE &&
+                descriptor->kind != OPENRFS_EXEC_DESCRIPTOR_PIPE_READ &&
+                descriptor->kind != OPENRFS_EXEC_DESCRIPTOR_PIPE_WRITE)
+            return -OPENRFS_EINVAL;
+        if (native_handle_resolve(&process->handles, descriptor->handle,
+                OPENRFS_HANDLE_FILE, &resource) != NATIVE_HANDLE_OK)
+            return -OPENRFS_EBADF;
+        if ((descriptor->kind == OPENRFS_EXEC_DESCRIPTOR_FILE &&
+                resource->words[2] != 0U) ||
+            (descriptor->kind == OPENRFS_EXEC_DESCRIPTOR_PIPE_READ &&
+                resource->words[2] != NATIVE_PIPE_READER) ||
+            (descriptor->kind == OPENRFS_EXEC_DESCRIPTOR_PIPE_WRITE &&
+                resource->words[2] != NATIVE_PIPE_WRITER))
+            return -OPENRFS_EBADF;
+        for (size_t prior = 0U; prior < index; ++prior)
+            if (payload->descriptors[prior].active != 0U &&
+                    payload->descriptors[prior].handle == descriptor->handle)
+                return -OPENRFS_EINVAL;
+    }
+    return 0;
 }
 
 static int64_t handle_error(enum native_handle_status status)
@@ -1685,9 +1836,18 @@ static bool prepare_image_pages(
             const uint64_t copy_end = page_end < file_virtual_end ?
                 page_end : file_virtual_end;
 
-            if (!allocate_page(process, virtual_address, permissions,
-                    PAGING_PROCESS_MAPPING_NATIVE_IMAGE, &physical_address)) {
+            const bool executable =
+                (permissions & PAGING_EXECUTE) != 0U;
+            uint8_t *destination = process->transfer;
+
+            if (executable) {
+                zero_bytes(destination, PAGING_PAGE_SIZE);
+            } else if (!allocate_page(process, virtual_address, permissions,
+                    PAGING_PROCESS_MAPPING_NATIVE_IMAGE,
+                    &physical_address)) {
                 return false;
+            } else {
+                destination = (uint8_t *)(void *)physical_address;
             }
             if (copy_start < copy_end) {
                 const uint64_t source_offset = segment->file_offset +
@@ -1698,11 +1858,16 @@ static bool prepare_image_pages(
                     count > elf_length - (size_t)source_offset) {
                     return false;
                 }
-                copy_bytes((uint8_t *)(void *)physical_address +
+                copy_bytes(destination +
                         (size_t)(copy_start - virtual_address),
                     elf + source_offset, count);
             }
-            if ((permissions & PAGING_EXECUTE) != 0U) {
+            if (executable) {
+                if (!acquire_shared_code_page(process, virtual_address,
+                        process->manifest.executable_sha256,
+                        virtual_address - process->image.mapping_start,
+                        destination, &physical_address))
+                    return false;
                 if (process->executable_count >=
                         PAGING_PROCESS_ALIAS_MAX_PAGES) {
                     return false;
@@ -2935,6 +3100,98 @@ static bool initialize_stack(
     return true;
 }
 
+static bool initialize_exec_stack(struct native_process *process,
+    struct native_thread *thread, const struct native_exec_payload *payload)
+{
+    uint64_t arguments[OPENRFS_EXEC_VECTOR_MAX];
+    uint64_t environment[OPENRFS_EXEC_VECTOR_MAX];
+    uint64_t vector[96];
+    uint64_t cursor = NATIVE_MAIN_STACK_END;
+    uint64_t descriptors_address;
+    const uint64_t start_entry = thread->context.rip;
+    size_t count = 0U;
+
+    for (size_t index = 0U; index < process->page_count; ++index)
+        if (process->pages[index].kind ==
+                PAGING_PROCESS_MAPPING_NATIVE_STACK)
+            zero_bytes((void *)process->pages[index].physical_address,
+                PAGING_PAGE_SIZE);
+    if (cursor < NATIVE_MAIN_STACK_BASE +
+            sizeof(payload->descriptors)) return false;
+    cursor -= sizeof(payload->descriptors);
+    if (!stack_write(process, cursor, payload->descriptors,
+            sizeof(payload->descriptors))) return false;
+    descriptors_address = cursor;
+    for (size_t reverse = payload->environment_count; reverse > 0U;
+         --reverse) {
+        const size_t index = reverse - 1U;
+        const size_t offset = payload->environment_offsets[index];
+        const size_t length = bounded_length(
+            (const uint8_t *)payload->strings + offset,
+            payload->string_bytes - offset) + 1U;
+
+        if (cursor < NATIVE_MAIN_STACK_BASE + length) return false;
+        cursor -= length;
+        if (!stack_write(process, cursor, payload->strings + offset,
+                length)) return false;
+        environment[index] = cursor;
+    }
+    for (size_t reverse = payload->argument_count; reverse > 0U;
+         --reverse) {
+        const size_t index = reverse - 1U;
+        const size_t offset = payload->argument_offsets[index];
+        const size_t length = bounded_length(
+            (const uint8_t *)payload->strings + offset,
+            payload->string_bytes - offset) + 1U;
+
+        if (cursor < NATIVE_MAIN_STACK_BASE + length) return false;
+        cursor -= length;
+        if (!stack_write(process, cursor, payload->strings + offset,
+                length)) return false;
+        arguments[index] = cursor;
+    }
+    vector[count++] = payload->argument_count;
+    for (size_t index = 0U; index < payload->argument_count; ++index)
+        vector[count++] = arguments[index];
+    vector[count++] = 0U;
+    for (size_t index = 0U; index < payload->environment_count; ++index)
+        vector[count++] = environment[index];
+    vector[count++] = 0U;
+    vector[count++] = NATIVE_AUX_PAGESZ;
+    vector[count++] = PAGING_PAGE_SIZE;
+    vector[count++] = NATIVE_AUX_ENTRY;
+    vector[count++] = process->image.entry;
+    vector[count++] = NATIVE_AUX_OPENRFS_ABI;
+    vector[count++] = OPENRFS_ABI_VERSION;
+    vector[count++] = NATIVE_AUX_TLS_IMAGE;
+    vector[count++] = process->image.tls.virtual_address;
+    vector[count++] = NATIVE_AUX_TLS_SIZE;
+    vector[count++] = process->image.tls.memory_size;
+    vector[count++] = NATIVE_AUX_TLS_ALIGN;
+    vector[count++] = process->image.tls.alignment;
+    vector[count++] = OPENRFS_AUX_EXEC_DESCRIPTORS;
+    vector[count++] = descriptors_address;
+    vector[count++] = OPENRFS_AUX_EXEC_DESCRIPTOR_COUNT;
+    vector[count++] = OPENRFS_EXEC_DESCRIPTOR_COUNT;
+    vector[count++] = NATIVE_AUX_NULL;
+    vector[count++] = 0U;
+    if (count > sizeof(vector) / sizeof(vector[0]) ||
+            cursor < NATIVE_MAIN_STACK_BASE + count * sizeof(uint64_t))
+        return false;
+    cursor = (cursor - count * sizeof(uint64_t)) & ~UINT64_C(0xF);
+    if (!stack_write(process, cursor, vector,
+            count * sizeof(uint64_t))) return false;
+    zero_bytes(&thread->context, sizeof(thread->context));
+    thread->context.rip = start_entry;
+    thread->context.rsp = cursor;
+    thread->context.rflags = NATIVE_RFLAGS;
+    thread->context.rdi = payload->argument_count;
+    thread->context.rsi = cursor + sizeof(uint64_t);
+    thread->context.rdx = cursor +
+        (payload->argument_count + 2U) * sizeof(uint64_t);
+    return true;
+}
+
 static void build_teardown_attempt(
     const struct native_process *process,
     bool blocked,
@@ -3221,7 +3478,8 @@ static bool process_cleanup_retry_self_test(void)
 static enum native_process_status load_process(
     struct native_process *process,
     const char *manifest_path,
-    enum openrfsfs_volume image_volume
+    enum openrfsfs_volume image_volume,
+    const struct native_manifest *ceiling
 )
 {
     uint8_t manifest_bytes[NATIVE_MANIFEST_BYTES];
@@ -3321,12 +3579,32 @@ static enum native_process_status load_process(
         }
         dynamic = true;
     }
+    if (ceiling != NULL) {
+        if (!bytes_equal(process->manifest.identifier,
+                ceiling->identifier, sizeof(ceiling->identifier)) ||
+            !bytes_equal(process->manifest.data_namespace,
+                ceiling->data_namespace,
+                sizeof(ceiling->data_namespace)) ||
+            !bytes_equal(process->manifest.resource_directory,
+                ceiling->resource_directory,
+                sizeof(ceiling->resource_directory)) ||
+            process->manifest.capabilities != ceiling->capabilities ||
+            process->manifest.max_handles < ceiling->max_handles) {
+            result = NATIVE_PROCESS_IMAGE_REFUSED;
+            goto finish;
+        }
+        if (process->manifest.memory_limit > ceiling->memory_limit)
+            process->manifest.memory_limit = ceiling->memory_limit;
+        if (process->manifest.max_threads > ceiling->max_threads)
+            process->manifest.max_threads = ceiling->max_threads;
+        process->manifest.max_handles = ceiling->max_handles;
+    }
     namespace_length = bounded_length(process->manifest.data_namespace,
         sizeof(process->manifest.data_namespace));
     zero_bytes(data_namespace, sizeof(data_namespace));
     copy_bytes(data_namespace, process->manifest.data_namespace,
         namespace_length);
-    {
+    if (ceiling == NULL) {
         const enum openrfsfs_status mkdir_status = openrfsfs_mkdir(OPENRFSFS_VOLUME_DATA,
             data_namespace);
 
@@ -3438,7 +3716,7 @@ static enum native_process_status native_process_spawn_from_volume(
     if (process->generation == 0U) {
         return NATIVE_PROCESS_NO_SLOT;
     }
-    status = load_process(process, manifest_path, image_volume);
+    status = load_process(process, manifest_path, image_volume, NULL);
     if (status != NATIVE_PROCESS_OK) {
         if (!process_cleanup(process, NULL)) {
             return NATIVE_PROCESS_TEARDOWN;
@@ -6929,6 +7207,97 @@ static int64_t fork_file_handles(
     return 0;
 }
 
+static int64_t syscall_process_exec(struct native_process *process,
+    uint64_t request_address)
+{
+    enum native_process_status status;
+    int64_t error;
+
+    if (exec_retired.handles.active_handles != 0U &&
+        !process_cleanup(&exec_retired, NULL))
+        return -OPENRFS_EBUSY;
+    if (exec_staging.page_count != 0U ||
+        exec_staging.handles.active_handles != 0U) {
+        if (!process_cleanup(&exec_staging, NULL))
+            return -OPENRFS_EBUSY;
+    }
+    if (process->window.allocated)
+        return -OPENRFS_EBUSY;
+    for (size_t index = 0U; index < process->handles.limit; ++index)
+        if (process->handles.objects[index].active &&
+            process->handles.objects[index].type != OPENRFS_HANDLE_FILE)
+            return -OPENRFS_EBUSY;
+    zero_bytes(&exec_payload, sizeof(exec_payload));
+    error = copy_exec_payload(process, request_address, &exec_payload);
+    if (error != 0) return error;
+    zero_bytes(&exec_staging, sizeof(exec_staging));
+    status = load_process(&exec_staging, exec_payload.manifest_path,
+        OPENRFSFS_VOLUME_SYSTEM, &process->manifest);
+    if (status != NATIVE_PROCESS_OK) {
+        error = status == NATIVE_PROCESS_MANIFEST_READ ? -OPENRFS_ENOENT :
+            status == NATIVE_PROCESS_EXECUTABLE_OPEN ? -OPENRFS_ENOENT :
+            status == NATIVE_PROCESS_IMAGE_REFUSED ? -OPENRFS_ENOEXEC :
+            status == NATIVE_PROCESS_MEMORY_LIMIT ||
+                status == NATIVE_PROCESS_FRAME_ALLOCATION ?
+                    -OPENRFS_ENOMEM : -OPENRFS_EIO;
+        goto rollback;
+    }
+    error = fork_file_handles(&exec_staging, process);
+    if (error != 0) goto rollback;
+    for (size_t index = 0U; index < OPENRFS_EXEC_DESCRIPTOR_COUNT;
+         ++index) {
+        struct openrfs_exec_descriptor *descriptor =
+            &exec_payload.descriptors[index];
+
+        if (descriptor->active == 0U ||
+            (descriptor->descriptor_flags & OPENRFS_EXEC_FD_CLOEXEC) == 0U)
+            continue;
+        if (descriptor->kind != OPENRFS_EXEC_DESCRIPTOR_CONSOLE_IN &&
+            descriptor->kind != OPENRFS_EXEC_DESCRIPTOR_CONSOLE_OUT &&
+            native_handle_close(&exec_staging.handles, descriptor->handle,
+                close_resource, &exec_staging) != NATIVE_HANDLE_OK) {
+            error = -OPENRFS_EIO;
+            goto rollback;
+        }
+        zero_bytes(descriptor, sizeof(*descriptor));
+    }
+    if (!initialize_exec_stack(&exec_staging, &exec_staging.threads[0],
+            &exec_payload)) {
+        error = -OPENRFS_E2BIG;
+        goto rollback;
+    }
+    /* The paging alias stack cannot retire distinct older RX pages. */
+    if (exec_staging.executable_count != process->executable_count ||
+        !bytes_equal((const uint8_t *)exec_staging.executable_frames,
+            (const uint8_t *)process->executable_frames,
+            process->executable_count * sizeof(uint64_t))) {
+        error = -OPENRFS_ENOTSUP;
+        goto rollback;
+    }
+    exec_staging.generation = process->generation;
+    exec_staging.parent_generation = process->parent_generation;
+    exec_staging.file_creation_mask = process->file_creation_mask;
+    exec_staging.ignored_signals = process->ignored_signals;
+    copy_bytes(exec_staging.console_input, process->console_input,
+        sizeof(process->console_input));
+    exec_staging.console_input_head = process->console_input_head;
+    exec_staging.console_input_count = process->console_input_count;
+    exec_retired = *process;
+    *process = exec_staging;
+    zero_bytes(&exec_staging, sizeof(exec_staging));
+    network_process_terminated(NETWORK_OWNER_NATIVE(process->generation));
+    audio_native_process_terminated(process->generation);
+    exec_retired.generation = 0U;
+    if (!process_cleanup(&exec_retired, NULL))
+        console_write("OpenRFS: exec retired image cleanup deferred\n");
+    return 0;
+
+rollback:
+    if (!process_cleanup(&exec_staging, NULL))
+        return -OPENRFS_EIO;
+    return error;
+}
+
 static int64_t syscall_process_fork(
     struct native_process *parent,
     const struct native_thread *caller
@@ -6964,12 +7333,26 @@ static int64_t syscall_process_fork(
         const struct native_page *source = &parent->pages[index];
         uintptr_t frame;
 
-        if (!allocate_page(child, source->virtual_address,
-                source->permissions, source->kind, &frame)) {
-            goto failed;
+        if (source->shared_code) {
+            if (source->shared_code_slot >=
+                    NATIVE_SHARED_CODE_CACHE_CAPACITY)
+                goto failed;
+            const struct native_shared_code_page *entry =
+                &shared_code_cache[source->shared_code_slot];
+
+            if (entry->state != NATIVE_SHARED_CODE_LIVE ||
+                !acquire_shared_code_page(child, source->virtual_address,
+                    entry->digest, entry->page_offset,
+                    (const uint8_t *)(const void *)source->physical_address,
+                    &frame) || frame != source->physical_address)
+                goto failed;
+        } else {
+            if (!allocate_page(child, source->virtual_address,
+                    source->permissions, source->kind, &frame))
+                goto failed;
+            copy_bytes((void *)frame,
+                (const void *)source->physical_address, PAGING_PAGE_SIZE);
         }
-        copy_bytes((void *)frame, (const void *)source->physical_address,
-            PAGING_PAGE_SIZE);
         if ((source->permissions & PAGING_EXECUTE) != 0U) {
             if (child->executable_count == PAGING_PROCESS_ALIAS_MAX_PAGES) {
                 goto failed;
@@ -7096,6 +7479,8 @@ static int64_t dispatch_syscall(
         return (int64_t)process->parent_generation;
     case OPENRFS_SYS_PROCESS_FORK:
         return syscall_process_fork(process, thread);
+    case OPENRFS_SYS_PROCESS_EXEC:
+        return syscall_process_exec(process, frame->rdi);
     case OPENRFS_SYS_PIPE_CREATE:
         return syscall_pipe_create(process, frame->rdi, frame->rsi);
     case OPENRFS_SYS_PIPE_WAIT:
@@ -7342,6 +7727,8 @@ uintptr_t native_process_on_syscall(struct native_syscall_frame *frame)
     record_context_transition(process, without_cycles, fpu_cycles);
     process->last_syscall = (uint32_t)frame->rax;
     result = dispatch_syscall(process, thread, frame);
+    thread = running_thread(process);
+    if (thread == NULL) return 0U;
     thread->context.rax = (uint64_t)result;
     ++process->syscall_count;
     resume_stack = process_user_resume_stack();

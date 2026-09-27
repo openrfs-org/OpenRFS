@@ -29,6 +29,8 @@ void openrfs_runtime_initialize(int argc, char **argv, char **environment)
 {
     char **cursor = environment;
     const uint64_t *auxiliary;
+    uint64_t descriptor_address = 0U;
+    uint64_t descriptor_count = 0U;
 
     startup.argc = argc;
     startup.argv = argv;
@@ -44,8 +46,21 @@ void openrfs_runtime_initialize(int argc, char **argv, char **environment)
             startup.tls_size = auxiliary[1];
         } else if (auxiliary[0] == OPENRFS_AUX_TLS_ALIGN) {
             startup.tls_alignment = auxiliary[1];
+        } else if (auxiliary[0] == OPENRFS_AUX_EXEC_DESCRIPTORS) {
+            descriptor_address = auxiliary[1];
+        } else if (auxiliary[0] == OPENRFS_AUX_EXEC_DESCRIPTOR_COUNT) {
+            descriptor_count = auxiliary[1];
         }
         auxiliary += 2;
+    }
+    if (descriptor_address != 0U || descriptor_count != 0U) {
+        if (descriptor_address == 0U ||
+                descriptor_count != OPENRFS_EXEC_DESCRIPTOR_COUNT ||
+                openrfs_posix_exec_restore == NULL ||
+                openrfs_posix_exec_restore(
+                    (const struct openrfs_exec_descriptor *)(uintptr_t)
+                        descriptor_address, descriptor_count) != 0)
+            abort();
     }
 }
 

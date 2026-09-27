@@ -680,6 +680,62 @@ static int multithread_fork_probe(void)
     return 0;
 }
 
+static int exec_probe(void)
+{
+    int status;
+    const int child = fork();
+
+    if (child < 0) return 101;
+    if (child == 0) {
+        char kept_text[16];
+        char closed_text[16];
+        char pid_text[16];
+        char *arguments[] = {"exec-child", kept_text, closed_text,
+            pid_text, NULL};
+        char *environment[] = {"OPENRFS_EXEC=validated", "", NULL};
+        char *too_many[OPENRFS_EXEC_VECTOR_MAX + 2U];
+        struct openrfs_exec_request bad_request = {
+            sizeof(bad_request), OPENRFS_ABI_VERSION, 1U,
+            (uint64_t)(uintptr_t)arguments,
+            (uint64_t)(uintptr_t)environment, 0U,
+            OPENRFS_EXEC_DESCRIPTOR_COUNT, 0U
+        };
+        const int kept = open("System:RESOURCE.TXT", O_RDONLY);
+        const int closed = open("System:RESOURCE.TXT", O_RDONLY | O_CLOEXEC);
+
+        if (kept < 3 || closed < 3 ||
+            snprintf(kept_text, sizeof(kept_text), "%d", kept) <= 0 ||
+            snprintf(closed_text, sizeof(closed_text), "%d", closed) <= 0 ||
+            snprintf(pid_text, sizeof(pid_text), "%d", getpid()) <= 0)
+            _Exit(102);
+        if (execve("MISSING.MAN", arguments, environment) != -1 ||
+            errno != ENOENT || fcntl(kept, F_GETFD) != 0 ||
+            fcntl(closed, F_GETFD) != FD_CLOEXEC)
+            _Exit(103);
+        for (size_t index = 0U; index <= OPENRFS_EXEC_VECTOR_MAX;
+             ++index) too_many[index] = "x";
+        too_many[OPENRFS_EXEC_VECTOR_MAX + 1U] = NULL;
+        if (execve("NATIVET.MAN", too_many, environment) != -1 ||
+            errno != E2BIG || fcntl(kept, F_GETFD) != 0)
+            _Exit(104);
+        if (openrfs_syscall1(OPENRFS_SYS_PROCESS_EXEC,
+                (uint64_t)(uintptr_t)&bad_request) != -OPENRFS_EFAULT ||
+            fcntl(kept, F_GETFD) != 0)
+            _Exit(109);
+        if (execve("NATIVET.MAN", arguments, environment) != -1)
+            _Exit(105);
+        printf("OPENRFS PROCESS exec error=%d\n", errno);
+        _Exit(106);
+    }
+    if (waitpid(child, &status, 0) != child || !WIFEXITED(status) ||
+        WEXITSTATUS(status) != 0) {
+        printf("OPENRFS PROCESS exec child status=%d\n", status);
+        return 107;
+    }
+    puts("OPENRFS PROCESS fork exec same-pid argv env rollback cloexec PASS");
+    return 0;
+}
+
 int main(int argc, char **argv, char **environment)
 {
     static const char expected_resource[] = "OpenRFS immutable resource\n";
@@ -692,6 +748,25 @@ int main(int argc, char **argv, char **environment)
     char resource[sizeof(expected_resource)];
     long resource_handle;
     int probe;
+
+    if (argc == 4 && argv != NULL && argv[0] != NULL &&
+        strcmp(argv[0], "exec-child") == 0) {
+        char first_byte = 0;
+        const int kept = atoi(argv[1]);
+        const int closed = atoi(argv[2]);
+
+        if (environment == NULL || environment[0] == NULL ||
+            environment[1] == NULL || environment[2] != NULL ||
+            strcmp(environment[0], "OPENRFS_EXEC=validated") != 0 ||
+            strcmp(environment[1], "") != 0 ||
+            getpid() != atoi(argv[3]) ||
+            fcntl(kept, F_GETFD) != 0 ||
+            read(kept, &first_byte, 1U) != 1 || first_byte != 'O' ||
+            fcntl(closed, F_GETFD) != -1 || errno != EBADF ||
+            close(kept) != 0) return 108;
+        puts("OPENRFS PROCESS exec replacement image observed PASS");
+        return 0;
+    }
 
     if (openrfs_syscall0(OPENRFS_SYS_ABI_VERSION) != OPENRFS_ABI_VERSION ||
         argc != 3 || argv == NULL || environment == NULL ||
@@ -781,6 +856,8 @@ int main(int argc, char **argv, char **environment)
     probe = process_umask_probe();
     if (probe != 0) return probe;
     probe = multithread_fork_probe();
+    if (probe != 0) return probe;
+    probe = exec_probe();
     if (probe != 0) return probe;
     printf("OPENRFS REFUSAL capability EACCES stale ESTALE pointer EFAULT "
         "traversal EINVAL exhaustion ENOMEM\n");

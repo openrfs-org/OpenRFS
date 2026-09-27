@@ -3422,15 +3422,28 @@ static enum paging_status restore_active_aliases(
     struct process_space_runtime *slot = resolve_process_space(space);
     struct process_alias_runtime *alias;
     struct paging_audit audit;
+    bool newest;
 
     if (slot == NULL || !process_space_alias(slot)->owned) {
         return PAGING_STATUS_PROCESS_BAD_TOKEN;
     }
     alias = process_space_alias(slot);
+    newest = alias->order == newest_owned_alias_order();
+    if (!newest) {
+        /* A shared alias can lose a reference without restoring its split. */
+        for (size_t index = 0U; index < alias->count; ++index) {
+            const size_t global_index = alias->pages[index].global_alias_index;
+
+            if (global_index >= PAGING_GLOBAL_ALIAS_CAPACITY ||
+                global_aliases[global_index].state !=
+                    PAGING_GLOBAL_ALIAS_LIVE ||
+                global_aliases[global_index].references < 2U)
+                return PAGING_STATUS_PROCESS_ALIAS_STATE;
+        }
+    }
     audit_hierarchy(&slot->hierarchy, &audit);
     if (slot->state == PAGING_PROCESS_SPACE_ACTIVE ||
         cpu_interrupts_enabled() || audit.user_leaves != 0U ||
-        alias->order != newest_owned_alias_order() ||
         (cpu_read_cr3() & PAGE_FRAME_MASK) != live_hierarchy.root) {
         return PAGING_STATUS_PROCESS_ALIAS_STATE;
     }
