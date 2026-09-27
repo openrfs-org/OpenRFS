@@ -630,6 +630,54 @@ int execve(const char *path, char *const argv[], char *const envp[])
     errno = result < 0 ? (int)-result : EIO;
     return -1;
 }
+int execv(const char *path, char *const argv[])
+{
+    return execve(path, argv, openrfs_startup_information()->environment);
+}
+int execl(const char *path, const char *arg0, ...)
+{
+    char *arguments[OPENRFS_EXEC_VECTOR_MAX + 1U];
+    const char *argument = arg0;
+    size_t count = 0U;
+    va_list items;
+
+    va_start(items, arg0);
+    while (argument != NULL) {
+        if (count == OPENRFS_EXEC_VECTOR_MAX) {
+            va_end(items);
+            errno = E2BIG;
+            return -1;
+        }
+        arguments[count++] = (char *)argument;
+        argument = va_arg(items, char *);
+    }
+    va_end(items);
+    arguments[count] = NULL;
+    return execv(path, arguments);
+}
+int execle(const char *path, const char *arg0, ...)
+{
+    char *arguments[OPENRFS_EXEC_VECTOR_MAX + 1U];
+    const char *argument = arg0;
+    char **environment;
+    size_t count = 0U;
+    va_list items;
+
+    va_start(items, arg0);
+    while (argument != NULL) {
+        if (count == OPENRFS_EXEC_VECTOR_MAX) {
+            va_end(items);
+            errno = E2BIG;
+            return -1;
+        }
+        arguments[count++] = (char *)argument;
+        argument = va_arg(items, char *);
+    }
+    arguments[count] = NULL;
+    environment = va_arg(items, char **);
+    va_end(items);
+    return execve(path, arguments, environment);
+}
 int pipe(int pair[2])
 {
     return pipe2(pair, 0);

@@ -35,7 +35,7 @@ TEST_SCENARIOS := normal breakpoint invalid-opcode page-fault ist pit unexpected
 	native-https native-openrfs account-kdf
 TEST_TARGETS := $(addprefix qemu-test-,$(TEST_SCENARIOS))
 EXPECTED_TEST_SCENARIO_COUNT := 117
-EXPECTED_SHELL_ASSERTION_COUNT := 477
+EXPECTED_SHELL_ASSERTION_COUNT := 478
 
 CC := gcc
 LD := ld
@@ -4041,6 +4041,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 		native-exec) \
 			grep -Fxq 'OPENRFS PROCESS distinct replacement image observed PASS' "$$log" && \
 			grep -Fxq 'OPENRFS PROCESS distinct signed image exec and wait PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PROCESS execv execl inherited environment PASS' "$$log" && \
 			grep -Fxq 'OPENRFS PROCESS exec pipeline consumer observed PASS' "$$log" && \
 			grep -Fxq 'OPENRFS PROCESS fork exec pipeline and wait PASS' "$$log" && \
 			grep -Fxq 'OpenRFS: distinct native exec and wait resources clean' "$$log" || \

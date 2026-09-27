@@ -46,6 +46,24 @@ int main(int argc, char **argv, char **environment)
         return 14;
     }
     puts("OPENRFS PROCESS distinct signed image exec and wait PASS");
+    for (int wrapper = 0; wrapper < 2; ++wrapper) {
+        child = fork();
+        if (child < 0) return 24;
+        if (child == 0) {
+            if (wrapper == 0) {
+                char *arguments[] = {"EXECALT.APP", "inherited-v", NULL};
+
+                (void)execv("EXECALT.MAN", arguments);
+            } else {
+                (void)execl("EXECALT.MAN", "EXECALT.APP", "inherited-l",
+                    (char *)NULL);
+            }
+            _Exit(25);
+        }
+        if (waitpid(child, &status, 0) != child || !WIFEXITED(status) ||
+            WEXITSTATUS(status) != 0) return 26;
+    }
+    puts("OPENRFS PROCESS execv execl inherited environment PASS");
     if (fflush(NULL) != 0) return 15;
     int ends[2];
 
@@ -54,13 +72,13 @@ int main(int argc, char **argv, char **environment)
 
     if (producer < 0) return 17;
     if (producer == 0) {
-        char *arguments[] = {"EXECALT.APP", "producer", NULL};
         char *replacement_environment[] = {"PIPE_STAGE=1", NULL};
 
         if (close(ends[0]) != 0 ||
             dup2(ends[1], STDOUT_FILENO) != STDOUT_FILENO ||
             close(ends[1]) != 0) _Exit(18);
-        (void)execve("EXECALT.MAN", arguments, replacement_environment);
+        (void)execle("EXECALT.MAN", "EXECALT.APP", "producer",
+            (char *)NULL, replacement_environment);
         _Exit(19);
     }
     const int consumer = fork();

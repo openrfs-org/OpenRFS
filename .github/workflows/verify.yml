@@ -187,7 +187,7 @@ jobs:
               run: rustup target add x86_64-unknown-none
             - name: Check encrypted Data on FAT32 and ext4
               run: |
-                  test "$(make -s contract-counts)" = "117 477"
+                  test "$(make -s contract-counts)" = "117 478"
                   make data-aead-backend-host-test account-host-test
                   make encrypted-data-qemu-test
                   make encrypted-data-native-qemu-test

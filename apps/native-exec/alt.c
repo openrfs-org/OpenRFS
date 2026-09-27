@@ -12,6 +12,20 @@ int main(int argc, char **argv, char **environment)
     int kept;
     int closed;
 
+    if (argc == 2 && argv != NULL &&
+        strcmp(argv[0], "EXECALT.APP") == 0 &&
+        (strcmp(argv[1], "inherited-v") == 0 ||
+            strcmp(argv[1], "inherited-l") == 0)) {
+        if (environment == NULL || environment[0] == NULL ||
+            environment[1] == NULL || environment[2] == NULL ||
+            environment[3] != NULL ||
+            strcmp(environment[0], "OPENRFS_ABI=1") != 0 ||
+            strcmp(environment[1], "OPENRFS_APP_ID=EXECAPP") != 0 ||
+            strcmp(environment[2], "OPENRFS_DATA=EXECAPP") != 0)
+            return 24;
+        return 0;
+    }
+
     if (argc == 2 && argv != NULL && environment != NULL &&
         environment[0] != NULL && environment[1] == NULL &&
         strcmp(environment[0], "PIPE_STAGE=1") == 0) {
