@@ -7,7 +7,7 @@ if [ "$#" -ne 2 ]; then
     exit 2
 fi
 
-root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+root=$(unset CDPATH; cd -- "$(dirname -- "$0")/.." && pwd)
 output=$1
 work=$2
 archive="$root/ports/lua/source/lua-5.4.7.tar.gz"

@@ -3662,6 +3662,37 @@ run: iso $(DESKTOP_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 		-device nvme,serial=openrfs-data-fat32,drive=data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
 		-serial stdio -no-reboot -no-shutdown
 
+.PHONY: verification-list verification-manifest verify-fast verify-extended \
+	fuzz-smoke fuzz-nightly fuzz-replay verification-report
+
+verification-list:
+	$(PYTHON) tools/verification/run.py list
+
+verification-manifest:
+	$(PYTHON) tools/verification/run.py validate
+
+verify-fast:
+	$(PYTHON) tools/verification/run.py run --profile fast
+
+verify-extended:
+	$(PYTHON) tools/verification/run.py run --profile extended
+
+fuzz-smoke:
+	$(PYTHON) tools/verification/run.py run --profile fast \
+		--target package-state-parser --target acpi-madt-topology \
+		--target package-transaction-sequence
+
+fuzz-nightly:
+	$(PYTHON) tools/verification/run.py run --profile nightly
+
+fuzz-replay:
+	@test -n '$(TARGET)' && test -n '$(INPUT)' || { \
+		echo 'usage: make fuzz-replay TARGET=name INPUT=path' >&2; exit 2; }
+	$(PYTHON) tools/verification/run.py replay --target '$(TARGET)' --input '$(INPUT)'
+
+verification-report:
+	$(PYTHON) tools/verification/run.py report
+
 hooks:
 	git config core.hooksPath .githooks
 	@echo "repository hooks enabled"

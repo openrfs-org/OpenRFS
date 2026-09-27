@@ -1,0 +1,151 @@
+# OpenRFS verification platform
+
+The manifest in `verification/manifest.json` is the executable inventory. Each
+target names production files, the real oracle, inputs, tool requirements,
+execution context, limits, and what it cannot establish. `run.py` refuses an
+unavailable required tool and returns a nonzero result for a timeout, finding,
+infrastructure failure, or interruption. Its `verification/runs/<run>/run.json`
+is the machine-readable receipt. Run directories are unique and ignored by Git;
+CI uploads them even when a job fails. Do not infer a clean HEAD from a passing
+run whose `source.dirty_paths` is nonempty.
+
+## Commands
+
+```sh
+make verification-list
+make verification-manifest
+make verify-fast
+make verify-extended
+make fuzz-smoke
+make fuzz-nightly
+make fuzz-replay TARGET=package-state-parser INPUT=/absolute/input
+make verification-report
+python3 tools/verification/run.py run --profile extended --resume verification/runs/<interrupted-run>
+```
+
+`verify-extended` runs the existing `make verify` recipe unchanged on a clean
+HEAD, followed by static scans, instrumented C fuzz campaigns, a normal QEMU
+boot, and the five-scenario production guest matrix. `make verify` itself
+cleans `build/`; runner logs live outside that tree. Extended and nightly runs
+reject dirty sources. The runner serializes jobs with an advisory lock, limits
+individual processes and output files, kills process groups on timeout or
+interrupt, and leaves `unfinished` target names in the receipt for an exact
+clean-source resume. A fast run may use a dirty development tree, but cannot
+be used as exact-head evidence.
+
+The two Clang 18 host fuzzers compile the *production* C translation units.
+Saved valid and invalid seeds run through standalone replay binaries before
+each campaign. LLVM source profiles measure production functions and regions
+reached by the saved seeds; libFuzzer reports campaign edges and executions.
+ASan, UBSan, and ASan's leak detector cover only those host binaries. The
+ACPI shim places test tables in 32-bit-addressable host memory because the
+kernel parser expects identity-mapped early physical addresses. This is not
+guest kernel sanitizer coverage. The transaction target invokes production
+`tools/openrfs-transaction.py` with deterministic, versioned operation bytes
+and an independent expected generation/version/file/user-data model.
+
+QEMU receipts require expected exit codes, begin/pass markers, no panic, and
+scenario-specific serial checks. `qemu_matrix.py` preserves each serial log and
+structured receipt. It checks the copied serial hash against the recipe's hash.
+The TCP scenario additionally reports teardown receipts. Machine acceleration
+is explicitly TCG. These checks do not provide guest source coverage.
+
+## Current baseline and limits
+
+The starting main was `f78d25d4ac43f05875bce17d80fbba738428d61e`.
+This branch was based on main because the separate process/POSIX PR was active
+and still changing; stacking that unreviewed work would make the quality branch
+hard to attribute. Main has 115 Makefile QEMU scenarios and 459 shell assertions.
+The earlier 116/460 inventory described another branch, not this starting SHA.
+
+The latest dirty-tree fast run at 2026-09-27 14:10 UTC passed nine targets on
+that base plus uncommitted platform changes. It executed 25,000 inputs in each
+C campaign and 200 Hypothesis examples. Saved seed replay reached 711/1180
+regions in `package_state.c` (320/882 branches), 139/499 regions in
+`acpi_madt.c` (73/312 branches), and 17/28 regions in `acpi_util.c` (6/14
+branches). These are *per-target host instrumented source* counts, not an
+overall kernel coverage percentage. The package corpus began with 8 committed
+seeds and grew to 69 in the isolated campaign copy; ACPI began with 8 and grew
+to 49. Hypothesis used seed 731 and exercised install, remove, cancel, injected
+disk-full, reopen, and tampered-stage recovery operations.
+
+An exploratory Clang Static Analyzer pass across `src/kernel/*.c` found
+candidate stack-lifetime and uninitialized-value warnings, and one missing
+Monocypher include because that ad hoc pass lacked a per-file vendor include
+flag. The raw log and analyzer plists remain in the local ignored
+`verification/runs/manual-static-baseline/`. It is **not** a clean broad scan.
+The CI gate runs Clang Static Analyzer, clang-tidy, and Cppcheck over the three
+production C files listed in the manifest, using the actual common kernel
+target flags. Broad findings need separate ownership and precondition review.
+
+Ruff found `NoReturn` missing from the UI font asset generator. Before the fix,
+`typing.get_type_hints(fail)` raised `NameError`; after importing `NoReturn` it
+resolves. `check_python.py` includes that regression and scans 85 first-party
+Python files with correctness-focused rules. The earlier before/after output
+is retained under `verification/runs/manual-ruff-finding/`.
+
+Remaining high-risk gaps include guest syscall sequence generation, stale PID
+and handle reuse, raw FAT32/ext4 cut-point recovery across actual guest
+restarts, encrypted Data and account state on the separate security branch,
+network packet parser host fuzzing, TLS handshake fuzzing, and PCI/DMA/NVMe/xHCI
+teardown faults. The five-scenario QEMU matrix is a narrow production-path
+check, not a claim that all 115 scenarios ran. The existing `make verify`
+includes host ext4, package, TLS, and related tests but no full QEMU matrix.
+
+## Tool roster
+
+"Integrated" means a manifest target executes the tool. "Not yet evaluated"
+means the project needs a documented suitability and license/version review
+before it may be counted as coverage. This inventory intentionally does not
+turn installed but unused tools into green checks.
+
+| Project | State | Scope or next decision |
+| --- | --- | --- |
+| LLVM/Clang sanitizers | Integrated | Clang 18.1.3 ASan/UBSan/LSan on two host-built production C parsers. |
+| LLVM libFuzzer | Integrated | Clang 18.1.3, two independent in-process parser targets with replay and corpus coverage. |
+| AFL++ | Not yet evaluated | Consider process isolation for parsers with non-resettable global state; no duplicate label for the current libFuzzer targets. |
+| Rust cargo-fuzz | Not yet evaluated | Inspect production ext4/image crate callability and nightly sanitizer compatibility. |
+| Hypothesis | Integrated | 6.168.1, bounded package transaction operation sequences against production Python. |
+| QEMU | Integrated | 8.2.2 TCG normal boot and five separate production scenarios. |
+| Clang Static Analyzer | Integrated | 18.1.3, three file gate; broad candidate findings retained for triage. |
+| clang-tidy | Integrated | 18.1.3, targeted correctness checks on the same three production files. |
+| Cppcheck | Integrated | 2.13.0, independent three file warning/performance/portability gate. |
+| Rust Clippy | Not yet evaluated | Check every tracked Cargo crate with compatible toolchain. |
+| RustSec cargo-audit | Not yet evaluated | Audit tracked locks with advisory data timestamp and applicability. |
+| cargo-deny | Not yet evaluated | Develop researched policy for vendored Rust dependencies. |
+| OSV-Scanner | Not yet evaluated | Determine attribution for vendored C and Rust components. |
+| Syft | Not yet evaluated | Generate exact-source/build SBOM and identify bundled components. |
+| Trivy | Not yet evaluated | Decide whether SBOM cross-check adds independent signal. |
+| Gitleaks | Not yet evaluated | Scan tracked files/history without printing discovered secrets. |
+| ShellCheck | Integrated | 0.9.0, tracked first-party shell scripts and actionlint embedded shell; vendor scripts excluded. |
+| actionlint | Integrated | 1.7.12, every workflow, pinned archive digest in installer. |
+| zizmor | Integrated | 1.30.1 offline workflow audits, pinned archive digest; online audits omitted. |
+| Ruff | Integrated | 0.16.9, 85 first-party Python files and a type-hint regression. |
+| Bandit | Not yet evaluated | Assess incremental value for scripts handling paths, downloads, and proof artifacts. |
+| Semgrep Community | Not yet evaluated | Develop and test a small repo-specific ownership/evidence rule set. |
+| Valgrind | Not yet evaluated | Bounded selected host test or replay; cannot instrument guest kernel. |
+| OSS-Fuzz | Not yet evaluated | Requires local target maturity, disclosure process, maintainers, and external enrollment decision. |
+
+Pin sources: `tools/verification/install_action_scanners.py` verifies archive
+SHA-256 for actionlint and zizmor; `tools/verification/requirements.txt` pins
+Hypothesis, sortedcontainers, and Ruff; CI pins Ubuntu apt package versions and
+GitHub actions by immutable commit. The platform's scanner inventory and exact
+command lines live in the manifest and each run receipt.
+
+## Findings and repair
+
+On a failed campaign, the runner preserves the first failure, attempts bounded
+libFuzzer minimization, replays a retained input twice, and writes
+`artifacts/finding.json` with source/tool/input hashes, logs, reproduction
+command, status, and empty fields for root-cause/fix/regression triage. A stable
+diagnostic-class ID is only a preliminary grouping; a human must deduplicate by
+root cause. A failure that does not reproduce twice is marked flaky, never
+converted into a pass. For potentially sensitive inputs, retain the local
+artifact and report only a concise finding in public CI or PR text.
+
+The repair loop is: choose a reproduced high-impact finding; minimize; inspect
+the actual production precondition or ownership failure; add a regression that
+fails before the fix; make the smallest source change; rerun replay, focused
+host/guest checks, the wider exact-head suite, and CI; then sign and verify a
+new commit. No automatic source edits or public disclosure occur without
+triage. The runner automates collection and replay, not autonomous code review.

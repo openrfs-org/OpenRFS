@@ -1,0 +1,5 @@
+db="ORFSDB01"
+authority="ORFSGN01"
+journal="ORFSTX01"
+arch="x86_64"
+identifier="org.openrfs.verify"

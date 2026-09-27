@@ -14,6 +14,7 @@ import struct
 import sys
 import zlib
 from pathlib import Path
+from typing import NoReturn
 
 
 MAGIC = b"SUF2"

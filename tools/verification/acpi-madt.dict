@@ -1,0 +1,3 @@
+signature="APIC"
+local_apic="\x00\x08"
+io_apic="\x01\x0c"
