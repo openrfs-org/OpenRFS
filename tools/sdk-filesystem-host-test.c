@@ -30,6 +30,8 @@ static long metadata_result;
 static unsigned publication_calls;
 static unsigned pipe_calls;
 static long pipe_result;
+static uint32_t pipe_reader_flags;
+static uint32_t pipe_writer_flags;
 
 long openrfs_syscall1(uint64_t number, uint64_t address)
 {
@@ -55,15 +57,11 @@ long openrfs_syscall1(uint64_t number, uint64_t address)
         }
         return close_result;
     }
-    if (number == OPENRFS_SYS_PIPE_CREATE) {
-        struct openrfs_pipe_pair *pair = (struct openrfs_pipe_pair *)(uintptr_t)address;
-
-        ++pipe_calls;
-        if (pipe_result == 0) {
-            *pair = (struct openrfs_pipe_pair){sizeof(*pair),
-                OPENRFS_ABI_VERSION, 44U, 45U};
-        }
-        return pipe_result;
+    if (number == OPENRFS_SYS_PIPE_GET_FLAGS) {
+        if (address == 44U || address == 43U) return pipe_reader_flags;
+        if (address == 45U) return pipe_writer_flags;
+        invalid_request = 1;
+        return -OPENRFS_EBADF;
     }
     if (number != OPENRFS_SYS_FILE_OPEN) { invalid_request = 1; return -OPENRFS_EINVAL; }
     const struct openrfs_file_open_request *request = (const struct openrfs_file_open_request *)(uintptr_t)address;
@@ -83,6 +81,26 @@ long openrfs_syscall1(uint64_t number, uint64_t address)
 
 long openrfs_syscall2(uint64_t number, uint64_t address, uint64_t value)
 {
+    if (number == OPENRFS_SYS_PIPE_CREATE) {
+        struct openrfs_pipe_pair *pair = (struct openrfs_pipe_pair *)(uintptr_t)address;
+
+        ++pipe_calls;
+        if (value != 0U && value != OPENRFS_PIPE_NONBLOCK) invalid_request = 1;
+        if (pipe_result == 0) {
+            pipe_reader_flags = (uint32_t)value;
+            pipe_writer_flags = (uint32_t)value;
+            *pair = (struct openrfs_pipe_pair){sizeof(*pair),
+                OPENRFS_ABI_VERSION, 44U, 45U};
+        }
+        return pipe_result;
+    }
+    if (number == OPENRFS_SYS_PIPE_SET_FLAGS) {
+        if (value != 0U && value != OPENRFS_PIPE_NONBLOCK) invalid_request = 1;
+        if (address == 44U || address == 43U) pipe_reader_flags = (uint32_t)value;
+        else if (address == 45U) pipe_writer_flags = (uint32_t)value;
+        else { invalid_request = 1; return -OPENRFS_EBADF; }
+        return 0;
+    }
     if (number == OPENRFS_SYS_FILE_PUBLISH || number == OPENRFS_SYS_FILE_UNLINK) {
         ++publication_calls;
         if (address != 42U) invalid_request = 1;
@@ -299,8 +317,17 @@ int main(void)
         pair[0] != 3 || pair[1] != 4 ||
         fcntl(pair[0], F_GETFL) != (O_RDONLY | O_NONBLOCK) ||
         fcntl(pair[1], F_GETFL) != (O_WRONLY | O_NONBLOCK) ||
-        fcntl(pair[0], F_GETFD) != (FD_CLOEXEC | FD_CLOFORK) ||
+        fcntl(pair[0], F_GETFD) != (FD_CLOEXEC | FD_CLOFORK)) return 56;
+    copied = dup(pair[0]);
+    if (copied != 5 ||
+        fcntl(copied, F_SETFL, O_RDONLY) != 0 ||
+        fcntl(pair[0], F_GETFL) != O_RDONLY ||
+        fcntl(pair[0], F_SETFL, O_NONBLOCK) != 0 ||
+        fcntl(copied, F_GETFL) != (O_RDONLY | O_NONBLOCK) ||
+        fcntl(pair[1], F_GETFL) != (O_WRONLY | O_NONBLOCK) ||
+        fcntl(pair[0], F_SETFL, O_APPEND) != -1 || errno != EINVAL ||
+        close(copied) != 0 ||
         close(pair[0]) != 0 || close(pair[1]) != 0 ||
-        pipe_calls != 3U || close_calls != 52U || invalid_request) return 56;
+        pipe_calls != 3U || close_calls != 53U || invalid_request) return 57;
     return 0;
 }

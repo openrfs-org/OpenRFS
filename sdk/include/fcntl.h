@@ -11,6 +11,7 @@
 #define O_CLOEXEC 0x1000
 #define O_CLOFORK 0x2000
 #define O_NONBLOCK 0x4000
+#define O_ACCMODE 0x0003
 
 #define FD_CLOEXEC 0x01
 #define FD_CLOFORK 0x02

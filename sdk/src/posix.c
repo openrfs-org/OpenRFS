@@ -68,8 +68,12 @@ static long pipe_transfer(const struct descriptor_record *record,
         const long result = write_operation ? openrfs_file_write(record->handle,
             buffer, length) : openrfs_file_read(record->handle, buffer, length);
 
-        if (result != -OPENRFS_EAGAIN ||
-            (record->open_flags & O_NONBLOCK) != 0) return result;
+        if (result != -OPENRFS_EAGAIN) return result;
+        const long flags = openrfs_syscall1(OPENRFS_SYS_PIPE_GET_FLAGS,
+            record->handle);
+
+        if (flags < 0) return flags;
+        if ((flags & OPENRFS_PIPE_NONBLOCK) != 0) return result;
         const long ready = openrfs_syscall2(OPENRFS_SYS_PIPE_WAIT,
             record->handle, length);
 
@@ -342,8 +346,27 @@ int fcntl(int number, int command, ...)
     if (command == F_GETFD) return record.descriptor_flags;
     if (command == F_SETFD) return 0;
     if (command == F_GETFL) {
+        if (record.kind == DESCRIPTOR_PIPE_READ ||
+            record.kind == DESCRIPTOR_PIPE_WRITE) {
+            const long flags = openrfs_syscall1(OPENRFS_SYS_PIPE_GET_FLAGS,
+                record.handle);
+
+            if (flags < 0) { errno = (int)-flags; return -1; }
+            return (record.kind == DESCRIPTOR_PIPE_READ ? O_RDONLY : O_WRONLY) |
+                ((flags & OPENRFS_PIPE_NONBLOCK) != 0 ? O_NONBLOCK : 0);
+        }
         return native_descriptor(record.kind) ? record.open_flags :
             (record.kind == DESCRIPTOR_CONSOLE_IN ? O_RDONLY : O_WRONLY);
+    }
+    if (command == F_SETFL && (record.kind == DESCRIPTOR_PIPE_READ ||
+            record.kind == DESCRIPTOR_PIPE_WRITE)) {
+        if ((argument & ~(O_ACCMODE | O_NONBLOCK)) != 0) {
+            errno = EINVAL;
+            return -1;
+        }
+        return openrfs_result(openrfs_syscall2(OPENRFS_SYS_PIPE_SET_FLAGS,
+            record.handle, (argument & O_NONBLOCK) != 0 ?
+                OPENRFS_PIPE_NONBLOCK : 0U));
     }
     errno = command == F_SETFL ? ENOSYS : EINVAL;
     return -1;
@@ -536,8 +559,9 @@ int pipe2(int pair[2], int flags)
         errno = EMFILE;
         return -1;
     }
-    const long status = openrfs_syscall1(OPENRFS_SYS_PIPE_CREATE,
-        (uint64_t)(uintptr_t)&native_pair);
+    const long status = openrfs_syscall2(OPENRFS_SYS_PIPE_CREATE,
+        (uint64_t)(uintptr_t)&native_pair,
+        (flags & O_NONBLOCK) != 0 ? OPENRFS_PIPE_NONBLOCK : 0U);
 
     if (status == 0 && native_pair.size == sizeof(native_pair) &&
         native_pair.version == OPENRFS_ABI_VERSION) {

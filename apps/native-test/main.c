@@ -416,6 +416,27 @@ static int pipe_probe(void)
         write(ends[1], "x", 1U) != -1 || errno != EPIPE ||
         close(ends[1]) != 0) return 67;
 
+    if (pipe2(ends, O_NONBLOCK) != 0) return 78;
+    const int copied_reader = dup(ends[0]);
+
+    if (copied_reader < 0 ||
+        fcntl(copied_reader, F_SETFL, O_RDONLY) != 0 ||
+        fcntl(ends[0], F_GETFL) != O_RDONLY ||
+        fcntl(ends[0], F_SETFL, O_NONBLOCK) != 0 ||
+        fcntl(copied_reader, F_GETFL) != (O_RDONLY | O_NONBLOCK) ||
+        close(copied_reader) != 0) return 79;
+    const int flag_child = fork();
+
+    if (flag_child < 0) return 80;
+    if (flag_child == 0) {
+        if (fcntl(ends[1], F_SETFL, O_WRONLY) != 0) _Exit(81);
+        _Exit(0);
+    }
+    if (waitpid(flag_child, &status, 0) != flag_child ||
+        !WIFEXITED(status) || WEXITSTATUS(status) != 0 ||
+        fcntl(ends[1], F_GETFL) != O_WRONLY ||
+        close(ends[0]) != 0 || close(ends[1]) != 0) return 82;
+
     if (pipe(ends) != 0) return 68;
     const int child = fork();
 

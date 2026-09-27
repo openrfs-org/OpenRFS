@@ -6,6 +6,7 @@
 
 #define OPENRFS_PATH_MAX 127U
 #define OPENRFS_DIRECTORY_NAME_MAX 12U
+#define OPENRFS_PIPE_NONBLOCK UINT32_C(1)
 
 /* PATH_MKDIR value 0 keeps legacy mode 0755. This flag admits an explicit
  * low-12-bit mode, including 0000, without changing existing callers. */

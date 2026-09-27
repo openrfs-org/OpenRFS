@@ -261,6 +261,8 @@ struct native_pipe {
     size_t count;
     uint16_t readers;
     uint16_t writers;
+    uint32_t reader_flags;
+    uint32_t writer_flags;
 };
 
 static struct native_process processes[NATIVE_PROCESS_LIMIT];
@@ -3822,7 +3824,7 @@ static int64_t syscall_file_open(
 }
 
 static int64_t syscall_pipe_create(
-    struct native_process *process, uint64_t output_address)
+    struct native_process *process, uint64_t output_address, uint64_t flags)
 {
     struct openrfs_pipe_pair pair = {sizeof(pair), OPENRFS_ABI_VERSION, 0U, 0U};
     struct native_pipe *pipe;
@@ -3831,6 +3833,9 @@ static int64_t syscall_pipe_create(
     openrfs_handle_t reader_handle;
     openrfs_handle_t writer_handle;
 
+    if ((flags & ~((uint64_t)OPENRFS_PIPE_NONBLOCK)) != 0U) {
+        return -OPENRFS_EINVAL;
+    }
     if (!validate_user_range(process, output_address, sizeof(pair), true)) {
         return -OPENRFS_EFAULT;
     }
@@ -3841,6 +3846,8 @@ static int64_t syscall_pipe_create(
     }
     pipe = pipe_allocate();
     if (pipe == NULL) return -OPENRFS_ENFILE;
+    pipe->reader_flags = (uint32_t)flags;
+    pipe->writer_flags = (uint32_t)flags;
     reader.words[0] = pipe->id;
     writer.words[0] = pipe->id;
     if (!pipe_retain(pipe->id, NATIVE_PIPE_READER) ||
@@ -3938,11 +3945,39 @@ static int64_t syscall_pipe_wait(struct native_process *process,
 
     if (pipe == NULL) return -OPENRFS_EBADF;
     if (pipe_transfer_ready(pipe, resource->words[2], (size_t)length)) return 0;
+    if ((resource->words[2] == NATIVE_PIPE_READER ? pipe->reader_flags :
+            pipe->writer_flags) & OPENRFS_PIPE_NONBLOCK) return -OPENRFS_EAGAIN;
     if (thread == NULL) return -OPENRFS_EIO;
     thread->pipe_wait_handle = handle;
     thread->pipe_wait_length = (uint32_t)length;
     thread->state = NATIVE_THREAD_PIPE_WAIT;
     return 0;
+}
+
+static int64_t syscall_pipe_flags(struct native_process *process,
+    openrfs_handle_t handle, uint64_t flags, bool update)
+{
+    struct native_resource *resource;
+    const enum native_handle_status status = native_handle_resolve(
+        &process->handles, handle, OPENRFS_HANDLE_FILE, &resource);
+
+    if (status != NATIVE_HANDLE_OK) return handle_error(status);
+    if (resource->words[2] != NATIVE_PIPE_READER &&
+        resource->words[2] != NATIVE_PIPE_WRITER) return -OPENRFS_EBADF;
+    if (update && (flags & ~((uint64_t)OPENRFS_PIPE_NONBLOCK)) != 0U) {
+        return -OPENRFS_EINVAL;
+    }
+    struct native_pipe *pipe = pipe_by_id(resource->words[0]);
+
+    if (pipe == NULL) return -OPENRFS_EBADF;
+    uint32_t *status_flags = resource->words[2] == NATIVE_PIPE_READER ?
+        &pipe->reader_flags : &pipe->writer_flags;
+
+    if (update) {
+        *status_flags = (uint32_t)flags;
+        return 0;
+    }
+    return (int64_t)*status_flags;
 }
 
 static int64_t syscall_file_io(
@@ -6960,9 +6995,13 @@ static int64_t dispatch_syscall(
     case OPENRFS_SYS_PROCESS_FORK:
         return syscall_process_fork(process, thread);
     case OPENRFS_SYS_PIPE_CREATE:
-        return syscall_pipe_create(process, frame->rdi);
+        return syscall_pipe_create(process, frame->rdi, frame->rsi);
     case OPENRFS_SYS_PIPE_WAIT:
         return syscall_pipe_wait(process, frame->rdi, frame->rsi);
+    case OPENRFS_SYS_PIPE_GET_FLAGS:
+        return syscall_pipe_flags(process, frame->rdi, 0U, false);
+    case OPENRFS_SYS_PIPE_SET_FLAGS:
+        return syscall_pipe_flags(process, frame->rdi, frame->rsi, true);
     case OPENRFS_SYS_PROCESS_WAIT:
         return syscall_process_wait(process, thread, (int64_t)frame->rdi,
             frame->rsi, frame->rdx);
@@ -7391,6 +7430,12 @@ static void update_waiting_threads(
                 } else {
                     ready = pipe_transfer_ready(pipe, resource->words[2],
                         thread->pipe_wait_length);
+                    if (!ready && ((resource->words[2] == NATIVE_PIPE_READER ?
+                            pipe->reader_flags : pipe->writer_flags) &
+                            OPENRFS_PIPE_NONBLOCK) != 0U) {
+                        result = -OPENRFS_EAGAIN;
+                        ready = true;
+                    }
                 }
             }
             if (ready) {
