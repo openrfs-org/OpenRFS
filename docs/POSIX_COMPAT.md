@@ -40,3 +40,5 @@ The current QEMU process coverage runs in `NATIVET.APP`, a real compiled C
 program using the production native syscall path. It does not cover fork plus
 exec, separate child executable programs, a BusyBox shell script, pipelines,
 signal handlers, FAT32/ext4 inherited Data logout cases, or a POSIX shell.
+The kernel keeps only the caller when a multithreaded process forks, but SDK
+locks held by vanished threads are not generally repaired in the child.
