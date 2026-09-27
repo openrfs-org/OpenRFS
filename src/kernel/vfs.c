@@ -1391,7 +1391,39 @@ enum openrfsfs_status openrfsfs_set_append(openrfsfs_handle handle, bool append)
     struct vfs_open_file_state *state;
     enum openrfsfs_status status = checked_open_file_state(handle, &state);
 
-    if (status == OPENRFSFS_STATUS_OK) state->append = append;
+    if (status == OPENRFSFS_STATUS_OK) {
+        const struct vfs_vnode_state *vnode = &vnodes[state->vnode_index];
+
+        if (state->data_session_generation != data_session_epoch(vnode->volume)) {
+            status = OPENRFSFS_STATUS_STALE_HANDLE;
+        } else if (!data_path_permitted(vnode->volume, vnode->path)) {
+            status = OPENRFSFS_STATUS_ACCESS;
+        } else {
+            state->append = append;
+        }
+    }
+    vnode_metadata_release(restore_interrupts);
+    return status;
+}
+
+enum openrfsfs_status openrfsfs_get_append(openrfsfs_handle handle, bool *append)
+{
+    if (append == NULL) return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    const bool restore_interrupts = vnode_metadata_acquire();
+    struct vfs_open_file_state *state;
+    enum openrfsfs_status status = checked_open_file_state(handle, &state);
+
+    if (status == OPENRFSFS_STATUS_OK) {
+        const struct vfs_vnode_state *vnode = &vnodes[state->vnode_index];
+
+        if (state->data_session_generation != data_session_epoch(vnode->volume)) {
+            status = OPENRFSFS_STATUS_STALE_HANDLE;
+        } else if (!data_path_permitted(vnode->volume, vnode->path)) {
+            status = OPENRFSFS_STATUS_ACCESS;
+        } else {
+            *append = state->append;
+        }
+    }
     vnode_metadata_release(restore_interrupts);
     return status;
 }

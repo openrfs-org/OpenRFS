@@ -237,6 +237,7 @@ enum openrfsfs_status openrfsfs_rename_replace(enum openrfsfs_volume volume,
     const char *source, const char *destination);
 bool openrfsfs_has_atomic_replace(enum openrfsfs_volume volume);
 enum openrfsfs_status openrfsfs_set_append(openrfsfs_handle handle, bool append);
+enum openrfsfs_status openrfsfs_get_append(openrfsfs_handle handle, bool *append);
 enum openrfsfs_status openrfsfs_ftruncate(openrfsfs_handle handle, uint64_t size);
 enum openrfsfs_status openrfsfs_set_times(enum openrfsfs_volume volume, const char *path,
     const struct openrfsfs_times *times);

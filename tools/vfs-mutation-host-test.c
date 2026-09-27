@@ -533,6 +533,12 @@ int main(void)
     assert(vnodes[old_vnode].stat.object_id == 101U && vnodes[old_vnode].references == 1U);
     assert(openrfsfs_retain(opened) == OPENRFSFS_STATUS_OK &&
         file->references == 2U);
+    bool append_status = true;
+    assert(openrfsfs_get_append(opened, &append_status) == OPENRFSFS_STATUS_OK &&
+        !append_status);
+    assert(openrfsfs_set_append(opened, true) == OPENRFSFS_STATUS_OK &&
+        openrfsfs_get_append(opened, &append_status) == OPENRFSFS_STATUS_OK &&
+        append_status);
     assert(openrfsfs_close(opened) == OPENRFSFS_STATUS_OK &&
         live_backend_handles == 1U && file->references == 1U);
     openrfsfs_data_login_lock_enable(test_data_session_active,
@@ -541,9 +547,17 @@ int main(void)
     ++data_session_epoch_value;
     assert(openrfsfs_retain(opened) == OPENRFSFS_STATUS_STALE_HANDLE &&
         file->references == 1U);
+    assert(openrfsfs_get_append(opened, &append_status) ==
+        OPENRFSFS_STATUS_STALE_HANDLE);
+    assert(openrfsfs_set_append(opened, false) ==
+        OPENRFSFS_STATUS_STALE_HANDLE);
     stale_io_counts(opened);
     data_session_is_active = true;
     stale_io_counts(opened);
+    assert(openrfsfs_get_append(opened, &append_status) ==
+        OPENRFSFS_STATUS_STALE_HANDLE);
+    assert(openrfsfs_set_append(opened, false) ==
+        OPENRFSFS_STATUS_STALE_HANDLE);
     closing_frontend = opened;
     assert(openrfsfs_close(opened) == OPENRFSFS_STATUS_OK && live_backend_handles == 0U);
     assert(closing_frontend == 0U);

@@ -346,6 +346,14 @@ int fcntl(int number, int command, ...)
     if (command == F_GETFD) return record.descriptor_flags;
     if (command == F_SETFD) return 0;
     if (command == F_GETFL) {
+        if (record.kind == DESCRIPTOR_FILE) {
+            const long flags = openrfs_syscall1(OPENRFS_SYS_FILE_GET_STATUS,
+                record.handle);
+
+            if (flags < 0) { errno = (int)-flags; return -1; }
+            return (record.open_flags & O_ACCMODE) |
+                ((flags & OPENRFS_OPEN_APPEND) != 0 ? O_APPEND : 0);
+        }
         if (record.kind == DESCRIPTOR_PIPE_READ ||
             record.kind == DESCRIPTOR_PIPE_WRITE) {
             const long flags = openrfs_syscall1(OPENRFS_SYS_PIPE_GET_FLAGS,
@@ -367,6 +375,15 @@ int fcntl(int number, int command, ...)
         return openrfs_result(openrfs_syscall2(OPENRFS_SYS_PIPE_SET_FLAGS,
             record.handle, (argument & O_NONBLOCK) != 0 ?
                 OPENRFS_PIPE_NONBLOCK : 0U));
+    }
+    if (command == F_SETFL && record.kind == DESCRIPTOR_FILE) {
+        if ((argument & ~(O_ACCMODE | O_APPEND)) != 0) {
+            errno = EINVAL;
+            return -1;
+        }
+        return openrfs_result(openrfs_syscall2(OPENRFS_SYS_FILE_SET_STATUS,
+            record.handle, (argument & O_APPEND) != 0 ?
+                OPENRFS_OPEN_APPEND : 0U));
     }
     errno = command == F_SETFL ? ENOSYS : EINVAL;
     return -1;

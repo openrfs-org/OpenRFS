@@ -32,6 +32,7 @@ static unsigned pipe_calls;
 static long pipe_result;
 static uint32_t pipe_reader_flags;
 static uint32_t pipe_writer_flags;
+static uint32_t file_status_flags;
 
 long openrfs_syscall1(uint64_t number, uint64_t address)
 {
@@ -63,6 +64,10 @@ long openrfs_syscall1(uint64_t number, uint64_t address)
         invalid_request = 1;
         return -OPENRFS_EBADF;
     }
+    if (number == OPENRFS_SYS_FILE_GET_STATUS) {
+        if (address != 42U && address != 43U) invalid_request = 1;
+        return file_status_flags;
+    }
     if (number != OPENRFS_SYS_FILE_OPEN) { invalid_request = 1; return -OPENRFS_EINVAL; }
     const struct openrfs_file_open_request *request = (const struct openrfs_file_open_request *)(uintptr_t)address;
     ++open_calls;
@@ -76,6 +81,8 @@ long openrfs_syscall1(uint64_t number, uint64_t address)
         reenter_open = 0;
         nested_descriptor = open("nested", O_RDONLY);
     }
+    if (syscall_result >= 0) file_status_flags =
+        expected_open_flags & OPENRFS_OPEN_APPEND;
     return syscall_result;
 }
 
@@ -99,6 +106,12 @@ long openrfs_syscall2(uint64_t number, uint64_t address, uint64_t value)
         if (address == 44U || address == 43U) pipe_reader_flags = (uint32_t)value;
         else if (address == 45U) pipe_writer_flags = (uint32_t)value;
         else { invalid_request = 1; return -OPENRFS_EBADF; }
+        return 0;
+    }
+    if (number == OPENRFS_SYS_FILE_SET_STATUS) {
+        if ((address != 42U && address != 43U) ||
+            (value & ~((uint64_t)OPENRFS_OPEN_APPEND)) != 0U) invalid_request = 1;
+        file_status_flags = (uint32_t)value;
         return 0;
     }
     if (number == OPENRFS_SYS_FILE_PUBLISH || number == OPENRFS_SYS_FILE_UNLINK) {
@@ -295,7 +308,12 @@ int main(void)
         fcntl(copied, F_GETFD) != FD_CLOFORK ||
         dup2(descriptor, copied) != copied || fcntl(copied, F_GETFD) != 0) return 51;
     if (dup3(descriptor, descriptor, 0) != -1 || errno != EINVAL ||
-        fcntl(descriptor, F_SETFL, O_APPEND) != -1 || errno != ENOSYS) return 52;
+        fcntl(descriptor, F_SETFL, O_APPEND) != 0 ||
+        fcntl(copied, F_GETFL) != (O_RDONLY | O_APPEND) ||
+        fcntl(copied, F_SETFL, O_RDONLY) != 0 ||
+        fcntl(descriptor, F_GETFL) != O_RDONLY ||
+        fcntl(descriptor, F_SETFL, O_NONBLOCK) != -1 || errno != EINVAL)
+        return 52;
     if (close(copied) != 0 || close(descriptor) != 0 ||
         duplicate_calls != 2U || close_calls != 47U || invalid_request) return 53;
     int pair[2] = {11, 12};

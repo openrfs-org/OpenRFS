@@ -352,6 +352,7 @@ static int descriptor_probe(void)
 {
     static const char message[] = "native descriptor redirection\n";
     char received[sizeof(message)] = {0};
+    char tail = 0;
     int status;
     const int saved_stdout = dup(STDOUT_FILENO);
     const int file = open("REDIR.TXT", O_CREAT | O_TRUNC | O_RDWR, 0600);
@@ -375,18 +376,29 @@ static int descriptor_probe(void)
     if (duplicate < 3 || fcntl(duplicate, F_GETFD) != FD_CLOFORK) {
         return 59;
     }
+    if (fcntl(duplicate, F_SETFL, O_APPEND) != 0 ||
+        fcntl(file, F_GETFL) != (O_RDWR | O_APPEND) ||
+        lseek(file, 0, SEEK_SET) != 0 || write(duplicate, "!", 1U) != 1 ||
+        lseek(file, sizeof(message) - 1U, SEEK_SET) !=
+            (off_t)(sizeof(message) - 1U) ||
+        read(file, &tail, 1U) != 1 || tail != '!' ||
+        fcntl(file, F_SETFL, O_RDWR) != 0 ||
+        fcntl(duplicate, F_GETFL) != O_RDWR) return 83;
     const int child = fork();
 
     if (child < 0) return 60;
     if (child == 0) {
         if (fcntl(duplicate, F_GETFD) != -1 || errno != EBADF ||
-            fcntl(file, F_GETFD) != FD_CLOEXEC) {
+            fcntl(file, F_GETFD) != FD_CLOEXEC ||
+            fcntl(file, F_SETFL, O_APPEND) != 0) {
             _Exit(61);
         }
         _Exit(0);
     }
     if (waitpid(child, &status, 0) != child || !WIFEXITED(status) ||
-        WEXITSTATUS(status) != 0 || close(duplicate) != 0 ||
+        WEXITSTATUS(status) != 0 ||
+        fcntl(file, F_GETFL) != (O_RDWR | O_APPEND) ||
+        close(duplicate) != 0 ||
         close(file) != 0) {
         return 62;
     }

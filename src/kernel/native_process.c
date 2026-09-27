@@ -3805,7 +3805,6 @@ static int64_t syscall_file_open(
         return filesystem_error(status);
     }
     resource.words[0] = file;
-    resource.words[1] = (request.flags & OPENRFS_OPEN_APPEND) != 0U ? 1U : 0U;
     {
         const enum native_handle_status handle_status = native_handle_install(
             &process->handles, OPENRFS_HANDLE_FILE, &resource, &handle);
@@ -3980,6 +3979,29 @@ static int64_t syscall_pipe_flags(struct native_process *process,
     return (int64_t)*status_flags;
 }
 
+static int64_t syscall_file_status(struct native_process *process,
+    openrfs_handle_t handle, uint64_t flags, bool update)
+{
+    struct native_resource *resource;
+    bool append = false;
+    const enum native_handle_status handle_status = native_handle_resolve(
+        &process->handles, handle, OPENRFS_HANDLE_FILE, &resource);
+
+    if (handle_status != NATIVE_HANDLE_OK) return handle_error(handle_status);
+    if (resource->words[2] != 0U) return -OPENRFS_EBADF;
+    if (update && (flags & ~((uint64_t)OPENRFS_OPEN_APPEND)) != 0U) {
+        return -OPENRFS_EINVAL;
+    }
+    cpu_interrupt_enable();
+    const enum openrfsfs_status status = update ? openrfsfs_set_append(
+        (openrfsfs_handle)resource->words[0],
+        (flags & OPENRFS_OPEN_APPEND) != 0U) : openrfsfs_get_append(
+        (openrfsfs_handle)resource->words[0], &append);
+    cpu_interrupt_disable();
+    if (status != OPENRFSFS_STATUS_OK) return filesystem_error(status);
+    return update ? 0 : (append ? OPENRFS_OPEN_APPEND : 0);
+}
+
 static int64_t syscall_file_io(
     struct native_process *process,
     uint64_t request_address,
@@ -3989,6 +4011,7 @@ static int64_t syscall_file_io(
     struct openrfs_io_request request;
     struct native_resource *resource;
     size_t completed = 0U;
+    bool append = false;
     enum native_handle_status handle_status;
 
     if (!copy_from_user(process, &request, request_address,
@@ -4012,6 +4035,15 @@ static int64_t syscall_file_io(
     }
     if (!validate_user_range(process, request.buffer, request.length, !write)) {
         return -OPENRFS_EFAULT;
+    }
+    if (write) {
+        cpu_interrupt_enable();
+        const enum openrfsfs_status append_status = openrfsfs_get_append(
+            (openrfsfs_handle)resource->words[0], &append);
+        cpu_interrupt_disable();
+        if (append_status != OPENRFSFS_STATUS_OK) {
+            return filesystem_error(append_status);
+        }
     }
     if (write && request.offset != UINT64_MAX) {
         uint64_t position;
@@ -4069,7 +4101,7 @@ static int64_t syscall_file_io(
         completed += transferred;
         // Append one copied chunk per syscall. Returning a short write avoids
         // claiming one atomic append across separately leased chunks.
-        if (transferred < chunk || (write && resource->words[1] != 0U)) {
+        if (transferred < chunk || (write && append)) {
             break;
         }
     }
@@ -7075,6 +7107,10 @@ static int64_t dispatch_syscall(
         return syscall_file_publication(process, frame->rdi, frame->rsi, false);
     case OPENRFS_SYS_FILE_UNLINK:
         return syscall_file_publication(process, frame->rdi, frame->rsi, true);
+    case OPENRFS_SYS_FILE_GET_STATUS:
+        return syscall_file_status(process, frame->rdi, 0U, false);
+    case OPENRFS_SYS_FILE_SET_STATUS:
+        return syscall_file_status(process, frame->rdi, frame->rsi, true);
     case OPENRFS_SYS_PATH_SET_TIMES:
         return syscall_set_times(process, frame->rdi);
     case OPENRFS_SYS_PATH_XATTR:
