@@ -21,7 +21,16 @@ struct backend_context {
     const uint8_t *key;
     char slot_paths[3][DATA_AEAD_PATH_MAX + 1U];
     struct held_segment segments[DATA_AEAD_SEGMENTS_MAX];
+    bool capacity_exhausted;
 };
+
+static void record_capacity(struct backend_context *context,
+    enum openrfsfs_status status)
+{
+    if (status == OPENRFSFS_STATUS_FULL ||
+            status == OPENRFSFS_STATUS_DIRECTORY_FULL)
+        context->capacity_exhausted = true;
+}
 
 static void zero_bytes(void *memory, size_t count)
 {
@@ -66,6 +75,7 @@ static bool ensure_parent_directories(struct backend_context *context,
             context->backend->stat_path(context->volume, parent, &stat);
         if (status == OPENRFSFS_STATUS_NOT_FOUND) {
             status = context->backend->mkdir(context->volume, parent);
+            record_capacity(context, status);
             if (status != OPENRFSFS_STATUS_OK ||
                     context->backend->sync(context->volume) !=
                         OPENRFSFS_STATUS_OK) return false;
@@ -163,12 +173,14 @@ static bool temp_write(void *opaque,
             status = context->backend->open(context->volume, path,
                 OPENRFSFS_ACCESS_WRITE, &handle);
     }
+    record_capacity(context, status);
     if (status != OPENRFSFS_STATUS_OK) return false;
     size_t done = 0U;
     while (done < DATA_AEAD_MANIFEST_BYTES) {
         size_t written = 0U;
         status = context->backend->write(handle, record + done,
             DATA_AEAD_MANIFEST_BYTES - done, &written);
+        record_capacity(context, status);
         if (status != OPENRFSFS_STATUS_OK || written == 0U ||
                 written > DATA_AEAD_MANIFEST_BYTES - done) break;
         done += written;
@@ -622,8 +634,10 @@ enum data_aead_status data_aead_backend_publish_manifest(
             return DATA_AEAD_ARGUMENT;
         }
     if (!ensure_parent_directories(&context, context.slot_paths[2])) {
+        const bool full = context.capacity_exhausted;
         zero_bytes(&context, sizeof(context));
-        return DATA_AEAD_IO;
+        zero_bytes(workspace, DATA_AEAD_REWRITE_WORKSPACE_BYTES);
+        return full ? DATA_AEAD_FULL : DATA_AEAD_IO;
     }
     const struct data_aead_manifest_publish_io io = {
         .context = &context,
@@ -642,6 +656,8 @@ enum data_aead_status data_aead_backend_publish_manifest(
     enum data_aead_status result = data_aead_manifest_publish(key,
         canonical_path, candidate, &io, workspace, workspace_bytes,
         published, slot);
+    if (result == DATA_AEAD_IO && context.capacity_exhausted)
+        result = DATA_AEAD_FULL;
     for (unsigned at = 0U; at < DATA_AEAD_SEGMENTS_MAX; ++at)
         if (context.segments[at].used &&
                 backend->close(context.segments[at].handle) !=
@@ -695,6 +711,7 @@ static bool migration_begin(void *opaque, uint64_t physical_bytes)
                 migration->shadow_path, OPENRFSFS_ACCESS_WRITE,
                 &migration->shadow);
     }
+    record_capacity(storage, status);
     migration->shadow_open = status == OPENRFSFS_STATUS_OK;
     migration->shadow_offset = 0U;
     migration->shadow_size = physical_bytes;
@@ -722,9 +739,11 @@ static bool migration_write(void *opaque, uint64_t offset,
     size_t done = 0U;
     while (done < bytes) {
         size_t written = 0U;
-        if (migration->storage.backend->write(migration->shadow,
-                from + done, bytes - done, &written) !=
-                OPENRFSFS_STATUS_OK || written == 0U ||
+        const enum openrfsfs_status status =
+            migration->storage.backend->write(migration->shadow,
+                from + done, bytes - done, &written);
+        record_capacity(&migration->storage, status);
+        if (status != OPENRFSFS_STATUS_OK || written == 0U ||
                 written > bytes - done) return false;
         done += written;
     }
@@ -1007,11 +1026,17 @@ static enum data_aead_status migrate_plain_impl(
     }
 done:
     if (migration.shadow_open &&
-            backend->close(migration.shadow) != OPENRFSFS_STATUS_OK)
+            backend->close(migration.shadow) != OPENRFSFS_STATUS_OK) {
         result = DATA_AEAD_IO;
+        migration.storage.capacity_exhausted = false;
+    }
     if (migration.source_open &&
-            backend->close(migration.source) != OPENRFSFS_STATUS_OK)
+            backend->close(migration.source) != OPENRFSFS_STATUS_OK) {
         result = DATA_AEAD_IO;
+        migration.storage.capacity_exhausted = false;
+    }
+    if (result == DATA_AEAD_IO && migration.storage.capacity_exhausted)
+        result = DATA_AEAD_FULL;
     if (result != DATA_AEAD_OK) zero_bytes(manifest, sizeof(*manifest));
     zero_bytes(expected_id, sizeof(expected_id));
     zero_bytes(&candidate, sizeof(candidate));
@@ -1294,11 +1319,17 @@ enum data_aead_status data_aead_backend_append_file(
             zero_bytes(binding, sizeof(binding));
         }
         if (migration.shadow_open &&
-                backend->close(migration.shadow) != OPENRFSFS_STATUS_OK)
+                backend->close(migration.shadow) != OPENRFSFS_STATUS_OK) {
             result = DATA_AEAD_IO;
+            migration.storage.capacity_exhausted = false;
+        }
         if (migration.source_open &&
-                backend->close(migration.source) != OPENRFSFS_STATUS_OK)
+                backend->close(migration.source) != OPENRFSFS_STATUS_OK) {
             result = DATA_AEAD_IO;
+            migration.storage.capacity_exhausted = false;
+        }
+        if (result == DATA_AEAD_IO && migration.storage.capacity_exhausted)
+            result = DATA_AEAD_FULL;
         zero_bytes(&migration, sizeof(migration));
         if (result != DATA_AEAD_OK) break;
         consumed += amount;
@@ -1581,11 +1612,17 @@ enum data_aead_status data_aead_backend_rewrite_file(
             zero_bytes(binding, sizeof(binding));
         }
         if (migration.shadow_open &&
-                backend->close(migration.shadow) != OPENRFSFS_STATUS_OK)
+                backend->close(migration.shadow) != OPENRFSFS_STATUS_OK) {
             result = DATA_AEAD_IO;
+            migration.storage.capacity_exhausted = false;
+        }
         if (migration.source_open &&
-                backend->close(migration.source) != OPENRFSFS_STATUS_OK)
+                backend->close(migration.source) != OPENRFSFS_STATUS_OK) {
             result = DATA_AEAD_IO;
+            migration.storage.capacity_exhausted = false;
+        }
+        if (result == DATA_AEAD_IO && migration.storage.capacity_exhausted)
+            result = DATA_AEAD_FULL;
         zero_bytes(&migration, sizeof(migration));
         if (result != DATA_AEAD_OK) break;
     }

@@ -53,8 +53,12 @@ An exploratory encrypted FAT32 run that created and removed another directory
 before package upload failed: the later upload write returned `EIO`. Its raw
 image passed structural and plaintext checks, while the backing directory had
 reached the FAT32 backend's 64-live-entry limit. The encrypted layer reported
-`EIO` and revoked the session; the exact lower-level failure has not been
-isolated. This failure is not counted as a passing directory-mode test.
+`EIO` and revoked the session. Backend host tests now return `FULL` for physical
+directory creation, segment creation, and shadow-write capacity failures while
+keeping the prior encrypted content readable and the session usable. The exact
+lower-level cause of that QEMU upload failure has not been isolated, and
+encrypted object cleanup does not yet prevent the 64-entry physical directory
+limit. This failure is not counted as a passing directory-mode test.
 
 The current QEMU process coverage runs in `NATIVET.APP`, a real compiled C
 program using the production native syscall path. It does not cover fork plus

@@ -24,7 +24,8 @@ enum data_aead_status {
     DATA_AEAD_IO,
     DATA_AEAD_ENTROPY,
     DATA_AEAD_NOT_FOUND,
-    DATA_AEAD_CONFLICT
+    DATA_AEAD_CONFLICT,
+    DATA_AEAD_FULL
 };
 
 /* The path is canonical; FAT32 uses uppercase. Each revision needs a fresh
