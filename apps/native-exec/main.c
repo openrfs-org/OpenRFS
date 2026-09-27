@@ -46,5 +46,42 @@ int main(int argc, char **argv, char **environment)
         return 14;
     }
     puts("OPENRFS PROCESS distinct signed image exec and wait PASS");
+    if (fflush(NULL) != 0) return 15;
+    int ends[2];
+
+    if (pipe(ends) != 0) return 16;
+    const int producer = fork();
+
+    if (producer < 0) return 17;
+    if (producer == 0) {
+        char *arguments[] = {"EXECALT.APP", "producer", NULL};
+        char *replacement_environment[] = {"PIPE_STAGE=1", NULL};
+
+        if (close(ends[0]) != 0 ||
+            dup2(ends[1], STDOUT_FILENO) != STDOUT_FILENO ||
+            close(ends[1]) != 0) _Exit(18);
+        (void)execve("EXECALT.MAN", arguments, replacement_environment);
+        _Exit(19);
+    }
+    const int consumer = fork();
+
+    if (consumer < 0) return 20;
+    if (consumer == 0) {
+        char *arguments[] = {"EXECALT.APP", "consumer", NULL};
+        char *replacement_environment[] = {"PIPE_STAGE=1", NULL};
+
+        if (close(ends[1]) != 0 ||
+            dup2(ends[0], STDIN_FILENO) != STDIN_FILENO ||
+            close(ends[0]) != 0) _Exit(21);
+        (void)execve("EXECALT.MAN", arguments, replacement_environment);
+        _Exit(22);
+    }
+    if (close(ends[0]) != 0 || close(ends[1]) != 0 ||
+        waitpid(producer, &status, 0) != producer ||
+        !WIFEXITED(status) || WEXITSTATUS(status) != 0 ||
+        waitpid(consumer, &status, 0) != consumer ||
+        !WIFEXITED(status) || WEXITSTATUS(status) != 0)
+        return 23;
+    puts("OPENRFS PROCESS fork exec pipeline and wait PASS");
     return 0;
 }

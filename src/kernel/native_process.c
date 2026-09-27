@@ -3344,10 +3344,11 @@ static bool process_cleanup(
         output, false);
 }
 
-static bool process_cleanup_exec_retired(struct native_process *process)
+static bool process_cleanup_any_order(struct native_process *process,
+    struct native_process_teardown_report *output)
 {
     return process_cleanup_with_callback(process, close_resource, process,
-        NULL, true);
+        output, true);
 }
 
 struct process_cleanup_test_script {
@@ -7224,7 +7225,7 @@ static int64_t syscall_process_exec(struct native_process *process,
     int64_t error;
 
     if (exec_retired.handles.active_handles != 0U &&
-        !process_cleanup_exec_retired(&exec_retired))
+        !process_cleanup_any_order(&exec_retired, NULL))
         return -OPENRFS_EBUSY;
     if (exec_staging.page_count != 0U ||
         exec_staging.handles.active_handles != 0U) {
@@ -7290,7 +7291,7 @@ static int64_t syscall_process_exec(struct native_process *process,
     network_process_terminated(NETWORK_OWNER_NATIVE(process->generation));
     audio_native_process_terminated(process->generation);
     exec_retired.generation = 0U;
-    if (!process_cleanup_exec_retired(&exec_retired))
+    if (!process_cleanup_any_order(&exec_retired, NULL))
         console_write("OpenRFS: exec retired image cleanup deferred\n");
     return 0;
 
@@ -8109,6 +8110,21 @@ static size_t newest_active_process(void)
     return selected;
 }
 
+static size_t newest_exiting_process(void)
+{
+    uint64_t generation = 0U;
+    size_t selected = SIZE_MAX;
+
+    for (size_t index = 0U; index < NATIVE_PROCESS_LIMIT; ++index) {
+        if (processes[index].active && processes[index].exiting &&
+            processes[index].generation > generation) {
+            generation = processes[index].generation;
+            selected = index;
+        }
+    }
+    return selected;
+}
+
 static struct native_process *console_input_target(void)
 {
     struct native_process *selected = NULL;
@@ -8412,10 +8428,10 @@ enum native_process_status native_process_run(struct native_process_result *resu
         }
 
         for (;;) {
-            const size_t newest = newest_active_process();
+            const size_t newest = newest_exiting_process();
             struct native_process_result completed;
 
-            if (newest == SIZE_MAX || !processes[newest].exiting) {
+            if (newest == SIZE_MAX) {
                 break;
             }
             capture_result(&processes[newest], &completed);
@@ -8427,7 +8443,8 @@ enum native_process_status native_process_run(struct native_process_result *resu
                 parent_generation != completed.generation &&
                 processes[newest].active &&
                 !processes[newest].zombie;
-            const bool process_retired = process_cleanup(&processes[newest],
+            const bool process_retired = process_cleanup_any_order(
+                &processes[newest],
                 &completed.teardown_report);
             if (process_retired && keep_zombie) {
                 bool parent_live = false;

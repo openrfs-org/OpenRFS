@@ -256,6 +256,7 @@ static size_t read_locked(void *pointer, size_t bytes, FILE *stream)
             stream->error = 1U;
             return completed;
         }
+        if (result == 0) stream->eof = 1U;
         return completed + (size_t)result;
     }
     while (completed < bytes) {
