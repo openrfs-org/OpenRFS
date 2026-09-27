@@ -218,6 +218,7 @@ struct native_process {
     uint64_t dynamic_fini_entry;
     uint32_t context_transition_samples;
     int32_t exit_status;
+    uint16_t file_creation_mask;
     uint8_t termination_signal;
     bool active;
     bool zombie;
@@ -3432,6 +3433,7 @@ static enum native_process_status native_process_spawn_from_volume(
     }
     zero_bytes(process, sizeof(*process));
     process->generation = claim_process_id();
+    process->file_creation_mask = 0022U;
     if (process->generation == 0U) {
         return NATIVE_PROCESS_NO_SLOT;
     }
@@ -3795,8 +3797,10 @@ static int64_t syscall_file_open(
     if (process->handles.active_handles >= process->handles.limit ||
         process->handles.active_objects >= process->handles.limit) return -OPENRFS_EMFILE;
     cpu_interrupt_enable();
+    const uint16_t requested_mode = (request.flags & OPENRFS_OPEN_MODE_PRESENT) != 0U ?
+        (uint16_t)request.reserved : 0644U;
     status = openrfsfs_open_options(volume, path, access, open_flags,
-        (request.flags & OPENRFS_OPEN_MODE_PRESENT) != 0U ? (uint16_t)request.reserved : 0644U, &file);
+        (uint16_t)(requested_mode & ~process->file_creation_mask), &file);
     if (status == OPENRFSFS_STATUS_OK && (request.flags & OPENRFS_OPEN_APPEND) != 0U) {
         status = openrfsfs_set_append(file, true);
         if (status != OPENRFSFS_STATUS_OK) (void)openrfsfs_close(file);
@@ -4395,8 +4399,10 @@ static int64_t syscall_single_path_mutation(
     }
     cpu_interrupt_enable();
     if (number == OPENRFS_SYS_PATH_MKDIR) {
+        const uint16_t requested_mode = value == 0U ? 0755U :
+            (uint16_t)(value & 07777U);
         status = openrfsfs_mkdir_mode(volume, path,
-            value == 0U ? 0755U : (uint16_t)(value & 07777U));
+            (uint16_t)(requested_mode & ~process->file_creation_mask));
     } else if (number == OPENRFS_SYS_PATH_TRUNCATE) {
         status = openrfsfs_truncate(volume, path, value);
     } else if (value == OPENRFS_UNLINK_FILE) {
@@ -6757,6 +6763,15 @@ static int64_t syscall_process_signal(struct native_process *caller,
     return -OPENRFS_ESRCH;
 }
 
+static int64_t syscall_process_umask(struct native_process *process,
+    uint64_t mask)
+{
+    const uint16_t previous = process->file_creation_mask;
+
+    process->file_creation_mask = (uint16_t)(mask & 0777U);
+    return previous;
+}
+
 static bool begin_dynamic_finalizers(
     struct native_process *process,
     struct native_thread *thread,
@@ -6917,6 +6932,7 @@ static int64_t syscall_process_fork(
     child->image = parent->image;
     child->dynamic_fini_entry = parent->dynamic_fini_entry;
     child->dynamic_fini_started = parent->dynamic_fini_started;
+    child->file_creation_mask = parent->file_creation_mask;
     for (size_t index = 0U; index < parent->page_count; ++index) {
         const struct native_page *source = &parent->pages[index];
         uintptr_t frame;
@@ -7067,6 +7083,8 @@ static int64_t dispatch_syscall(
     case OPENRFS_SYS_PROCESS_SIGNAL:
         return syscall_process_signal(process, (int64_t)frame->rdi,
             (int64_t)frame->rsi);
+    case OPENRFS_SYS_PROCESS_UMASK:
+        return syscall_process_umask(process, frame->rdi);
     case OPENRFS_SYS_PROCESS_EXIT_IMMEDIATE:
         terminate_process(process, (int32_t)frame->rdi);
         return 0;

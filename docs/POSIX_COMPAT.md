@@ -12,6 +12,7 @@ The behavior here is compared with POSIX Issue 8 for
 [descriptors](https://pubs.opengroup.org/onlinepubs/9799919799/functions/dup.html),
 [pipes](https://pubs.opengroup.org/onlinepubs/9799919799/functions/pipe.html),
 [kill](https://pubs.opengroup.org/onlinepubs/9799919799/functions/kill.html),
+[umask](https://pubs.opengroup.org/onlinepubs/9799919799/functions/umask.html),
 and [signals](https://pubs.opengroup.org/onlinepubs/9799919799/functions/sigaction.html).
 
 | Operation | Status | Current behavior and evidence |
@@ -26,8 +27,9 @@ and [signals](https://pubs.opengroup.org/onlinepubs/9799919799/functions/sigacti
 | `execve`, exec family | Unsupported | The SDK `execve` wrapper returns `ENOSYS`. No replacement image transaction, argument and environment transfer, or interpreter execution exists. Native loading admits authenticated static ET_EXEC and a bounded authenticated dynamic profile when launched by the existing package path; it is not an exec interface. |
 | `pipe`, `pipe2` | Limited, native SDK | A kernel pipe has a 4096-byte buffer; at most 16 pipes can be live. `PIPE_BUF` is 4096. Writes of at most that size are all-or-nothing, and blocking readers and writers park until the requested transfer can proceed. `pipe2` accepts `O_NONBLOCK`, `O_CLOEXEC`, and `O_CLOFORK`; descriptor duplication, fork, close, EOF, and `EPIPE` work. `F_SETFL` changes nonblocking status across duplicated and inherited references to the same endpoint. A broken pipe returns `EPIPE` without `SIGPIPE` delivery. Pipe metadata and `fdopen` blocking behavior are incomplete. The native QEMU C program checks a forked producer/consumer, a full-buffer blocked writer, atomic nonblocking writes, EOF, `EPIPE`, and redirection. |
 | `kill`, `raise`, signals | Limited, native | `kill(pid, 0)` checks a live self or direct child. `SIGINT`, `SIGTERM`, and `SIGKILL` terminate self or a direct child with signaled wait status; only default actions exist. Other positive PIDs fail with `EPERM` or `ESRCH`; process-group PID forms return `ENOSYS`. Other signals return `ENOSYS`, and `signal()` returns `ENOTSUP`. There is no signal disposition, mask, user handler frame, signal return, SIGCHLD delivery, or SIGPIPE delivery. A child fault produces signal 11 in wait status without a handler. Host and native QEMU C tests cover the limited default actions and wait status. |
+| `umask` | Limited, native | Each native process starts with mask `0022`. `umask` returns the old mask, retains only permission bits, and fork copies it independently. The kernel applies it when a native call creates a file or directory. Host and native QEMU C tests check the mask and inheritance; encrypted Data QEMU tests check a created file's mode on FAT32 and ext4. Encrypted Data stores its mode in authenticated namespace metadata, while raw FAT32 has no POSIX permission bits. Existing objects are unaffected. This does not establish multiuser permission enforcement. |
 | Process groups and terminal control | Unsupported | No `setpgid`, `tcsetpgrp`, foreground pipeline, Ctrl-C fanout, or job control exists. |
-| Process cwd, root, umask, credentials | Unsupported as POSIX process attributes | The SDK uses its existing application rooted path parser and the kernel applies package capabilities and Data session checks. There is no per process cwd, root, umask, or POSIX credential inheritance. This is not a multiuser permission boundary. |
+| Process cwd, root, credentials | Unsupported as POSIX process attributes | The SDK uses its existing application rooted path parser and the kernel applies package capabilities and Data session checks. There is no per process cwd, root, or POSIX credential inheritance. This is not a multiuser permission boundary. |
 | Linux `fork`, `exec`, `wait`, pipes, signals | Unsupported | The measured Linux echo/uname/cat syscall path refuses calls outside each profile. Native calls and Linux calls are not interchangeable. |
 
 Fork inherits native file and pipe handles, the underlying VFS open file
@@ -45,6 +47,13 @@ also inspect the raw Data image for plaintext markers. A VFS host test checks
 that an extra retained file reference cannot read or write after the session
 epoch changes, including after login resumes. A child left alive across logout,
 password rotation, or account deletion has not been tested in QEMU.
+
+An exploratory encrypted FAT32 run that created and removed another directory
+before package upload failed: the later upload write returned `EIO`. Its raw
+image passed structural and plaintext checks, while the backing directory had
+reached the FAT32 backend's 64-live-entry limit. The encrypted layer reported
+`EIO` and revoked the session; the exact lower-level failure has not been
+isolated. This failure is not counted as a passing directory-mode test.
 
 The current QEMU process coverage runs in `NATIVET.APP`, a real compiled C
 program using the production native syscall path. It does not cover fork plus

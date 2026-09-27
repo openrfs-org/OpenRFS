@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -600,6 +601,23 @@ static int process_signal_probe(void)
     return 0;
 }
 
+static int process_umask_probe(void)
+{
+    int status;
+
+    if (umask(0077U) != 0022U) return 94;
+    const int child = fork();
+
+    if (child < 0) return 95;
+    if (child == 0) {
+        _Exit(umask(0027U) == 0077U ? 0 : 96);
+    }
+    if (waitpid(child, &status, 0) != child || !WIFEXITED(status) ||
+        WEXITSTATUS(status) != 0 || umask(0022U) != 0077U) return 97;
+    puts("OPENRFS PROCESS inherited umask PASS");
+    return 0;
+}
+
 static void *sleeping_thread(void *unused)
 {
     (void)unused;
@@ -727,6 +745,8 @@ int main(int argc, char **argv, char **environment)
     probe = process_fault_probe();
     if (probe != 0) return probe;
     probe = process_signal_probe();
+    if (probe != 0) return probe;
+    probe = process_umask_probe();
     if (probe != 0) return probe;
     probe = multithread_fork_probe();
     if (probe != 0) return probe;

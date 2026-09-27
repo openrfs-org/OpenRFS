@@ -482,6 +482,11 @@ int mkdir(const char *path, mode_t mode)
     return path_operation(path, OPENRFS_SYS_PATH_MKDIR,
         OPENRFS_MKDIR_MODE_PRESENT | (uint64_t)(mode & 07777U));
 }
+mode_t umask(mode_t mask)
+{
+    return (mode_t)openrfs_syscall1(OPENRFS_SYS_PROCESS_UMASK,
+        (uint64_t)(mask & 0777U));
+}
 int ftruncate(int number, int64_t length)
 {
     struct descriptor_record record;

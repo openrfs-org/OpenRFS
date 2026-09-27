@@ -1,16 +1,19 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include <openrfs/package_upload.h>
 #include <openrfs/runtime.h>
+#include <fcntl.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 static int data_probe(void)
 {
     char readback[12] = {0};
+    struct stat file_stat;
     long file = openrfs_file_open(OPENRFS_VOLUME_DATA, "NCHK.TXT",
         OPENRFS_OPEN_READ | OPENRFS_OPEN_WRITE |
         OPENRFS_OPEN_CREATE | OPENRFS_OPEN_TRUNCATE);
@@ -63,6 +66,17 @@ static int data_probe(void)
         openrfs_handle_close((openrfs_handle_t)file) != 0 ||
         openrfs_path_unlink(OPENRFS_VOLUME_DATA, "NREN.TXT") != 0)
         return 18;
+    if (umask(0077U) != 0022U) return 19;
+    const int masked_file = open("NMSK.TXT", O_CREAT | O_EXCL | O_RDWR, 0666);
+
+    if (masked_file < 0 || fstat(masked_file, &file_stat) != 0 ||
+        close(masked_file) != 0 || unlink("NMSK.TXT") != 0 ||
+        umask(0022U) != 0077U) return 20;
+    if ((file_stat.st_mode & 0777U) == 0600U) {
+        puts("OPENRFS NATIVE UMASK file 0600 PASS");
+    } else {
+        puts("OPENRFS NATIVE UMASK mode unavailable on this filesystem");
+    }
     puts("OPENRFS NATIVE DATA INHERITED PASS");
     puts("OPENRFS NATIVE DATA PASS");
     return 0;
@@ -83,8 +97,11 @@ int main(void)
     if (opened < 0) return 1;
     puts("OPENRFS UPLOAD opened");
     const openrfs_handle_t handle = (openrfs_handle_t)opened;
-    if (openrfs_package_upload_write(handle, payload,
-            sizeof(payload) - 1U) != (long)(sizeof(payload) - 1U)) {
+    const long written = openrfs_package_upload_write(handle, payload,
+        sizeof(payload) - 1U);
+
+    if (written != (long)(sizeof(payload) - 1U)) {
+        printf("OPENRFS UPLOAD write result=%ld\n", written);
         (void)openrfs_package_upload_close(handle);
         return 2;
     }

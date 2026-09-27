@@ -38,6 +38,12 @@ int main(void)
     zero_bytes(processes, sizeof(processes));
     processes[0].generation = 1U;
     processes[0].active = true;
+    processes[0].file_creation_mask = 0022U;
+    assert(syscall_process_umask(&processes[0], 0077U) == 0022U);
+    assert(processes[0].file_creation_mask == 0077U);
+    assert(syscall_process_umask(&processes[0], 01722U) == 0077U);
+    assert(processes[0].file_creation_mask == 0722U);
+    assert(syscall_process_umask(&processes[0], 0022U) == 0722U);
     processes[1].generation = 2U;
     processes[1].parent_generation = 1U;
     processes[1].active = true;
