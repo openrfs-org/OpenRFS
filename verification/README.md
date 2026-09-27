@@ -69,6 +69,18 @@ seeds and grew to 69 in the isolated campaign copy; ACPI began with 8 and grew
 to 49. Hypothesis used seed 731 and exercised install, remove, cancel, injected
 disk-full, reopen, and tampered-stage recovery operations.
 
+The first clean-source extended attempt on signed commit
+`da44309f002f4efc3608b8c417eaf06586990f08` failed two platform checks:
+the isolated Python venv omitted `cryptography`, which the existing package
+repository test needs for Ed25519, and the 512 MiB address-space cap was too
+small for zizmor. The five QEMU scenarios, normal boot, fuzzers, and focused C
+scanners passed in that attempt. The repair pins `cryptography` and its
+dependencies in the venv and gives zizmor a 2 GiB address-space limit.
+GitHub's first fast job also exposed a profile-validation variable shadowing
+bug; a runner regression now simulates an extended-only tool gap while
+validating the fast profile. A subsequent clean-HEAD run is required before
+claiming the full extended suite passed.
+
 An exploratory Clang Static Analyzer pass across `src/kernel/*.c` found
 candidate stack-lifetime and uninitialized-value warnings, and one missing
 Monocypher include because that ad hoc pass lacked a per-file vendor include

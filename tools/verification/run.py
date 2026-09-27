@@ -163,10 +163,10 @@ def validate_manifest(manifest: dict[str, Any], *, check_tools: bool,
                 command_tokens(target[field], f"{name}.{field}")
             except ValueError as error:
                 errors.append(str(error))
-        for profile in target["profiles"]:
-            field = "smoke_command" if profile == "fast" else f"{profile}_command"
-            if target.get(field) is None or profile not in target["timeout_seconds"]:
-                errors.append(f"{name}: profile {profile} lacks command or timeout")
+        for target_profile in target["profiles"]:
+            field = "smoke_command" if target_profile == "fast" else f"{target_profile}_command"
+            if target.get(field) is None or target_profile not in target["timeout_seconds"]:
+                errors.append(f"{name}: profile {target_profile} lacks command or timeout")
         if target["status"] == "integrated" and check_tools and \
                 (profile is None or profile in target["profiles"]):
             errors.extend(f"{name}: {reason}" for reason in availability(target))
@@ -519,6 +519,13 @@ def perform(manifest: dict[str, Any], profile: str, selected: list[str],
         "passed" if not report["unfinished"] and all(
             item["status"] == "passed" for item in latest.values())
         else "failed")
+    if profile in ("extended", "nightly"):
+        report["ending_source"] = source_snapshot(manifest)
+        if report["ending_source"]["commit"] != report["source"]["commit"] or \
+                report["ending_source"]["manifest_sha256"] != report["source"]["manifest_sha256"] or \
+                report["ending_source"]["dirty_paths"]:
+            report["status"] = "invalidated"
+            report["invalidated_reason"] = "source changed during exact-head verification"
     atomic_json(run_dir / "run.json", report)
     print(f"run: {run_dir}\nstatus: {report['status']}\n"
           f"commit: {report['source']['commit']}", flush=True)

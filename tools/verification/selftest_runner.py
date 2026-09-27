@@ -7,6 +7,7 @@ import argparse
 import json
 from pathlib import Path
 import sys
+from unittest import mock
 
 import run as verification
 
@@ -26,10 +27,15 @@ def main() -> int:
         if step["status"] != "failed_finding" or step["exit_code"] != 1 or \
                 "harness-only assertion sentinel" not in stderr:
             raise AssertionError("runner did not classify injected assertion as a finding")
+        with mock.patch.object(verification, "availability",
+                               side_effect=lambda target: ["simulated missing"]
+                               if "fast" not in target["profiles"] else []):
+            assert verification.validate_manifest(verification.load_manifest(),
+                                                  check_tools=True, profile="fast") == []
         (owned / "selftest-result.json").write_text(
             json.dumps({"expected": "failed_finding", "observed": step,
                         "injection_removed": True}, indent=2, sort_keys=True) + "\n")
-        print("runner rejected injected harness assertion; injected source removed")
+        print("runner rejected injected assertion and ignored simulated extended-only tool gap")
         return 0
     finally:
         injected.unlink(missing_ok=True)
