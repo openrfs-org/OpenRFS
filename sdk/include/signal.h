@@ -9,9 +9,13 @@ typedef int sig_atomic_t;
 #define SIGINT 2
 #define SIGABRT 6
 #define SIGFPE 8
+#define SIGKILL 9
 #define SIGSEGV 11
+#define SIGPIPE 13
 #define SIGTERM 15
+#define SIGCHLD 17
 sighandler_t signal(int signal_number, sighandler_t handler);
 int raise(int signal_number);
+int kill(int pid, int signal_number);
 
 #endif

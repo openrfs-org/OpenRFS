@@ -5,6 +5,7 @@
 #include <limits.h>
 #include <openrfs/event.h>
 #include <openrfs/runtime.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -552,6 +553,53 @@ static int process_fault_probe(void)
     return 0;
 }
 
+static int process_signal_probe(void)
+{
+    int status;
+    int ends[2];
+
+    if (kill(getpid(), 0) != 0 ||
+        kill(getpid(), 65) != -1 || errno != EINVAL ||
+        kill(getpid(), SIGCHLD) != -1 || errno != ENOSYS ||
+        kill(-1, SIGTERM) != -1 || errno != ENOSYS ||
+        pipe(ends) != 0) return 84;
+    const int child = fork();
+
+    if (child < 0) return 85;
+    if (child == 0) {
+        char byte;
+
+        (void)close(ends[1]);
+        (void)read(ends[0], &byte, 1U);
+        _Exit(86);
+    }
+    if (close(ends[0]) != 0 || kill(child, 0) != 0 ||
+        kill(child, SIGTERM) != 0 || close(ends[1]) != 0 ||
+        waitpid(child, &status, 0) != child || !WIFSIGNALED(status) ||
+        WTERMSIG(status) != SIGTERM ||
+        kill(child, 0) != -1 || errno != ESRCH) return 87;
+    const int killed = fork();
+
+    if (killed < 0) return 88;
+    if (killed == 0) {
+        (void)kill(getpid(), SIGKILL);
+        _Exit(89);
+    }
+    if (waitpid(killed, &status, 0) != killed ||
+        !WIFSIGNALED(status) || WTERMSIG(status) != SIGKILL) return 90;
+    const int interrupted = fork();
+
+    if (interrupted < 0) return 91;
+    if (interrupted == 0) {
+        (void)raise(SIGINT);
+        _Exit(92);
+    }
+    if (waitpid(interrupted, &status, 0) != interrupted ||
+        !WIFSIGNALED(status) || WTERMSIG(status) != SIGINT) return 93;
+    puts("OPENRFS SIGNAL SIGINT SIGTERM SIGKILL default wait PASS");
+    return 0;
+}
+
 static void *sleeping_thread(void *unused)
 {
     (void)unused;
@@ -677,6 +725,8 @@ int main(int argc, char **argv, char **environment)
     probe = process_limits_probe();
     if (probe != 0) return probe;
     probe = process_fault_probe();
+    if (probe != 0) return probe;
+    probe = process_signal_probe();
     if (probe != 0) return probe;
     probe = multithread_fork_probe();
     if (probe != 0) return probe;

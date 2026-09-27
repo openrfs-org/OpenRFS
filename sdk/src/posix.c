@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include <dirent.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -537,6 +538,11 @@ pid_t waitpid(pid_t pid, int *status, int options)
         (uint64_t)(unsigned)options));
 }
 pid_t wait(int *status) { return waitpid(-1, status, 0); }
+int kill(int pid, int signal_number)
+{
+    return openrfs_result(openrfs_syscall2(OPENRFS_SYS_PROCESS_SIGNAL,
+        (uint64_t)(int64_t)pid, (uint64_t)(int64_t)signal_number));
+}
 int execve(const char *path, char *const argv[], char *const envp[])
 {
     (void)path;

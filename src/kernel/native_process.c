@@ -218,6 +218,7 @@ struct native_process {
     uint64_t dynamic_fini_entry;
     uint32_t context_transition_samples;
     int32_t exit_status;
+    uint8_t termination_signal;
     bool active;
     bool zombie;
     bool exiting;
@@ -6731,6 +6732,31 @@ static void terminate_process(struct native_process *process, int32_t status)
     }
 }
 
+static int64_t syscall_process_signal(struct native_process *caller,
+    int64_t pid, int64_t signal_number)
+{
+    if (signal_number < 0 || signal_number > 64) return -OPENRFS_EINVAL;
+    if (pid <= 0) return -OPENRFS_ENOSYS;
+    if (pid > INT32_MAX) return -OPENRFS_ESRCH;
+    if (signal_number != 0 && signal_number != 2 &&
+        signal_number != 9 && signal_number != 15) return -OPENRFS_ENOSYS;
+    for (size_t index = 0U; index < NATIVE_PROCESS_LIMIT; ++index) {
+        struct native_process *target = &processes[index];
+
+        if (!target->active || target->exiting || target->generation !=
+                (uint64_t)pid) continue;
+        if (target != caller && target->parent_generation != caller->generation) {
+            return -OPENRFS_EPERM;
+        }
+        if (signal_number != 0) {
+            target->termination_signal = (uint8_t)signal_number;
+            terminate_process(target, (int32_t)(128 + signal_number));
+        }
+        return 0;
+    }
+    return -OPENRFS_ESRCH;
+}
+
 static bool begin_dynamic_finalizers(
     struct native_process *process,
     struct native_thread *thread,
@@ -6960,6 +6986,7 @@ static int64_t process_wait_child(
         has_child = true;
         if (child->zombie) {
             const int status = child->faulted ? 11 :
+                child->termination_signal != 0U ? child->termination_signal :
                 (int)((uint32_t)child->exit_status & 0xFFU) << 8U;
             const int64_t pid = (int64_t)child->generation;
 
@@ -7037,6 +7064,9 @@ static int64_t dispatch_syscall(
     case OPENRFS_SYS_PROCESS_WAIT:
         return syscall_process_wait(process, thread, (int64_t)frame->rdi,
             frame->rsi, frame->rdx);
+    case OPENRFS_SYS_PROCESS_SIGNAL:
+        return syscall_process_signal(process, (int64_t)frame->rdi,
+            (int64_t)frame->rsi);
     case OPENRFS_SYS_PROCESS_EXIT_IMMEDIATE:
         terminate_process(process, (int32_t)frame->rdi);
         return 0;
@@ -7955,6 +7985,8 @@ enum native_process_status native_process_run(struct native_process_result *resu
             capture_result(&processes[newest], &completed);
             const uint64_t parent_generation =
                 processes[newest].parent_generation;
+            const uint8_t termination_signal =
+                processes[newest].termination_signal;
             const bool keep_zombie = parent_generation != 0U &&
                 parent_generation != completed.generation &&
                 processes[newest].active &&
@@ -7977,6 +8009,7 @@ enum native_process_status native_process_run(struct native_process_result *resu
                     processes[newest].generation = completed.generation;
                     processes[newest].parent_generation = parent_generation;
                     processes[newest].exit_status = completed.exit_status;
+                    processes[newest].termination_signal = termination_signal;
                     processes[newest].faulted = completed.faulted;
                     processes[newest].zombie = true;
                 }

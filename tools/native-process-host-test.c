@@ -58,6 +58,26 @@ int main(void)
 
     processes[1].generation = 3U;
     processes[1].parent_generation = 1U;
+    processes[1].active = true;
+    processes[2].generation = 4U;
+    processes[2].parent_generation = 9U;
+    processes[2].active = true;
+    assert(syscall_process_signal(&processes[0], 4, 0) == -OPENRFS_EPERM);
+    assert(syscall_process_signal(&processes[0], 5, 0) == -OPENRFS_ESRCH);
+    assert(syscall_process_signal(&processes[0], 0, 15) == -OPENRFS_ENOSYS);
+    assert(syscall_process_signal(&processes[0], INT32_MAX + INT64_C(1), 0) ==
+        -OPENRFS_ESRCH);
+    assert(syscall_process_signal(&processes[0], 3, 65) == -OPENRFS_EINVAL);
+    assert(syscall_process_signal(&processes[0], 3, 0) == 0);
+    assert(syscall_process_signal(&processes[0], 3, 15) == 0);
+    assert(processes[1].exiting && processes[1].termination_signal == 15U &&
+        processes[1].exit_status == 143);
+    assert(syscall_process_signal(&processes[0], 3, 0) == -OPENRFS_ESRCH);
+    zero_bytes(&processes[1], sizeof(processes[1]));
+    zero_bytes(&processes[2], sizeof(processes[2]));
+
+    processes[1].generation = 3U;
+    processes[1].parent_generation = 1U;
     processes[1].zombie = true;
     processes[2].generation = 4U;
     processes[2].parent_generation = 1U;

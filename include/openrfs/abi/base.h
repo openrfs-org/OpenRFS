@@ -15,6 +15,7 @@ typedef uint64_t openrfs_handle_t;
 enum openrfs_errno {
     OPENRFS_EPERM = 1,
     OPENRFS_ENOENT = 2,
+    OPENRFS_ESRCH = 3,
     OPENRFS_EIO = 5,
     OPENRFS_EBADF = 9,
     OPENRFS_ECHILD = 10,
@@ -141,7 +142,8 @@ enum openrfs_syscall_number {
     OPENRFS_SYS_PIPE_CREATE = 0x0905,
     OPENRFS_SYS_PIPE_WAIT = 0x0906,
     OPENRFS_SYS_PIPE_GET_FLAGS = 0x0907,
-    OPENRFS_SYS_PIPE_SET_FLAGS = 0x0908
+    OPENRFS_SYS_PIPE_SET_FLAGS = 0x0908,
+    OPENRFS_SYS_PROCESS_SIGNAL = 0x0909
 };
 
 enum openrfs_capability {

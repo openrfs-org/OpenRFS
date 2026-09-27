@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include <locale.h>
 #include <signal.h>
+#include <unistd.h>
 
 #include <errno.h>
 #include <stdlib.h>
@@ -27,6 +28,5 @@ sighandler_t signal(int signal_number, sighandler_t handler)
 int raise(int signal_number)
 {
     if (signal_number == SIGABRT) abort();
-    errno = ENOTSUP;
-    return -1;
+    return kill(getpid(), signal_number);
 }
