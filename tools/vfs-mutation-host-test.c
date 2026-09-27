@@ -541,7 +541,9 @@ int main(void)
     ++data_session_epoch_value;
     assert(openrfsfs_retain(opened) == OPENRFSFS_STATUS_STALE_HANDLE &&
         file->references == 1U);
+    stale_io_counts(opened);
     data_session_is_active = true;
+    stale_io_counts(opened);
     closing_frontend = opened;
     assert(openrfsfs_close(opened) == OPENRFSFS_STATUS_OK && live_backend_handles == 0U);
     assert(closing_frontend == 0U);

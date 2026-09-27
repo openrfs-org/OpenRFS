@@ -28,6 +28,8 @@ static unsigned file_sync_calls;
 static unsigned file_stat_calls;
 static long metadata_result;
 static unsigned publication_calls;
+static unsigned pipe_calls;
+static long pipe_result;
 
 long openrfs_syscall1(uint64_t number, uint64_t address)
 {
@@ -38,12 +40,13 @@ long openrfs_syscall1(uint64_t number, uint64_t address)
         return sync_result;
     }
     if (number == OPENRFS_SYS_HANDLE_DUPLICATE) {
-        if (address != 42U) invalid_request = 1;
+        if (address != 42U && address != 44U) invalid_request = 1;
         ++duplicate_calls;
         return 43;
     }
     if (number == OPENRFS_SYS_HANDLE_CLOSE) {
-        if (address != 42U && address != 43U) invalid_request = 1;
+        if (address != 42U && address != 43U && address != 44U &&
+            address != 45U) invalid_request = 1;
         ++close_calls;
         if (reenter_close) {
             reenter_close = 0;
@@ -51,6 +54,16 @@ long openrfs_syscall1(uint64_t number, uint64_t address)
             nested_descriptor = open("nested", O_RDONLY);
         }
         return close_result;
+    }
+    if (number == OPENRFS_SYS_PIPE_CREATE) {
+        struct openrfs_pipe_pair *pair = (struct openrfs_pipe_pair *)(uintptr_t)address;
+
+        ++pipe_calls;
+        if (pipe_result == 0) {
+            *pair = (struct openrfs_pipe_pair){sizeof(*pair),
+                OPENRFS_ABI_VERSION, 44U, 45U};
+        }
+        return pipe_result;
     }
     if (number != OPENRFS_SYS_FILE_OPEN) { invalid_request = 1; return -OPENRFS_EINVAL; }
     const struct openrfs_file_open_request *request = (const struct openrfs_file_open_request *)(uintptr_t)address;
@@ -268,8 +281,26 @@ int main(void)
     if (close(copied) != 0 || close(descriptor) != 0 ||
         duplicate_calls != 2U || close_calls != 47U || invalid_request) return 53;
     int pair[2] = {11, 12};
+    pipe_result = -OPENRFS_ENFILE;
     if (execve("nested", NULL, NULL) != -1 || errno != ENOSYS ||
-        pipe(pair) != -1 || errno != ENOSYS ||
-        pair[0] != 11 || pair[1] != 12) return 54;
+        pipe(pair) != -1 || errno != ENFILE ||
+        pair[0] != 11 || pair[1] != 12 ||
+        pipe2(pair, O_TRUNC) != -1 || errno != EINVAL ||
+        pipe_calls != 1U) return 54;
+    pipe_result = 0;
+    if (pipe(pair) != 0 || pair[0] != 3 || pair[1] != 4 ||
+        fcntl(pair[0], F_GETFL) != O_RDONLY ||
+        fcntl(pair[1], F_GETFL) != O_WRONLY ||
+        fcntl(pair[0], F_GETFD) != 0 ||
+        dup(pair[0]) != 5 || duplicate_calls != 3U ||
+        close(5) != 0 || close(pair[0]) != 0 || close(pair[1]) != 0)
+        return 55;
+    if (pipe2(pair, O_NONBLOCK | O_CLOEXEC | O_CLOFORK) != 0 ||
+        pair[0] != 3 || pair[1] != 4 ||
+        fcntl(pair[0], F_GETFL) != (O_RDONLY | O_NONBLOCK) ||
+        fcntl(pair[1], F_GETFL) != (O_WRONLY | O_NONBLOCK) ||
+        fcntl(pair[0], F_GETFD) != (FD_CLOEXEC | FD_CLOFORK) ||
+        close(pair[0]) != 0 || close(pair[1]) != 0 ||
+        pipe_calls != 3U || close_calls != 52U || invalid_request) return 56;
     return 0;
 }

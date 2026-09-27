@@ -258,7 +258,8 @@ def upload_encrypted_data_check(qmp, serial):
     while time.monotonic() < deadline:
         output = serial.read_bytes()[start:]
         if b"openrfs$ " in output:
-            if (b"OPENRFS NATIVE DATA PASS" not in output or
+            if (b"OPENRFS NATIVE DATA INHERITED PASS" not in output or
+                    b"OPENRFS NATIVE DATA PASS" not in output or
                     b"OPENRFS UPLOAD PASS" not in output or
                     b"released=yes" not in output):
                 raise RuntimeError(f"package upload probe failed: {output!r}")

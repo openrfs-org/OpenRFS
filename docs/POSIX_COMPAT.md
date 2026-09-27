@@ -37,6 +37,14 @@ capabilities are copied without expansion. Data file operations still check the
 current login session; this change does not establish a new encrypted Data
 authorization or multiuser security model.
 
+The encrypted Data QEMU test runs a compiled C child with an inherited Data
+file handle after login on FAT32 and ext4. The child reads one byte, and the
+parent reads the remaining bytes through the shared file position. Both runs
+also inspect the raw Data image for plaintext markers. A VFS host test checks
+that an extra retained file reference cannot read or write after the session
+epoch changes, including after login resumes. A child left alive across logout,
+password rotation, or account deletion has not been tested in QEMU.
+
 The current QEMU process coverage runs in `NATIVET.APP`, a real compiled C
 program using the production native syscall path. It does not cover fork plus
 exec, separate child executable programs, a BusyBox shell script, multi-command pipelines,

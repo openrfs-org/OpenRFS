@@ -2,8 +2,11 @@
 #include <openrfs/package_upload.h>
 #include <openrfs/runtime.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 static int data_probe(void)
 {
@@ -37,9 +40,30 @@ static int data_probe(void)
     if (file < 0 || openrfs_file_read((openrfs_handle_t)file,
             readback, sizeof(readback)) != 5 ||
         memcmp(readback, "amber", 5U) != 0 ||
+        openrfs_handle_close((openrfs_handle_t)file) != 0)
+        return 14;
+    file = openrfs_file_open(OPENRFS_VOLUME_DATA, "NREN.TXT",
+        OPENRFS_OPEN_READ);
+    if (file < 0) return 15;
+    const int child = fork();
+
+    if (child < 0) return 16;
+    if (child == 0) {
+        char first;
+
+        _Exit(openrfs_file_read((openrfs_handle_t)file, &first, 1U) == 1 &&
+            first == 'a' ? 0 : 17);
+    }
+    int status;
+
+    if (waitpid(child, &status, 0) != child || !WIFEXITED(status) ||
+        WEXITSTATUS(status) != 0 ||
+        openrfs_file_read((openrfs_handle_t)file, readback, 4U) != 4 ||
+        memcmp(readback, "mber", 4U) != 0 ||
         openrfs_handle_close((openrfs_handle_t)file) != 0 ||
         openrfs_path_unlink(OPENRFS_VOLUME_DATA, "NREN.TXT") != 0)
-        return 14;
+        return 18;
+    puts("OPENRFS NATIVE DATA INHERITED PASS");
     puts("OPENRFS NATIVE DATA PASS");
     return 0;
 }
