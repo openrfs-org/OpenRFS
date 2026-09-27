@@ -765,8 +765,8 @@ def _parse_directory(
             records.append(record)
         if terminated:
             break
-    if not terminated:
-        raise Fat32Error("truncated directory has no end marker")
+    if lfn_pending:
+        raise Fat32Error("truncated directory ends with a long filename entry")
 
     folded: set[bytes] = set()
     descendants: list[DirectoryRecord] = []
@@ -920,6 +920,13 @@ def mutate_image(kind: str, source: bytes) -> bytes:
         cluster_bytes = geometry.bytes_per_sector * geometry.sectors_per_cluster
         for offset in range(root + ENTRY_BYTES, root + cluster_bytes, ENTRY_BYTES):
             changed[offset] = 0xE5
+        final = root + cluster_bytes - ENTRY_BYTES
+        entry = bytearray(ENTRY_BYTES)
+        entry[0] = 0x41
+        entry[11] = 0x0F
+        for offset in (1, 3, 5, 7, 9, 14, 16, 18, 20, 22, 24, 28, 30):
+            put_u16(entry, offset, 0xFFFF)
+        changed[final:final + ENTRY_BYTES] = entry
 
     mutations = {
         "boot-signature": lambda: changed.__setitem__(slice(510, 512), b"\x00\x00"),
