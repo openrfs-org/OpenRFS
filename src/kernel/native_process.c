@@ -153,6 +153,7 @@ struct native_thread {
     uint64_t wait_status_address;
     openrfs_handle_t pipe_wait_handle;
     int32_t wait_pid;
+    uint64_t wait_group;
     uint32_t pipe_wait_length;
     size_t console_length;
     size_t wait_item_count;
@@ -202,6 +203,8 @@ struct native_process {
     uint8_t transfer[NATIVE_COPY_CHUNK];
     uint64_t generation;
     uint64_t parent_generation;
+    uint64_t session_id;
+    uint64_t process_group;
     size_t page_count;
     size_t executable_count;
     size_t thread_count;
@@ -228,6 +231,7 @@ struct native_process {
     bool exiting;
     bool faulted;
     bool dynamic_fini_started;
+    bool has_executed;
 };
 
 struct native_exec_payload {
@@ -3727,6 +3731,8 @@ static enum native_process_status native_process_spawn_from_volume(
     if (process->generation == 0U) {
         return NATIVE_PROCESS_NO_SLOT;
     }
+    process->session_id = process->generation;
+    process->process_group = process->generation;
     status = load_process(process, manifest_path, image_volume, NULL);
     if (status != NATIVE_PROCESS_OK) {
         if (!process_cleanup(process, NULL)) {
@@ -7036,15 +7042,100 @@ static void terminate_process(struct native_process *process, int32_t status)
     }
 }
 
+static struct native_process *process_by_pid(uint64_t pid)
+{
+    for (size_t index = 0U; index < NATIVE_PROCESS_LIMIT; ++index)
+        if (processes[index].generation == pid)
+            return &processes[index];
+    return NULL;
+}
+
+static int64_t syscall_process_group_get(struct native_process *caller,
+    int64_t pid)
+{
+    struct native_process *target;
+
+    if (pid < 0) return -OPENRFS_EINVAL;
+    if (pid > INT32_MAX) return -OPENRFS_ESRCH;
+    target = pid == 0 ? caller : process_by_pid((uint64_t)pid);
+    if (target == NULL) return -OPENRFS_ESRCH;
+    if (target != caller && target->session_id != caller->session_id)
+        return -OPENRFS_EPERM;
+    return (int64_t)target->process_group;
+}
+
+static int64_t syscall_process_group_set(struct native_process *caller,
+    int64_t pid, int64_t pgid)
+{
+    struct native_process *target;
+    uint64_t group;
+    bool existing = false;
+
+    if (pgid < 0 || pgid > INT32_MAX) return -OPENRFS_EINVAL;
+    if (pid < 0 || pid > INT32_MAX) return -OPENRFS_ESRCH;
+    target = pid == 0 ? caller : process_by_pid((uint64_t)pid);
+    if (target == NULL || !target->active || target->exiting ||
+        (target != caller && target->parent_generation != caller->generation))
+        return -OPENRFS_ESRCH;
+    if (target->session_id != caller->session_id ||
+        target->generation == target->session_id)
+        return -OPENRFS_EPERM;
+    if (target != caller && target->has_executed)
+        return -OPENRFS_EACCES;
+    group = pgid == 0 ? target->generation : (uint64_t)pgid;
+    if (group != target->generation) {
+        for (size_t index = 0U; index < NATIVE_PROCESS_LIMIT; ++index) {
+            const struct native_process *member = &processes[index];
+
+            if (member->active && !member->exiting &&
+                member->session_id == caller->session_id &&
+                member->process_group == group) {
+                existing = true;
+                break;
+            }
+        }
+        if (!existing) return -OPENRFS_EPERM;
+    }
+    target->process_group = group;
+    return 0;
+}
+
+static void deliver_default_signal(struct native_process *target,
+    int64_t signal_number)
+{
+    if (signal_number != 0 &&
+        (target->ignored_signals & (UINT32_C(1) << signal_number)) == 0U) {
+        target->termination_signal = (uint8_t)signal_number;
+        terminate_process(target, (int32_t)(128 + signal_number));
+    }
+}
+
 static int64_t syscall_process_signal(struct native_process *caller,
     int64_t pid, int64_t signal_number)
 {
+    uint64_t group;
+    bool found = false;
+
     if (signal_number < 0 || signal_number > 64) return -OPENRFS_EINVAL;
-    if (pid <= 0) return -OPENRFS_ENOSYS;
+    if (pid == -1) return -OPENRFS_ENOSYS;
     if (pid > INT32_MAX) return -OPENRFS_ESRCH;
     if (signal_number != 0 && signal_number != 2 &&
         signal_number != 9 && signal_number != 13 &&
         signal_number != 15) return -OPENRFS_ENOSYS;
+    if (pid <= 0) {
+        if (pid < -INT32_MAX) return -OPENRFS_ESRCH;
+        group = pid == 0 ? caller->process_group : (uint64_t)-pid;
+        for (size_t index = 0U; index < NATIVE_PROCESS_LIMIT; ++index) {
+            struct native_process *target = &processes[index];
+
+            if (!target->active || target->exiting ||
+                target->session_id != caller->session_id ||
+                target->process_group != group) continue;
+            found = true;
+            deliver_default_signal(target, signal_number);
+        }
+        return found ? 0 : -OPENRFS_ESRCH;
+    }
     for (size_t index = 0U; index < NATIVE_PROCESS_LIMIT; ++index) {
         struct native_process *target = &processes[index];
 
@@ -7053,11 +7144,7 @@ static int64_t syscall_process_signal(struct native_process *caller,
         if (target != caller && target->parent_generation != caller->generation) {
             return -OPENRFS_EPERM;
         }
-        if (signal_number != 0 &&
-            (target->ignored_signals & (UINT32_C(1) << signal_number)) == 0U) {
-            target->termination_signal = (uint8_t)signal_number;
-            terminate_process(target, (int32_t)(128 + signal_number));
-        }
+        deliver_default_signal(target, signal_number);
         return 0;
     }
     return -OPENRFS_ESRCH;
@@ -7279,6 +7366,9 @@ static int64_t syscall_process_exec(struct native_process *process,
     }
     exec_staging.generation = process->generation;
     exec_staging.parent_generation = process->parent_generation;
+    exec_staging.session_id = process->session_id;
+    exec_staging.process_group = process->process_group;
+    exec_staging.has_executed = true;
     exec_staging.file_creation_mask = process->file_creation_mask;
     exec_staging.ignored_signals = process->ignored_signals;
     copy_bytes(exec_staging.console_input, process->console_input,
@@ -7326,6 +7416,8 @@ static int64_t syscall_process_fork(
     zero_bytes(child, sizeof(*child));
     child->generation = pid;
     child->parent_generation = parent->generation;
+    child->session_id = parent->session_id;
+    child->process_group = parent->process_group;
     child->manifest = parent->manifest;
     child->image = parent->image;
     child->dynamic_fini_entry = parent->dynamic_fini_entry;
@@ -7395,6 +7487,7 @@ failed:
 static int64_t process_wait_child(
     struct native_process *parent,
     int32_t requested_pid,
+    uint64_t requested_group,
     uint64_t status_address,
     bool nohang,
     bool *complete
@@ -7408,8 +7501,10 @@ static int64_t process_wait_child(
 
         if (child->generation == 0U ||
             child->parent_generation != parent->generation ||
-            (requested_pid != -1 && child->generation !=
-                (uint64_t)requested_pid)) {
+            (requested_pid > 0 && child->generation !=
+                (uint64_t)requested_pid) ||
+            (requested_pid != -1 && requested_pid <= 0 &&
+                child->process_group != requested_group)) {
             continue;
         }
         has_child = true;
@@ -7447,20 +7542,23 @@ static int64_t syscall_process_wait(
 {
     bool complete;
     int64_t result;
+    uint64_t requested_group = 0U;
 
-    if ((requested_pid != -1 &&
-            (requested_pid <= 0 || requested_pid > INT32_MAX)) ||
+    if (requested_pid < -INT32_MAX || requested_pid > INT32_MAX ||
         (options & ~UINT64_C(1)) != 0U) {
         return -OPENRFS_EINVAL;
     }
+    if (requested_pid == 0) requested_group = process->process_group;
+    else if (requested_pid < -1) requested_group = (uint64_t)-requested_pid;
     if (status_address != 0U &&
         !validate_user_range(process, status_address, sizeof(int), true)) {
         return -OPENRFS_EFAULT;
     }
     result = process_wait_child(process, (int32_t)requested_pid,
-        status_address, (options & 1U) != 0U, &complete);
+        requested_group, status_address, (options & 1U) != 0U, &complete);
     if (!complete) {
         thread->wait_pid = (int32_t)requested_pid;
+        thread->wait_group = requested_group;
         thread->wait_status_address = status_address;
         thread->state = NATIVE_THREAD_CHILD_WAIT;
     }
@@ -7497,6 +7595,11 @@ static int64_t dispatch_syscall(
             frame->rsi, frame->rdx);
     case OPENRFS_SYS_PROCESS_SIGNAL:
         return syscall_process_signal(process, (int64_t)frame->rdi,
+            (int64_t)frame->rsi);
+    case OPENRFS_SYS_PROCESS_GROUP_GET:
+        return syscall_process_group_get(process, (int64_t)frame->rdi);
+    case OPENRFS_SYS_PROCESS_GROUP_SET:
+        return syscall_process_group_set(process, (int64_t)frame->rdi,
             (int64_t)frame->rsi);
     case OPENRFS_SYS_PROCESS_UMASK:
         return syscall_process_umask(process, frame->rdi);
@@ -7900,11 +8003,13 @@ static void update_waiting_threads(
         } else if (thread->state == NATIVE_THREAD_CHILD_WAIT) {
             bool complete;
             const int64_t result = process_wait_child(process,
-                thread->wait_pid, thread->wait_status_address, false,
+                thread->wait_pid, thread->wait_group,
+                thread->wait_status_address, false,
                 &complete);
 
             if (complete) {
                 thread->wait_pid = 0;
+                thread->wait_group = 0U;
                 thread->wait_status_address = 0U;
                 thread->context.rax = (uint64_t)result;
                 thread->state = NATIVE_THREAD_RUNNABLE;
@@ -8437,6 +8542,8 @@ enum native_process_status native_process_run(struct native_process_result *resu
             capture_result(&processes[newest], &completed);
             const uint64_t parent_generation =
                 processes[newest].parent_generation;
+            const uint64_t session_id = processes[newest].session_id;
+            const uint64_t process_group = processes[newest].process_group;
             const uint8_t termination_signal =
                 processes[newest].termination_signal;
             const bool keep_zombie = parent_generation != 0U &&
@@ -8461,6 +8568,8 @@ enum native_process_status native_process_run(struct native_process_result *resu
                 if (parent_live) {
                     processes[newest].generation = completed.generation;
                     processes[newest].parent_generation = parent_generation;
+                    processes[newest].session_id = session_id;
+                    processes[newest].process_group = process_group;
                     processes[newest].exit_status = completed.exit_status;
                     processes[newest].termination_signal = termination_signal;
                     processes[newest].faulted = completed.faulted;

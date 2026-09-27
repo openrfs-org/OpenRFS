@@ -38,6 +38,8 @@ int main(void)
     zero_bytes(processes, sizeof(processes));
     processes[0].generation = 1U;
     processes[0].active = true;
+    processes[0].session_id = 1U;
+    processes[0].process_group = 1U;
     processes[0].file_creation_mask = 0022U;
     assert(syscall_process_umask(&processes[0], 0077U) == 0022U);
     assert(processes[0].file_creation_mask == 0077U);
@@ -47,19 +49,21 @@ int main(void)
     processes[1].generation = 2U;
     processes[1].parent_generation = 1U;
     processes[1].active = true;
-    assert(process_wait_child(&processes[0], 2, 0U, true,
+    processes[1].session_id = 1U;
+    processes[1].process_group = 1U;
+    assert(process_wait_child(&processes[0], 2, 0U, 0U, true,
         &complete) == 0 && complete);
-    assert(process_wait_child(&processes[0], 3, 0U, false,
+    assert(process_wait_child(&processes[0], 3, 0U, 0U, false,
         &complete) == -OPENRFS_ECHILD && complete);
-    assert(process_wait_child(&processes[0], 2, 0U, false,
+    assert(process_wait_child(&processes[0], 2, 0U, 0U, false,
         &complete) == 0 && !complete);
     processes[1].active = false;
     processes[1].zombie = true;
     processes[1].exit_status = 23;
-    assert(process_wait_child(&processes[0], -1, 0U, false,
+    assert(process_wait_child(&processes[0], -1, 0U, 0U, false,
         &complete) == 2 && complete);
     assert(processes[1].generation == 0U);
-    assert(process_wait_child(&processes[0], -1, 0U, false,
+    assert(process_wait_child(&processes[0], -1, 0U, 0U, false,
         &complete) == -OPENRFS_ECHILD && complete);
 
     processes[1].generation = 3U;
@@ -79,7 +83,7 @@ int main(void)
         -OPENRFS_ENOSYS);
     assert(syscall_process_signal(&processes[0], 4, 0) == -OPENRFS_EPERM);
     assert(syscall_process_signal(&processes[0], 5, 0) == -OPENRFS_ESRCH);
-    assert(syscall_process_signal(&processes[0], 0, 15) == -OPENRFS_ENOSYS);
+    assert(syscall_process_signal(&processes[0], 0, 0) == 0);
     assert(syscall_process_signal(&processes[0], INT32_MAX + INT64_C(1), 0) ==
         -OPENRFS_ESRCH);
     assert(syscall_process_signal(&processes[0], 3, 65) == -OPENRFS_EINVAL);
@@ -90,6 +94,51 @@ int main(void)
     assert(syscall_process_signal(&processes[0], 3, 0) == -OPENRFS_ESRCH);
     zero_bytes(&processes[1], sizeof(processes[1]));
     zero_bytes(&processes[2], sizeof(processes[2]));
+
+    processes[1].generation = 3U;
+    processes[1].parent_generation = 1U;
+    processes[1].session_id = 1U;
+    processes[1].process_group = 1U;
+    processes[1].active = true;
+    processes[2].generation = 4U;
+    processes[2].parent_generation = 1U;
+    processes[2].session_id = 1U;
+    processes[2].process_group = 1U;
+    processes[2].active = true;
+    processes[3].generation = 5U;
+    processes[3].parent_generation = 1U;
+    processes[3].session_id = 5U;
+    processes[3].process_group = 5U;
+    processes[3].active = true;
+    assert(syscall_process_group_get(&processes[0], 0) == 1);
+    assert(syscall_process_group_get(&processes[0], 5) == -OPENRFS_EPERM);
+    assert(syscall_process_group_set(&processes[0], 5, 0) == -OPENRFS_EPERM);
+    assert(syscall_process_signal(&processes[0], -5, 0) == -OPENRFS_ESRCH);
+    assert(syscall_process_group_set(&processes[0], 0, 0) == -OPENRFS_EPERM);
+    processes[1].has_executed = true;
+    assert(syscall_process_group_set(&processes[0], 3, 0) == -OPENRFS_EACCES);
+    processes[1].has_executed = false;
+    assert(syscall_process_group_set(&processes[0], 3, 4) == -OPENRFS_EPERM);
+    assert(syscall_process_group_set(&processes[0], 3, 0) == 0);
+    assert(syscall_process_group_set(&processes[0], 4, 3) == 0);
+    assert(syscall_process_group_get(&processes[0], 4) == 3);
+    assert(process_wait_child(&processes[0], 0, 1U, 0U, true,
+        &complete) == -OPENRFS_ECHILD && complete);
+    assert(process_wait_child(&processes[0], -3, 3U, 0U, true,
+        &complete) == 0 && complete);
+    assert(syscall_process_signal(&processes[0], -3, 15) == 0);
+    assert(processes[1].exiting && processes[2].exiting);
+    processes[1].active = false;
+    processes[1].zombie = true;
+    processes[2].active = false;
+    processes[2].zombie = true;
+    assert(process_wait_child(&processes[0], -3, 3U, 0U, false,
+        &complete) == 3 && complete);
+    assert(process_wait_child(&processes[0], -3, 3U, 0U, false,
+        &complete) == 4 && complete);
+    assert(process_wait_child(&processes[0], -3, 3U, 0U, true,
+        &complete) == -OPENRFS_ECHILD && complete);
+    zero_bytes(&processes[3], sizeof(processes[3]));
 
     processes[1].generation = 3U;
     processes[1].parent_generation = 1U;

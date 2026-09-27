@@ -654,6 +654,65 @@ static int process_signal_probe(void)
     return 0;
 }
 
+static int process_group_probe(void)
+{
+    int ends[2];
+    int status;
+    int first;
+    int second;
+    int same_group;
+    int reaped_first;
+    int reaped_second;
+
+    if (getpgrp() != getpid() || getpgid(0) != getpid() ||
+        setpgid(0, 0) != -1 || errno != EPERM ||
+        getpgid(-1) != -1 || errno != EINVAL ||
+        pipe(ends) != 0) return 114;
+    same_group = fork();
+    if (same_group < 0) return 115;
+    if (same_group == 0) _Exit(0);
+    if (waitpid(0, &status, 0) != same_group ||
+        !WIFEXITED(status) || WEXITSTATUS(status) != 0) return 115;
+    first = fork();
+    if (first < 0) return 115;
+    if (first == 0) {
+        char byte;
+
+        (void)close(ends[1]);
+        (void)read(ends[0], &byte, 1U);
+        _Exit(116);
+    }
+    second = fork();
+    if (second < 0) return 117;
+    if (second == 0) {
+        char byte;
+
+        (void)close(ends[1]);
+        (void)read(ends[0], &byte, 1U);
+        _Exit(118);
+    }
+    if (close(ends[0]) != 0 ||
+        setpgid(first, second) != -1 || errno != EPERM ||
+        setpgid(first, first) != 0 ||
+        setpgid(second, first) != 0 ||
+        getpgid(first) != first || getpgid(second) != first ||
+        waitpid(0, &status, WNOHANG) != -1 || errno != ECHILD ||
+        kill(-first, 0) != 0 ||
+        kill(-first, SIGTERM) != 0) return 119;
+    if (close(ends[1]) != 0) return 120;
+    reaped_first = waitpid(-first, &status, 0);
+    if ((reaped_first != first && reaped_first != second) ||
+        !WIFSIGNALED(status) || WTERMSIG(status) != SIGTERM) return 121;
+    reaped_second = waitpid(-first, &status, 0);
+    if ((reaped_second != first && reaped_second != second) ||
+        reaped_second == reaped_first || !WIFSIGNALED(status) ||
+        WTERMSIG(status) != SIGTERM ||
+        waitpid(-first, &status, WNOHANG) != -1 || errno != ECHILD ||
+        kill(-first, 0) != -1 || errno != ESRCH) return 122;
+    puts("OPENRFS PROCESS group signal and wait selectors PASS");
+    return 0;
+}
+
 static int process_umask_probe(void)
 {
     int status;
@@ -726,7 +785,8 @@ static int exec_probe(void)
         const int kept = open("System:RESOURCE.TXT", O_RDONLY);
         const int closed = open("System:RESOURCE.TXT", O_RDONLY | O_CLOEXEC);
 
-        if (kept < 3 || closed < 3 ||
+        if (setpgid(0, 0) != 0 || getpgrp() != getpid() ||
+            kept < 3 || closed < 3 ||
             snprintf(kept_text, sizeof(kept_text), "%d", kept) <= 0 ||
             snprintf(closed_text, sizeof(closed_text), "%d", closed) <= 0 ||
             snprintf(pid_text, sizeof(pid_text), "%d", getpid()) <= 0)
@@ -782,7 +842,7 @@ int main(int argc, char **argv, char **environment)
             environment[1] == NULL || environment[2] != NULL ||
             strcmp(environment[0], "OPENRFS_EXEC=validated") != 0 ||
             strcmp(environment[1], "") != 0 ||
-            getpid() != atoi(argv[3]) ||
+            getpid() != atoi(argv[3]) || getpgrp() != getpid() ||
             fcntl(kept, F_GETFD) != 0 ||
             read(kept, &first_byte, 1U) != 1 || first_byte != 'O' ||
             fcntl(closed, F_GETFD) != -1 || errno != EBADF ||
@@ -875,6 +935,8 @@ int main(int argc, char **argv, char **environment)
     probe = process_fault_probe();
     if (probe != 0) return probe;
     probe = process_signal_probe();
+    if (probe != 0) return probe;
+    probe = process_group_probe();
     if (probe != 0) return probe;
     probe = process_umask_probe();
     if (probe != 0) return probe;
