@@ -11,7 +11,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCES = ["src/kernel/package_state.c", "src/kernel/acpi_madt.c",
-           "src/kernel/acpi_util.c"]
+           "src/kernel/acpi_util.c", "src/kernel/multiboot2.c"]
 FLAGS = ["-std=c11", "-ffreestanding", "-fno-pie", "-fno-stack-protector",
          "-mno-red-zone", "-mno-mmx", "-mno-sse", "-mno-sse2", "-msoft-float",
          "-Iinclude"]

@@ -19,6 +19,10 @@ SOURCES = {
         "src/kernel/acpi_madt.c",
         "src/kernel/acpi_util.c",
     ],
+    "multiboot2-admission": [
+        "tools/verification/fuzz_multiboot2.c",
+        "src/kernel/multiboot2.c",
+    ],
 }
 BASE_FLAGS = [
     "-std=c11", "-O1", "-g", "-fno-omit-frame-pointer",

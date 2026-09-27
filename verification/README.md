@@ -33,16 +33,20 @@ interrupt, and leaves `unfinished` target names in the receipt for an exact
 clean-source resume. A fast run may use a dirty development tree, but cannot
 be used as exact-head evidence.
 
-The two Clang 18 host fuzzers compile the *production* C translation units.
+The three Clang 18 host fuzzers compile the *production* C translation units.
 Saved valid and invalid seeds run through standalone replay binaries before
 each campaign. LLVM source profiles measure production functions and regions
 reached by the saved seeds; libFuzzer reports campaign edges and executions.
 ASan, UBSan, and ASan's leak detector cover only those host binaries. The
-ACPI shim places test tables in 32-bit-addressable host memory because the
-kernel parser expects identity-mapped early physical addresses. This is not
-guest kernel sanitizer coverage. The transaction target invokes production
+ACPI and Multiboot2 shims place test tables in 32-bit-addressable host memory
+because the kernel parsers expect identity-mapped early physical addresses.
+The Multiboot2 shim makes remaining mapped bytes zero; it does not model
+missing physical pages. This is not guest kernel sanitizer coverage. The
+transaction target invokes production
 `tools/openrfs-transaction.py` with deterministic, versioned operation bytes
 and an independent expected generation/version/file/user-data model.
+Valgrind Memcheck separately replays all eight committed package-state seeds
+against a plain, unsanitized build of the same production C parser.
 
 QEMU receipts require expected exit codes, begin/pass markers, no panic, and
 scenario-specific serial checks. `qemu_matrix.py` preserves each serial log and
@@ -66,8 +70,13 @@ regions in `package_state.c` (320/882 branches), 139/499 regions in
 branches). These are *per-target host instrumented source* counts, not an
 overall kernel coverage percentage. The package corpus began with 8 committed
 seeds and grew to 69 in the isolated campaign copy; ACPI began with 8 and grew
-to 49. Hypothesis used seed 731 and exercised install, remove, cancel, injected
-disk-full, reopen, and tampered-stage recovery operations.
+to 49. The added Multiboot2 corpus has 10 committed seeds. Its dirty-tree
+runner smoke executed 25,000 inputs in 0.467 seconds and reached 210/281
+production regions and 137/228 branches in `multiboot2.c`; all 11 production
+functions were reached, including memory-map and framebuffer validation.
+Those are saved-seed source coverage counts; the campaign's 116 edge count is
+a separate libFuzzer measure. Hypothesis used seed 731 and exercised install,
+remove, cancel, injected disk-full, reopen, and tampered-stage recovery.
 
 The first clean-source extended attempt on signed commit
 `da44309f002f4efc3608b8c417eaf06586990f08` failed two platform checks:
@@ -94,13 +103,17 @@ reported 27 candidate matches in fixture, tooling, and vendored files. These
 candidates still need triage; the partial run is not
 recorded as a clean full-history scan. The committed gate establishes only
 the new branch commit range.
+A current-tree exploratory scan completed and reported 16 redacted candidate
+matches: four committed TLS private-key fixtures and 12 generic-key heuristics
+in TLS code, fixture hash tooling, and vendored checksum files. These files
+have not been broadly suppressed, and the current-tree scan is not green.
 
 An exploratory Clang Static Analyzer pass across `src/kernel/*.c` found
 candidate stack-lifetime and uninitialized-value warnings, and one missing
 Monocypher include because that ad hoc pass lacked a per-file vendor include
 flag. The raw log and analyzer plists remain in the local ignored
 `verification/runs/manual-static-baseline/`. It is **not** a clean broad scan.
-The CI gate runs Clang Static Analyzer, clang-tidy, and Cppcheck over the three
+The CI gate runs Clang Static Analyzer, clang-tidy, and Cppcheck over the four
 production C files listed in the manifest, using the actual common kernel
 target flags. Broad findings need separate ownership and precondition review.
 
@@ -127,15 +140,15 @@ turn installed but unused tools into green checks.
 
 | Project | State | Scope or next decision |
 | --- | --- | --- |
-| LLVM/Clang sanitizers | Integrated | Clang 18.1.3 ASan/UBSan/LSan on two host-built production C parsers. |
-| LLVM libFuzzer | Integrated | Clang 18.1.3, two independent in-process parser targets with replay and corpus coverage. |
+| LLVM/Clang sanitizers | Integrated | Clang 18.1.3 ASan/UBSan/LSan on three host-built production C parsers. |
+| LLVM libFuzzer | Integrated | Clang 18.1.3, three independent in-process parser targets with replay and corpus coverage. |
 | AFL++ | Not yet evaluated | Consider process isolation for parsers with non-resettable global state; no duplicate label for the current libFuzzer targets. |
 | Rust cargo-fuzz | Not yet evaluated | Inspect production ext4/image crate callability and nightly sanitizer compatibility. |
 | Hypothesis | Integrated | 6.168.1, bounded package transaction operation sequences against production Python. |
 | QEMU | Integrated | 8.2.2 TCG normal boot and six separate production scenarios. |
-| Clang Static Analyzer | Integrated | 18.1.3, three file gate; broad candidate findings retained for triage. |
-| clang-tidy | Integrated | 18.1.3, targeted correctness checks on the same three production files. |
-| Cppcheck | Integrated | 2.13.0, independent three file warning/performance/portability gate. |
+| Clang Static Analyzer | Integrated | 18.1.3, four file gate; broad candidate findings retained for triage. |
+| clang-tidy | Integrated | 18.1.3, targeted correctness checks on the same four production files. |
+| Cppcheck | Integrated | 2.13.0, independent four file warning/performance/portability gate. |
 | Rust Clippy | Integrated | Rust 1.98.1 correctness gate over all four first-party Cargo crates, with an inventory assertion. |
 | RustSec cargo-audit | Not yet evaluated | Audit tracked locks with advisory data timestamp and applicability. |
 | cargo-deny | Not yet evaluated | Develop researched policy for vendored Rust dependencies. |
@@ -149,7 +162,7 @@ turn installed but unused tools into green checks.
 | Ruff | Integrated | 0.16.9, 85 first-party Python files and a type-hint regression. |
 | Bandit | Not yet evaluated | Assess incremental value for scripts handling paths, downloads, and proof artifacts. |
 | Semgrep Community | Not yet evaluated | Develop and test a small repo-specific ownership/evidence rule set. |
-| Valgrind | Not yet evaluated | Bounded selected host test or replay; cannot instrument guest kernel. |
+| Valgrind | Integrated | 3.22.0 Memcheck and leak check on eight saved package-state seeds in a plain host build; no guest coverage. |
 | OSS-Fuzz | Not yet evaluated | Requires local target maturity, disclosure process, maintainers, and external enrollment decision. |
 
 Pin sources: `tools/verification/install_action_scanners.py` verifies archive
