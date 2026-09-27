@@ -7,6 +7,28 @@
 int main(void)
 {
     bool complete;
+    struct native_pipe *pipe;
+    uint64_t pipe_id;
+
+    zero_bytes(pipes, sizeof(pipes));
+    next_pipe_id = 1U;
+    pipe = pipe_allocate();
+    assert(pipe != NULL);
+    pipe_id = pipe->id;
+    assert(pipe_retain(pipe_id, NATIVE_PIPE_READER));
+    assert(pipe_retain(pipe_id, NATIVE_PIPE_WRITER));
+    assert(!pipe_transfer_ready(pipe, NATIVE_PIPE_READER, 1U));
+    assert(pipe_transfer_ready(pipe, NATIVE_PIPE_WRITER, 4096U));
+    pipe->count = 4095U;
+    assert(!pipe_transfer_ready(pipe, NATIVE_PIPE_WRITER, 2U));
+    assert(pipe_transfer_ready(pipe, NATIVE_PIPE_WRITER, 1U));
+    assert(pipe_release(pipe_id, NATIVE_PIPE_READER));
+    assert(pipe_transfer_ready(pipe, NATIVE_PIPE_WRITER, 4096U));
+    assert(pipe_release(pipe_id, NATIVE_PIPE_WRITER));
+    assert(pipe_by_id(pipe_id) == NULL);
+    pipe = pipe_allocate();
+    assert(pipe != NULL && pipe->id != pipe_id);
+    zero_bytes(pipes, sizeof(pipes));
 
     next_process_generation = INT32_MAX;
     assert(claim_process_id() == INT32_MAX);

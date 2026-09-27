@@ -38,6 +38,10 @@
 #define NATIVE_MAIN_STACK_END \
     (NATIVE_MAIN_STACK_BASE + NATIVE_STACK_PAGES * PAGING_PAGE_SIZE)
 #define NATIVE_COPY_CHUNK 4096U
+#define NATIVE_PIPE_LIMIT 16U
+#define NATIVE_PIPE_CAPACITY 4096U
+#define NATIVE_PIPE_READER UINT64_C(1)
+#define NATIVE_PIPE_WRITER UINT64_C(2)
 #define NATIVE_AUX_NULL UINT64_C(0)
 #define NATIVE_AUX_PAGESZ UINT64_C(6)
 #define NATIVE_AUX_ENTRY UINT64_C(9)
@@ -67,6 +71,8 @@
 
 _Static_assert(OPENRFS_NETWORK_IO_MAX_BYTES <= NATIVE_COPY_CHUNK,
     "native network transfer bound exceeds the syscall copy buffer");
+_Static_assert(NATIVE_PIPE_CAPACITY <= NATIVE_COPY_CHUNK,
+    "native pipe buffer exceeds the syscall copy buffer");
 _Static_assert(
     (NATIVE_SHARED_CODE_CACHE_CAPACITY &
         (NATIVE_SHARED_CODE_CACHE_CAPACITY - 1U)) == 0U,
@@ -112,6 +118,7 @@ enum native_thread_state {
     NATIVE_THREAD_FUTEX_WAIT,
     NATIVE_THREAD_CONSOLE_WAIT,
     NATIVE_THREAD_CHILD_WAIT,
+    NATIVE_THREAD_PIPE_WAIT,
     NATIVE_THREAD_HANDLE_WAIT,
     NATIVE_THREAD_AUDIO_DRAIN_WAIT,
     NATIVE_THREAD_EXITED,
@@ -142,7 +149,9 @@ struct native_thread {
     uint64_t wait_items_address;
     uint64_t audio_token;
     uint64_t wait_status_address;
+    openrfs_handle_t pipe_wait_handle;
     int32_t wait_pid;
+    uint32_t pipe_wait_length;
     size_t console_length;
     size_t wait_item_count;
     struct openrfs_wait_item wait_items[OPENRFS_WAIT_MAX];
@@ -245,7 +254,18 @@ struct native_shared_code_page {
     uint8_t state;
 };
 
+struct native_pipe {
+    uint8_t bytes[NATIVE_PIPE_CAPACITY];
+    uint64_t id;
+    size_t head;
+    size_t count;
+    uint16_t readers;
+    uint16_t writers;
+};
+
 static struct native_process processes[NATIVE_PROCESS_LIMIT];
+static struct native_pipe pipes[NATIVE_PIPE_LIMIT];
+static uint64_t next_pipe_id = UINT64_C(1);
 static struct native_shared_code_page
     shared_code_cache[NATIVE_SHARED_CODE_CACHE_CAPACITY];
 static size_t shared_code_live_pages;
@@ -296,6 +316,75 @@ static void copy_bytes(void *destination, const void *source, size_t length)
     for (size_t index = 0U; index < length; ++index) {
         output[index] = input[index];
     }
+}
+
+static struct native_pipe *pipe_by_id(uint64_t id)
+{
+    if (id == 0U) return NULL;
+    for (size_t index = 0U; index < NATIVE_PIPE_LIMIT; ++index) {
+        if (pipes[index].id == id) return &pipes[index];
+    }
+    return NULL;
+}
+
+static struct native_pipe *pipe_allocate(void)
+{
+    if (next_pipe_id == 0U) return NULL;
+    for (size_t index = 0U; index < NATIVE_PIPE_LIMIT; ++index) {
+        if (pipes[index].id == 0U) {
+            zero_bytes(&pipes[index], sizeof(pipes[index]));
+            pipes[index].id = next_pipe_id++;
+            return &pipes[index];
+        }
+    }
+    return NULL;
+}
+
+static bool pipe_retain(uint64_t id, uint64_t endpoint)
+{
+    struct native_pipe *pipe = pipe_by_id(id);
+    uint16_t *references;
+
+    if (pipe == NULL || (endpoint != NATIVE_PIPE_READER &&
+            endpoint != NATIVE_PIPE_WRITER)) return false;
+    references = endpoint == NATIVE_PIPE_READER ? &pipe->readers :
+        &pipe->writers;
+    if (*references == UINT16_MAX) return false;
+    ++*references;
+    return true;
+}
+
+static bool pipe_release(uint64_t id, uint64_t endpoint)
+{
+    struct native_pipe *pipe = pipe_by_id(id);
+    uint16_t *references;
+
+    if (pipe == NULL || (endpoint != NATIVE_PIPE_READER &&
+            endpoint != NATIVE_PIPE_WRITER)) return false;
+    references = endpoint == NATIVE_PIPE_READER ? &pipe->readers :
+        &pipe->writers;
+    if (*references == 0U) return false;
+    --*references;
+    if (pipe->readers == 0U && pipe->writers == 0U) {
+        zero_bytes(pipe, sizeof(*pipe));
+    }
+    return true;
+}
+
+static bool pipe_transfer_ready(const struct native_pipe *pipe,
+    uint64_t endpoint, size_t length)
+{
+    if (pipe == NULL) return false;
+    if (endpoint == NATIVE_PIPE_READER) {
+        return pipe->count != 0U || pipe->writers == 0U;
+    }
+    if (endpoint == NATIVE_PIPE_WRITER) {
+        const size_t needed = length <= NATIVE_PIPE_CAPACITY ? length : 1U;
+
+        return pipe->readers == 0U ||
+            NATIVE_PIPE_CAPACITY - pipe->count >= needed;
+    }
+    return false;
 }
 
 static bool add_u64(uint64_t left, uint64_t right, uint64_t *result)
@@ -1071,6 +1160,10 @@ static enum native_resource_close_result close_resource(
     }
     switch (type) {
     case OPENRFS_HANDLE_FILE: {
+        if (resource->words[2] != 0U) {
+            return pipe_release(resource->words[0], resource->words[2]) ?
+                NATIVE_RESOURCE_CLOSED : NATIVE_RESOURCE_RETAINED;
+        }
         bool consumed = false;
         const enum openrfsfs_status status = openrfsfs_close_report((openrfsfs_handle)resource->words[0], &consumed);
         return status == OPENRFSFS_STATUS_OK ? NATIVE_RESOURCE_CLOSED :
@@ -3728,6 +3821,130 @@ static int64_t syscall_file_open(
     return (int64_t)handle;
 }
 
+static int64_t syscall_pipe_create(
+    struct native_process *process, uint64_t output_address)
+{
+    struct openrfs_pipe_pair pair = {sizeof(pair), OPENRFS_ABI_VERSION, 0U, 0U};
+    struct native_pipe *pipe;
+    struct native_resource reader = {{0U, 0U, NATIVE_PIPE_READER, 0U}};
+    struct native_resource writer = {{0U, 0U, NATIVE_PIPE_WRITER, 0U}};
+    openrfs_handle_t reader_handle;
+    openrfs_handle_t writer_handle;
+
+    if (!validate_user_range(process, output_address, sizeof(pair), true)) {
+        return -OPENRFS_EFAULT;
+    }
+    if (process->handles.limit < 2U ||
+        process->handles.active_handles > process->handles.limit - 2U ||
+        process->handles.active_objects > process->handles.limit - 2U) {
+        return -OPENRFS_EMFILE;
+    }
+    pipe = pipe_allocate();
+    if (pipe == NULL) return -OPENRFS_ENFILE;
+    reader.words[0] = pipe->id;
+    writer.words[0] = pipe->id;
+    if (!pipe_retain(pipe->id, NATIVE_PIPE_READER) ||
+        native_handle_install(&process->handles, OPENRFS_HANDLE_FILE,
+            &reader, &reader_handle) != NATIVE_HANDLE_OK) {
+        zero_bytes(pipe, sizeof(*pipe));
+        return -OPENRFS_EMFILE;
+    }
+    pair.reader = reader_handle;
+    if (!pipe_retain(pipe->id, NATIVE_PIPE_WRITER) ||
+        native_handle_install(&process->handles, OPENRFS_HANDLE_FILE,
+            &writer, &writer_handle) != NATIVE_HANDLE_OK) {
+        if (pipe->writers != 0U) (void)pipe_release(pipe->id,
+            NATIVE_PIPE_WRITER);
+        (void)native_handle_close(&process->handles, pair.reader,
+            close_resource, process);
+        return -OPENRFS_EMFILE;
+    }
+    pair.writer = writer_handle;
+    if (!copy_to_user(process, output_address, &pair, sizeof(pair))) {
+        (void)native_handle_close(&process->handles, pair.writer,
+            close_resource, process);
+        (void)native_handle_close(&process->handles, pair.reader,
+            close_resource, process);
+        return -OPENRFS_EFAULT;
+    }
+    if (process->handles.active_handles > process->peak_handles) {
+        process->peak_handles = process->handles.active_handles;
+    }
+    return 0;
+}
+
+static int64_t syscall_pipe_io(
+    struct native_process *process, const struct openrfs_io_request *request,
+    const struct native_resource *resource, bool write)
+{
+    struct native_pipe *pipe = pipe_by_id(resource->words[0]);
+    size_t length = request->length;
+
+    if (pipe == NULL) return -OPENRFS_EBADF;
+    if (request->offset != UINT64_MAX) return -OPENRFS_ESPIPE;
+    if (resource->words[2] != (write ? NATIVE_PIPE_WRITER :
+            NATIVE_PIPE_READER)) return -OPENRFS_EBADF;
+    if (length == 0U) return 0;
+    if (!validate_user_range(process, request->buffer, length, !write)) {
+        return -OPENRFS_EFAULT;
+    }
+    if (write) {
+        if (pipe->readers == 0U) return -OPENRFS_EPIPE;
+        if (length <= NATIVE_PIPE_CAPACITY &&
+            length > NATIVE_PIPE_CAPACITY - pipe->count) {
+            return -OPENRFS_EAGAIN;
+        }
+        if (pipe->count == NATIVE_PIPE_CAPACITY) return -OPENRFS_EAGAIN;
+        if (length > NATIVE_PIPE_CAPACITY - pipe->count) {
+            length = NATIVE_PIPE_CAPACITY - pipe->count;
+        }
+        if (!copy_from_user(process, process->transfer, request->buffer,
+                length)) return -OPENRFS_EFAULT;
+        for (size_t index = 0U; index < length; ++index) {
+            pipe->bytes[(pipe->head + pipe->count + index) %
+                NATIVE_PIPE_CAPACITY] = process->transfer[index];
+        }
+        pipe->count += length;
+    } else {
+        if (pipe->count == 0U) {
+            return pipe->writers == 0U ? 0 : -OPENRFS_EAGAIN;
+        }
+        if (length > pipe->count) length = pipe->count;
+        for (size_t index = 0U; index < length; ++index) {
+            process->transfer[index] = pipe->bytes[(pipe->head + index) %
+                NATIVE_PIPE_CAPACITY];
+        }
+        if (!copy_to_user(process, request->buffer, process->transfer,
+                length)) return -OPENRFS_EFAULT;
+        pipe->head = (pipe->head + length) % NATIVE_PIPE_CAPACITY;
+        pipe->count -= length;
+    }
+    return (int64_t)length;
+}
+
+static int64_t syscall_pipe_wait(struct native_process *process,
+    openrfs_handle_t handle, uint64_t length)
+{
+    struct native_resource *resource;
+    struct native_thread *thread = running_thread(process);
+    const enum native_handle_status status = native_handle_resolve(
+        &process->handles, handle, OPENRFS_HANDLE_FILE, &resource);
+
+    if (status != NATIVE_HANDLE_OK) return handle_error(status);
+    if (resource->words[2] != NATIVE_PIPE_READER &&
+        resource->words[2] != NATIVE_PIPE_WRITER) return -OPENRFS_EBADF;
+    if (length == 0U || length > UINT32_MAX) return -OPENRFS_EINVAL;
+    struct native_pipe *pipe = pipe_by_id(resource->words[0]);
+
+    if (pipe == NULL) return -OPENRFS_EBADF;
+    if (pipe_transfer_ready(pipe, resource->words[2], (size_t)length)) return 0;
+    if (thread == NULL) return -OPENRFS_EIO;
+    thread->pipe_wait_handle = handle;
+    thread->pipe_wait_length = (uint32_t)length;
+    thread->state = NATIVE_THREAD_PIPE_WAIT;
+    return 0;
+}
+
 static int64_t syscall_file_io(
     struct native_process *process,
     uint64_t request_address,
@@ -3751,6 +3968,9 @@ static int64_t syscall_file_io(
         OPENRFS_HANDLE_FILE, &resource);
     if (handle_status != NATIVE_HANDLE_OK) {
         return handle_error(handle_status);
+    }
+    if (resource->words[2] != 0U) {
+        return syscall_pipe_io(process, &request, resource, write);
     }
     if (request.length == 0U) {
         return 0;
@@ -3845,6 +4065,7 @@ static int64_t syscall_file_seek(
             OPENRFS_HANDLE_FILE, &resource) != NATIVE_HANDLE_OK) {
         return -OPENRFS_EBADF;
     }
+    if (resource->words[2] != 0U) return -OPENRFS_ESPIPE;
     origin = request.origin == OPENRFS_SEEK_START ? OPENRFSFS_SEEK_START :
         (request.origin == OPENRFS_SEEK_CURRENT ? OPENRFSFS_SEEK_CURRENT :
             OPENRFSFS_SEEK_END);
@@ -3923,6 +4144,7 @@ static int64_t syscall_file_metadata(struct native_process *process, openrfs_han
     const enum native_handle_status handle_status = native_handle_resolve(
         &process->handles, handle, OPENRFS_HANDLE_FILE, &resource);
     if (handle_status != NATIVE_HANDLE_OK) return handle_error(handle_status);
+    if (resource->words[2] != 0U) return -OPENRFS_EBADF;
     const openrfsfs_handle file = (openrfsfs_handle)resource->words[0];
     cpu_interrupt_enable();
     const enum openrfsfs_status status = openrfsfs_fstat(file, &stat);
@@ -4167,6 +4389,7 @@ static int64_t syscall_file_sync(struct native_process *process, openrfs_handle_
     const enum native_handle_status handle_status = native_handle_resolve(
         &process->handles, handle, OPENRFS_HANDLE_FILE, &resource);
     if (handle_status != NATIVE_HANDLE_OK) return handle_error(handle_status);
+    if (resource->words[2] != 0U) return -OPENRFS_EBADF;
     const openrfsfs_handle file = (openrfsfs_handle)resource->words[0];
     cpu_interrupt_enable();
     const enum openrfsfs_status status = openrfsfs_fsync(file);
@@ -4180,6 +4403,7 @@ static int64_t syscall_file_truncate(struct native_process *process, openrfs_han
     enum native_handle_status handle_status = native_handle_resolve(
         &process->handles, handle, OPENRFS_HANDLE_FILE, &resource);
     if (handle_status != NATIVE_HANDLE_OK) return handle_error(handle_status);
+    if (resource->words[2] != 0U) return -OPENRFS_EBADF;
     cpu_interrupt_enable();
     enum openrfsfs_status status = openrfsfs_ftruncate((openrfsfs_handle)resource->words[0], size);
     cpu_interrupt_disable();
@@ -4393,6 +4617,7 @@ static int64_t syscall_file_publication(struct native_process *process,
     const enum native_handle_status handle_status = native_handle_resolve(
         &process->handles, handle, OPENRFS_HANDLE_FILE, &resource);
     if (handle_status != NATIVE_HANDLE_OK) return handle_error(handle_status);
+    if (resource->words[2] != 0U) return -OPENRFS_EBADF;
     // Copy the checked VFS generation before enabling interrupts. The backend
     // checks write access and the source name's inode under the same lease.
     const openrfsfs_handle file = (openrfsfs_handle)resource->words[0];
@@ -4700,7 +4925,35 @@ static int64_t poll_wait_items(
             items[index].interests == 0U) {
             return -OPENRFS_EINVAL;
         }
-        if (type == OPENRFS_HANDLE_FILE || type == OPENRFS_HANDLE_DIRECTORY) {
+        if (type == OPENRFS_HANDLE_FILE && resource->words[2] != 0U) {
+            const struct native_pipe *pipe = pipe_by_id(resource->words[0]);
+
+            if (pipe == NULL) return -OPENRFS_EBADF;
+            if (resource->words[2] == NATIVE_PIPE_READER) {
+                if ((items[index].interests & ~(OPENRFS_WAIT_READABLE |
+                        OPENRFS_WAIT_CLOSED)) != 0U) return -OPENRFS_EINVAL;
+                if (pipe->count != 0U || pipe->writers == 0U) {
+                    items[index].ready |= items[index].interests &
+                        OPENRFS_WAIT_READABLE;
+                }
+                if (pipe->writers == 0U) {
+                    items[index].ready |= items[index].interests &
+                        OPENRFS_WAIT_CLOSED;
+                }
+            } else if (resource->words[2] == NATIVE_PIPE_WRITER) {
+                if ((items[index].interests & ~(OPENRFS_WAIT_WRITABLE |
+                        OPENRFS_WAIT_CLOSED)) != 0U) return -OPENRFS_EINVAL;
+                if (pipe->count < NATIVE_PIPE_CAPACITY || pipe->readers == 0U) {
+                    items[index].ready |= items[index].interests &
+                        OPENRFS_WAIT_WRITABLE;
+                }
+                if (pipe->readers == 0U) {
+                    items[index].ready |= items[index].interests &
+                        OPENRFS_WAIT_CLOSED;
+                }
+            } else return -OPENRFS_EBADF;
+        } else if (type == OPENRFS_HANDLE_FILE ||
+            type == OPENRFS_HANDLE_DIRECTORY) {
             items[index].ready = items[index].interests &
                 (OPENRFS_WAIT_READABLE | OPENRFS_WAIT_WRITABLE);
         } else if (type == OPENRFS_HANDLE_TIMER) {
@@ -6476,7 +6729,10 @@ static int64_t fork_file_handles(
 )
 {
     openrfsfs_handle retained[NATIVE_HANDLE_LIMIT];
+    uint64_t retained_pipes[NATIVE_HANDLE_LIMIT];
+    uint64_t retained_endpoints[NATIVE_HANDLE_LIMIT];
     size_t retained_count = 0U;
+    size_t retained_pipe_count = 0U;
     int64_t error = 0;
 
     for (size_t index = 0U; index < parent->handles.limit; ++index) {
@@ -6484,6 +6740,17 @@ static int64_t fork_file_handles(
             &parent->handles.objects[index];
 
         if (!object->active || object->type != OPENRFS_HANDLE_FILE) {
+            continue;
+        }
+        if (object->resource.words[2] != 0U) {
+            if (!pipe_retain(object->resource.words[0],
+                    object->resource.words[2])) {
+                error = -OPENRFS_EMFILE;
+                break;
+            }
+            retained_pipes[retained_pipe_count] = object->resource.words[0];
+            retained_endpoints[retained_pipe_count++] =
+                object->resource.words[2];
             continue;
         }
         const openrfsfs_handle file = (openrfsfs_handle)object->resource.words[0];
@@ -6498,6 +6765,10 @@ static int64_t fork_file_handles(
     if (error != 0) {
         for (size_t index = retained_count; index > 0U; --index) {
             (void)openrfsfs_close(retained[index - 1U]);
+        }
+        for (size_t index = retained_pipe_count; index > 0U; --index) {
+            (void)pipe_release(retained_pipes[index - 1U],
+                retained_endpoints[index - 1U]);
         }
         return error;
     }
@@ -6688,6 +6959,10 @@ static int64_t dispatch_syscall(
         return (int64_t)process->parent_generation;
     case OPENRFS_SYS_PROCESS_FORK:
         return syscall_process_fork(process, thread);
+    case OPENRFS_SYS_PIPE_CREATE:
+        return syscall_pipe_create(process, frame->rdi);
+    case OPENRFS_SYS_PIPE_WAIT:
+        return syscall_pipe_wait(process, frame->rdi, frame->rsi);
     case OPENRFS_SYS_PROCESS_WAIT:
         return syscall_process_wait(process, thread, (int64_t)frame->rdi,
             frame->rsi, frame->rdx);
@@ -7092,6 +7367,38 @@ static void update_waiting_threads(
                 thread->context.rax = (uint64_t)result;
                 thread->state = NATIVE_THREAD_RUNNABLE;
             }
+        } else if (thread->state == NATIVE_THREAD_PIPE_WAIT) {
+            struct native_resource *resource;
+            const enum native_handle_status status = native_handle_resolve(
+                &process->handles, thread->pipe_wait_handle,
+                OPENRFS_HANDLE_FILE, &resource);
+            int64_t result = 0;
+            bool ready = false;
+
+            if (status != NATIVE_HANDLE_OK) {
+                result = handle_error(status);
+                ready = true;
+            } else if (resource->words[2] != NATIVE_PIPE_READER &&
+                resource->words[2] != NATIVE_PIPE_WRITER) {
+                result = -OPENRFS_EBADF;
+                ready = true;
+            } else {
+                const struct native_pipe *pipe = pipe_by_id(resource->words[0]);
+
+                if (pipe == NULL) {
+                    result = -OPENRFS_EBADF;
+                    ready = true;
+                } else {
+                    ready = pipe_transfer_ready(pipe, resource->words[2],
+                        thread->pipe_wait_length);
+                }
+            }
+            if (ready) {
+                thread->pipe_wait_handle = 0U;
+                thread->pipe_wait_length = 0U;
+                thread->context.rax = (uint64_t)result;
+                thread->state = NATIVE_THREAD_RUNNABLE;
+            }
         } else if (thread->state == NATIVE_THREAD_HANDLE_WAIT) {
             int64_t ready = poll_wait_items(process, thread->wait_items,
                 thread->wait_item_count);
@@ -7321,6 +7628,8 @@ static bool any_handle_waiter(void)
              thread_index < process->thread_count; ++thread_index) {
             if (process->threads[thread_index].state ==
                     NATIVE_THREAD_HANDLE_WAIT ||
+                process->threads[thread_index].state ==
+                    NATIVE_THREAD_PIPE_WAIT ||
                 process->threads[thread_index].state ==
                     NATIVE_THREAD_AUDIO_DRAIN_WAIT) {
                 return true;

@@ -20,7 +20,9 @@ enum descriptor_kind {
     DESCRIPTOR_NONE = 0,
     DESCRIPTOR_FILE,
     DESCRIPTOR_CONSOLE_IN,
-    DESCRIPTOR_CONSOLE_OUT
+    DESCRIPTOR_CONSOLE_OUT,
+    DESCRIPTOR_PIPE_READ,
+    DESCRIPTOR_PIPE_WRITE
 };
 
 struct descriptor_record {
@@ -51,6 +53,28 @@ static int descriptor_snapshot(int number, struct descriptor_record *record, int
     }
     openrfs_runtime_unlock(&descriptor_lock);
     return found;
+}
+
+static int native_descriptor(enum descriptor_kind kind)
+{
+    return kind == DESCRIPTOR_FILE || kind == DESCRIPTOR_PIPE_READ ||
+        kind == DESCRIPTOR_PIPE_WRITE;
+}
+
+static long pipe_transfer(const struct descriptor_record *record,
+    void *buffer, size_t length, int write_operation)
+{
+    for (;;) {
+        const long result = write_operation ? openrfs_file_write(record->handle,
+            buffer, length) : openrfs_file_read(record->handle, buffer, length);
+
+        if (result != -OPENRFS_EAGAIN ||
+            (record->open_flags & O_NONBLOCK) != 0) return result;
+        const long ready = openrfs_syscall2(OPENRFS_SYS_PIPE_WAIT,
+            record->handle, length);
+
+        if (ready < 0) return ready;
+    }
 }
 
 int open(const char *path, int flags, ...)
@@ -119,6 +143,8 @@ ssize_t read(int number, void *buffer, size_t length)
         result = openrfs_console_read(buffer, length);
     } else if (record.kind == DESCRIPTOR_FILE) {
         result = openrfs_file_read(record.handle, buffer, length);
+    } else if (record.kind == DESCRIPTOR_PIPE_READ) {
+        result = pipe_transfer(&record, buffer, length, 0);
     } else { errno = EBADF; return -1; }
     if (result < 0) { errno = (int)-result; return -1; }
     return (ssize_t)result;
@@ -137,6 +163,8 @@ ssize_t write(int number, const void *buffer, size_t length)
     } else if (record.kind == DESCRIPTOR_FILE) {
         if (length == 0U) return 0;
         result = openrfs_file_write(record.handle, buffer, length);
+    } else if (record.kind == DESCRIPTOR_PIPE_WRITE) {
+        result = pipe_transfer(&record, (void *)(uintptr_t)buffer, length, 1);
     } else { errno = EBADF; return -1; }
     if (result < 0) { errno = (int)-result; return -1; }
     return (ssize_t)result;
@@ -161,7 +189,7 @@ int close(int number)
     // Retire before entering native teardown: a nested/concurrent open may
     // reuse the number, and this close must never erase that replacement.
     if (!descriptor_snapshot(number, &record, 1)) { errno = EBADF; return -1; }
-    if (record.kind != DESCRIPTOR_FILE) return 0;
+    if (!native_descriptor(record.kind)) return 0;
     result = openrfs_handle_close(record.handle);
     return openrfs_result(result);
 }
@@ -194,7 +222,7 @@ static int duplicate_from(int source, int minimum, int descriptor_flags)
         return -1;
     }
     record = descriptors[source];
-    if (record.kind == DESCRIPTOR_FILE) {
+    if (native_descriptor(record.kind)) {
         const long duplicate = openrfs_handle_duplicate(record.handle);
 
         if (duplicate < 0) {
@@ -243,7 +271,7 @@ static int duplicate_exact(int source, int destination, int flags, int same_ok)
         return -1;
     }
     replacement = descriptors[source];
-    if (replacement.kind == DESCRIPTOR_FILE) {
+    if (native_descriptor(replacement.kind)) {
         const long duplicate = openrfs_handle_duplicate(replacement.handle);
 
         if (duplicate < 0) {
@@ -259,7 +287,7 @@ static int duplicate_exact(int source, int destination, int flags, int same_ok)
         ((flags & O_CLOFORK) != 0 ? FD_CLOFORK : 0);
     descriptors[destination] = replacement;
     openrfs_runtime_unlock(&descriptor_lock);
-    if (previous.active == 1 && previous.kind == DESCRIPTOR_FILE) {
+    if (previous.active == 1 && native_descriptor(previous.kind)) {
         (void)openrfs_handle_close(previous.handle);
     }
     return destination;
@@ -314,7 +342,7 @@ int fcntl(int number, int command, ...)
     if (command == F_GETFD) return record.descriptor_flags;
     if (command == F_SETFD) return 0;
     if (command == F_GETFL) {
-        return record.kind == DESCRIPTOR_FILE ? record.open_flags :
+        return native_descriptor(record.kind) ? record.open_flags :
             (record.kind == DESCRIPTOR_CONSOLE_IN ? O_RDONLY : O_WRONLY);
     }
     errno = command == F_SETFL ? ENOSYS : EINVAL;
@@ -443,9 +471,10 @@ int getpid(void) { return openrfs_result(openrfs_syscall0(OPENRFS_SYS_PROCESS_ID
 int getppid(void) { return openrfs_result(openrfs_syscall0(OPENRFS_SYS_PARENT_ID)); }
 int fork(void)
 {
-    const int result = openrfs_result(openrfs_syscall0(OPENRFS_SYS_PROCESS_FORK));
+    openrfs_runtime_lock(&descriptor_lock);
+    const long native_result = openrfs_syscall0(OPENRFS_SYS_PROCESS_FORK);
 
-    if (result == 0) {
+    if (native_result == 0) {
         __atomic_store_n(&descriptor_lock, 0U, __ATOMIC_RELEASE);
         for (int index = 0; index < DESCRIPTOR_MAX; ++index) {
             if (descriptors[index].active == 2) {
@@ -456,8 +485,10 @@ int fork(void)
                 (void)close(index);
             }
         }
+    } else {
+        openrfs_runtime_unlock(&descriptor_lock);
     }
-    return result;
+    return openrfs_result(native_result);
 }
 pid_t waitpid(pid_t pid, int *status, int options)
 {
@@ -476,16 +507,67 @@ int execve(const char *path, char *const argv[], char *const envp[])
 }
 int pipe(int pair[2])
 {
-    (void)pair;
-    errno = ENOSYS;
-    return -1;
+    return pipe2(pair, 0);
 }
 int pipe2(int pair[2], int flags)
 {
-    (void)pair;
-    (void)flags;
-    errno = ENOSYS;
-    return -1;
+    struct openrfs_pipe_pair native_pair;
+    int reader = -1;
+    int writer = -1;
+
+    if (pair == NULL) { errno = EFAULT; return -1; }
+    if ((flags & ~(O_NONBLOCK | O_CLOEXEC | O_CLOFORK)) != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    openrfs_runtime_lock(&descriptor_lock);
+    for (int index = 0; index < DESCRIPTOR_MAX; ++index) {
+        if (descriptors[index].active == 0) {
+            if (reader < 0) reader = index;
+            else { writer = index; break; }
+        }
+    }
+    if (writer >= 0) {
+        descriptors[reader].active = 2;
+        descriptors[writer].active = 2;
+    }
+    if (writer < 0) {
+        openrfs_runtime_unlock(&descriptor_lock);
+        errno = EMFILE;
+        return -1;
+    }
+    const long status = openrfs_syscall1(OPENRFS_SYS_PIPE_CREATE,
+        (uint64_t)(uintptr_t)&native_pair);
+
+    if (status == 0 && native_pair.size == sizeof(native_pair) &&
+        native_pair.version == OPENRFS_ABI_VERSION) {
+        descriptors[reader] = (struct descriptor_record){
+            .handle = native_pair.reader,
+            .open_flags = O_RDONLY | (flags & O_NONBLOCK),
+            .descriptor_flags = ((flags & O_CLOEXEC) != 0 ? FD_CLOEXEC : 0) |
+                ((flags & O_CLOFORK) != 0 ? FD_CLOFORK : 0),
+            .kind = DESCRIPTOR_PIPE_READ, .active = 1};
+        descriptors[writer] = (struct descriptor_record){
+            .handle = native_pair.writer,
+            .open_flags = O_WRONLY | (flags & O_NONBLOCK),
+            .descriptor_flags = descriptors[reader].descriptor_flags,
+            .kind = DESCRIPTOR_PIPE_WRITE, .active = 1};
+    } else {
+        (void)memset(&descriptors[reader], 0, sizeof(descriptors[reader]));
+        (void)memset(&descriptors[writer], 0, sizeof(descriptors[writer]));
+    }
+    openrfs_runtime_unlock(&descriptor_lock);
+    if (status < 0) { errno = (int)-status; return -1; }
+    if (native_pair.size != sizeof(native_pair) ||
+        native_pair.version != OPENRFS_ABI_VERSION) {
+        (void)openrfs_handle_close(native_pair.reader);
+        (void)openrfs_handle_close(native_pair.writer);
+        errno = EIO;
+        return -1;
+    }
+    pair[0] = reader;
+    pair[1] = writer;
+    return 0;
 }
 
 DIR *opendir(const char *path)

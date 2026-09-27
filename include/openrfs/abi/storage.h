@@ -157,6 +157,16 @@ struct openrfs_volume_space {
     uint32_t reserved;
 } __attribute__((packed));
 
+struct openrfs_pipe_pair {
+    uint32_t size;
+    uint32_t version;
+    openrfs_handle_t reader;
+    openrfs_handle_t writer;
+} __attribute__((packed));
+
+_Static_assert(sizeof(struct openrfs_pipe_pair) == 24U,
+    "OpenRFS pipe-pair ABI changed");
+
 enum openrfs_xattr_operation {
     OPENRFS_XATTR_GET = 0,
     OPENRFS_XATTR_SET = 1,

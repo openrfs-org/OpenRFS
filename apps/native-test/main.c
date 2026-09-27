@@ -2,6 +2,7 @@
 #include <pthread.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <openrfs/event.h>
 #include <openrfs/runtime.h>
 #include <stdio.h>
@@ -393,6 +394,81 @@ static int descriptor_probe(void)
     return 0;
 }
 
+static int pipe_probe(void)
+{
+    static const char full[PIPE_BUF] = {0};
+    int ends[2];
+    int status;
+    char bytes[16] = {0};
+
+    if (pipe2(ends, O_NONBLOCK) != 0 ||
+        fcntl(ends[0], F_GETFL) != (O_RDONLY | O_NONBLOCK) ||
+        read(ends[0], bytes, 1U) != -1 || errno != EAGAIN ||
+        write(ends[1], "ab", 2U) != 2 ||
+        read(ends[0], bytes, 2U) != 2 ||
+        bytes[0] != 'a' || bytes[1] != 'b' ||
+        write(ends[1], full, sizeof(full)) != (ssize_t)sizeof(full) ||
+        write(ends[1], "x", 1U) != -1 || errno != EAGAIN ||
+        read(ends[0], bytes, 1U) != 1 ||
+        write(ends[1], "xy", 2U) != -1 || errno != EAGAIN ||
+        lseek(ends[0], 0, SEEK_SET) != -1 || errno != ESPIPE ||
+        close(ends[0]) != 0 ||
+        write(ends[1], "x", 1U) != -1 || errno != EPIPE ||
+        close(ends[1]) != 0) return 67;
+
+    if (pipe(ends) != 0) return 68;
+    const int child = fork();
+
+    if (child < 0) return 69;
+    if (child == 0) {
+        if (close(ends[0]) != 0 || write(ends[1], "producer", 8U) != 8 ||
+            close(ends[1]) != 0) _Exit(70);
+        _Exit(0);
+    }
+    if (close(ends[1]) != 0 || read(ends[0], bytes, sizeof(bytes)) != 8 ||
+        memcmp(bytes, "producer", 8U) != 0 ||
+        waitpid(child, &status, 0) != child || !WIFEXITED(status) ||
+        WEXITSTATUS(status) != 0 || read(ends[0], bytes, 1U) != 0 ||
+        close(ends[0]) != 0) return 71;
+
+    if (fflush(stdout) != 0 || pipe(ends) != 0) return 72;
+    const int saved = dup(STDOUT_FILENO);
+
+    if (saved < 0 || dup2(ends[1], STDOUT_FILENO) != STDOUT_FILENO ||
+        write(STDOUT_FILENO, "redirect", 8U) != 8 ||
+        dup2(saved, STDOUT_FILENO) != STDOUT_FILENO ||
+        close(saved) != 0 || close(ends[1]) != 0 ||
+        read(ends[0], bytes, sizeof(bytes)) != 8 ||
+        memcmp(bytes, "redirect", 8U) != 0 ||
+        close(ends[0]) != 0) return 73;
+
+    int acknowledgement[2];
+
+    if (pipe(ends) != 0 || pipe(acknowledgement) != 0 ||
+        write(ends[1], full, sizeof(full) - 1U) !=
+            (ssize_t)(sizeof(full) - 1U)) return 74;
+    const int consumer = fork();
+
+    if (consumer < 0) return 75;
+    if (consumer == 0) {
+        if (close(ends[1]) != 0 || close(acknowledgement[1]) != 0 ||
+            read(ends[0], bytes, 1U) != 1 ||
+            read(acknowledgement[0], bytes, 1U) != 1 ||
+            close(ends[0]) != 0 || close(acknowledgement[0]) != 0) {
+            _Exit(76);
+        }
+        _Exit(0);
+    }
+    if (close(ends[0]) != 0 || close(acknowledgement[0]) != 0 ||
+        write(ends[1], "xy", 2U) != 2 ||
+        write(acknowledgement[1], "a", 1U) != 1 ||
+        close(ends[1]) != 0 || close(acknowledgement[1]) != 0 ||
+        waitpid(consumer, &status, 0) != consumer || !WIFEXITED(status) ||
+        WEXITSTATUS(status) != 0) return 77;
+    puts("OPENRFS PIPE fork blocking EOF EPIPE nonblock redirection PASS");
+    return 0;
+}
+
 static int process_limits_probe(void)
 {
     int children[3];
@@ -562,6 +638,8 @@ int main(int argc, char **argv, char **environment)
     probe = process_probe();
     if (probe != 0) return probe;
     probe = descriptor_probe();
+    if (probe != 0) return probe;
+    probe = pipe_probe();
     if (probe != 0) return probe;
     probe = process_limits_probe();
     if (probe != 0) return probe;
