@@ -415,7 +415,8 @@ static int pipe_probe(void)
     int status;
     char bytes[16] = {0};
 
-    if (pipe2(ends, O_NONBLOCK) != 0 ||
+    if (signal(SIGPIPE, SIG_IGN) != SIG_DFL ||
+        pipe2(ends, O_NONBLOCK) != 0 ||
         fcntl(ends[0], F_GETFL) != (O_RDONLY | O_NONBLOCK) ||
         read(ends[0], bytes, 1U) != -1 || errno != EAGAIN ||
         write(ends[1], "ab", 2U) != 2 ||
@@ -428,7 +429,8 @@ static int pipe_probe(void)
         lseek(ends[0], 0, SEEK_SET) != -1 || errno != ESPIPE ||
         close(ends[0]) != 0 ||
         write(ends[1], "x", 1U) != -1 || errno != EPIPE ||
-        close(ends[1]) != 0) return 67;
+        close(ends[1]) != 0 ||
+        signal(SIGPIPE, SIG_DFL) != SIG_IGN) return 67;
 
     if (pipe2(ends, O_NONBLOCK) != 0) return 78;
     const int copied_reader = dup(ends[0]);
@@ -501,6 +503,34 @@ static int pipe_probe(void)
         waitpid(consumer, &status, 0) != consumer || !WIFEXITED(status) ||
         WEXITSTATUS(status) != 0) return 77;
     puts("OPENRFS PIPE fork blocking EOF EPIPE nonblock redirection PASS");
+    return 0;
+}
+
+static int pipe_signal_probe(void)
+{
+    int status;
+
+    if (signal(SIGPIPE, SIG_IGN) != SIG_DFL) return 98;
+    const int child = fork();
+
+    if (child < 0) return 99;
+    if (child == 0) {
+        int ends[2];
+
+        if (signal(SIGPIPE, SIG_DFL) != SIG_IGN || pipe(ends) != 0 ||
+            close(ends[0]) != 0) _Exit(100);
+        (void)write(ends[1], "x", 1U);
+        _Exit(101);
+    }
+    if (waitpid(child, &status, 0) != child || !WIFSIGNALED(status) ||
+        WTERMSIG(status) != SIGPIPE ||
+        signal(SIGPIPE, SIG_DFL) != SIG_IGN ||
+        signal(SIGKILL, SIG_IGN) != SIG_ERR || errno != EINVAL ||
+        signal(SIGCHLD, SIG_IGN) != SIG_ERR || errno != ENOSYS ||
+        signal(SIGINT, SIG_IGN) != SIG_DFL ||
+        kill(getpid(), SIGINT) != 0 ||
+        signal(SIGINT, SIG_DFL) != SIG_IGN) return 102;
+    puts("OPENRFS SIGNAL SIGPIPE default ignore and fork PASS");
     return 0;
 }
 
@@ -739,6 +769,8 @@ int main(int argc, char **argv, char **environment)
     probe = descriptor_probe();
     if (probe != 0) return probe;
     probe = pipe_probe();
+    if (probe != 0) return probe;
+    probe = pipe_signal_probe();
     if (probe != 0) return probe;
     probe = process_limits_probe();
     if (probe != 0) return probe;

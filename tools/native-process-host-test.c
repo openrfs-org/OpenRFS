@@ -68,6 +68,15 @@ int main(void)
     processes[2].generation = 4U;
     processes[2].parent_generation = 9U;
     processes[2].active = true;
+    assert(syscall_process_disposition(&processes[1], 15U, 1U) == 0);
+    assert(syscall_process_disposition(&processes[1], 15U, 1U) == 1);
+    assert(syscall_process_signal(&processes[0], 3, 15) == 0);
+    assert(!processes[1].exiting);
+    assert(syscall_process_disposition(&processes[1], 15U, 0U) == 1);
+    assert(syscall_process_disposition(&processes[1], 9U, 1U) ==
+        -OPENRFS_EINVAL);
+    assert(syscall_process_disposition(&processes[1], 17U, 1U) ==
+        -OPENRFS_ENOSYS);
     assert(syscall_process_signal(&processes[0], 4, 0) == -OPENRFS_EPERM);
     assert(syscall_process_signal(&processes[0], 5, 0) == -OPENRFS_ESRCH);
     assert(syscall_process_signal(&processes[0], 0, 15) == -OPENRFS_ENOSYS);

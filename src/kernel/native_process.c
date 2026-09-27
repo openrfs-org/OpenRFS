@@ -218,6 +218,7 @@ struct native_process {
     uint64_t dynamic_fini_entry;
     uint32_t context_transition_samples;
     int32_t exit_status;
+    uint32_t ignored_signals;
     uint16_t file_creation_mask;
     uint8_t termination_signal;
     bool active;
@@ -3884,6 +3885,8 @@ static int64_t syscall_pipe_create(
     return 0;
 }
 
+static void terminate_process(struct native_process *process, int32_t status);
+
 static int64_t syscall_pipe_io(
     struct native_process *process, const struct openrfs_io_request *request,
     const struct native_resource *resource, bool write)
@@ -3900,7 +3903,13 @@ static int64_t syscall_pipe_io(
         return -OPENRFS_EFAULT;
     }
     if (write) {
-        if (pipe->readers == 0U) return -OPENRFS_EPIPE;
+        if (pipe->readers == 0U) {
+            if ((process->ignored_signals & (UINT32_C(1) << 13U)) == 0U) {
+                process->termination_signal = 13U;
+                terminate_process(process, 141);
+            }
+            return -OPENRFS_EPIPE;
+        }
         if (length <= NATIVE_PIPE_CAPACITY &&
             length > NATIVE_PIPE_CAPACITY - pipe->count) {
             return -OPENRFS_EAGAIN;
@@ -6745,7 +6754,8 @@ static int64_t syscall_process_signal(struct native_process *caller,
     if (pid <= 0) return -OPENRFS_ENOSYS;
     if (pid > INT32_MAX) return -OPENRFS_ESRCH;
     if (signal_number != 0 && signal_number != 2 &&
-        signal_number != 9 && signal_number != 15) return -OPENRFS_ENOSYS;
+        signal_number != 9 && signal_number != 13 &&
+        signal_number != 15) return -OPENRFS_ENOSYS;
     for (size_t index = 0U; index < NATIVE_PROCESS_LIMIT; ++index) {
         struct native_process *target = &processes[index];
 
@@ -6754,13 +6764,29 @@ static int64_t syscall_process_signal(struct native_process *caller,
         if (target != caller && target->parent_generation != caller->generation) {
             return -OPENRFS_EPERM;
         }
-        if (signal_number != 0) {
+        if (signal_number != 0 &&
+            (target->ignored_signals & (UINT32_C(1) << signal_number)) == 0U) {
             target->termination_signal = (uint8_t)signal_number;
             terminate_process(target, (int32_t)(128 + signal_number));
         }
         return 0;
     }
     return -OPENRFS_ESRCH;
+}
+
+static int64_t syscall_process_disposition(struct native_process *process,
+    uint64_t signal_number, uint64_t disposition)
+{
+    if (signal_number == 9U || signal_number == 19U || signal_number == 0U ||
+        signal_number > 64U || disposition > 1U) return -OPENRFS_EINVAL;
+    if (signal_number != 2U && signal_number != 13U &&
+        signal_number != 15U) return -OPENRFS_ENOSYS;
+    const uint32_t bit = UINT32_C(1) << signal_number;
+    const int64_t previous = (process->ignored_signals & bit) != 0U ? 1 : 0;
+
+    if (disposition == 0U) process->ignored_signals &= ~bit;
+    else process->ignored_signals |= bit;
+    return previous;
 }
 
 static int64_t syscall_process_umask(struct native_process *process,
@@ -6932,6 +6958,7 @@ static int64_t syscall_process_fork(
     child->image = parent->image;
     child->dynamic_fini_entry = parent->dynamic_fini_entry;
     child->dynamic_fini_started = parent->dynamic_fini_started;
+    child->ignored_signals = parent->ignored_signals;
     child->file_creation_mask = parent->file_creation_mask;
     for (size_t index = 0U; index < parent->page_count; ++index) {
         const struct native_page *source = &parent->pages[index];
@@ -7085,6 +7112,8 @@ static int64_t dispatch_syscall(
             (int64_t)frame->rsi);
     case OPENRFS_SYS_PROCESS_UMASK:
         return syscall_process_umask(process, frame->rdi);
+    case OPENRFS_SYS_PROCESS_DISPOSITION:
+        return syscall_process_disposition(process, frame->rdi, frame->rsi);
     case OPENRFS_SYS_PROCESS_EXIT_IMMEDIATE:
         terminate_process(process, (int32_t)frame->rdi);
         return 0;

@@ -35,7 +35,7 @@ TEST_SCENARIOS := normal breakpoint invalid-opcode page-fault ist pit unexpected
 	native-https native-openrfs account-kdf
 TEST_TARGETS := $(addprefix qemu-test-,$(TEST_SCENARIOS))
 EXPECTED_TEST_SCENARIO_COUNT := 116
-EXPECTED_SHELL_ASSERTION_COUNT := 468
+EXPECTED_SHELL_ASSERTION_COUNT := 469
 
 CC := gcc
 LD := ld
@@ -3980,6 +3980,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 			grep -Fxq 'OPENRFS PROCESS slot exhaustion rollback and three children PASS' "$$log" && \
 			grep -Fxq 'OPENRFS PROCESS child fault status and wait pointer refusal PASS' "$$log" && \
 			grep -Fxq 'OPENRFS SIGNAL SIGINT SIGTERM SIGKILL default wait PASS' "$$log" && \
+			grep -Fxq 'OPENRFS SIGNAL SIGPIPE default ignore and fork PASS' "$$log" && \
 			grep -Fxq 'OPENRFS PROCESS inherited umask PASS' "$$log" && \
 			grep -Fxq 'OPENRFS PROCESS fork retains only calling thread PASS' "$$log" && \
 			grep -Eq '^OPENRFS PERF syscall iterations=1024 total_ns=[1-9][0-9]* average_ns=[1-9][0-9]*$$' "$$log" && \
