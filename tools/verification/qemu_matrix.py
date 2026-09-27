@@ -14,7 +14,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 SCENARIOS = ("process", "native-crash", "filesystem", "fat32-persistence",
-             "network-tcp-listen")
+             "network-tcp-listen", "network-native")
 
 
 def digest(path: Path) -> str:

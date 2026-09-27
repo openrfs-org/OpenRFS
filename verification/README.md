@@ -25,7 +25,7 @@ python3 tools/verification/run.py run --profile extended --resume verification/r
 
 `verify-extended` runs the existing `make verify` recipe unchanged on a clean
 HEAD, followed by static scans, instrumented C fuzz campaigns, a normal QEMU
-boot, and the five-scenario production guest matrix. `make verify` itself
+boot, and the six-scenario production guest matrix. `make verify` itself
 cleans `build/`; runner logs live outside that tree. Extended and nightly runs
 reject dirty sources. The runner serializes jobs with an advisory lock, limits
 individual processes and output files, kills process groups on timeout or
@@ -100,7 +100,7 @@ Remaining high-risk gaps include guest syscall sequence generation, stale PID
 and handle reuse, raw FAT32/ext4 cut-point recovery across actual guest
 restarts, encrypted Data and account state on the separate security branch,
 network packet parser host fuzzing, TLS handshake fuzzing, and PCI/DMA/NVMe/xHCI
-teardown faults. The five-scenario QEMU matrix is a narrow production-path
+teardown faults. The six-scenario QEMU matrix is a narrow production-path
 check, not a claim that all 115 scenarios ran. The existing `make verify`
 includes host ext4, package, TLS, and related tests but no full QEMU matrix.
 
@@ -118,7 +118,7 @@ turn installed but unused tools into green checks.
 | AFL++ | Not yet evaluated | Consider process isolation for parsers with non-resettable global state; no duplicate label for the current libFuzzer targets. |
 | Rust cargo-fuzz | Not yet evaluated | Inspect production ext4/image crate callability and nightly sanitizer compatibility. |
 | Hypothesis | Integrated | 6.168.1, bounded package transaction operation sequences against production Python. |
-| QEMU | Integrated | 8.2.2 TCG normal boot and five separate production scenarios. |
+| QEMU | Integrated | 8.2.2 TCG normal boot and six separate production scenarios. |
 | Clang Static Analyzer | Integrated | 18.1.3, three file gate; broad candidate findings retained for triage. |
 | clang-tidy | Integrated | 18.1.3, targeted correctness checks on the same three production files. |
 | Cppcheck | Integrated | 2.13.0, independent three file warning/performance/portability gate. |
