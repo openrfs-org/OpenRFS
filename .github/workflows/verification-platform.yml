@@ -28,11 +28,13 @@ jobs:
         timeout-minutes: 30
         env:
             SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+            GITLEAKS_BASE_REF: ${{ github.event.pull_request.base.sha }}
         steps:
             - name: Check out exact source head
               uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
               with:
                   ref: ${{ env.SOURCE_SHA }}
+                  fetch-depth: 0
                   persist-credentials: false
             - name: Record exact checkout
               run: |
@@ -75,12 +77,14 @@ jobs:
         timeout-minutes: 180
         env:
             SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+            GITLEAKS_BASE_REF: ${{ github.event.pull_request.base.sha }}
             RUST_TEST_THREADS: '2'
         steps:
             - name: Check out exact source head
               uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
               with:
                   ref: ${{ env.SOURCE_SHA }}
+                  fetch-depth: 0
                   persist-credentials: false
             - name: Record exact checkout
               run: |

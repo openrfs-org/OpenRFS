@@ -83,6 +83,17 @@ passed on `3b9ce151d489e3eed16cab3dd990d3195ea9a0a9`, including the
 unchanged `make verify` recipe. The subsequent native network finding has its
 own failing and fixed exact commits and serial digests in
 `verification/findings/native-network-wait-slot.md`.
+GitHub's fast and extended jobs also passed on the fixed
+`eafe65bae768b38112cd9a47d827894d7c63c477` head, including the new
+six-scenario guest matrix.
+
+Gitleaks 8.30.1 now gates the commits after the PR merge-base and retains a
+fully redacted finding report. A separate exploratory scan of the repository's
+older history timed out after 120 seconds. It had reached 234 commits and
+reported 27 candidate matches in fixture, tooling, and vendored files. These
+candidates still need triage; the partial run is not
+recorded as a clean full-history scan. The committed gate establishes only
+the new branch commit range.
 
 An exploratory Clang Static Analyzer pass across `src/kernel/*.c` found
 candidate stack-lifetime and uninitialized-value warnings, and one missing
@@ -131,7 +142,7 @@ turn installed but unused tools into green checks.
 | OSV-Scanner | Not yet evaluated | Determine attribution for vendored C and Rust components. |
 | Syft | Not yet evaluated | Generate exact-source/build SBOM and identify bundled components. |
 | Trivy | Not yet evaluated | Decide whether SBOM cross-check adds independent signal. |
-| Gitleaks | Not yet evaluated | Scan tracked files/history without printing discovered secrets. |
+| Gitleaks | Integrated | 8.30.1 scans new branch commits against the merge-base, fails on findings or incomplete scans, and retains a redacted report. Full history remains a separate triage task. |
 | ShellCheck | Integrated | 0.9.0, tracked first-party shell scripts and actionlint embedded shell; vendor scripts excluded. |
 | actionlint | Integrated | 1.7.12, every workflow, pinned archive digest in installer. |
 | zizmor | Integrated | 1.30.1 offline workflow audits, pinned archive digest; online audits omitted. |
@@ -142,7 +153,7 @@ turn installed but unused tools into green checks.
 | OSS-Fuzz | Not yet evaluated | Requires local target maturity, disclosure process, maintainers, and external enrollment decision. |
 
 Pin sources: `tools/verification/install_action_scanners.py` verifies archive
-SHA-256 for actionlint and zizmor; `tools/verification/requirements.txt` pins
+SHA-256 for actionlint, zizmor, and Gitleaks; `tools/verification/requirements.txt` pins
 Hypothesis, sortedcontainers, and Ruff; CI pins Rust/Clippy 1.98.1 for the
 extended gate, Ubuntu apt package versions, and GitHub actions by immutable
 commit. The platform's scanner inventory and exact

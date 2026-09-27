@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install exact Linux actionlint/zizmor release assets after SHA-256 verification."""
+"""Install exact Linux scanner release assets after SHA-256 verification."""
 
 from __future__ import annotations
 
@@ -18,6 +18,9 @@ RELEASES = (
     ("zizmor", "v1.30.1", "zizmor-x86_64-unknown-linux-gnu.tar.gz",
      "e65324f4430c2717591937edcec90ccbefaf14c174f8ec9415e03ca875b46e1a",
      "https://github.com/zizmorcore/zizmor/releases/download/"),
+    ("gitleaks", "v8.30.1", "gitleaks_8.30.1_linux_x64.tar.gz",
+     "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb",
+     "https://github.com/gitleaks/gitleaks/releases/download/"),
 )
 
 
