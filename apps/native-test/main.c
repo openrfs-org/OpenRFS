@@ -502,7 +502,30 @@ static int pipe_probe(void)
         close(ends[1]) != 0 || close(acknowledgement[1]) != 0 ||
         waitpid(consumer, &status, 0) != consumer || !WIFEXITED(status) ||
         WEXITSTATUS(status) != 0) return 77;
-    puts("OPENRFS PIPE fork blocking EOF EPIPE nonblock redirection PASS");
+    if (pipe(ends) != 0 || fdopen(ends[0], "w") != NULL || errno != EBADF)
+        return 110;
+    FILE *reader = fdopen(ends[0], "r");
+    FILE *writer = fdopen(ends[1], "w");
+
+    if (reader == NULL || writer == NULL ||
+        fputs("stdio pipe\n", writer) != 0 || fflush(writer) != 0 ||
+        fgets(bytes, sizeof(bytes), reader) == NULL ||
+        strcmp(bytes, "stdio pipe\n") != 0 ||
+        fseek(reader, 0L, SEEK_SET) != -1 || errno != ESPIPE ||
+        fclose(writer) != 0 || fgetc(reader) != EOF || !feof(reader) ||
+        fclose(reader) != 0 || fcntl(ends[0], F_GETFD) != -1 ||
+        errno != EBADF || fcntl(ends[1], F_GETFD) != -1 ||
+        errno != EBADF) return 111;
+    if (pipe2(ends, O_NONBLOCK) != 0) return 112;
+    reader = fdopen(ends[0], "r");
+    writer = fdopen(ends[1], "w");
+    if (reader == NULL || writer == NULL || fgetc(reader) != EOF ||
+        errno != EAGAIN || !ferror(reader)) return 113;
+    clearerr(reader);
+    if (fputc('x', writer) != 'x' || fflush(writer) != 0 ||
+        fgetc(reader) != 'x' || fclose(writer) != 0 ||
+        fclose(reader) != 0) return 114;
+    puts("OPENRFS PIPE fork blocking EOF EPIPE nonblock redirection fdopen PASS");
     return 0;
 }
 

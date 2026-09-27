@@ -2,6 +2,7 @@
 #include <stdio.h>
 
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,10 +16,12 @@
 #define FILE_CONSOLE 8U
 #define FILE_STATIC 16U
 #define FILE_BUFFER_DIRTY 32U
+#define FILE_DESCRIPTOR 64U
 
 struct openrfs_FILE {
     openrfs_handle_t handle;
     unsigned int flags;
+    int descriptor;
     unsigned int error;
     unsigned int eof;
     unsigned char buffer[BUFSIZ];
@@ -29,13 +32,13 @@ struct openrfs_FILE {
 };
 
 static struct openrfs_FILE input_stream = {
-    0U, FILE_READ | FILE_CONSOLE | FILE_STATIC, 0U, 0U, {0}, 0U, 0U, -1, 0U
+    .flags = FILE_READ | FILE_CONSOLE | FILE_STATIC, .pushed = -1
 };
 static struct openrfs_FILE output_stream = {
-    0U, FILE_WRITE | FILE_CONSOLE | FILE_STATIC, 0U, 0U, {0}, 0U, 0U, -1, 0U
+    .flags = FILE_WRITE | FILE_CONSOLE | FILE_STATIC, .pushed = -1
 };
 static struct openrfs_FILE error_stream = {
-    0U, FILE_WRITE | FILE_CONSOLE | FILE_STATIC, 0U, 0U, {0}, 0U, 0U, -1, 0U
+    .flags = FILE_WRITE | FILE_CONSOLE | FILE_STATIC, .pushed = -1
 };
 FILE *stdin = &input_stream;
 FILE *stdout = &output_stream;
@@ -56,13 +59,23 @@ static int flush_locked(FILE *stream)
         if ((stream->flags & FILE_CONSOLE) != 0U) {
             result = write(stream == stderr ? STDERR_FILENO : STDOUT_FILENO,
                 stream->buffer + offset, stream->length - offset);
+        } else if ((stream->flags & FILE_DESCRIPTOR) != 0U) {
+            result = write(stream->descriptor, stream->buffer + offset,
+                stream->length - offset);
         } else {
             result = openrfs_file_write(stream->handle,
                 stream->buffer + offset, stream->length - offset);
         }
         if (result <= 0) {
+            if (offset != 0U) {
+                (void)memmove(stream->buffer, stream->buffer + offset,
+                    stream->length - offset);
+                stream->length -= offset;
+            }
             stream->error = 1U;
-            if (result < 0 && (stream->flags & FILE_CONSOLE) == 0U) {
+            if (result == 0) errno = EIO;
+            if (result < 0 && (stream->flags &
+                    (FILE_CONSOLE | FILE_DESCRIPTOR)) == 0U) {
                 errno = (int)-result;
             }
             return EOF;
@@ -149,6 +162,33 @@ FILE *fopen(const char *path, const char *mode)
     return stream;
 }
 
+FILE *fdopen(int descriptor, const char *mode)
+{
+    uint32_t native_flags = 0U;
+    const int flags = mode_flags(mode, &native_flags);
+    const int status = fcntl(descriptor, F_GETFL);
+    FILE *stream;
+
+    if (flags == 0) { errno = EINVAL; return NULL; }
+    if (status < 0) return NULL;
+    if (((flags & FILE_READ) != 0U && (status & O_RDONLY) == 0) ||
+        ((flags & FILE_WRITE) != 0U && (status & O_WRONLY) == 0)) {
+        errno = EBADF;
+        return NULL;
+    }
+    stream = calloc(1U, sizeof(*stream));
+    if (stream == NULL) return NULL;
+    if ((flags & FILE_APPEND) != 0U &&
+        fcntl(descriptor, F_SETFL, status | O_APPEND) != 0) {
+        free(stream);
+        return NULL;
+    }
+    stream->flags = (unsigned int)flags | FILE_DESCRIPTOR;
+    stream->descriptor = descriptor;
+    stream->pushed = -1;
+    return stream;
+}
+
 FILE *freopen(const char *path, const char *mode, FILE *stream)
 {
     FILE *replacement;
@@ -163,7 +203,10 @@ FILE *freopen(const char *path, const char *mode, FILE *stream)
         return NULL;
     }
     (void)fflush(stream);
-    (void)openrfs_handle_close(stream->handle);
+    if ((stream->flags & FILE_DESCRIPTOR) != 0U)
+        (void)close(stream->descriptor);
+    else
+        (void)openrfs_handle_close(stream->handle);
     *stream = *replacement;
     free(replacement);
     return stream;
@@ -178,7 +221,9 @@ int fclose(FILE *stream)
         return EOF;
     }
     result = fflush(stream);
-    if (openrfs_handle_close(stream->handle) < 0) {
+    if (((stream->flags & FILE_DESCRIPTOR) != 0U ?
+            close(stream->descriptor) :
+            openrfs_handle_close(stream->handle)) < 0) {
         result = EOF;
     }
     free(stream);
@@ -226,12 +271,15 @@ static size_t read_locked(void *pointer, size_t bytes, FILE *stream)
             completed += chunk;
             continue;
         }
-        const long result = openrfs_file_read(stream->handle, stream->buffer,
-            sizeof(stream->buffer));
+        const long result = (stream->flags & FILE_DESCRIPTOR) != 0U ?
+            read(stream->descriptor, stream->buffer, sizeof(stream->buffer)) :
+            openrfs_file_read(stream->handle, stream->buffer,
+                sizeof(stream->buffer));
 
         if (result < 0) {
             stream->error = 1U;
-            errno = (int)-result;
+            if ((stream->flags & FILE_DESCRIPTOR) == 0U)
+                errno = (int)-result;
             break;
         }
         if (result == 0) {
@@ -277,12 +325,15 @@ static size_t write_locked(const void *pointer, size_t bytes, FILE *stream)
         long seek_result = 0;
 
         if ((stream->flags & FILE_CONSOLE) == 0U && unread != 0U) {
-            seek_result = openrfs_file_seek(stream->handle, -(int64_t)unread,
-                OPENRFS_SEEK_CURRENT);
+            seek_result = (stream->flags & FILE_DESCRIPTOR) != 0U ?
+                lseek(stream->descriptor, -(off_t)unread, SEEK_CUR) :
+                openrfs_file_seek(stream->handle, -(int64_t)unread,
+                    OPENRFS_SEEK_CURRENT);
         }
         if (seek_result < 0) {
             stream->error = 1U;
-            errno = (int)-seek_result;
+            if ((stream->flags & FILE_DESCRIPTOR) == 0U)
+                errno = (int)-seek_result;
             return 0U;
         }
         stream->position = 0U;
@@ -348,10 +399,13 @@ int fseek(FILE *stream, long offset, int origin)
     stream->length = 0U;
     stream->pushed = -1;
     stream->eof = 0U;
-    result = openrfs_file_seek(stream->handle, offset, (uint32_t)origin);
+    result = (stream->flags & FILE_DESCRIPTOR) != 0U ?
+        lseek(stream->descriptor, offset, origin) :
+        openrfs_file_seek(stream->handle, offset, (uint32_t)origin);
     openrfs_runtime_unlock(&stream->lock);
     if (result < 0) {
-        errno = (int)-result;
+        if ((stream->flags & FILE_DESCRIPTOR) == 0U)
+            errno = (int)-result;
         return -1;
     }
     return 0;
@@ -366,7 +420,9 @@ long ftell(FILE *stream)
         return -1L;
     }
     openrfs_runtime_lock(&stream->lock);
-    result = openrfs_file_seek(stream->handle, 0, OPENRFS_SEEK_CURRENT);
+    result = (stream->flags & FILE_DESCRIPTOR) != 0U ?
+        lseek(stream->descriptor, 0, SEEK_CUR) :
+        openrfs_file_seek(stream->handle, 0, OPENRFS_SEEK_CURRENT);
     if (result >= 0 && (stream->flags & FILE_BUFFER_DIRTY) != 0U) {
         result += (long)stream->length;
     } else if (result >= 0 && (stream->flags & FILE_READ) != 0U) {
@@ -374,7 +430,8 @@ long ftell(FILE *stream)
     }
     openrfs_runtime_unlock(&stream->lock);
     if (result < 0) {
-        errno = (int)-result;
+        if ((stream->flags & FILE_DESCRIPTOR) == 0U)
+            errno = (int)-result;
         return -1L;
     }
     return result;

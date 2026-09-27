@@ -4022,7 +4022,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 		native) \
 			grep -Fxq 'OPENRFS PROCESS fork wait private-memory shared-offset PASS' "$$log" && \
 			grep -Fxq 'OPENRFS DESCRIPTOR dup redirection flags fork inheritance PASS' "$$log" && \
-			grep -Fxq 'OPENRFS PIPE fork blocking EOF EPIPE nonblock redirection PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PIPE fork blocking EOF EPIPE nonblock redirection fdopen PASS' "$$log" && \
 			grep -Fxq 'OPENRFS PROCESS slot exhaustion rollback and three children PASS' "$$log" && \
 			grep -Fxq 'OPENRFS PROCESS child fault status and wait pointer refusal PASS' "$$log" && \
 			grep -Fxq 'OPENRFS SIGNAL SIGINT SIGTERM SIGKILL default wait PASS' "$$log" && \
