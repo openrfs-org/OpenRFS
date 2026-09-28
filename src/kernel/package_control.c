@@ -5,16 +5,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/heap.h>
-#include <openrfs/package_builder.h>
-#include <openrfs/package_control.h>
-#include <openrfs/package_generation.h>
-#include <openrfs/package_manager.h>
-#include <openrfs/package_platform_trust.h>
-#include <openrfs/package_service.h>
-#include <openrfs/package_state.h>
-#include <openrfs/package_upload.h>
-#include <openrfs/wall_clock.h>
+#include <rsd/heap.h>
+#include <rsd/package_builder.h>
+#include <rsd/package_control.h>
+#include <rsd/package_generation.h>
+#include <rsd/package_manager.h>
+#include <rsd/package_platform_trust.h>
+#include <rsd/package_service.h>
+#include <rsd/package_state.h>
+#include <rsd/package_upload.h>
+#include <rsd/wall_clock.h>
 
 struct control_session {
     struct package_manager_policy policy;
