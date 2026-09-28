@@ -1499,7 +1499,7 @@ static void command_starty(const char *arguments)
 
 static bool start_desktop(void)
 {
-    if (!ui_select_minimal_desktop()) {
+    if (!ui_select_rsd_desktop()) {
         console_write("starty: desktop mode cannot be changed now\n");
         return false;
     }

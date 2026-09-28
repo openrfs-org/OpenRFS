@@ -5,7 +5,7 @@ The current interface tree is `ui/`. Its console, installer, desktop, applicatio
 ## Runtime wiring
 
 - `src/kernel/installer_ui.c` maps kernel keyboard events and framebuffer cells to `ui/console/src/{term,ui,install}.c`.
-- `src/kernel/minimal_de.c` maps kernel pointer and keyboard events to `ui/desktop/src/` and draws the desktop into the guest framebuffer.
+- `src/kernel/rsd_desktop.c` maps kernel pointer and keyboard events to `ui/desktop/src/` and draws the desktop into the guest framebuffer.
 - The kernel shell retains command dispatch, storage, account, process, and network operations. Its visible identity is RSD. The console UI model in `ui/console/` also contains the target command line design, but command routing and boot presentation still require integration.
 
 The installer is a configuration preview. Its write and verification progress are in-memory UI states. It does not partition, format, or copy a disk. The boundary stays visible to users until a transactional backend exists.
@@ -13,7 +13,7 @@ The installer is a configuration preview. Its write and verification progress ar
 ## Build checks
 
 ```sh
-make installer-port-test minimal-de-host-test
+make installer-port-test rsd-desktop-host-test
 make -C ui/console/tools check
 make -C ui/desktop/tools all
 ```

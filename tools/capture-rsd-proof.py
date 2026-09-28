@@ -282,7 +282,7 @@ def main():
         if durable_data is not None:
             start_authenticated_desktop(qmp, serial)
         time.sleep(0.25)
-        # starty opens the minimal desktop with its terminal attached to the
+        # starty opens the RSD desktop with its terminal attached to the
         # production shell. Capture the initial guest frame, then exercise
         # gfetch and a second command through the same PS/2 keyboard path.
         clean = capture(qmp, output, "rsd-proof")

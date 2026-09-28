@@ -319,7 +319,7 @@ def main() -> int:
             ), timeout=20.0)
             # The boot CLI is the primary interface. After its networking
             # transcript is complete, exercise authenticated `starty`, whose
-            # minimal desktop opens a real shell terminal by default.
+            # RSD desktop opens a real shell terminal by default.
             support.start_authenticated_desktop(qmp, serial)
             time.sleep(0.35)
             support.capture(qmp, output, "RSD-networking-terminal-open")

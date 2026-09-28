@@ -1825,23 +1825,23 @@ $(INSTALLER_PORT_TEST): tools/installer-port-test.c \
 installer-port-test: $(INSTALLER_PORT_TEST)
 	$(INSTALLER_PORT_TEST)
 
-MINIMAL_DE_HOST_TEST := $(BUILD_DIR)/tools/minimal-de-host-test
+RSD_DESKTOP_HOST_TEST := $(BUILD_DIR)/tools/rsd-desktop-host-test
 
-$(MINIMAL_DE_HOST_TEST): tools/minimal-de-host-test.c \
-		src/kernel/minimal_de.c include/rsd/minimal_de.h \
+$(RSD_DESKTOP_HOST_TEST): tools/rsd-desktop-host-test.c \
+		src/kernel/rsd_desktop.c include/rsd/rsd_desktop.h \
 		$(RSD_DESKTOP_SOURCES) \
 		$(wildcard ui/desktop/include/rsd_desktop/*.h)
 	mkdir -p $(dir $@)
 	$(CC) -Iinclude -Iui/desktop/include -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
 		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
-		tools/minimal-de-host-test.c src/kernel/minimal_de.c \
+		tools/rsd-desktop-host-test.c src/kernel/rsd_desktop.c \
 		$(RSD_DESKTOP_SOURCES) -o $@
 
-.PHONY: minimal-de-host-test
-minimal-de-host-test: $(MINIMAL_DE_HOST_TEST)
-	$(MINIMAL_DE_HOST_TEST)
+.PHONY: rsd-desktop-host-test
+rsd-desktop-host-test: $(RSD_DESKTOP_HOST_TEST)
+	$(RSD_DESKTOP_HOST_TEST)
 
-verify: toolchain lint installer-port-test minimal-de-host-test
+verify: toolchain lint installer-port-test rsd-desktop-host-test
 ifneq ($(VERIFY_CLEAN),0)
 	$(MAKE) clean
 endif

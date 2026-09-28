@@ -19,7 +19,7 @@
 #include <rsd/framebuffer.h>
 #include <rsd/heap.h>
 #include <rsd/hwdrv.h>
-#include <rsd/minimal_de.h>
+#include <rsd/rsd_desktop.h>
 #include <rsd/pointer.h>
 #include <rsd/screen.h>
 #include <rsd/surface.h>
@@ -58,7 +58,7 @@ static const char *self_test_failure = "RSD desktop self-test has not run";
 static const char *installed_failure = "RSD desktop proof has not run";
 static struct native_window_record native_windows[UI_NATIVE_WINDOW_COUNT];
 static int32_t native_focus = -1;
-static bool minimal_desktop_selected;
+static bool rsd_desktop_selected;
 
 static void zero_bytes(void *pointer, size_t bytes)
 {
@@ -259,10 +259,10 @@ static void sync_state(void)
     if (native_focus >= 0 && native_windows[native_focus].open) {
         state.active_panel = (enum ui_panel_id)(UI_PANEL_NATIVE_0 +
             (uint32_t)native_focus);
-    } else if (minimal_desktop_selected) {
+    } else if (rsd_desktop_selected) {
         struct ui_rect terminal;
 
-        state.active_panel = minimal_de_terminal_client(&terminal) ?
+        state.active_panel = rsd_desktop_terminal_client(&terminal) ?
             UI_PANEL_TERMINAL : UI_PANEL_NONE;
     } else {
         const uint32_t focused = rsd_shell_focused();
@@ -327,9 +327,9 @@ static void draw_cursor(void)
 
 static enum ui_status render_desktop(void)
 {
-    minimal_de_draw();
+    rsd_desktop_draw();
     draw_native_windows();
-    minimal_de_draw_overlays();
+    rsd_desktop_draw_overlays();
     draw_cursor();
     for (uint32_t y = 0U; y < desktop.height; ++y) {
         for (uint32_t x = 0U; x < desktop.width; ++x) {
@@ -346,7 +346,7 @@ static enum ui_status render_desktop(void)
     if (state.active_panel == UI_PANEL_TERMINAL) {
         struct ui_rect client;
 
-        if (minimal_de_terminal_client(&client)) {
+        if (rsd_desktop_terminal_client(&client)) {
             (void)screen_set_viewport((struct surface_rect){ client.x,
                 client.y, client.width, client.height }, true);
         }
@@ -411,14 +411,14 @@ enum ui_status ui_construct(bool pointer_present)
     }
     desktop = (struct rsd_surface){ desktop_pixels,
         canvas->width, canvas->height };
-    if (!minimal_de_construct(desktop_pixels, desktop.width,
+    if (!rsd_desktop_construct(desktop_pixels, desktop.width,
             desktop.height)) {
         (void)heap_free(desktop_pixels);
         desktop_pixels = NULL;
         desktop = (struct rsd_surface){ NULL, 0U, 0U };
         return UI_STATUS_SURFACE_FAILURE;
     }
-    minimal_desktop_selected = true;
+    rsd_desktop_selected = true;
     state.initialized = true;
     state.pointer_present = pointer_present;
     state.focus = UI_ELEMENT_NONE;
@@ -433,12 +433,12 @@ enum ui_status ui_construct(bool pointer_present)
     return UI_STATUS_OK;
 }
 
-bool ui_select_minimal_desktop(void)
+bool ui_select_rsd_desktop(void)
 {
     if (state.initialized || state.active) {
         return false;
     }
-    minimal_desktop_selected = true;
+    rsd_desktop_selected = true;
     return true;
 }
 
@@ -645,7 +645,7 @@ static bool process_one(const struct ui_event *event)
 {
     struct rsd_event translated;
 
-    if (minimal_desktop_selected) {
+    if (rsd_desktop_selected) {
         bool changed;
         bool overlay_dispatched = false;
 
@@ -659,9 +659,9 @@ static bool process_one(const struct ui_event *event)
                     (old.x != state.pointer.x || old.y != state.pointer.y)) {
                 ++state.renders.cursor_moves;
             }
-            if (minimal_de_overlay_open()) {
+            if (rsd_desktop_overlay_open()) {
                 overlay_dispatched = true;
-                if (minimal_de_event(event)) {
+                if (rsd_desktop_event(event)) {
                     sync_state();
                     return true;
                 }
@@ -683,7 +683,7 @@ static bool process_one(const struct ui_event *event)
             sync_state();
             return true;
         }
-        changed = minimal_de_event(event);
+        changed = rsd_desktop_event(event);
         sync_state();
         return changed || event->type == UI_EVENT_POINTER_MOVEMENT;
     }
@@ -936,8 +936,8 @@ bool ui_self_test(void)
         self_test_failure = "RSD desktop layout self-test failed";
         return false;
     }
-    if (!minimal_de_self_test()) {
-        self_test_failure = "minimal desktop source self-test failed";
+    if (!rsd_desktop_self_test()) {
+        self_test_failure = "RSD desktop source self-test failed";
         return false;
     }
     if (!rsd_menu_self_test()) {

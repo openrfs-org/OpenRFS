@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#include <rsd/minimal_de.h>
+#include <rsd/rsd_desktop.h>
 
 #include <rsd_desktop/files.h>
 #include <rsd_desktop/input.h>
@@ -13,7 +13,7 @@
 
 static struct rsd_surface minimal_surface;
 
-bool minimal_de_construct(uint32_t *pixels, uint32_t width, uint32_t height)
+bool rsd_desktop_construct(uint32_t *pixels, uint32_t width, uint32_t height)
 {
     if (pixels == NULL || width < 800U || height < 600U ||
             width > 4096U || height > 4096U) {
@@ -45,7 +45,7 @@ bool minimal_de_construct(uint32_t *pixels, uint32_t width, uint32_t height)
         RSD_SHELL_MAX_WINDOWS;
 }
 
-void minimal_de_draw(void)
+void rsd_desktop_draw(void)
 {
     rsd_shell_draw_root();
     rsd_shell_draw_desktop();
@@ -53,12 +53,12 @@ void minimal_de_draw(void)
     rsd_shell_draw();
 }
 
-void minimal_de_draw_overlays(void)
+void rsd_desktop_draw_overlays(void)
 {
     rsd_shell_draw_overlays();
 }
 
-bool minimal_de_terminal_client(struct ui_rect *out)
+bool rsd_desktop_terminal_client(struct ui_rect *out)
 {
     const uint32_t focused = rsd_shell_focused();
     const struct rsd_window *window;
@@ -78,13 +78,13 @@ bool minimal_de_terminal_client(struct ui_rect *out)
     return true;
 }
 
-bool minimal_de_overlay_open(void)
+bool rsd_desktop_overlay_open(void)
 {
     return rsd_shell_root_menu_open() || rsd_shell_run_open() ||
         rsd_shell_context_open() || rsd_shell_rename_open();
 }
 
-bool minimal_de_event(const struct ui_event *event)
+bool rsd_desktop_event(const struct ui_event *event)
 {
     struct rsd_event translated = { 0 };
 
@@ -134,7 +134,7 @@ bool minimal_de_event(const struct ui_event *event)
         return false;
     }
     if (translated.kind == RSD_EVENT_POINTER_DOWN &&
-            !minimal_de_overlay_open() &&
+            !rsd_desktop_overlay_open() &&
             rsd_shell_at(translated.x, translated.y) >=
                 RSD_SHELL_MAX_WINDOWS) {
         return rsd_shell_root_press(translated.x, translated.y);
@@ -142,7 +142,7 @@ bool minimal_de_event(const struct ui_event *event)
     return rsd_shell_handle(&translated);
 }
 
-bool minimal_de_self_test(void)
+bool rsd_desktop_self_test(void)
 {
     return rsd_shell_self_test() && rsd_terminal_self_test() &&
         rsd_files_self_test() && rsd_menu_self_test() &&

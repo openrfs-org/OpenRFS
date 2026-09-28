@@ -2,7 +2,7 @@
 
 # RSD desktop
 
-RSD boots to its command line. After a local account is created, `starty` authenticates and opens the optional framebuffer desktop. The current desktop source is in `ui/desktop/`; `src/kernel/minimal_de.c` maps kernel events and framebuffer pixels to that interface.
+RSD boots to its command line. After a local account is created, `starty` authenticates and opens the optional framebuffer desktop. The current desktop source is in `ui/desktop/`; `src/kernel/rsd_desktop.c` maps kernel events and framebuffer pixels to that interface.
 
 The desktop has a root menu, launcher, multiple windows, workspaces, wallpaper, icons, and five applications: Files, Terminal, Task Manager, Settings, and Packages. Its image and icon sources are pinned in `ui/assets/sha256.json`.
 
@@ -12,4 +12,4 @@ The desktop uses a linear framebuffer and freestanding C. It does not require a 
 
 ## Verification
 
-`make minimal-de-host-test` exercises construction, drawing, pointer routing, window lifecycle, and terminal geometry. `make -C ui/desktop/tools all` compiles the freestanding desktop sources and its host harness. The full guest image still needs a successful kernel build and QEMU boot to verify the integrated session.
+`make rsd-desktop-host-test` exercises construction, drawing, pointer routing, window lifecycle, and terminal geometry. `make -C ui/desktop/tools all` compiles the freestanding desktop sources and its host harness. The full guest image still needs a successful kernel build and QEMU boot to verify the integrated session.

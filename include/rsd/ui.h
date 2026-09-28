@@ -344,8 +344,8 @@ enum ui_status ui_hit_test(
 
 enum ui_status ui_construct(bool pointer_present);
 enum ui_status ui_activate(void);
-/* Select the minimal desktop before constructing the deferred starty session. */
-bool ui_select_minimal_desktop(void);
+/* Select the RSD desktop before constructing the deferred starty session. */
+bool ui_select_rsd_desktop(void);
 enum ui_status ui_terminal_draw_logo(void);
 bool ui_is_active(void);
 /* The kernel console changed while its viewport is embedded in a terminal. */
