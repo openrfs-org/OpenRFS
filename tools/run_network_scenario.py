@@ -352,6 +352,10 @@ def run(args: argparse.Namespace) -> int:
     if args.scenario == "network-native" and healthy:
         healthy = (
             transcript.count(
+                "OPENRFS NETAPP PHASE wait-slot-mapping PASS\n"
+            ) == 1
+            and
+            transcript.count(
                 "OPENRFS NETAPP PASS dns=10.0.2.20 http=31 udp=echo "
                 "timeout reset cancel malformed-dns\n"
             ) == 1

@@ -1,0 +1,13 @@
+# Reviewed fixture/hash false positives; guarded by source-file SHA-256.
+sdk/src/tls.c:generic-api-key:210
+tests/fixtures/tls/expired-key.pem:private-key:1
+tests/fixtures/tls/future-key.pem:private-key:1
+tests/fixtures/tls/untrusted-key.pem:private-key:1
+tests/fixtures/tls/valid-key.pem:private-key:1
+tools/https_anchor.py:generic-api-key:22
+tools/https_anchor.py:generic-api-key:24
+tools/https_anchor.py:generic-api-key:26
+tools/https_anchor.py:generic-api-key:28
+vendor/rust-crates/quote-1.0.47/.cargo-checksum.json:generic-api-key:1
+vendor/rust-crates/syn-2.0.119/.cargo-checksum.json:generic-api-key:1
+vendor/rust-crates/syn-3.0.4/.cargo-checksum.json:generic-api-key:1

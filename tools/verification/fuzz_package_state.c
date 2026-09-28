@@ -1,0 +1,261 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+/* Host-only libFuzzer and one-file replay of the production package parser. */
+#include <openrfs/package_state.h>
+
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+
+#ifdef OPENRFS_REPLAY
+#include <stdio.h>
+#endif
+
+#define MAX_INPUT_BYTES 8193U
+
+static void require(bool condition)
+{
+    if (!condition) {
+        abort();
+    }
+}
+
+static enum package_state_status check_database(
+    const uint8_t *bytes, size_t count)
+{
+    struct package_state_database_view database = { 0 };
+    enum package_state_status status = package_state_database_parse(
+        bytes, count, &database);
+    if (status != PACKAGE_STATE_STATUS_OK) {
+        return status;
+    }
+    require(database.bytes == bytes && database.byte_count == count);
+    require(database.generation != 0U);
+    require(database.package_count <= PACKAGE_STATE_DATABASE_MAX_PACKAGES);
+    require(database.edge_count <= PACKAGE_STATE_DATABASE_MAX_EDGES);
+    require(database.file_count <= PACKAGE_STATE_DATABASE_MAX_FILES);
+    for (uint32_t index = 0U; index < database.package_count; ++index) {
+        struct package_state_package_view package = { 0 };
+        require(package_state_database_package(&database, index, &package) ==
+            PACKAGE_STATE_STATUS_OK);
+        require(package.database == &database && package.package_index == index);
+    }
+    for (uint32_t index = 0U; index < database.edge_count; ++index) {
+        struct package_state_dependency_view dependency = { 0 };
+        require(package_state_database_dependency(&database, index, &dependency) ==
+            PACKAGE_STATE_STATUS_OK);
+        require(dependency.database == &database &&
+            dependency.dependency_index == index);
+    }
+    for (uint32_t index = 0U; index < database.file_count; ++index) {
+        struct package_state_file_view file = { 0 };
+        require(package_state_database_file(&database, index, &file) ==
+            PACKAGE_STATE_STATUS_OK);
+        require(file.database == &database && file.file_index == index);
+    }
+    uint8_t authority[PACKAGE_STATE_AUTHORITY_BYTES];
+    struct package_state_authority_view admitted = { 0 };
+    require(package_state_authority_encode(&database, authority) ==
+        PACKAGE_STATE_STATUS_OK);
+    require(package_state_authority_parse(authority, sizeof(authority), &admitted) ==
+        PACKAGE_STATE_STATUS_OK);
+    require(admitted.generation == database.generation &&
+        admitted.database_bytes == count);
+    struct package_state_generation complete = { bytes, count, true };
+    struct package_state_generation incomplete = { bytes, count, false };
+    struct package_state_recovery_result recovery = { 0 };
+    require(package_state_recovery_decide(authority, sizeof(authority),
+        NULL, 0U, &complete, NULL, &recovery) == PACKAGE_STATE_STATUS_OK);
+    require(recovery.choice == PACKAGE_STATE_RECOVERY_OLD &&
+        recovery.generation == database.generation &&
+        recovery.database.bytes == bytes);
+    recovery = (struct package_state_recovery_result){ 0 };
+    require(package_state_recovery_decide(authority, sizeof(authority),
+        NULL, 0U, &incomplete, NULL, &recovery) ==
+        PACKAGE_STATE_STATUS_INCOMPLETE);
+    require(recovery.choice == PACKAGE_STATE_RECOVERY_NONE &&
+        recovery.generation == 0U);
+    recovery = (struct package_state_recovery_result){ 0 };
+    require(package_state_recovery_decide(authority, sizeof(authority),
+        NULL, 0U, &complete, &complete, &recovery) ==
+        PACKAGE_STATE_STATUS_MISMATCH);
+    require(recovery.choice == PACKAGE_STATE_RECOVERY_NONE &&
+        recovery.generation == 0U);
+    return status;
+}
+
+static enum package_state_status check_authority(
+    const uint8_t *bytes, size_t count)
+{
+    struct package_state_authority_view authority = { 0 };
+    enum package_state_status status = package_state_authority_parse(
+        bytes, count, &authority);
+    if (status == PACKAGE_STATE_STATUS_OK) {
+        require(authority.generation != 0U);
+        require(authority.database_bytes >= PACKAGE_STATE_DATABASE_HEADER_BYTES);
+        require(authority.database_bytes <= PACKAGE_STATE_DATABASE_MAX_BYTES);
+    }
+    return status;
+}
+
+static enum package_state_status check_journal(
+    const uint8_t *bytes, size_t count)
+{
+    struct package_state_journal_view journal = { 0 };
+    enum package_state_status status = package_state_journal_parse(
+        bytes, count, &journal);
+    if (status == PACKAGE_STATE_STATUS_OK) {
+        require(journal.operation >= PACKAGE_STATE_OPERATION_INSTALL &&
+            journal.operation <= PACKAGE_STATE_OPERATION_REPAIR);
+        require(journal.base_generation != 0U &&
+            journal.target_generation == journal.base_generation + 1U);
+        require(journal.required_space != 0U);
+    }
+    return status;
+}
+
+static enum package_state_status check_transition(
+    const uint8_t *bytes, size_t count)
+{
+    if (count < 4U) {
+        return PACKAGE_STATE_STATUS_LENGTH;
+    }
+    const size_t base_length = (size_t)bytes[0] | ((size_t)bytes[1] << 8U);
+    const size_t target_length = (size_t)bytes[2] | ((size_t)bytes[3] << 8U);
+    if (base_length > count - 4U ||
+        target_length > count - 4U - base_length ||
+        count - 4U - base_length - target_length != PACKAGE_STATE_JOURNAL_BYTES) {
+        return PACKAGE_STATE_STATUS_LENGTH;
+    }
+    const uint8_t *base_bytes = bytes + 4U;
+    const uint8_t *target_bytes = base_bytes + base_length;
+    const uint8_t *journal = target_bytes + target_length;
+    struct package_state_database_view base = { 0 };
+    struct package_state_database_view target = { 0 };
+    struct package_state_journal_view parsed = { 0 };
+    enum package_state_status status = package_state_database_parse(
+        base_bytes, base_length, &base);
+    if (status != PACKAGE_STATE_STATUS_OK) {
+        return status;
+    }
+    status = package_state_database_parse(target_bytes, target_length, &target);
+    if (status != PACKAGE_STATE_STATUS_OK) {
+        return status;
+    }
+    status = package_state_journal_parse(journal, PACKAGE_STATE_JOURNAL_BYTES,
+        &parsed);
+    if (status != PACKAGE_STATE_STATUS_OK) {
+        return status;
+    }
+    uint8_t base_sha256[PACKAGE_STATE_SHA256_BYTES];
+    uint8_t target_sha256[PACKAGE_STATE_SHA256_BYTES];
+    require(package_state_sha256(base_bytes, base_length, base_sha256) ==
+        PACKAGE_STATE_STATUS_OK);
+    require(package_state_sha256(target_bytes, target_length, target_sha256) ==
+        PACKAGE_STATE_STATUS_OK);
+    if (parsed.base_generation != base.generation ||
+        parsed.target_generation != target.generation ||
+        parsed.base_database_bytes != base_length ||
+        parsed.target_database_bytes != target_length ||
+        memcmp(parsed.base_database_sha256, base_sha256,
+            PACKAGE_STATE_SHA256_BYTES) != 0 ||
+        memcmp(parsed.target_database_sha256, target_sha256,
+            PACKAGE_STATE_SHA256_BYTES) != 0) {
+        return PACKAGE_STATE_STATUS_MISMATCH;
+    }
+    size_t identifier_length = 0U;
+    while (identifier_length < 64U && journal[160U + identifier_length] != 0U) {
+        ++identifier_length;
+    }
+    if (identifier_length == 64U) {
+        return PACKAGE_STATE_STATUS_TEXT;
+    }
+    struct package_state_journal_spec spec = {
+        .operation = parsed.operation,
+        .base = &base,
+        .target = &target,
+        .required_space = parsed.required_space,
+        .target_identifier = journal + 160U,
+        .target_identifier_bytes = identifier_length,
+    };
+    uint8_t encoded[PACKAGE_STATE_JOURNAL_BYTES];
+    require(package_state_journal_encode(&spec, encoded) ==
+        PACKAGE_STATE_STATUS_OK);
+    require(memcmp(encoded, journal, sizeof(encoded)) == 0);
+    uint8_t old_authority[PACKAGE_STATE_AUTHORITY_BYTES];
+    uint8_t new_authority[PACKAGE_STATE_AUTHORITY_BYTES];
+    require(package_state_authority_encode(&base, old_authority) ==
+        PACKAGE_STATE_STATUS_OK);
+    require(package_state_authority_encode(&target, new_authority) ==
+        PACKAGE_STATE_STATUS_OK);
+    struct package_state_generation old_generation = {
+        base_bytes, base_length, true
+    };
+    struct package_state_generation new_generation = {
+        target_bytes, target_length, true
+    };
+    struct package_state_recovery_result recovery = { 0 };
+    require(package_state_recovery_decide(old_authority,
+        sizeof(old_authority), journal, PACKAGE_STATE_JOURNAL_BYTES,
+        &old_generation, &new_generation, &recovery) == PACKAGE_STATE_STATUS_OK);
+    require(recovery.choice == PACKAGE_STATE_RECOVERY_OLD &&
+        recovery.generation == base.generation);
+    recovery = (struct package_state_recovery_result){ 0 };
+    require(package_state_recovery_decide(new_authority,
+        sizeof(new_authority), journal, PACKAGE_STATE_JOURNAL_BYTES,
+        &old_generation, &new_generation, &recovery) == PACKAGE_STATE_STATUS_OK);
+    require(recovery.choice == PACKAGE_STATE_RECOVERY_NEW &&
+        recovery.generation == target.generation);
+    new_generation.owned_files_complete = false;
+    recovery = (struct package_state_recovery_result){ 0 };
+    require(package_state_recovery_decide(new_authority,
+        sizeof(new_authority), journal, PACKAGE_STATE_JOURNAL_BYTES,
+        &old_generation, &new_generation, &recovery) == PACKAGE_STATE_STATUS_OK);
+    require(recovery.choice == PACKAGE_STATE_RECOVERY_OLD &&
+        recovery.generation == base.generation);
+    return PACKAGE_STATE_STATUS_OK;
+}
+
+static enum package_state_status run_input(
+    const uint8_t *input, size_t size)
+{
+    if (size < 1U || size > MAX_INPUT_BYTES) {
+        return PACKAGE_STATE_STATUS_LENGTH;
+    }
+    switch (input[0]) {
+        case 0U: return check_database(input + 1U, size - 1U);
+        case 1U: return check_authority(input + 1U, size - 1U);
+        case 2U: return check_journal(input + 1U, size - 1U);
+        case 3U: return check_transition(input + 1U, size - 1U);
+        default: return PACKAGE_STATE_STATUS_HEADER;
+    }
+}
+
+int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size)
+{
+    (void)run_input(input, size);
+    return 0;
+}
+
+#ifdef OPENRFS_REPLAY
+int main(int argc, char **argv)
+{
+    uint8_t input[MAX_INPUT_BYTES + 1U];
+    size_t count;
+    FILE *stream;
+    enum package_state_status status;
+
+    if (argc != 2 || (stream = fopen(argv[1], "rb")) == NULL) {
+        fprintf(stderr, "usage: package-state-replay INPUT\n");
+        return 2;
+    }
+    count = fread(input, 1U, sizeof(input), stream);
+    if (ferror(stream) || fclose(stream) != 0) {
+        fprintf(stderr, "cannot read input\n");
+        return 2;
+    }
+    status = run_input(input, count);
+    printf("status=%d accepted=%d\n", (int)status,
+        status == PACKAGE_STATE_STATUS_OK ? 1 : 0);
+    return 0;
+}
+#endif

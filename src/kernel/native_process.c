@@ -4605,7 +4605,7 @@ static int64_t poll_wait_items(
         if (status != NETWORK_STATUS_OK && status != NETWORK_STATUS_TIMEOUT) {
             return network_error(status);
         }
-        for (size_t result = 0U; result < result_count; ++result) {
+        for (size_t result = 0U; result < network_count; ++result) {
             const size_t index = network_indices[result];
 
             if ((network_results[result].ready & NETWORK_READY_READABLE) != 0U) {

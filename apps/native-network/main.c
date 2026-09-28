@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+#include <openrfs/event.h>
 #include <openrfs/network.h>
 #include <openrfs/runtime.h>
 
@@ -82,6 +83,33 @@ static int exercise_udp(uint32_t address)
         close_handle(datagram) != 0) {
         return -12;
     }
+    return 0;
+}
+
+static int exercise_wait_slot_mapping(openrfs_handle_t stream)
+{
+    const long opened = openrfs_datagram_open();
+    struct openrfs_wait_item items[2];
+    long ready;
+    int closed;
+
+    if (opened < 0) {
+        return -1;
+    }
+    items[0] = (struct openrfs_wait_item){(openrfs_handle_t)opened,
+        OPENRFS_WAIT_READABLE, 0U};
+    items[1] = (struct openrfs_wait_item){stream,
+        OPENRFS_WAIT_WRITABLE, 0U};
+    ready = openrfs_wait(items, 2U,
+        openrfs_monotonic_ns() + UINT64_C(150000000));
+    closed = close_handle((openrfs_handle_t)opened);
+    if (ready != 1 || items[0].ready != 0U ||
+        items[1].ready != OPENRFS_WAIT_WRITABLE || closed != 0) {
+        printf("OPENRFS NETAPP WAIT SLOT failure ready=%ld first=%u second=%u close=%d\n",
+            ready, items[0].ready, items[1].ready, closed);
+        return -1;
+    }
+    puts("OPENRFS NETAPP PHASE wait-slot-mapping PASS");
     return 0;
 }
 
@@ -184,8 +212,15 @@ int main(int argc, char **argv, char **environment)
         openrfs_network_address(stream, 1, &peer) < 0 ||
         openrfs_network_address(stream, 0, &local) < 0 ||
         peer.address != HTTP_ADDRESS || peer.port != 80U ||
-        local.address == 0U || local.port == 0U ||
-        openrfs_stream_write(stream, request, sizeof(request) - 1U,
+        local.address == 0U || local.port == 0U) {
+        (void)close_handle(stream);
+        return 32;
+    }
+    if (exercise_wait_slot_mapping(stream) != 0) {
+        (void)close_handle(stream);
+        return 37;
+    }
+    if (openrfs_stream_write(stream, request, sizeof(request) - 1U,
             deadline()) != (long)(sizeof(request) - 1U)) {
         (void)close_handle(stream);
         return 32;

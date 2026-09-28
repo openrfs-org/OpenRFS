@@ -1,0 +1,195 @@
+name: Verification platform
+
+on:
+    pull_request:
+        branches: [main]
+    push:
+        branches: [main]
+    workflow_dispatch:
+        inputs:
+            long_campaign:
+                description: Run the bounded sustained fuzz campaign
+                type: boolean
+                default: false
+    schedule:
+        - cron: '17 2 * * 0'
+
+permissions:
+    contents: read
+
+concurrency:
+    group: verification-platform-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    fast:
+        if: ${{ github.event_name != 'schedule' && !(github.event_name == 'workflow_dispatch' && inputs.long_campaign) }}
+        runs-on: ubuntu-24.04
+        timeout-minutes: 30
+        env:
+            SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+            GITLEAKS_BASE_REF: ${{ github.event.pull_request.base.sha }}
+        steps:
+            - name: Check out exact source head
+              uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+              with:
+                  ref: ${{ env.SOURCE_SHA }}
+                  fetch-depth: 0
+                  persist-credentials: false
+            - name: Record exact checkout
+              run: |
+                  set -euo pipefail
+                  test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+                  test -z "$(git status --porcelain)"
+                  printf 'verification source: %s\n' "$SOURCE_SHA"
+            - name: Install pinned host tools
+              run: |
+                  set -euo pipefail
+                  sudo apt-get update
+                  sudo apt-get install --yes --no-install-recommends \
+                      clang-18=1:18.1.3-1ubuntu1 llvm-18=1:18.1.3-1ubuntu1 shellcheck=0.9.0-1 \
+                      gcc make python3-venv
+                  rustup toolchain install 1.98.1 --profile minimal
+                  rustup toolchain install nightly-2026-09-20 --profile minimal
+                  rustup default 1.98.1
+                  python3 tools/verification/install_action_scanners.py \
+                      --output "$RUNNER_TEMP/openrfs-scanners"
+                  python3 tools/verification/install_cargo_fuzz.py \
+                      --output "$RUNNER_TEMP/openrfs-scanners"
+                  echo "$RUNNER_TEMP/openrfs-scanners" >>"$GITHUB_PATH"
+                  python3 -m venv "$RUNNER_TEMP/openrfs-verify-venv"
+                  "$RUNNER_TEMP/openrfs-verify-venv/bin/python" -m pip install \
+                      --no-cache-dir -r tools/verification/requirements.txt
+                  echo "$RUNNER_TEMP/openrfs-verify-venv/bin" >>"$GITHUB_PATH"
+            - name: Verify manifest and run fast gate
+              run: |
+                  set -euo pipefail
+                  python3 tools/verification/run.py validate --profile fast
+                  make verify-fast
+                  make verification-report
+            - name: Retain fast evidence
+              if: ${{ always() }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: verification-fast-${{ env.SOURCE_SHA }}
+                  path: verification/runs
+                  if-no-files-found: warn
+                  retention-days: 14
+
+    extended:
+        if: ${{ github.event_name != 'schedule' && !(github.event_name == 'workflow_dispatch' && inputs.long_campaign) }}
+        runs-on: ubuntu-24.04
+        timeout-minutes: 180
+        env:
+            SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+            GITLEAKS_BASE_REF: ${{ github.event.pull_request.base.sha }}
+            RUST_TEST_THREADS: '2'
+        steps:
+            - name: Check out exact source head
+              uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+              with:
+                  ref: ${{ env.SOURCE_SHA }}
+                  fetch-depth: 0
+                  persist-credentials: false
+            - name: Record exact checkout
+              run: |
+                  set -euo pipefail
+                  test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+                  test -z "$(git status --porcelain)"
+                  printf 'verification source: %s\n' "$SOURCE_SHA"
+            - name: Install pinned verification tools
+              run: |
+                  set -euo pipefail
+                  sudo apt-get update
+                  sudo apt-get install --yes --no-install-recommends \
+                      binutils bzip2 clang-18=1:18.1.3-1ubuntu1 llvm-18=1:18.1.3-1ubuntu1 \
+                      cppcheck=2.13.0-2ubuntu3 clang-tidy-18=1:18.1.3-1ubuntu1 \
+                      clang-tools-18=1:18.1.3-1ubuntu1 \
+                      e2fsprogs ffmpeg gcc grub-common grub-pc-bin lld make \
+                      mtools python3-cryptography python3-venv \
+                      qemu-system-x86 shellcheck=0.9.0-1 \
+                      valgrind=1:3.22.0-0ubuntu3 xorriso
+                  rustup toolchain install 1.98.1 --profile minimal \
+                      --component clippy --target x86_64-unknown-none
+                  rustup toolchain install nightly-2026-09-20 --profile minimal
+                  rustup default 1.98.1
+                  python3 tools/verification/install_action_scanners.py \
+                      --output "$RUNNER_TEMP/openrfs-scanners"
+                  python3 tools/verification/install_cargo_audit.py \
+                      --output "$RUNNER_TEMP/openrfs-scanners"
+                  python3 tools/verification/install_cargo_fuzz.py \
+                      --output "$RUNNER_TEMP/openrfs-scanners"
+                  python3 tools/verification/install_syft.py \
+                      --output "$RUNNER_TEMP/openrfs-scanners"
+                  python3 tools/verification/install_osv_scanner.py \
+                      --output "$RUNNER_TEMP/openrfs-scanners"
+                  echo "$RUNNER_TEMP/openrfs-scanners" >>"$GITHUB_PATH"
+                  python3 -m venv "$RUNNER_TEMP/openrfs-verify-venv"
+                  "$RUNNER_TEMP/openrfs-verify-venv/bin/python" -m pip install \
+                      --no-cache-dir -r tools/verification/requirements.txt
+                  echo "$RUNNER_TEMP/openrfs-verify-venv/bin" >>"$GITHUB_PATH"
+            - name: Run unchanged make verify and extended manifest
+              run: |
+                  set -euo pipefail
+                  make verification-manifest
+                  make verify-extended
+                  make verification-report
+            - name: Retain extended evidence
+              if: ${{ always() }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: verification-extended-${{ env.SOURCE_SHA }}
+                  path: |
+                      verification/runs
+                      build/tests/normal/serial.log
+                      build/tests/normal/scenario-result.json
+                  if-no-files-found: warn
+                  retention-days: 30
+
+    sustained:
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.long_campaign) }}
+        runs-on: ubuntu-24.04
+        timeout-minutes: 60
+        env:
+            SOURCE_SHA: ${{ github.sha }}
+        steps:
+            - name: Check out exact source head
+              uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+              with:
+                  ref: ${{ env.SOURCE_SHA }}
+                  persist-credentials: false
+            - name: Record exact checkout
+              run: |
+                  set -euo pipefail
+                  test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+                  test -z "$(git status --porcelain)"
+                  printf 'verification source: %s\n' "$SOURCE_SHA"
+            - name: Install pinned fuzz tools
+              run: |
+                  set -euo pipefail
+                  sudo apt-get update
+                  sudo apt-get install --yes --no-install-recommends \
+                      clang-18=1:18.1.3-1ubuntu1 llvm-18=1:18.1.3-1ubuntu1 python3-venv
+                  rustup toolchain install 1.98.1 --profile minimal
+                  rustup toolchain install nightly-2026-09-20 --profile minimal
+                  rustup default 1.98.1
+                  python3 tools/verification/install_cargo_fuzz.py \
+                      --output "$RUNNER_TEMP/openrfs-scanners"
+                  echo "$RUNNER_TEMP/openrfs-scanners" >>"$GITHUB_PATH"
+                  python3 -m venv "$RUNNER_TEMP/openrfs-verify-venv"
+                  "$RUNNER_TEMP/openrfs-verify-venv/bin/python" -m pip install \
+                      --no-cache-dir -r tools/verification/requirements.txt
+                  echo "$RUNNER_TEMP/openrfs-verify-venv/bin" >>"$GITHUB_PATH"
+            - name: Run bounded sustained campaigns
+              run: |
+                  set -euo pipefail
+                  make fuzz-nightly
+                  make verification-report
+            - name: Retain campaign checkpoints and findings
+              if: ${{ always() }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: verification-sustained-${{ env.SOURCE_SHA }}
+                  path: verification/runs
+                  if-no-files-found: warn
+                  retention-days: 30
