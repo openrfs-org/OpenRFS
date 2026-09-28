@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include <assert.h>
 #include <stdio.h>
-#include <openrfs/native_handle.h>
+#include <rsd/native_handle.h>
 #include "../src/kernel/vfs.c"
 
 static bool host_interrupts_enabled = true;
@@ -14,7 +14,7 @@ static enum native_resource_close_result next_result;
 static enum native_resource_close_result close_file(uint8_t type,
     const struct native_resource *resource, void *context)
 {
-    assert(type == OPENRFS_HANDLE_FILE && resource->words[0] == 77U && context == &calls);
+    assert(type == RSD_HANDLE_FILE && resource->words[0] == 77U && context == &calls);
     ++calls;
     return next_result;
 }
@@ -32,12 +32,12 @@ static enum native_resource_close_result close_scripted(uint8_t type,
     struct close_script *script = context;
 
     assert(resource != NULL && script != NULL);
-    if (type == OPENRFS_HANDLE_FILE) {
+    if (type == RSD_HANDLE_FILE) {
         assert(resource->words[0] == 77U);
         ++script->file_calls;
         return script->file_result;
     }
-    assert(type == OPENRFS_HANDLE_DIRECTORY && resource->words[0] == 88U);
+    assert(type == RSD_HANDLE_DIRECTORY && resource->words[0] == 88U);
     ++script->directory_calls;
     return script->directory_result;
 }
@@ -58,18 +58,18 @@ static void mixed_close_all_test(void)
         0U,
     };
     struct native_handle_table table;
-    openrfs_handle_t file_handle;
-    openrfs_handle_t file_duplicate;
-    openrfs_handle_t directory_handle;
+    rsd_handle_t file_handle;
+    rsd_handle_t file_duplicate;
+    rsd_handle_t directory_handle;
     struct native_resource *resolved;
     struct native_handle_close_report report;
 
     assert(native_handle_table_initialize(&table, 3U) == NATIVE_HANDLE_OK);
-    assert(native_handle_install(&table, OPENRFS_HANDLE_FILE, &file,
+    assert(native_handle_install(&table, RSD_HANDLE_FILE, &file,
         &file_handle) == NATIVE_HANDLE_OK);
     assert(native_handle_duplicate(&table, file_handle, &file_duplicate) ==
         NATIVE_HANDLE_OK);
-    assert(native_handle_install(&table, OPENRFS_HANDLE_DIRECTORY, &directory,
+    assert(native_handle_install(&table, RSD_HANDLE_DIRECTORY, &directory,
         &directory_handle) == NATIVE_HANDLE_OK);
 
     /* close_all must retire the consumed directory error and still retain the
@@ -83,7 +83,7 @@ static void mixed_close_all_test(void)
         script.file_calls == 1U &&
         script.directory_calls == 1U);
     assert(table.active_handles == 1U && table.active_objects == 1U);
-    assert(native_handle_resolve(&table, file_duplicate, OPENRFS_HANDLE_FILE,
+    assert(native_handle_resolve(&table, file_duplicate, RSD_HANDLE_FILE,
         &resolved) == NATIVE_HANDLE_OK && resolved->words[0] == 77U);
 
     script.file_result = NATIVE_RESOURCE_CLOSED;
@@ -122,14 +122,14 @@ static void duplicate_reference_census_test(void)
         0U,
     };
     struct native_handle_table table;
-    openrfs_handle_t first;
-    openrfs_handle_t second;
-    openrfs_handle_t third;
+    rsd_handle_t first;
+    rsd_handle_t second;
+    rsd_handle_t third;
     struct native_resource *resolved;
     struct native_handle_close_report report;
 
     assert(native_handle_table_initialize(&table, 3U) == NATIVE_HANDLE_OK);
-    assert(native_handle_install(&table, OPENRFS_HANDLE_FILE, &resource,
+    assert(native_handle_install(&table, RSD_HANDLE_FILE, &resource,
         &first) == NATIVE_HANDLE_OK);
     assert(native_handle_duplicate(&table, first, &second) ==
         NATIVE_HANDLE_OK);
@@ -142,11 +142,11 @@ static void duplicate_reference_census_test(void)
         report.retired_handles == 2U && report.retryable && report.progress &&
         script.file_calls == 1U &&
         table.active_handles == 1U && table.active_objects == 1U);
-    assert(native_handle_resolve(&table, first, OPENRFS_HANDLE_FILE,
+    assert(native_handle_resolve(&table, first, RSD_HANDLE_FILE,
         &resolved) == NATIVE_HANDLE_STALE);
-    assert(native_handle_resolve(&table, second, OPENRFS_HANDLE_FILE,
+    assert(native_handle_resolve(&table, second, RSD_HANDLE_FILE,
         &resolved) == NATIVE_HANDLE_STALE);
-    assert(native_handle_resolve(&table, third, OPENRFS_HANDLE_FILE,
+    assert(native_handle_resolve(&table, third, RSD_HANDLE_FILE,
         &resolved) == NATIVE_HANDLE_OK);
 
     script.file_result = NATIVE_RESOURCE_CLOSED;
@@ -162,35 +162,35 @@ static void duplicate_reference_census_test(void)
 }
 
 static unsigned directory_close_calls;
-static enum openrfsfs_status directory_close_status;
+static enum rsdfs_status directory_close_status;
 
-static enum openrfsfs_status directory_stat(enum openrfsfs_volume volume,
-    const char *path, struct openrfsfs_stat *stat)
+static enum rsdfs_status directory_stat(enum rsdfs_volume volume,
+    const char *path, struct rsdfs_stat *stat)
 {
-    assert(volume == OPENRFSFS_VOLUME_DATA && path != NULL && stat != NULL);
+    assert(volume == RSDFS_VOLUME_DATA && path != NULL && stat != NULL);
     assert(host_interrupts_enabled);
-    *stat = (struct openrfsfs_stat){.object_id = 101U, .directory = true};
-    return OPENRFSFS_STATUS_OK;
+    *stat = (struct rsdfs_stat){.object_id = 101U, .directory = true};
+    return RSDFS_STATUS_OK;
 }
 
-static enum openrfsfs_status directory_open(enum openrfsfs_volume volume,
-    const char *path, openrfsfs_handle *handle)
+static enum rsdfs_status directory_open(enum rsdfs_volume volume,
+    const char *path, rsdfs_handle *handle)
 {
-    assert(volume == OPENRFSFS_VOLUME_DATA && path != NULL && handle != NULL);
+    assert(volume == RSDFS_VOLUME_DATA && path != NULL && handle != NULL);
     assert(host_interrupts_enabled);
     *handle = 91U;
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-static enum openrfsfs_status directory_read(openrfsfs_handle handle,
-    struct openrfsfs_list_entry *entry, bool *present)
+static enum rsdfs_status directory_read(rsdfs_handle handle,
+    struct rsdfs_list_entry *entry, bool *present)
 {
     assert(handle == 91U && entry != NULL && present != NULL);
     *present = false;
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-static enum openrfsfs_status directory_close(openrfsfs_handle handle)
+static enum rsdfs_status directory_close(rsdfs_handle handle)
 {
     assert(handle == 91U);
     ++directory_close_calls;
@@ -198,7 +198,7 @@ static enum openrfsfs_status directory_close(openrfsfs_handle handle)
 }
 
 struct native_directory_state {
-    openrfsfs_directory_handle iterator;
+    rsdfs_directory_handle iterator;
     bool active;
 };
 
@@ -210,12 +210,12 @@ static enum native_resource_close_result close_directory(uint8_t type,
     struct native_directory_state *state = context;
     ++native_directory_callback_calls;
     bool consumed = false;
-    const enum openrfsfs_status status = openrfsfs_directory_close_report(
+    const enum rsdfs_status status = rsdfs_directory_close_report(
         state->iterator, &consumed);
 
-    assert(type == OPENRFS_HANDLE_DIRECTORY && resource->words[0] == 0U);
+    assert(type == RSD_HANDLE_DIRECTORY && resource->words[0] == 0U);
     if (consumed) state->active = false;
-    return status == OPENRFSFS_STATUS_OK ? NATIVE_RESOURCE_CLOSED :
+    return status == RSDFS_STATUS_OK ? NATIVE_RESOURCE_CLOSED :
         consumed ? NATIVE_RESOURCE_CLOSED_WITH_ERROR : NATIVE_RESOURCE_RETAINED;
 }
 
@@ -229,36 +229,36 @@ static const struct vfs_backend_ops directory_backend = {
 
 static void prepare_directory_mount(void)
 {
-    mounts[OPENRFSFS_VOLUME_DATA].active = true;
-    mounts[OPENRFSFS_VOLUME_DATA].mounting = false;
-    mounts[OPENRFSFS_VOLUME_DATA].unmounting = false;
-    mounts[OPENRFSFS_VOLUME_DATA].generation = 1U;
-    mounts[OPENRFSFS_VOLUME_DATA].references = 0U;
-    mounts[OPENRFSFS_VOLUME_DATA].backend = &directory_backend;
+    mounts[RSDFS_VOLUME_DATA].active = true;
+    mounts[RSDFS_VOLUME_DATA].mounting = false;
+    mounts[RSDFS_VOLUME_DATA].unmounting = false;
+    mounts[RSDFS_VOLUME_DATA].generation = 1U;
+    mounts[RSDFS_VOLUME_DATA].references = 0U;
+    mounts[RSDFS_VOLUME_DATA].backend = &directory_backend;
     directory_close_calls = 0U;
     native_directory_callback_calls = 0U;
-    directory_close_status = OPENRFSFS_STATUS_OK;
+    directory_close_status = RSDFS_STATUS_OK;
     for (size_t index = 0U; index < VFS_VNODE_BUCKETS; ++index) {
         vnode_buckets[index] = VFS_NO_INDEX;
     }
 }
 
-static openrfsfs_directory_handle open_test_directory(void)
+static rsdfs_directory_handle open_test_directory(void)
 {
-    openrfsfs_directory_handle iterator;
+    rsdfs_directory_handle iterator;
 
-    assert(openrfsfs_directory_open(OPENRFSFS_VOLUME_DATA, "root", &iterator) ==
-        OPENRFSFS_STATUS_OK);
+    assert(rsdfs_directory_open(RSDFS_VOLUME_DATA, "root", &iterator) ==
+        RSDFS_STATUS_OK);
     return iterator;
 }
 
 static void release_directory_mount(void)
 {
-    mounts[OPENRFSFS_VOLUME_DATA].active = false;
-    mounts[OPENRFSFS_VOLUME_DATA].backend = NULL;
-    mounts[OPENRFSFS_VOLUME_DATA].references = 0U;
+    mounts[RSDFS_VOLUME_DATA].active = false;
+    mounts[RSDFS_VOLUME_DATA].backend = NULL;
+    mounts[RSDFS_VOLUME_DATA].references = 0U;
     assert(vnode_resources_released());
-    assert(openrfsfs_resources_released());
+    assert(rsdfs_resources_released());
 }
 
 static void assert_directory_wrapper(const struct native_handle_table *table,
@@ -275,19 +275,19 @@ static void retryable_process_teardown_test(void)
     const struct native_resource resource = {{0U, 0U, 0U, 0U}};
     struct native_handle_table table;
     struct native_directory_state state = {open_test_directory(), true};
-    openrfs_handle_t first;
-    openrfs_handle_t duplicate;
+    rsd_handle_t first;
+    rsd_handle_t duplicate;
     struct native_handle_close_report report;
 
     assert(native_handle_table_initialize(&table, 2U) == NATIVE_HANDLE_OK);
-    assert(native_handle_install(&table, OPENRFS_HANDLE_DIRECTORY, &resource,
+    assert(native_handle_install(&table, RSD_HANDLE_DIRECTORY, &resource,
         &first) == NATIVE_HANDLE_OK);
     assert(native_handle_duplicate(&table, first, &duplicate) ==
         NATIVE_HANDLE_OK);
 
     /* A full mount reference count makes the VFS refuse before consuming the
      * iterator.  close_all must leave its final wrapper for a later retry. */
-    mounts[OPENRFSFS_VOLUME_DATA].references = SIZE_MAX;
+    mounts[RSDFS_VOLUME_DATA].references = SIZE_MAX;
     assert(native_handle_close_all_diagnostics(&table, close_directory,
         &state, &report) == NATIVE_HANDLE_CLOSE_FAILED);
     // The native callback ran and received the VFS refusal; the backend close
@@ -299,10 +299,10 @@ static void retryable_process_teardown_test(void)
         report.retired_handles == 1U && report.retryable && report.progress);
     assert(directory_close_calls == 0U);
     assert_directory_wrapper(&table, &state, 1U, 1U, true);
-    assert(openrfsfs_directory_read(state.iterator,
-        &(struct openrfsfs_list_entry){0}, &(bool){false}) == OPENRFSFS_STATUS_BUSY);
+    assert(rsdfs_directory_read(state.iterator,
+        &(struct rsdfs_list_entry){0}, &(bool){false}) == RSDFS_STATUS_BUSY);
 
-    mounts[OPENRFSFS_VOLUME_DATA].references = 0U;
+    mounts[RSDFS_VOLUME_DATA].references = 0U;
     assert(native_handle_close_all_diagnostics(&table, close_directory, &state,
         &report) == NATIVE_HANDLE_OK && !report.retryable);
     assert(report.attempted_handles == 1U && report.callback_attempts == 1U &&
@@ -311,8 +311,8 @@ static void retryable_process_teardown_test(void)
     assert(directory_close_calls == 1U);
     assert_directory_wrapper(&table, &state, 0U, 0U, false);
     bool consumed = true;
-    assert(openrfsfs_directory_close_report(state.iterator, &consumed) ==
-        OPENRFSFS_STATUS_STALE_HANDLE && !consumed);
+    assert(rsdfs_directory_close_report(state.iterator, &consumed) ==
+        RSDFS_STATUS_STALE_HANDLE && !consumed);
 }
 
 static void consumed_error_process_teardown_test(void)
@@ -320,16 +320,16 @@ static void consumed_error_process_teardown_test(void)
     const struct native_resource resource = {{0U, 0U, 0U, 0U}};
     struct native_handle_table table;
     struct native_directory_state state = {open_test_directory(), true};
-    openrfs_handle_t first;
-    openrfs_handle_t duplicate;
+    rsd_handle_t first;
+    rsd_handle_t duplicate;
     struct native_handle_close_report report;
 
     assert(native_handle_table_initialize(&table, 2U) == NATIVE_HANDLE_OK);
-    assert(native_handle_install(&table, OPENRFS_HANDLE_DIRECTORY, &resource,
+    assert(native_handle_install(&table, RSD_HANDLE_DIRECTORY, &resource,
         &first) == NATIVE_HANDLE_OK);
     assert(native_handle_duplicate(&table, first, &duplicate) ==
         NATIVE_HANDLE_OK);
-    directory_close_status = OPENRFSFS_STATUS_IO;
+    directory_close_status = RSDFS_STATUS_IO;
     assert(native_handle_close_all_diagnostics(&table, close_directory, &state,
         &report) == NATIVE_HANDLE_CLOSE_FAILED);
     assert(!report.retryable && report.attempted_handles == 2U &&
@@ -340,8 +340,8 @@ static void consumed_error_process_teardown_test(void)
     assert(directory_close_calls == 1U);
     assert_directory_wrapper(&table, &state, 0U, 0U, false);
     bool consumed = true;
-    assert(openrfsfs_directory_close_report(state.iterator, &consumed) ==
-        OPENRFSFS_STATUS_STALE_HANDLE && !consumed);
+    assert(rsdfs_directory_close_report(state.iterator, &consumed) ==
+        RSDFS_STATUS_STALE_HANDLE && !consumed);
 }
 
 int main(void)
@@ -349,9 +349,9 @@ int main(void)
     struct native_handle_table table;
     const struct native_resource resource = {{77U, 0U, 0U, 0U}};
     struct native_resource *resolved;
-    openrfs_handle_t first, duplicate, reused;
+    rsd_handle_t first, duplicate, reused;
     assert(native_handle_table_initialize(&table, 2U) == NATIVE_HANDLE_OK);
-    assert(native_handle_install(&table, OPENRFS_HANDLE_FILE, &resource, &first) == NATIVE_HANDLE_OK);
+    assert(native_handle_install(&table, RSD_HANDLE_FILE, &resource, &first) == NATIVE_HANDLE_OK);
     assert(native_handle_duplicate(&table, first, &duplicate) == NATIVE_HANDLE_OK);
     next_result = NATIVE_RESOURCE_CLOSED_WITH_ERROR;
     assert(native_handle_close(&table, first, close_file, &calls) == NATIVE_HANDLE_OK);
@@ -360,20 +360,20 @@ int main(void)
     // native wrapper; neither close nor close_all may call the backend again.
     assert(native_handle_close(&table, duplicate, close_file, &calls) == NATIVE_HANDLE_CLOSE_FAILED);
     assert(calls == 1U && table.active_handles == 0U && table.active_objects == 0U);
-    assert(native_handle_resolve(&table, duplicate, OPENRFS_HANDLE_FILE, &resolved) == NATIVE_HANDLE_STALE);
+    assert(native_handle_resolve(&table, duplicate, RSD_HANDLE_FILE, &resolved) == NATIVE_HANDLE_STALE);
     assert(native_handle_close_all(&table, close_file, &calls) == NATIVE_HANDLE_OK && calls == 1U);
-    assert(native_handle_install(&table, OPENRFS_HANDLE_FILE, &resource, &reused) == NATIVE_HANDLE_OK);
+    assert(native_handle_install(&table, RSD_HANDLE_FILE, &resource, &reused) == NATIVE_HANDLE_OK);
     assert(reused != first && reused != duplicate);
     // A refusal before consumption retains exactly one retryable reference.
     next_result = NATIVE_RESOURCE_RETAINED;
     assert(native_handle_close(&table, reused, close_file, &calls) == NATIVE_HANDLE_CLOSE_FAILED);
     assert(table.active_handles == 1U && table.active_objects == 1U);
-    assert(native_handle_resolve(&table, reused, OPENRFS_HANDLE_FILE, &resolved) == NATIVE_HANDLE_OK);
+    assert(native_handle_resolve(&table, reused, RSD_HANDLE_FILE, &resolved) == NATIVE_HANDLE_OK);
     next_result = NATIVE_RESOURCE_CLOSED;
     assert(native_handle_close(&table, reused, close_file, &calls) == NATIVE_HANDLE_OK);
     assert(calls == 3U && table.active_handles == 0U && table.active_objects == 0U);
-    assert(native_handle_install(&table, OPENRFS_HANDLE_FILE, &resource, &first) == NATIVE_HANDLE_OK);
-    assert(native_handle_install(&table, OPENRFS_HANDLE_FILE, &resource, &duplicate) == NATIVE_HANDLE_OK);
+    assert(native_handle_install(&table, RSD_HANDLE_FILE, &resource, &first) == NATIVE_HANDLE_OK);
+    assert(native_handle_install(&table, RSD_HANDLE_FILE, &resource, &duplicate) == NATIVE_HANDLE_OK);
     next_result = NATIVE_RESOURCE_CLOSED_WITH_ERROR;
     assert(native_handle_close_all(&table, close_file, &calls) == NATIVE_HANDLE_CLOSE_FAILED);
     assert(calls == 5U && table.active_handles == 0U && table.active_objects == 0U);
@@ -383,17 +383,17 @@ int main(void)
     duplicate_reference_census_test();
 
     prepare_directory_mount();
-    const openrfsfs_directory_handle iterator = open_test_directory();
+    const rsdfs_directory_handle iterator = open_test_directory();
     struct native_directory_state directory_state = {iterator, true};
     struct native_handle_table directory_table;
     const struct native_resource directory_resource = {{0U, 0U, 0U, 0U}};
-    openrfs_handle_t directory_handle, directory_duplicate;
+    rsd_handle_t directory_handle, directory_duplicate;
     assert(native_handle_table_initialize(&directory_table, 2U) == NATIVE_HANDLE_OK);
-    assert(native_handle_install(&directory_table, OPENRFS_HANDLE_DIRECTORY,
+    assert(native_handle_install(&directory_table, RSD_HANDLE_DIRECTORY,
         &directory_resource, &directory_handle) == NATIVE_HANDLE_OK);
     assert(native_handle_duplicate(&directory_table, directory_handle,
         &directory_duplicate) == NATIVE_HANDLE_OK);
-    directory_close_status = OPENRFSFS_STATUS_IO;
+    directory_close_status = RSDFS_STATUS_IO;
     assert(native_handle_close(&directory_table, directory_handle,
         close_directory, &directory_state) == NATIVE_HANDLE_OK);
     assert(directory_close_calls == 0U && directory_state.active &&
@@ -403,8 +403,8 @@ int main(void)
     assert(directory_close_calls == 1U && !directory_state.active &&
         directory_table.active_handles == 0U && directory_table.active_objects == 0U);
     bool consumed = true;
-    assert(openrfsfs_directory_close_report(iterator, &consumed) ==
-        OPENRFSFS_STATUS_STALE_HANDLE && !consumed);
+    assert(rsdfs_directory_close_report(iterator, &consumed) ==
+        RSDFS_STATUS_STALE_HANDLE && !consumed);
     assert(native_handle_close_all(&directory_table, close_directory,
         &directory_state) == NATIVE_HANDLE_OK && directory_close_calls == 1U);
     release_directory_mount();

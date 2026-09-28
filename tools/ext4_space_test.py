@@ -67,7 +67,7 @@ def run(args):
     marker = ("ST EXT4 VFS inode exhaustion create mkdir symlink rollback reuse cleanup census exact"
         if args.inodes else "ST EXT4 VFS ENOSPC durable short prefix rollback cursor reuse cleanup census exact")
     if status != recovery.PASS_EXIT_STATUS or transcript.count(marker) != 1 or \
-            transcript.count(recovery.PASS_MARKER) != 1 or "ST FAIL" in transcript or "OpenRFS PANIC" in transcript:
+            transcript.count(recovery.PASS_MARKER) != 1 or "ST FAIL" in transcript or "RSD PANIC" in transcript:
         raise RuntimeError(f"ordinary VFS low-space test failed ({status}):\n" + recovery._transcript_tail(transcript))
     if not args.inodes and transcript.count(
             "ST EXT4 VFS retained write fsync and sync ENOSPC prefix cursor exact") != 1:

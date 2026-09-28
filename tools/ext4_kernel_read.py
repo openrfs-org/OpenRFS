@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Read clean OpenRFS guest results through the Linux ext4 driver."""
+"""Read clean RSD guest results through the Linux ext4 driver."""
 
 from __future__ import annotations
 
@@ -80,7 +80,7 @@ def mounted_read(root, expected):
 
 
 def verify_files(image, output, expected):
-    if os.environ.get("OPENRFS_EXT4_KERNEL_INTEROP") != "1":
+    if os.environ.get("RSD_EXT4_KERNEL_INTEROP") != "1":
         return {"verified": False, "reason": "Linux kernel interoperability not requested; no gate credit"}
     if platform.system() != "Linux":
         raise RuntimeError("requested kernel interoperability requires Linux")
@@ -148,11 +148,11 @@ def main():
     if args.mounted_read:
         print(json.dumps(mounted_read(args.image.resolve(), json.loads(args.output.read_text()))))
     else:
-        prefix = b"OpenRFS deterministic ext4 fixture\n"
+        prefix = b"RSD deterministic ext4 fixture\n"
         content = prefix + bytes(4096 - len(prefix)) + b"X"
         report = verify_files(args.image, args.output, {
             "system/README.TXT": {"bytes": len(content), "sha256": hashlib.sha256(content).hexdigest()},
-            "indexed": {"entries": [f"entry-{index:04d}-openrfs-fixture" for index in range(256)]}})
+            "indexed": {"entries": [f"entry-{index:04d}-rsd-core-fixture" for index in range(256)]}})
         print(json.dumps(report, sort_keys=True))
 
 
