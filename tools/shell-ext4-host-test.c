@@ -71,6 +71,8 @@ enum rsdfs_status rsdfs_close(rsdfs_handle handle)
 
 int main(void)
 {
+    assert(history_is_right());
+    puts("RSD shell history navigation and draft restoration: PASS");
     interrupts_enabled = true;
     shell_idle_if_no_input(true);
     assert(halts == 1U && interrupts_enabled);

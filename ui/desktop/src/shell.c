@@ -1057,8 +1057,23 @@ static bool handle_client(uint32_t slot, const struct rsd_event *event)
         return false;
     case RSD_APP_PACKAGES: {
         struct rsd_rect apply;
+        struct rsd_rect page_button;
 
-        if (rsd_packages_apply_bounds(&windows[slot], &apply) &&
+        if (rsd_packages_page_bounds(&windows[slot], false,
+                &page_button) &&
+                rsd_rect_contains(page_button, event->x, event->y)) {
+            (void)rsd_packages_turn_page(&windows[slot], false);
+            return true;
+        }
+        if (rsd_packages_page_bounds(&windows[slot], true,
+                &page_button) &&
+                rsd_rect_contains(page_button, event->x, event->y)) {
+            (void)rsd_packages_turn_page(&windows[slot], true);
+            return true;
+        }
+
+        if (!rsd_packages_live() &&
+                rsd_packages_apply_bounds(&windows[slot], &apply) &&
                 rsd_rect_contains(apply, event->x, event->y)) {
             uint32_t changed = rsd_packages_apply();
 
@@ -1068,14 +1083,18 @@ static bool handle_client(uint32_t slot, const struct rsd_event *event)
             }
             return true;
         }
-        for (at = 0U; at < rsd_packages_count(); ++at) {
+        for (at = rsd_packages_first_visible(&windows[slot]);
+                at < rsd_packages_count(); ++at) {
             struct rsd_rect row;
 
             row.x = client.x;
-            row.y = client.y + 30U + at * 19U;
+            row.y = client.y + 30U +
+                (at - rsd_packages_first_visible(&windows[slot])) * 19U;
             row.width = client.width;
             row.height = 19U;
-            if (rsd_rect_contains(row, event->x, event->y)) {
+            if (row.y + row.height <=
+                    client.y + client.height - 74U &&
+                    rsd_rect_contains(row, event->x, event->y)) {
                 rsd_packages_select(at);
                 return true;
             }
@@ -1287,6 +1306,10 @@ static bool shell_context_pick(uint32_t row)
 {
     if (context_node >= RSD_FILES_MAX_NODES) {
         return false;
+    }
+    if (rsd_files_live_read_only() && (row == 1U || row == 2U)) {
+        rsd_shell_notify("Files", "Mounted Data is read-only here");
+        return true;
     }
     switch (row) {
     case 0U:     /* Open */
@@ -1689,6 +1712,12 @@ bool rsd_shell_handle(const struct rsd_event *event)
          */
         if (apps[slot] == RSD_APP_FILES &&
                 (event->modifiers & RSD_MOD_CTRL) != 0U) {
+            if (event->key == 'r') {
+                if (!rsd_files_refresh()) {
+                    rsd_shell_notify("Files", "Data refresh failed");
+                }
+                return true;
+            }
             if (event->key == 'c' || event->key == 'x') {
                 return rsd_files_copy_selection(event->key == 'x');
             }
@@ -1707,6 +1736,14 @@ bool rsd_shell_handle(const struct rsd_event *event)
                 rsd_files_select_all();
                 return true;
             }
+        }
+        if (apps[slot] == RSD_APP_PACKAGES &&
+                (event->modifiers & RSD_MOD_CTRL) != 0U &&
+                event->key == 'r') {
+            if (!rsd_packages_refresh()) {
+                rsd_shell_notify("Packages", "Database unavailable");
+            }
+            return true;
         }
         if (apps[slot] == RSD_APP_TERMINAL) {
             if (event->special == RSD_KEY_ENTER) {

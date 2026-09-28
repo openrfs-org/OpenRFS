@@ -14,6 +14,9 @@
 static struct rsd_package packages[RSD_PACKAGES_MAX];
 static uint32_t package_count;
 static uint32_t selected;
+static bool (*live_load)(void);
+static bool live_ready;
+static uint32_t page;
 
 static void copy(char *out, const char *text, uint32_t capacity)
 {
@@ -43,6 +46,38 @@ void rsd_packages_reset(void)
 {
     package_count = 0U;
     selected = 0U;
+    live_load = NULL;
+    live_ready = false;
+    page = 0U;
+}
+
+void rsd_packages_use_live_source(bool (*load)(void))
+{
+    live_load = load;
+    package_count = 0U;
+    selected = 0U;
+    live_ready = false;
+    page = 0U;
+}
+
+bool rsd_packages_refresh(void)
+{
+    if (live_load == NULL) {
+        return false;
+    }
+    package_count = 0U;
+    selected = 0U;
+    page = 0U;
+    live_ready = live_load();
+    if (!live_ready) {
+        package_count = 0U;
+    }
+    return live_ready;
+}
+
+bool rsd_packages_live(void)
+{
+    return live_load != NULL;
 }
 
 bool rsd_packages_add(const char *name, const char *summary,
@@ -99,7 +134,7 @@ const struct rsd_package *rsd_packages_at(uint32_t index)
  */
 void rsd_packages_mark(uint32_t index, enum rsd_package_mark mark)
 {
-    if (index >= package_count) {
+    if (live_load != NULL || index >= package_count) {
         return;
     }
     if (mark == RSD_PACKAGE_INSTALL && packages[index].installed) {
@@ -129,6 +164,9 @@ uint32_t rsd_packages_apply(void)
     uint32_t changed = 0U;
     uint32_t at;
 
+    if (live_load != NULL) {
+        return 0U;
+    }
     for (at = 0U; at < package_count; ++at) {
         if (packages[at].mark == RSD_PACKAGE_NONE) {
             continue;
@@ -163,6 +201,61 @@ void rsd_packages_select(uint32_t index)
 uint32_t rsd_packages_selected(void)
 {
     return selected;
+}
+
+static uint32_t page_rows(const struct rsd_window *window)
+{
+    struct rsd_rect client = rsd_window_client(window);
+    uint32_t list_height = client.height > PKG_TOOLBAR + PKG_DETAIL ?
+        client.height - PKG_TOOLBAR - PKG_DETAIL : 0U;
+    uint32_t rows = list_height / PKG_ROW;
+
+    return rows == 0U ? 1U : rows;
+}
+
+uint32_t rsd_packages_first_visible(const struct rsd_window *window)
+{
+    return window == NULL ? 0U : page * page_rows(window);
+}
+
+bool rsd_packages_turn_page(const struct rsd_window *window, bool next)
+{
+    uint32_t rows;
+
+    if (window == NULL) {
+        return false;
+    }
+    rows = page_rows(window);
+    if (next) {
+        if ((page + 1U) * rows >= package_count) {
+            return false;
+        }
+        ++page;
+    } else {
+        if (page == 0U) {
+            return false;
+        }
+        --page;
+    }
+    selected = page * rows;
+    return true;
+}
+
+bool rsd_packages_page_bounds(const struct rsd_window *window, bool next,
+    struct rsd_rect *out)
+{
+    struct rsd_rect client;
+
+    if (window == NULL || out == NULL) {
+        return false;
+    }
+    client = rsd_window_client(window);
+    if (client.width < 250U) {
+        return false;
+    }
+    *out = (struct rsd_rect){ client.x + client.width - (next ? 58U : 112U),
+        client.y + 4U, 50U, 22U };
+    return true;
 }
 
 static void box_at(struct rsd_surface *surface, struct rsd_rect clip,
@@ -250,20 +343,11 @@ void rsd_packages_draw(struct rsd_surface *surface,
     client = rsd_window_client(window);
     rsd_surface_fill(surface, client, client, RSD_BG);
 
-    /*
-     * ONE BUTTON, AND IT IS THE ONE THAT DOES SOMETHING.
-     *
-     * synaptic's toolbar has Reload, Mark All Upgrades and Apply, and
-     * this drew all three.  Reload and Mark All had nothing behind
-     * them - there is no repository to reload and no upgrade to mark -
-     * so they were pictures.  Apply had a function behind it and no way
-     * to reach it: the harness called rsd_packages_apply() directly
-     * and the button never did.  It does now.
-     */
+    /* Apply belongs to the standalone preview model only. */
     {
         struct rsd_rect button;
 
-        if (rsd_packages_apply_bounds(window, &button)) {
+        if (live_load == NULL && rsd_packages_apply_bounds(window, &button)) {
             rsd_oxy_button(surface, client, button, RSD_BG, false);
             rsd_font_draw(surface, client, button.x + 8U,
                 button.y + (button.height + rsd_font_ascent()) / 2U - 1U,
@@ -278,8 +362,33 @@ void rsd_packages_draw(struct rsd_surface *surface,
         client.height - PKG_TOOLBAR - PKG_DETAIL : 0U;
     rsd_surface_fill(surface, client, list, RSD_BASE);
 
-    for (at = 0U; at < package_count; ++at) {
-        uint32_t top = list.y + at * PKG_ROW;
+    if (live_load != NULL) {
+        rsd_font_draw(surface, client, client.x + PKG_PAD,
+            client.y + 19U, "Installed packages - read only (Ctrl+R reload)",
+            RSD_TEXT);
+        if (!live_ready) {
+            rsd_font_draw(surface, list, list.x + PKG_PAD,
+                list.y + 20U, "Package database unavailable", RSD_TEXT);
+        }
+    }
+    if (package_count > page_rows(window)) {
+        struct rsd_rect previous;
+        struct rsd_rect following;
+
+        if (rsd_packages_page_bounds(window, false, &previous) &&
+                rsd_packages_page_bounds(window, true, &following)) {
+            rsd_oxy_button(surface, client, previous, RSD_BG, false);
+            rsd_oxy_button(surface, client, following, RSD_BG, false);
+            rsd_font_draw(surface, client, previous.x + 7U,
+                previous.y + 17U, "Prev", RSD_FG);
+            rsd_font_draw(surface, client, following.x + 7U,
+                following.y + 17U, "Next", RSD_FG);
+        }
+    }
+
+    for (at = rsd_packages_first_visible(window); at < package_count; ++at) {
+        uint32_t top = list.y +
+            (at - rsd_packages_first_visible(window)) * PKG_ROW;
         bool lit = at == selected;
 
         if (top + PKG_ROW > list.y + list.height) {
