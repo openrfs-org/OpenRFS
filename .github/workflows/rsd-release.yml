@@ -1,0 +1,65 @@
+name: RSD release
+
+on:
+    push:
+        tags:
+            - v2.5.0-beta.2
+
+permissions:
+    contents: write
+
+concurrency:
+    group: rsd-release-${{ github.ref }}
+    cancel-in-progress: false
+
+jobs:
+    publish:
+        name: build and publish RSD 2.5 beta 2
+        runs-on: ubuntu-24.04
+        timeout-minutes: 120
+        steps:
+            - name: Check out tagged source
+              uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+              with:
+                  persist-credentials: false
+            - name: Install build tools
+              run: |
+                  sudo sed -i '\|azure.archive.ubuntu.com|d' /etc/apt/apt-mirrors.txt
+                  sudo apt-get update
+                  sudo apt-get install --yes --no-install-recommends \
+                      binutils clang e2fsprogs ffmpeg gcc grub-common grub-pc-bin \
+                      lld make mtools python3-cryptography qemu-system-x86 xorriso
+            - name: Install the Rust bare-metal target
+              run: rustup target add x86_64-unknown-none
+            - name: Build the release images
+              run: |
+                  set -euo pipefail
+                  make verify
+                  make iso build/userspace/rsd-desktop-system-fat32.raw \
+                      build/userspace/rsd-data-fat32.raw
+                  mkdir -p release
+                  cp build/rsd.iso release/RSD-v2.5.0-beta.2.iso
+                  cp build/rsd.elf release/rsd-v2.5.0-beta.2.elf
+                  cp build/userspace/rsd-desktop-system-fat32.raw \
+                      release/rsd-v2.5.0-beta.2-system-fat32.raw
+                  cp build/userspace/rsd-data-fat32.raw \
+                      release/rsd-v2.5.0-beta.2-data-fat32.raw
+                  (cd release && sha256sum * > SHA256SUMS && sha256sum -c SHA256SUMS)
+            - name: Publish the tagged release
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  set -euo pipefail
+                  cat > release-notes.md <<'NOTES'
+                  # RSD 2.5 beta 2
+
+                  RSD stands for Root Software Distribution. It is an operating system and kernel designed to be read, modified, and forked into your own distribution.
+
+                  This beta includes the RSD command line, installer configuration interface, and desktop with its applications and icons. The installer currently previews configuration and does not write to disk. RSD remains experimental.
+
+                  The ISO, kernel ELF, desktop System volume, Data volume, and SHA256 manifest were built from this exact tag. The two FAT32 images are required for the desktop boot profile.
+                  NOTES
+                  printf '\nSource commit: `%s`.\n' "$GITHUB_SHA" >> release-notes.md
+                  gh release create "$GITHUB_REF_NAME" release/* \
+                      --verify-tag --prerelease \
+                      --title 'RSD 2.5 beta 2' --notes-file release-notes.md
