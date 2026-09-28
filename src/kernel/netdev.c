@@ -8,8 +8,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/netdev.h>
-#include <openrfs/virtio_net.h>
+#include <rsd/netdev.h>
+#include <rsd/virtio_net.h>
 
 struct netdev_interface {
     char name[NETDEV_NAME_CAPACITY];
