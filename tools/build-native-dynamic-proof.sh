@@ -9,8 +9,8 @@ fi
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 output=$1
-cc=${OPENRFS_SDK_CC:-clang}
-ld=${OPENRFS_SDK_LD:-ld.lld}
+cc=${RSD_SDK_CC:-clang}
+ld=${RSD_SDK_LD:-ld.lld}
 python=${PYTHON:-python3}
 readelf=${READELF:-llvm-readelf}
 

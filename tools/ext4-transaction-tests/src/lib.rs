@@ -921,12 +921,12 @@ fn superblock_images_admit_only_a_complete_clean_inode_map() {
 
 #[test]
 fn deterministic_ext4_fixture_discovers_its_real_journal_inode_map() {
-    let Ok(path) = std::env::var("OPENRFS_EXT4_RUST_FIXTURE") else {
-        eprintln!("OPENRFS_EXT4_RUST_FIXTURE is unset; journal-inode integration is CI-only");
+    let Ok(path) = std::env::var("RSD_EXT4_RUST_FIXTURE") else {
+        eprintln!("RSD_EXT4_RUST_FIXTURE is unset; journal-inode integration is CI-only");
         return;
     };
     let bytes = std::fs::read(&path)
-        .expect("configured OPENRFS_EXT4_RUST_FIXTURE must exist and be readable");
+        .expect("configured RSD_EXT4_RUST_FIXTURE must exist and be readable");
 
     // Exercise the shipped loader against the real fixture. The vendored
     // superblock unit test references upstream test_data that is not shipped.
@@ -1749,7 +1749,7 @@ fn orphan_cleanup_plan(storage: &VectorStorage) -> Vec<JournalCommitOperation> {
 
 #[test]
 fn real_orphan_unlink_and_cleanup_survive_every_plan_cut_and_repeated_recovery() {
-    let Ok(path) = std::env::var("OPENRFS_EXT4_RUST_FIXTURE") else { return };
+    let Ok(path) = std::env::var("RSD_EXT4_RUST_FIXTURE") else { return };
     let baseline = std::fs::read(&path).unwrap();
     let original = Ext4::load(Box::new(baseline.clone())).unwrap();
     let original_inode = original.open(b"/system/README.TXT").unwrap().inode().index;

@@ -6,9 +6,9 @@ if [ "$#" -ne 2 ]; then
     exit 2
 fi
 
-build_only=${OPENRFS_BUSYBOX_BUILD_ONLY:-0}
+build_only=${RSD_BUSYBOX_BUILD_ONLY:-0}
 if [ "$build_only" != 0 ] && [ "$build_only" != 1 ]; then
-    printf 'OPENRFS_BUSYBOX_BUILD_ONLY must be 0 or 1\n' >&2
+    printf 'RSD_BUSYBOX_BUILD_ONLY must be 0 or 1\n' >&2
     exit 2
 fi
 
