@@ -29,7 +29,7 @@
 #include <rsd/ui.h>
 #include <rsd/version.h>
 
-#include "rsd_mark.h"
+#include <rsd/mark.h>
 
 /*
  * A command line.
