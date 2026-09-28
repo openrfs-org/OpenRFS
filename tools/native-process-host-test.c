@@ -1,14 +1,27 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "../src/kernel/native_process.c"
 
 int main(void)
 {
     bool complete;
+    char path[OPENRFSFS_MAX_PATH];
     struct native_pipe *pipe;
     uint64_t pipe_id;
+
+    assert(data_path_from_cwd("", "notes", 5U, path) &&
+        strcmp(path, "notes") == 0);
+    assert(data_path_from_cwd("one/two", "../three/./item", 15U, path) &&
+        strcmp(path, "one/three/item") == 0);
+    assert(data_path_from_cwd("one", "../../four", 10U, path) &&
+        strcmp(path, "four") == 0);
+    assert(data_path_from_cwd("one", "..", 2U, path) &&
+        strcmp(path, ".") == 0);
+    assert(!data_path_from_cwd("one", "bad:name", 8U, path));
+    assert(!data_path_from_cwd("one", "bad\\name", 8U, path));
 
     zero_bytes(pipes, sizeof(pipes));
     next_pipe_id = 1U;

@@ -14,7 +14,8 @@
 
 enum openrfs_volume {
     OPENRFS_VOLUME_SYSTEM = 1,
-    OPENRFS_VOLUME_DATA = 2
+    OPENRFS_VOLUME_DATA = 2,
+    OPENRFS_VOLUME_DATA_CWD = 3
 };
 
 /* PATH_UNLINK's second argument. Zero preserves the original remove-any API. */

@@ -4029,6 +4029,8 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 			grep -Fxq 'OPENRFS PROCESS group signal and wait selectors PASS' "$$log" && \
 			grep -Fxq 'OPENRFS SIGNAL SIGPIPE default ignore and fork PASS' "$$log" && \
 			grep -Fxq 'OPENRFS PROCESS inherited umask PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PROCESS Data cwd relative paths and fork inheritance PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PROCESS cwd preserved across exec PASS' "$$log" && \
 			grep -Fxq 'OPENRFS PROCESS fork retains only calling thread PASS' "$$log" && \
 			grep -Fxq 'OPENRFS PROCESS exec replacement image observed PASS' "$$log" && \
 			grep -Fxq 'OPENRFS PROCESS fork exec same-pid argv env rollback cloexec PASS' "$$log" && \

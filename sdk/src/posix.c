@@ -472,6 +472,28 @@ int access(const char *path, int mode)
     return 0;
 }
 
+int chdir(const char *path)
+{
+    struct openrfs_runtime_path parsed;
+    struct openrfs_path request;
+
+    if (openrfs_runtime_path(path, &parsed) != 0) return -1;
+    request = (struct openrfs_path){(uint64_t)(uintptr_t)parsed.text,
+        (uint32_t)parsed.length, parsed.volume, 0U};
+    return openrfs_result(openrfs_syscall1(OPENRFS_SYS_PROCESS_CHDIR,
+        (uint64_t)(uintptr_t)&request));
+}
+
+char *getcwd(char *buffer, size_t size)
+{
+    if (buffer == NULL) { errno = EFAULT; return NULL; }
+    const long result = openrfs_syscall2(OPENRFS_SYS_PROCESS_GETCWD,
+        (uint64_t)(uintptr_t)buffer, size);
+
+    if (result < 0) { errno = (int)-result; return NULL; }
+    return buffer;
+}
+
 static int path_operation(const char *path, uint64_t number, uint64_t value)
 {
     struct openrfs_runtime_path parsed;
@@ -495,10 +517,21 @@ int link(const char *source, const char *destination)
 {
     struct openrfs_runtime_path from;
     struct openrfs_runtime_path to;
+    struct openrfs_rename_request request;
     if (openrfs_runtime_path(source, &from) != 0 ||
         openrfs_runtime_path(destination, &to) != 0) return -1;
-    if (from.volume != to.volume) { errno = EXDEV; return -1; }
-    return openrfs_result(openrfs_path_link(from.volume, from.text, to.text));
+    if (from.volume == OPENRFS_VOLUME_SYSTEM ||
+        to.volume == OPENRFS_VOLUME_SYSTEM) { errno = EXDEV; return -1; }
+    request = (struct openrfs_rename_request){
+        sizeof(request), OPENRFS_ABI_VERSION,
+        {(uint64_t)(uintptr_t)from.text, (uint32_t)from.length,
+            from.volume, 0U},
+        {(uint64_t)(uintptr_t)to.text, (uint32_t)to.length,
+            to.volume, 0U},
+        0U, 0U
+    };
+    return openrfs_result(openrfs_syscall1(OPENRFS_SYS_PATH_LINK,
+        (uint64_t)(uintptr_t)&request));
 }
 ssize_t readlink(const char *path, char *output, size_t capacity)
 {

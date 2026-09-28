@@ -199,6 +199,7 @@ struct native_process {
     struct native_directory_resource directories[NATIVE_HANDLE_LIMIT];
     struct native_window_state window;
     uint8_t console_input[NATIVE_CONSOLE_INPUT_CAPACITY];
+    char cwd[OPENRFSFS_MAX_PATH];
     uint64_t executable_frames[PAGING_PROCESS_ALIAS_MAX_PAGES];
     uint8_t transfer[NATIVE_COPY_CHUNK];
     uint64_t generation;
@@ -1450,6 +1451,48 @@ static bool safe_relative_path(const char *path, size_t length)
     return true;
 }
 
+static bool data_path_from_cwd(const char *cwd, const char *input,
+    size_t length, char output[OPENRFSFS_MAX_PATH])
+{
+    size_t used = bounded_length((const uint8_t *)cwd,
+        OPENRFSFS_MAX_PATH);
+    size_t index = 0U;
+
+    if (used >= OPENRFSFS_MAX_PATH || length == 0U) return false;
+    copy_bytes(output, cwd, used);
+    while (index < length) {
+        size_t start;
+        size_t component_length;
+
+        while (index < length && input[index] == '/') ++index;
+        start = index;
+        while (index < length && input[index] != '/') {
+            const uint8_t value = (uint8_t)input[index];
+
+            if (value == 0U || value > UINT8_C(0x7F) ||
+                value == '\\' || value == ':') return false;
+            ++index;
+        }
+        component_length = index - start;
+        if (component_length == 0U ||
+            (component_length == 1U && input[start] == '.')) continue;
+        if (component_length == 2U && input[start] == '.' &&
+            input[start + 1U] == '.') {
+            while (used != 0U && output[used - 1U] != '/') --used;
+            if (used != 0U) --used;
+            continue;
+        }
+        if (used + (used != 0U ? 1U : 0U) + component_length >=
+            OPENRFSFS_MAX_PATH) return false;
+        if (used != 0U) output[used++] = '/';
+        copy_bytes(output + used, input + start, component_length);
+        used += component_length;
+    }
+    if (used == 0U) output[used++] = '.';
+    output[used] = '\0';
+    return safe_relative_path(output, used);
+}
+
 /* ext4 follows symlinks after the lexical namespace prefix is applied.
  * Refuse every existing link component before passing native Data paths to
  * VFS. Native link creation is disabled below until the backend has an atomic
@@ -1519,16 +1562,28 @@ static int64_t path_from_user_checked(
 )
 {
     char relative[OPENRFSFS_MAX_PATH];
+    char normalized[OPENRFSFS_MAX_PATH];
+    const char *resolved = relative;
+    size_t resolved_length;
     size_t namespace_length;
 
     if (process == NULL || path == NULL || output == NULL || volume == NULL ||
         path->reserved != 0U || path->length == 0U ||
         path->length >= sizeof(relative) ||
-        !copy_from_user(process, relative, path->address, path->length) ||
-        !safe_relative_path(relative, path->length)) {
+        !copy_from_user(process, relative, path->address, path->length)) {
         return -OPENRFS_EINVAL;
     }
     relative[path->length] = '\0';
+    resolved_length = path->length;
+    if (path->volume == OPENRFS_VOLUME_DATA_CWD) {
+        if (!data_path_from_cwd(process->cwd, relative, path->length,
+                normalized)) return -OPENRFS_EINVAL;
+        resolved = normalized;
+        resolved_length = bounded_length((const uint8_t *)normalized,
+            sizeof(normalized));
+    } else if (!safe_relative_path(relative, path->length)) {
+        return -OPENRFS_EINVAL;
+    }
     zero_bytes(output, OPENRFSFS_MAX_PATH);
     if (path->volume == OPENRFS_VOLUME_SYSTEM) {
         size_t resource_length;
@@ -1556,7 +1611,8 @@ static int64_t path_from_user_checked(
         *volume = OPENRFSFS_VOLUME_SYSTEM;
         return 0;
     }
-    if (path->volume != OPENRFS_VOLUME_DATA ||
+    if ((path->volume != OPENRFS_VOLUME_DATA &&
+            path->volume != OPENRFS_VOLUME_DATA_CWD) ||
         (process->manifest.capabilities &
             (OPENRFS_CAP_DATA_READ | OPENRFS_CAP_DATA_WRITE)) == 0U) {
         return -OPENRFS_EINVAL;
@@ -1564,16 +1620,16 @@ static int64_t path_from_user_checked(
     namespace_length = bounded_length(process->manifest.data_namespace,
         sizeof(process->manifest.data_namespace));
     if (namespace_length == 0U ||
-        namespace_length + 1U + path->length >= OPENRFSFS_MAX_PATH) {
+        namespace_length + 1U + resolved_length >= OPENRFSFS_MAX_PATH) {
         return -OPENRFS_EINVAL;
     }
     copy_bytes(output, process->manifest.data_namespace, namespace_length);
-    if (path->length == 1U && relative[0] == '.') {
+    if (resolved_length == 1U && resolved[0] == '.') {
         output[namespace_length] = '\0';
     } else {
         output[namespace_length] = '/';
-        copy_bytes(output + namespace_length + 1U, relative,
-            path->length + 1U);
+        copy_bytes(output + namespace_length + 1U, resolved,
+            resolved_length + 1U);
     }
     const enum openrfsfs_status path_status =
         native_data_path_no_symlink(output, allow_final_link);
@@ -7174,6 +7230,65 @@ static int64_t syscall_process_umask(struct native_process *process,
     return previous;
 }
 
+static int64_t syscall_process_chdir(struct native_process *process,
+    uint64_t request_address)
+{
+    struct openrfs_path request;
+    struct openrfsfs_stat stat;
+    enum openrfsfs_volume volume;
+    char path[OPENRFSFS_MAX_PATH];
+    size_t namespace_length;
+
+    if (!copy_from_user(process, &request, request_address,
+            sizeof(request))) return -OPENRFS_EFAULT;
+    if (request.volume != OPENRFS_VOLUME_DATA &&
+        request.volume != OPENRFS_VOLUME_DATA_CWD) return -OPENRFS_ENOTSUP;
+    const int64_t path_error = path_from_user(process, &request, path,
+        &volume);
+    if (path_error != 0) return path_error;
+    cpu_interrupt_enable();
+    const enum openrfsfs_status status = openrfsfs_stat_path(volume, path,
+        &stat);
+    cpu_interrupt_disable();
+    if (status != OPENRFSFS_STATUS_OK) return filesystem_error(status);
+    if (!stat.directory) return -OPENRFS_ENOTDIR;
+    namespace_length = bounded_length(process->manifest.data_namespace,
+        sizeof(process->manifest.data_namespace));
+    if (namespace_length == 0U ||
+        bounded_length((const uint8_t *)path, sizeof(path)) <
+            namespace_length) {
+        return -OPENRFS_EIO;
+    }
+    if (path[namespace_length] == '\0') process->cwd[0] = '\0';
+    else {
+        const size_t length = bounded_length((const uint8_t *)path +
+            namespace_length + 1U,
+            sizeof(path) - namespace_length - 1U);
+
+        if (path[namespace_length] != '/' || length >= sizeof(process->cwd))
+            return -OPENRFS_EIO;
+        copy_bytes(process->cwd, path + namespace_length + 1U, length + 1U);
+    }
+    return 0;
+}
+
+static int64_t syscall_process_getcwd(struct native_process *process,
+    uint64_t output_address, uint64_t capacity)
+{
+    char path[OPENRFSFS_MAX_PATH + 1U];
+    const size_t length = bounded_length((const uint8_t *)process->cwd,
+        sizeof(process->cwd));
+
+    if (length >= sizeof(process->cwd)) return -OPENRFS_EIO;
+    if (capacity < length + 2U) return -OPENRFS_ERANGE;
+    if (output_address == 0U) return -OPENRFS_EFAULT;
+    path[0] = '/';
+    copy_bytes(path + 1U, process->cwd, length);
+    path[length + 1U] = '\0';
+    return copy_to_user(process, output_address, path, length + 2U) ?
+        (int64_t)(length + 2U) : -OPENRFS_EFAULT;
+}
+
 static bool begin_dynamic_finalizers(
     struct native_process *process,
     struct native_thread *thread,
@@ -7370,6 +7485,7 @@ static int64_t syscall_process_exec(struct native_process *process,
     exec_staging.process_group = process->process_group;
     exec_staging.has_executed = true;
     exec_staging.file_creation_mask = process->file_creation_mask;
+    copy_bytes(exec_staging.cwd, process->cwd, sizeof(process->cwd));
     exec_staging.ignored_signals = process->ignored_signals;
     copy_bytes(exec_staging.console_input, process->console_input,
         sizeof(process->console_input));
@@ -7424,6 +7540,7 @@ static int64_t syscall_process_fork(
     child->dynamic_fini_started = parent->dynamic_fini_started;
     child->ignored_signals = parent->ignored_signals;
     child->file_creation_mask = parent->file_creation_mask;
+    copy_bytes(child->cwd, parent->cwd, sizeof(parent->cwd));
     for (size_t index = 0U; index < parent->page_count; ++index) {
         const struct native_page *source = &parent->pages[index];
         uintptr_t frame;
@@ -7603,6 +7720,10 @@ static int64_t dispatch_syscall(
             (int64_t)frame->rsi);
     case OPENRFS_SYS_PROCESS_UMASK:
         return syscall_process_umask(process, frame->rdi);
+    case OPENRFS_SYS_PROCESS_CHDIR:
+        return syscall_process_chdir(process, frame->rdi);
+    case OPENRFS_SYS_PROCESS_GETCWD:
+        return syscall_process_getcwd(process, frame->rdi, frame->rsi);
     case OPENRFS_SYS_PROCESS_DISPOSITION:
         return syscall_process_disposition(process, frame->rdi, frame->rsi);
     case OPENRFS_SYS_PROCESS_EXIT_IMMEDIATE:

@@ -39,6 +39,8 @@ int getppid(void);
 int getpgrp(void);
 int getpgid(int pid);
 int setpgid(int pid, int pgid);
+int chdir(const char *path);
+char *getcwd(char *buffer, size_t size);
 int fork(void);
 int execve(const char *path, char *const argv[], char *const envp[]);
 int execv(const char *path, char *const argv[]);

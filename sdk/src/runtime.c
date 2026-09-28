@@ -458,18 +458,25 @@ int openrfs_runtime_path(const char *input, struct openrfs_runtime_path *result)
         errno = EINVAL;
         return -1;
     }
-    result->volume = OPENRFS_VOLUME_DATA;
+    result->volume = OPENRFS_VOLUME_DATA_CWD;
     result->text = input;
     if (strncmp(input, "System:", 7U) == 0) {
         result->volume = OPENRFS_VOLUME_SYSTEM;
         result->text += 7;
     } else if (strncmp(input, "Data:", 5U) == 0) {
+        result->volume = OPENRFS_VOLUME_DATA;
         result->text += 5;
+    } else if (input[0] == '/') {
+        result->volume = OPENRFS_VOLUME_DATA;
     }
     while (*result->text == '/') {
         ++result->text;
     }
     result->length = strlen(result->text);
+    if (result->length == 0U && input[0] != '\0') {
+        result->text = ".";
+        result->length = 1U;
+    }
     if (result->length == 0U || result->length > OPENRFS_PATH_MAX) {
         errno = ENAMETOOLONG;
         return -1;
