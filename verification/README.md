@@ -86,6 +86,8 @@ vendored upstream development locks or built-image packages.
 QEMU receipts require expected exit codes, begin/pass markers, no panic, and
 scenario-specific serial checks. `qemu_matrix.py` preserves each serial log and
 structured receipt. It checks the copied serial hash against the recipe's hash.
+The ISO hash must agree before boot, after the scenario, and in the retained
+copy, so evidence cannot silently describe a different guest image.
 The TCP scenario additionally reports teardown receipts. Machine acceleration
 is explicitly TCG. These checks do not provide guest source coverage.
 

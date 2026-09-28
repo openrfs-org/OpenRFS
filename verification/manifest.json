@@ -707,7 +707,7 @@
       "timeout_seconds": {"extended": 2400},
       "memory_max_mb": 4096,
       "disk_max_mb": 512,
-      "oracle": "Each actual guest run must satisfy its existing strict expected exit, begin/pass receipt, no panic, and subsystem diagnostics; serial SHA must match the retained copy. TCP and native network scenarios require resource teardown censuses; native network must report readiness on the later of two wait slots.",
+      "oracle": "Each actual guest run must satisfy its existing strict expected exit, begin/pass receipt, no panic, and subsystem diagnostics; serial SHA must match the retained copy, and ISO SHA must match before execution, after execution, and in retained evidence. TCP and native network scenarios require resource teardown censuses; native network must report readiness on the later of two wait slots.",
       "known_valid": [],
       "known_invalid": [],
       "execution": "QEMU guest, x86_64 TCG",
