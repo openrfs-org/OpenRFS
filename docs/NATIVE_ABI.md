@@ -2,10 +2,10 @@
 
 # Native userspace ABI v1
 
-The OpenRFS native ABI is the kernel contract for static Ring 3 applications.
+The RSD native ABI is the kernel contract for static Ring 3 applications.
 It is separate from the three measured Linux/BusyBox profiles. The canonical
-machine-readable definitions are under `include/openrfs/abi/`; the SDK installs
-the same headers under `sdk/include/openrfs/abi/`.
+machine-readable definitions are under `include/rsd/abi/`; the SDK installs
+the same headers under `sdk/include/rsd/abi/`.
 
 ## Calling and result convention
 
@@ -16,7 +16,7 @@ Its low-end canary is checked during disarm; the TSS `RSP0` stack remains
 reserved for privilege-changing interrupts and is not reused by deep filesystem
 or package-service syscall paths.
 Results are returned in `RAX`: zero or a positive value is success and a
-negative `openrfs_errno` value is failure. Unknown numbers return `-ENOSYS`.
+negative `rsd_errno` value is failure. Unknown numbers return `-ENOSYS`.
 
 Every public record uses fixed-width fields, begins with `size` and `version`
 where evolution is expected, and names its reserved fields. Callers set every
@@ -98,7 +98,7 @@ is immutable; writable Data paths are rooted below the application namespace.
 | `0x0213 FILE_TRUNCATE(handle, size)` | `0` | K | Requires a writable file handle. Ext4 truncates by inode identity through JBD2, preserving the cursor and surviving file/parent rename. Ext4's mutable-file cap is 64 MiB; FAT32 retains its separate 16 MiB limit. |
 | `0x0214 PATH_SET_TIMES(*request)` | `0` | K | A 48-byte versioned request sets explicit non-negative atime/mtime seconds and nanoseconds on ext4 Data with write capability. Seconds must fit the admitted ext4 epoch range, nanoseconds below one billion. Ctime comes from the transaction clock. |
 | `0x0215 PATH_LINK(*request)` | `0` | K | Creates a hard link to an existing regular Data inode at an absent destination. Requires Data write capability; copies both paths and allocates no handle. |
-| `0x0216 PATH_METADATA(*path, *metadata, flags)` | `0` | K | Copies versioned metadata for a path. `OPENRFS_METADATA_NOFOLLOW` selects the final link itself; otherwise lookup follows it. Retains no pointer or handle. |
+| `0x0216 PATH_METADATA(*path, *metadata, flags)` | `0` | K | Copies versioned metadata for a path. `RSD_METADATA_NOFOLLOW` selects the final link itself; otherwise lookup follows it. Retains no pointer or handle. |
 | `0x0217 FILE_SYNC(handle)` | `0` | K | Uses a valid file handle to complete that inode's retained ext4 durability plan; unrelated retained work can return busy. The handle remains owned by the caller. |
 | `0x0218 FILE_METADATA(handle, *metadata)` | `0` | K | Copies versioned metadata for the inode held by a file handle, including after rename or unlink. The handle remains caller-owned. |
 | `0x0219 FILE_PUBLISH(handle, *request)` | `0` | K | With Data write capability, atomically replaces the named ext4 destination only if the source still names the inode held by the writable handle. Copies both paths; the handle remains owned. |
@@ -118,7 +118,7 @@ is immutable; writable Data paths are rooted below the application namespace.
 | `0x0307 TIME_REALTIME()` | UTC Unix seconds or `-EIO` | K | Performs one bounded coherent CMOS/RTC read. It owns no object. RTC validity does not affect monotonic deadlines. |
 | `0x0308 RANDOM_STRONG(buffer, length)` | Bytes written or `-EIO` | K | Bypasses the non-cryptographic generator and copies only repetition-checked RDSEED/RDRAND output. It fails closed when strong hardware entropy is unavailable. |
 
-### OpenRFS window, surface, and input
+### RSD window, surface, and input
 
 | Number and signature | Result | Mode | Ownership, concurrency, and cleanup |
 | --- | --- | --- | --- |
@@ -181,7 +181,7 @@ duplicated; the final close releases the authenticated repository snapshot,
 installed-state snapshot, and copied payloads. Process teardown performs the
 same close. The v1 control profile admits at most eight changed packages with
 4 MiB of aggregate package bytes. Removal is exposed without a repository or
-payload upload. `openrfs repair` uses the repair flag with a signed repository and
+payload upload. `rsd repair` uses the repair flag with a signed repository and
 the same payload-binding path. Install/update/repair advance a checksummed,
 monotonic repository-version floor before package staging, so a signed older
 index remains refused across reboot and crash recovery.
@@ -194,7 +194,7 @@ DNS and stream/datagram operations pump bounded protocol state, recheck their
 absolute deadline and completion state, then halt the core until a device or
 timer interrupt. They never poll in a userspace or kernel spin loop.
 
-`include/openrfs/abi/base.h` is the syscall-number and error-number registry.
+`include/rsd/abi/base.h` is the syscall-number and error-number registry.
 The service-specific headers define exact records, limits, flags, event values,
 pixel format, IPv4 endpoint encoding, and static size checks.
 

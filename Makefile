@@ -2,18 +2,18 @@ SHELL := /bin/sh
 
 BUILD_DIR := build
 ISO_ROOT := $(BUILD_DIR)/iso-root
-KERNEL := $(BUILD_DIR)/openrfs.elf
-ISO := $(BUILD_DIR)/openrfs.iso
+KERNEL := $(BUILD_DIR)/rsd.elf
+ISO := $(BUILD_DIR)/rsd.iso
 SERIAL_LOG := $(BUILD_DIR)/serial.log
 TEST_BUILD_DIR := $(BUILD_DIR)/tests
 TEST_SCENARIOS := normal breakpoint invalid-opcode page-fault ist pit unexpected \
 	double-fault apic ioapic ioapic-level retired apic-timer tsc pm-timer \
 	pit-retired timers paging heap pci pci-ecam threads thread-guard framebuffer \
 	screen keyboard shell surface write-combining device-windows \
-	boot-ledger openrfs-proof device-substrate xhci nvme filesystem process \
-	linux-abi linux-abi-uname openrfs-proof-userland \
-	openrfs-proof-userland-absent openrfs-proof-userland-interactive \
-	openrfs-proof-userland-interactive-absent \
+	boot-ledger rsd-proof device-substrate xhci nvme filesystem process \
+	linux-abi linux-abi-uname rsd-proof-userland \
+	rsd-proof-userland-absent rsd-proof-userland-interactive \
+	rsd-proof-userland-interactive-absent \
 	fat32-system fat32-data fat32-nested fat32-growth fat32-random \
 	fat32-truncate fat32-rename fat32-delete fat32-full fat32-corrupt \
 	fat32-missing fat32-persistence fat32-cache fat32-immutable fat32-handles \
@@ -32,7 +32,7 @@ TEST_SCENARIOS := normal breakpoint invalid-opcode page-fault ist pit unexpected
 	nvidia nvidia-builtin native native-lua native-sqlite \
 	native-rust native-crash native-elf-refusal native-digest-refusal \
 	native-abi-refusal native-relaunch native-audio native-sdl native-dynamic \
-	native-https native-openrfs
+	native-https native-rsd
 TEST_TARGETS := $(addprefix qemu-test-,$(TEST_SCENARIOS))
 EXPECTED_TEST_SCENARIO_COUNT := 115
 EXPECTED_SHELL_ASSERTION_COUNT := 459
@@ -113,7 +113,7 @@ export RUST_TEST_THREADS
 # The one target Rust is built for. It matches the C flags exactly - no MMX, no
 # SSE, soft float, no red zone - which is why the two halves can share a stack.
 RUST_TARGET := x86_64-unknown-none
-RUST_LIB := $(BUILD_DIR)/libopenrfs.a
+RUST_LIB := $(BUILD_DIR)/librsd.a
 RUST_FAT16_TEST := $(BUILD_DIR)/fat16-tests$(HOST_EXEEXT)
 RUST_FAT32_TEST := $(BUILD_DIR)/fat32-tests$(HOST_EXEEXT)
 RUST_LINUX_FAT16_TEST := $(BUILD_DIR)/linux-fat16-tests$(HOST_EXEEXT)
@@ -144,18 +144,18 @@ TLS_HOST_WRAPPER_OBJECT := $(TEST_BUILD_DIR)/tls-wrapper.o
 HTTPS_HOST_TEST := $(TEST_BUILD_DIR)/https-client-host-test$(HOST_EXEEXT)
 HTTPS_HOST_OBJECT := $(TEST_BUILD_DIR)/https-client-host.o
 ZLIB_HOST_TEST := $(TEST_BUILD_DIR)/zlib-host-test$(HOST_EXEEXT)
-EXT4_FIXTURE := $(TEST_BUILD_DIR)/ext4/openrfs-ext4.raw
+EXT4_FIXTURE := $(TEST_BUILD_DIR)/ext4/rsd-ext4.raw
 EXT4_RECOVERY_FIXTURE := $(TEST_BUILD_DIR)/ext4-recovery/data.raw
 RUST_SOURCES := $(wildcard src/rust/*.rs)
 RUST_MANIFEST := src/rust/Cargo.toml
 RUST_LOCKFILE := src/rust/Cargo.lock
 RUST_VENDOR_SOURCES := $(shell find vendor/ext4plus vendor/rust-crates \
 	-type f -print 2>/dev/null)
-LOGO_CANONICAL_SOURCE := assets/openrfs/logo.png
-LOGO_SOURCE := assets/openrfs/logo.png
+LOGO_CANONICAL_SOURCE := ui/assets/logo/rsd-mark.png
+LOGO_SOURCE := ui/assets/logo/rsd-mark.png
 LOGO_BLOB := $(BUILD_DIR)/logo.srl
 LOGO_MAX_DIMENSION := 280
-WALLPAPER_SOURCES := assets/openrfs/wallpaper.png
+WALLPAPER_SOURCES := ui/assets/wallpaper/rsd-2.5.png
 WALLPAPER_BLOB := $(BUILD_DIR)/wallpaper.spw
 FONT_SOURCE := tools/font8x16.txt
 FONT_BLOB := $(BUILD_DIR)/font.snf
@@ -168,16 +168,16 @@ PACKAGE_TRUST_SPEC ?= platform/package-trust.json
 PACKAGE_TRUST_BLOB := $(BUILD_DIR)/package-trust.skt
 PACKAGE_TRUST_ASSET_C := $(BUILD_DIR)/package-trust-asset.c
 PACKAGE_TRUST_ASSET_OBJECT := $(BUILD_DIR)/package-trust-asset.o
-OPENRFS_PROOF_IMAGE := assets/openrfs/proof.png
-OPENRFS_PROOF_FOCUS_IMAGE := assets/openrfs/proof-focus.png
-OPENRFS_PROOF_TERMINAL_IMAGE := assets/openrfs/proof-terminal.png
-OPENRFS_PROOF_CAPTURE_DIR := $(BUILD_DIR)/openrfs-proof-captures
-OPENRFS_PROOF_BOOT_VIDEO := assets/openrfs-proof-boot-20s.mp4
-OPENRFS_CAPTURE_DIR := $(BUILD_DIR)/openrfs-captures
+RSD_PROOF_IMAGE := assets/rsd/proof.png
+RSD_PROOF_FOCUS_IMAGE := assets/rsd/proof-focus.png
+RSD_PROOF_TERMINAL_IMAGE := assets/rsd/proof-terminal.png
+RSD_PROOF_CAPTURE_DIR := $(BUILD_DIR)/rsd-proof-captures
+RSD_PROOF_BOOT_VIDEO := assets/rsd-proof-boot-20s.mp4
+RSD_CAPTURE_DIR := $(BUILD_DIR)/rsd-captures
 NETWORK_CAPTURE_DIR := $(BUILD_DIR)/networking-capture
 NVME_FIXTURE := $(TEST_BUILD_DIR)/nvme/nvme-fixture.raw
 FILESYSTEM_FIXTURE := $(TEST_BUILD_DIR)/filesystem/fat16-fixture.raw
-PROCESS_ELF := $(TEST_BUILD_DIR)/process/OPENRFS.BIN
+PROCESS_ELF := $(TEST_BUILD_DIR)/process/RSD.BIN
 PROCESS_FIXTURE := $(TEST_BUILD_DIR)/process/process-fixture.raw
 BUSYBOX_OUTPUT_DIR := $(BUILD_DIR)/busybox-contract
 BUSYBOX_WORK_DIR := $(BUILD_DIR)/busybox-work
@@ -190,18 +190,18 @@ LINUX_UNAME_FIXTURE := $(BUILD_DIR)/fixtures/linux-uname-fat16.raw
 BUSYBOX_CAT_OUTPUT_DIR := $(BUILD_DIR)/busybox-cat-contract
 BUSYBOX_CAT_WORK_DIR := $(BUILD_DIR)/busybox-cat-work
 BUSYBOX_CAT_BINARY := $(BUSYBOX_CAT_OUTPUT_DIR)/busybox
-OPENRFS_PROOF_USERLAND_IMAGE := $(BUILD_DIR)/userspace/openrfs-userland-fat16.raw
-OPENRFS_PROOF_USERLAND_NO_CAT_IMAGE := \
-	$(BUILD_DIR)/userspace/openrfs-userland-no-cat-fat16.raw
-FAT32_SYSTEM_IMAGE := $(BUILD_DIR)/userspace/openrfs-system-fat32.raw
-DESKTOP_SYSTEM_IMAGE := $(BUILD_DIR)/userspace/openrfs-desktop-system-fat32.raw
-FAT32_DATA_IMAGE := $(BUILD_DIR)/userspace/openrfs-data-fat32.raw
+RSD_PROOF_USERLAND_IMAGE := $(BUILD_DIR)/userspace/rsd-userland-fat16.raw
+RSD_PROOF_USERLAND_NO_CAT_IMAGE := \
+	$(BUILD_DIR)/userspace/rsd-userland-no-cat-fat16.raw
+FAT32_SYSTEM_IMAGE := $(BUILD_DIR)/userspace/rsd-system-fat32.raw
+DESKTOP_SYSTEM_IMAGE := $(BUILD_DIR)/userspace/rsd-desktop-system-fat32.raw
+FAT32_DATA_IMAGE := $(BUILD_DIR)/userspace/rsd-data-fat32.raw
 FAT32_RUN_DATA_IMAGE := $(BUILD_DIR)/run-data-fat32.raw
-FAT32_FULL_IMAGE := $(BUILD_DIR)/userspace/openrfs-data-full-fat32.raw
-FAT32_CORRUPT_IMAGE := $(BUILD_DIR)/userspace/openrfs-data-corrupt-fat32.raw
+FAT32_FULL_IMAGE := $(BUILD_DIR)/userspace/rsd-data-full-fat32.raw
+FAT32_CORRUPT_IMAGE := $(BUILD_DIR)/userspace/rsd-data-corrupt-fat32.raw
 SDK_BUILD_DIR ?= $(BUILD_DIR)/sdk
 SDK_OBJECT_DIR := $(SDK_BUILD_DIR)/obj
-SDK_LIB := $(SDK_BUILD_DIR)/lib/libopenrfs.a
+SDK_LIB := $(SDK_BUILD_DIR)/lib/librsd.a
 SDK_CRT := $(SDK_BUILD_DIR)/lib/crt0.o
 SDK_C_SOURCES := $(wildcard sdk/src/*.c)
 SDK_ASM_SOURCES := $(wildcard sdk/src/*.S)
@@ -257,7 +257,7 @@ SDL2_OBJECTS := $(patsubst vendor/sdl2/src/%.c,\
 	$(SDL2_OBJECT_DIR)/%.o,$(SDL2_SOURCES))
 SDL2_LIB := $(SDK_BUILD_DIR)/lib/libSDL2.a
 SDL2_PUBLIC_HEADERS := $(wildcard vendor/sdl2/include/*.h)
-SDL2_CFLAGS := --target=x86_64-unknown-none-elf -D__OPENRFS__=1 \
+SDL2_CFLAGS := --target=x86_64-unknown-none-elf -D__RSD__=1 \
 	-Ivendor/sdl2/include -Isdk/include -Iinclude -std=c11 -O2 -g \
 	-ffreestanding -fno-pie -fno-stack-protector -mcmodel=large \
 	-mno-red-zone -fno-builtin -ffunction-sections -fdata-sections \
@@ -295,13 +295,13 @@ HTTPSAPP_APP := $(HTTPSAPP_DIR)/HTTPS.APP
 HTTPSAPP_PACKAGE := $(HTTPSAPP_DIR)/HTTPSAPP.SPK
 HTTPSAPP_SYSTEM_IMAGE := $(HTTPSAPP_DIR)/system.raw
 HTTPSAPP_DATA_IMAGE := $(HTTPSAPP_DIR)/data.raw
-OPENRFSAPP_DIR := $(BUILD_DIR)/native-openrfs
-OPENRFSAPP_APP := $(OPENRFSAPP_DIR)/OPENRFS.APP
-OPENRFSAPP_PACKAGE := $(OPENRFSAPP_DIR)/OPENRFS.SPK
-OPENRFSAPP_REPAIR_PACKAGE := $(OPENRFSAPP_DIR)/OPENRFSREP.SPK
-OPENRFSAPP_SYSTEM_IMAGE := $(OPENRFSAPP_DIR)/system.raw
-OPENRFSAPP_DATA_IMAGE := $(OPENRFSAPP_DIR)/data.raw
-OPENRFSAPP_REPOSITORY := $(OPENRFSAPP_DIR)/repository/repository.sri
+RSDAPP_DIR := $(BUILD_DIR)/native-rsd
+RSDAPP_APP := $(RSDAPP_DIR)/RSD.APP
+RSDAPP_PACKAGE := $(RSDAPP_DIR)/RSD.SPK
+RSDAPP_REPAIR_PACKAGE := $(RSDAPP_DIR)/RSDREP.SPK
+RSDAPP_SYSTEM_IMAGE := $(RSDAPP_DIR)/system.raw
+RSDAPP_DATA_IMAGE := $(RSDAPP_DIR)/data.raw
+RSDAPP_REPOSITORY := $(RSDAPP_DIR)/repository/repository.sri
 AUDIO_APP_DIR := $(BUILD_DIR)/native-audio
 AUDIO_APP := $(AUDIO_APP_DIR)/AUDIO.APP
 AUDIO_PACKAGE := $(AUDIO_APP_DIR)/AUDIO.SPK
@@ -327,7 +327,7 @@ DYNAMIC_SYSTEM_IMAGE := $(DYNAMIC_APP_DIR)/system.raw
 DYNAMIC_DATA_IMAGE := $(DYNAMIC_APP_DIR)/data.raw
 RUST_APP_DIR := $(BUILD_DIR)/native-rust
 RUST_APP_CARGO_TARGET := $(RUST_APP_DIR)/cargo
-RUST_APP_SOURCE := $(RUST_APP_CARGO_TARGET)/x86_64-unknown-none/release/openrfs-native-rust-proof
+RUST_APP_SOURCE := $(RUST_APP_CARGO_TARGET)/x86_64-unknown-none/release/rsd-native-rust-proof
 RUST_APP := $(RUST_APP_DIR)/RUST.APP
 RUST_APP_PACKAGE := $(RUST_APP_DIR)/RUSTAPP.SPK
 RUST_APP_SYSTEM_IMAGE := $(RUST_APP_DIR)/system.raw
@@ -348,7 +348,7 @@ RUST_APP_FLAGS := -Dwarnings -C panic=abort -C relocation-model=static \
 	-C link-arg=--orphan-handling=error \
 	-C link-arg=-T../../sdk/linker.ld
 
-CPPFLAGS := -Iinclude
+CPPFLAGS := -Iinclude -Iui/console/include -Iui/console/src -Iui/desktop/include
 COMMON_FLAGS := -m64 -g -ffreestanding -fno-pie -fno-stack-protector
 CFLAGS := $(COMMON_FLAGS) -std=c11 -O2 -mno-red-zone -mno-mmx -mno-sse \
 	-mno-sse2 -msoft-float -fno-tree-vectorize -fno-asynchronous-unwind-tables \
@@ -361,10 +361,16 @@ ASFLAGS := $(COMMON_FLAGS) -Wa,--fatal-warnings
 # the first time one was linked in. Now an unnamed section is a link error.
 LDFLAGS := -nostdlib -z max-page-size=0x1000 -z noexecstack --fatal-warnings \
 	--orphan-handling=error --build-id=none -T linker.ld \
-	-Map=$(BUILD_DIR)/openrfs.map
+	-Map=$(BUILD_DIR)/rsd.map
 
 C_SOURCES := $(wildcard src/kernel/*.c)
 C_OBJECTS := $(patsubst src/kernel/%.c,$(BUILD_DIR)/%.o,$(C_SOURCES))
+RSD_INSTALLER_SOURCES := ui/console/src/term.c ui/console/src/ui.c \
+	ui/console/src/install.c
+RSD_INSTALLER_OBJECTS := $(patsubst ui/console/src/%.c,$(BUILD_DIR)/ui-console/%.o,$(RSD_INSTALLER_SOURCES))
+$(BUILD_DIR)/installer_ui.o $(RSD_INSTALLER_OBJECTS): CPPFLAGS := -Iui/console/include -Iinclude
+RSD_DESKTOP_SOURCES := $(wildcard ui/desktop/src/*.c)
+RSD_DESKTOP_OBJECTS := $(patsubst ui/desktop/src/%.c,$(BUILD_DIR)/ui-desktop/%.o,$(RSD_DESKTOP_SOURCES))
 MONOCYPHER_OBJECTS := $(BUILD_DIR)/monocypher/monocypher.o \
 	$(BUILD_DIR)/monocypher/monocypher-ed25519.o
 MONOCYPHER_HOST_OBJECTS := $(TEST_BUILD_DIR)/monocypher/monocypher.o \
@@ -395,7 +401,7 @@ IPXE_BASE_CFLAGS := $(COMMON_FLAGS) -std=gnu11 -O2 -mno-red-zone -mno-mmx \
 	-nostdinc -isystem $(GCC_FREESTANDING_INCLUDE) -Iports/ipxe/include \
 	-Ivendor/ipxe/src/include -Iinclude \
 	-include ports/ipxe/include/compiler.h \
-	$(if $(IPXE_DEBUG),-DOPENRFS_IPXE_DEBUG_OUTPUT)
+	$(if $(IPXE_DEBUG),-DRSD_IPXE_DEBUG_OUTPUT)
 # Upstream code keeps upstream's warning profile: every warning iPXE's own
 # build treats as an error is an error here too.
 IPXE_VENDOR_CFLAGS := $(IPXE_BASE_CFLAGS) -Wall -Werror -Wno-address \
@@ -406,7 +412,7 @@ IPXE_GLUE_CFLAGS := $(IPXE_BASE_CFLAGS) -Wall -Wextra -Werror -Wshadow \
 # The SeaBIOS layer. Its vendored drivers are compiled as SeaBIOS compiles
 # them for 32-bit flat mode (-fno-delete-null-pointer-checks, no strict
 # aliasing, packed-member addresses allowed), plus the pointer/integer casts
-# of that 32-bit code, which OpenRFS makes exact by keeping everything they
+# of that 32-bit code, which RSD makes exact by keeping everything they
 # hand a device below 4 GiB. The objects are partially linked into one and
 # every symbol except the exported glue entry points is made local, so the
 # layer's own malloc, printf and PCI helpers never meet the kernel's.
@@ -438,7 +444,7 @@ include ports/seavga/sources.mk
 SEAVGA_OBJECT_DIR := $(BUILD_DIR)/seavga
 SEAVGA_BASE_CFLAGS := $(subst -Iports/seabios/include,-Iports/seavga/include \
 	-Iports/seabios/include -Ivendor/seabios/vgasrc,$(SEABIOS_BASE_CFLAGS)) \
-	-DOPENRFS_SEABIOS_FAR_SEGMENTS
+	-DRSD_SEABIOS_FAR_SEGMENTS
 SEAVGA_VENDOR_CFLAGS := $(SEAVGA_BASE_CFLAGS) -Wall -Werror \
 	-Wno-address-of-packed-member -Wno-pointer-to-int-cast \
 	-Wno-int-to-pointer-cast -Wno-unused-function -Wno-array-bounds \
@@ -476,7 +482,7 @@ SEAVGA_OBJECTS := $(SEAVGA_LIBC_OBJECT) $(foreach variant,$(SEAVGA_VARIANTS),\
 	$(patsubst %,$(SEAVGA_OBJECT_DIR)/$(variant)/lp64/%.o,\
 		$(SEAVGA_$(variant)_LP64_FILES)))
 
-OBJECTS := $(ASM_OBJECTS) $(C_OBJECTS) $(MONOCYPHER_OBJECTS) \
+OBJECTS := $(ASM_OBJECTS) $(C_OBJECTS) $(RSD_INSTALLER_OBJECTS) $(RSD_DESKTOP_OBJECTS) $(MONOCYPHER_OBJECTS) \
 	$(IPXE_OBJECTS) $(IPXE_USB_LAYER_OBJECT) $(SEABIOS_LAYER_OBJECT) \
 	$(SEAVGA_LAYER_OBJECTS) $(MINIX_LAYER_OBJECTS) \
 	$(PACKAGE_TRUST_ASSET_OBJECT)
@@ -508,8 +514,8 @@ DEPENDENCIES := $(C_OBJECTS:.o=.d) $(MONOCYPHER_OBJECTS:.o=.d) \
 # implicit and pattern rule search for a phony target, so declaring them phony
 # makes every scenario resolve to "nothing to be done" and pass without booting.
 # They never create a file of their own name, so they rerun regardless.
-.PHONY: all installer-port-test audio-wav-tests capture-boot-video capture-openrfs capture-openrfs-proof capture-networking clean contract-counts contract-scenarios dynamic-elf-tests ext4-images ext4-tests ext4-fsync-test ext4-sparse-truncate-test fat32-images force-package-trust hooks https-tests \
-	iso kernel lint native-apps native-audio-proof native-dynamic-proof native-https-proof native-openrfs-proof native-sdl-proof sdl-preference-tests port-tests qemu-port-tests reproducible-sdk run \
+.PHONY: all installer-port-test audio-wav-tests capture-boot-video capture-rsd capture-rsd-proof capture-networking clean contract-counts contract-scenarios dynamic-elf-tests ext4-images ext4-tests ext4-fsync-test ext4-sparse-truncate-test fat32-images force-package-trust hooks https-tests \
+	iso kernel lint native-apps native-audio-proof native-dynamic-proof native-https-proof native-rsd-proof native-sdl-proof sdl-preference-tests port-tests qemu-port-tests reproducible-sdk run \
 	package-control-tests package-fetch-tests package-manager-tests package-repository-tests package-service-tests package-state-tests package-transaction-tests package-trust-asset-tests package-trust-tests package-upload-tests qemu-test-ext4-powercuts screenshot-proof sdk sdk-once smoke tls-tests toolchain verify wall-clock-tests zlib-tests
 
 all: kernel
@@ -536,7 +542,7 @@ $(ZLIB_OBJECT_DIR)/%.o: vendor/zlib/src/%.c $(ZLIB_HEADERS)
 	$(SDK_CC) $(ZLIB_CFLAGS) -c $< -o $@
 
 $(SDL2_OBJECT_DIR)/%.o: vendor/sdl2/src/%.c $(SDL2_PUBLIC_HEADERS) \
-		vendor/sdl2/include/SDL_config_openrfs.h
+		vendor/sdl2/include/SDL_config_rsd.h
 	mkdir -p $(dir $@)
 	$(SDK_CC) $(SDL2_VENDOR_CFLAGS) -MMD -MP -MT sdl2/$*.o -c $< -o $@
 
@@ -570,25 +576,25 @@ $(SDL2_LIB): $(SDL2_OBJECTS) | $(SDK_BUILD_DIR)/lib
 $(SDK_BUILD_DIR)/.installed: Makefile $(SDK_LIB) $(BEARSSL_LIB) $(ZLIB_LIB) \
 		$(SDL2_LIB) $(SDK_CRT) \
 		sdk/linker.ld \
-		sdk/bin/openrfs-cc $(wildcard sdk/include/*.h) \
-		$(wildcard sdk/include/openrfs/*.h) $(wildcard sdk/include/sys/*.h) \
+		sdk/bin/rsd-cc $(wildcard sdk/include/*.h) \
+		$(wildcard sdk/include/rsd/*.h) $(wildcard sdk/include/sys/*.h) \
 		$(wildcard vendor/bearssl/inc/*.h) \
 		$(wildcard vendor/zlib/include/*.h) \
 		$(SDL2_PUBLIC_HEADERS) \
-		$(wildcard include/openrfs/abi/*.h) \
-		include/openrfs/abi.h | $(SDK_BUILD_DIR)/include $(SDK_BUILD_DIR)/bin
-	mkdir -p $(SDK_BUILD_DIR)/include/openrfs/abi $(SDK_BUILD_DIR)/include/sys \
+		$(wildcard include/rsd/abi/*.h) \
+		include/rsd/abi.h | $(SDK_BUILD_DIR)/include $(SDK_BUILD_DIR)/bin
+	mkdir -p $(SDK_BUILD_DIR)/include/rsd/abi $(SDK_BUILD_DIR)/include/sys \
 		$(SDK_BUILD_DIR)/include/SDL2
 	cp sdk/include/*.h $(SDK_BUILD_DIR)/include/
-	cp sdk/include/openrfs/*.h $(SDK_BUILD_DIR)/include/openrfs/
+	cp sdk/include/rsd/*.h $(SDK_BUILD_DIR)/include/rsd/
 	cp sdk/include/sys/*.h $(SDK_BUILD_DIR)/include/sys/
-	cp include/openrfs/abi.h $(SDK_BUILD_DIR)/include/openrfs/
-	cp include/openrfs/abi/*.h $(SDK_BUILD_DIR)/include/openrfs/abi/
+	cp include/rsd/abi.h $(SDK_BUILD_DIR)/include/rsd/
+	cp include/rsd/abi/*.h $(SDK_BUILD_DIR)/include/rsd/abi/
 	cp vendor/bearssl/inc/*.h $(SDK_BUILD_DIR)/include/
 	cp vendor/zlib/include/*.h $(SDK_BUILD_DIR)/include/
 	cp vendor/sdl2/include/*.h $(SDK_BUILD_DIR)/include/SDL2/
 	cp sdk/linker.ld $(SDK_BUILD_DIR)/linker.ld
-	cp sdk/bin/openrfs-cc $(SDK_BUILD_DIR)/bin/openrfs-cc
+	cp sdk/bin/rsd-cc $(SDK_BUILD_DIR)/bin/rsd-cc
 	touch $@
 
 sdk-once: $(SDK_BUILD_DIR)/.installed
@@ -617,7 +623,7 @@ $(NETAPP_DIR):
 $(HTTPSAPP_DIR):
 	mkdir -p $@
 
-$(OPENRFSAPP_DIR):
+$(RSDAPP_DIR):
 	mkdir -p $@
 
 $(AUDIO_APP_DIR):
@@ -657,7 +663,7 @@ $(NATIVE_TEST_APP): $(NATIVE_APP_DIR)/native-test.o \
 
 $(NATIVE_TEST_PACKAGE): $(NATIVE_TEST_APP) apps/native-test/manifest.json \
 		apps/native-test/RESOURCE.TXT
-	$(PYTHON) tools/openrfs-package.py build \
+	$(PYTHON) tools/rsd-package.py build \
 		--spec apps/native-test/manifest.json --executable $< --output $@
 
 $(CRASH_APP_DIR)/main.o: apps/native-crash/main.c \
@@ -669,21 +675,21 @@ $(CRASH_APP): $(CRASH_APP_DIR)/main.o $(SDK_BUILD_DIR)/.installed
 		-o $@ $(SDK_CRT) $< $(SDK_LIB)
 
 $(CRASH_PACKAGE): $(CRASH_APP) apps/native-crash/manifest.json
-	$(PYTHON) tools/openrfs-package.py build \
+	$(PYTHON) tools/rsd-package.py build \
 		--spec apps/native-crash/manifest.json --executable $< --output $@
 
 $(LUA_APP): tools/build-lua-port.sh ports/lua/source/SHA256SUMS \
 		ports/lua/source/lua-5.4.7.tar.gz $(SDK_BUILD_DIR)/.installed
-	OPENRFS_SDK_CC='$(SDK_CC)' OPENRFS_SDK_LD='$(SDK_LD)' \
+	RSD_SDK_CC='$(SDK_CC)' RSD_SDK_LD='$(SDK_LD)' \
 		bash tools/build-lua-port.sh $(LUA_PORT_DIR) $(LUA_PORT_WORK_DIR)
 
 $(LUA_PACKAGE): $(LUA_APP) ports/lua/manifest.json
-	$(PYTHON) tools/openrfs-package.py build \
+	$(PYTHON) tools/rsd-package.py build \
 		--spec ports/lua/manifest.json --executable $< --output $@
 
-$(LUA_SYSTEM_IMAGE): $(LUA_PACKAGE) tools/openrfs-package.py \
+$(LUA_SYSTEM_IMAGE): $(LUA_PACKAGE) tools/rsd-package.py \
 		tools/fat32_image.py
-	$(PYTHON) tools/openrfs-package.py install-system \
+	$(PYTHON) tools/rsd-package.py install-system \
 		--output $@ $(LUA_PACKAGE)
 
 $(LUA_EMPTY_DATA_IMAGE): tools/fat32_image.py | $(LUA_PORT_DIR)
@@ -695,20 +701,20 @@ $(LUA_DATA_IMAGE): $(LUA_EMPTY_DATA_IMAGE) ports/lua/SCRIPT.LUA \
 		--file LUA/SCRIPT.LUA=ports/lua/SCRIPT.LUA
 
 $(SQLITE_APP): tools/build-sqlite-port.sh ports/sqlite/main.c \
-		ports/sqlite/openrfs_vfs.c ports/sqlite/source/SHA256SUMS \
+		ports/sqlite/rsd_vfs.c ports/sqlite/source/SHA256SUMS \
 		ports/sqlite/source/sqlite-amalgamation-3460000.zip \
 		$(SDK_BUILD_DIR)/.installed
-	OPENRFS_SDK_CC='$(SDK_CC)' OPENRFS_SDK_LD='$(SDK_LD)' \
+	RSD_SDK_CC='$(SDK_CC)' RSD_SDK_LD='$(SDK_LD)' \
 		PYTHON='$(PYTHON)' bash tools/build-sqlite-port.sh \
 		$(SQLITE_PORT_DIR) $(SQLITE_PORT_WORK_DIR)
 
 $(SQLITE_PACKAGE): $(SQLITE_APP) ports/sqlite/manifest.json
-	$(PYTHON) tools/openrfs-package.py build \
+	$(PYTHON) tools/rsd-package.py build \
 		--spec ports/sqlite/manifest.json --executable $< --output $@
 
-$(SQLITE_SYSTEM_IMAGE): $(SQLITE_PACKAGE) tools/openrfs-package.py \
+$(SQLITE_SYSTEM_IMAGE): $(SQLITE_PACKAGE) tools/rsd-package.py \
 		tools/fat32_image.py
-	$(PYTHON) tools/openrfs-package.py install-system \
+	$(PYTHON) tools/rsd-package.py install-system \
 		--output $@ $(SQLITE_PACKAGE)
 
 $(SQLITE_DATA_IMAGE): tools/fat32_image.py | $(SQLITE_PORT_DIR)
@@ -723,12 +729,12 @@ $(NETAPP_APP): $(NETAPP_DIR)/main.o $(SDK_BUILD_DIR)/.installed
 		-o $@ $(SDK_CRT) $< $(SDK_LIB)
 
 $(NETAPP_PACKAGE): $(NETAPP_APP) apps/native-network/manifest.json
-	$(PYTHON) tools/openrfs-package.py build \
+	$(PYTHON) tools/rsd-package.py build \
 		--spec apps/native-network/manifest.json --executable $< --output $@
 
-$(NETAPP_SYSTEM_IMAGE): $(NETAPP_PACKAGE) tools/openrfs-package.py \
+$(NETAPP_SYSTEM_IMAGE): $(NETAPP_PACKAGE) tools/rsd-package.py \
 		tools/fat32_image.py
-	$(PYTHON) tools/openrfs-package.py install-system \
+	$(PYTHON) tools/rsd-package.py install-system \
 		--output $@ $(NETAPP_PACKAGE)
 
 $(NETAPP_DATA_IMAGE): tools/fat32_image.py | $(NETAPP_DIR)
@@ -744,50 +750,50 @@ $(HTTPSAPP_APP): $(HTTPSAPP_DIR)/main.o $(SDK_BUILD_DIR)/.installed
 		-o $@ $(SDK_CRT) $< $(SDK_LIB) $(BEARSSL_LIB)
 
 $(HTTPSAPP_PACKAGE): $(HTTPSAPP_APP) apps/native-https/manifest.json
-	$(PYTHON) tools/openrfs-package.py build \
+	$(PYTHON) tools/rsd-package.py build \
 		--spec apps/native-https/manifest.json --executable $< --output $@
 
-$(HTTPSAPP_SYSTEM_IMAGE): $(HTTPSAPP_PACKAGE) tools/openrfs-package.py \
+$(HTTPSAPP_SYSTEM_IMAGE): $(HTTPSAPP_PACKAGE) tools/rsd-package.py \
 		tools/fat32_image.py
-	$(PYTHON) tools/openrfs-package.py install-system \
+	$(PYTHON) tools/rsd-package.py install-system \
 		--output $@ $(HTTPSAPP_PACKAGE)
 
 $(HTTPSAPP_DATA_IMAGE): tools/fat32_image.py | $(HTTPSAPP_DIR)
 	$(PYTHON) tools/fat32_image.py format data $@
 
-$(OPENRFSAPP_DIR)/main.o: apps/openrfs/main.c \
+$(RSDAPP_DIR)/main.o: apps/rsd/main.c \
 		apps/native-https/trust_anchor.h $(SDK_BUILD_DIR)/.installed | \
-		$(OPENRFSAPP_DIR)
+		$(RSDAPP_DIR)
 	$(SDK_CC) $(SDK_CFLAGS) -c $< -o $@
 
-$(OPENRFSAPP_APP): $(OPENRFSAPP_DIR)/main.o $(SDK_BUILD_DIR)/.installed
-	$(SDK_LD) $(SDK_LDFLAGS) -Map=$(OPENRFSAPP_DIR)/OPENRFS.map \
+$(RSDAPP_APP): $(RSDAPP_DIR)/main.o $(SDK_BUILD_DIR)/.installed
+	$(SDK_LD) $(SDK_LDFLAGS) -Map=$(RSDAPP_DIR)/RSD.map \
 		-o $@ $(SDK_CRT) $< $(SDK_LIB) $(BEARSSL_LIB)
 
-$(OPENRFSAPP_PACKAGE): $(OPENRFSAPP_APP) apps/openrfs/manifest.json
-	$(PYTHON) tools/openrfs-package.py build \
-		--spec apps/openrfs/manifest.json --executable $< --output $@
+$(RSDAPP_PACKAGE): $(RSDAPP_APP) apps/rsd/manifest.json
+	$(PYTHON) tools/rsd-package.py build \
+		--spec apps/rsd/manifest.json --executable $< --output $@
 
-$(OPENRFSAPP_REPAIR_PACKAGE): $(OPENRFSAPP_APP) apps/openrfs/repair-manifest.json
-	$(PYTHON) tools/openrfs-package.py build \
-		--spec apps/openrfs/repair-manifest.json --executable $< --output $@
+$(RSDAPP_REPAIR_PACKAGE): $(RSDAPP_APP) apps/rsd/repair-manifest.json
+	$(PYTHON) tools/rsd-package.py build \
+		--spec apps/rsd/repair-manifest.json --executable $< --output $@
 
-$(OPENRFSAPP_SYSTEM_IMAGE): $(OPENRFSAPP_PACKAGE) $(OPENRFSAPP_REPAIR_PACKAGE) \
-		tools/openrfs-package.py \
+$(RSDAPP_SYSTEM_IMAGE): $(RSDAPP_PACKAGE) $(RSDAPP_REPAIR_PACKAGE) \
+		tools/rsd-package.py \
 		tools/fat32_image.py
-	$(PYTHON) tools/openrfs-package.py install-system \
-		--output $@ $(OPENRFSAPP_PACKAGE) $(OPENRFSAPP_REPAIR_PACKAGE)
+	$(PYTHON) tools/rsd-package.py install-system \
+		--output $@ $(RSDAPP_PACKAGE) $(RSDAPP_REPAIR_PACKAGE)
 
-$(OPENRFSAPP_DATA_IMAGE): $(EXT4_FIXTURE) | $(OPENRFSAPP_DIR)
+$(RSDAPP_DATA_IMAGE): $(EXT4_FIXTURE) | $(RSDAPP_DIR)
 	cp $< $@
 
-$(OPENRFSAPP_REPOSITORY): $(SDL_CHESS_RELEASE_APP) \
+$(RSDAPP_REPOSITORY): $(SDL_CHESS_RELEASE_APP) \
 		apps/upstream-sdl-chess/manifest.json \
 		tools/package_lifecycle_fixture.py \
-		tools/openrfs-package.py tools/openrfs-repository.py \
+		tools/rsd-package.py tools/rsd-repository.py \
 		platform/package-trust.json
 	$(PYTHON) tools/package_lifecycle_fixture.py \
-		--output $(OPENRFSAPP_DIR)/repository \
+		--output $(RSDAPP_DIR)/repository \
 		--executable $(SDL_CHESS_RELEASE_APP) \
 		--manifest-spec apps/upstream-sdl-chess/manifest.json
 
@@ -800,18 +806,18 @@ $(AUDIO_APP): $(AUDIO_APP_DIR)/main.o $(SDK_BUILD_DIR)/.installed
 		-o $@ $(SDK_CRT) $< $(SDK_LIB)
 
 $(AUDIO_PACKAGE): $(AUDIO_APP) apps/native-audio/manifest.json
-	$(PYTHON) tools/openrfs-package.py build \
+	$(PYTHON) tools/rsd-package.py build \
 		--spec apps/native-audio/manifest.json --executable $< --output $@
 
 $(AUDIO_REFUSAL_PACKAGE): $(AUDIO_APP) \
 		apps/native-audio/manifest-refusal.json
-	$(PYTHON) tools/openrfs-package.py build \
+	$(PYTHON) tools/rsd-package.py build \
 		--spec apps/native-audio/manifest-refusal.json \
 		--executable $< --output $@
 
 $(AUDIO_SYSTEM_IMAGE): $(AUDIO_PACKAGE) $(AUDIO_REFUSAL_PACKAGE) \
-		tools/openrfs-package.py tools/fat32_image.py
-	$(PYTHON) tools/openrfs-package.py install-system \
+		tools/rsd-package.py tools/fat32_image.py
+	$(PYTHON) tools/rsd-package.py install-system \
 		--output $@ $(AUDIO_PACKAGE) $(AUDIO_REFUSAL_PACKAGE)
 
 $(AUDIO_DATA_IMAGE): tools/fat32_image.py | $(AUDIO_APP_DIR)
@@ -827,12 +833,12 @@ $(SDL_PROOF_APP): $(SDL_PROOF_DIR)/main.o $(SDK_BUILD_DIR)/.installed
 		-o $@ $(SDK_CRT) $< $(SDL2_LIB) $(SDK_LIB)
 
 $(SDL_PROOF_PACKAGE): $(SDL_PROOF_APP) apps/native-sdl/manifest.json
-	$(PYTHON) tools/openrfs-package.py build \
+	$(PYTHON) tools/rsd-package.py build \
 		--spec apps/native-sdl/manifest.json --executable $< --output $@
 
-$(SDL_PROOF_SYSTEM_IMAGE): $(SDL_PROOF_PACKAGE) tools/openrfs-package.py \
+$(SDL_PROOF_SYSTEM_IMAGE): $(SDL_PROOF_PACKAGE) tools/rsd-package.py \
 		tools/fat32_image.py
-	$(PYTHON) tools/openrfs-package.py install-system \
+	$(PYTHON) tools/rsd-package.py install-system \
 		--output $@ $(SDL_PROOF_PACKAGE)
 
 $(SDL_PROOF_DATA_IMAGE): tools/fat32_image.py | $(SDL_PROOF_DIR)
@@ -856,7 +862,7 @@ $(SDL_CHESS_RELEASE_APP): $(SDL_CHESS_DIR)/main.o \
 
 $(SDL_CHESS_PACKAGE): $(SDL_CHESS_APP) \
 		apps/upstream-sdl-chess/manifest.json
-	$(PYTHON) tools/openrfs-package.py build \
+	$(PYTHON) tools/rsd-package.py build \
 		--spec apps/upstream-sdl-chess/manifest.json \
 		--executable $< --output $@
 
@@ -866,19 +872,19 @@ $(DYNAMIC_ROOT_APP) $(DYNAMIC_LIBRARY) $(DYNAMIC_CATALOG) \
 		apps/native-dynamic/proof.h apps/native-dynamic/manifest.json \
 		tools/build-native-dynamic-proof.sh \
 		tools/make-native-dynamic-proof.py | $(DYNAMIC_APP_DIR)
-	OPENRFS_SDK_CC='$(SDK_CC)' OPENRFS_SDK_LD='$(SDK_LD)' \
+	RSD_SDK_CC='$(SDK_CC)' RSD_SDK_LD='$(SDK_LD)' \
 		PYTHON='$(PYTHON)' READELF='$(READELF)' \
 		bash tools/build-native-dynamic-proof.sh $(DYNAMIC_APP_DIR)
 
 $(DYNAMIC_PACKAGE): $(DYNAMIC_ROOT_APP) $(DYNAMIC_LIBRARY) \
-		$(DYNAMIC_CATALOG) $(DYNAMIC_PACKAGE_SPEC) tools/openrfs-package.py
-	$(PYTHON) tools/openrfs-package.py build \
+		$(DYNAMIC_CATALOG) $(DYNAMIC_PACKAGE_SPEC) tools/rsd-package.py
+	$(PYTHON) tools/rsd-package.py build \
 		--spec $(DYNAMIC_PACKAGE_SPEC) --executable $(DYNAMIC_ROOT_APP) \
 		--output $@
 
-$(DYNAMIC_SYSTEM_IMAGE): $(DYNAMIC_PACKAGE) tools/openrfs-package.py \
+$(DYNAMIC_SYSTEM_IMAGE): $(DYNAMIC_PACKAGE) tools/rsd-package.py \
 		tools/fat32_image.py
-	$(PYTHON) tools/openrfs-package.py install-system \
+	$(PYTHON) tools/rsd-package.py install-system \
 		--output $@ $(DYNAMIC_PACKAGE)
 
 $(DYNAMIC_DATA_IMAGE): tools/fat32_image.py | $(DYNAMIC_APP_DIR)
@@ -886,7 +892,7 @@ $(DYNAMIC_DATA_IMAGE): tools/fat32_image.py | $(DYNAMIC_APP_DIR)
 
 $(RUST_APP): apps/native-rust/Cargo.toml apps/native-rust/Cargo.lock \
 		apps/native-rust/manifest.json apps/native-rust/src/main.rs \
-		rust/openrfs/Cargo.toml rust/openrfs/src/lib.rs sdk/linker.ld | $(RUST_APP_DIR)
+		rust/rsd/Cargo.toml rust/rsd/src/lib.rs sdk/linker.ld | $(RUST_APP_DIR)
 	CARGO_TARGET_DIR='$(abspath $(RUST_APP_CARGO_TARGET))' \
 		RUSTFLAGS='$(RUST_APP_FLAGS)' $(CARGO) build \
 		--manifest-path apps/native-rust/Cargo.toml --release \
@@ -894,35 +900,35 @@ $(RUST_APP): apps/native-rust/Cargo.toml apps/native-rust/Cargo.lock \
 	cp '$(RUST_APP_SOURCE)' $@
 
 $(RUST_APP_PACKAGE): $(RUST_APP) apps/native-rust/manifest.json
-	$(PYTHON) tools/openrfs-package.py build \
+	$(PYTHON) tools/rsd-package.py build \
 		--spec apps/native-rust/manifest.json --executable $< --output $@
 
-$(RUST_APP_SYSTEM_IMAGE): $(RUST_APP_PACKAGE) tools/openrfs-package.py \
+$(RUST_APP_SYSTEM_IMAGE): $(RUST_APP_PACKAGE) tools/rsd-package.py \
 		tools/fat32_image.py
-	$(PYTHON) tools/openrfs-package.py install-system \
+	$(PYTHON) tools/rsd-package.py install-system \
 		--output $@ $(RUST_APP_PACKAGE)
 
 $(RUST_APP_DATA_IMAGE): tools/fat32_image.py | $(RUST_APP_DIR)
 	$(PYTHON) tools/fat32_image.py format data $@
 
-$(NATIVE_SYSTEM_IMAGE): $(NATIVE_TEST_PACKAGE) tools/openrfs-package.py \
+$(NATIVE_SYSTEM_IMAGE): $(NATIVE_TEST_PACKAGE) tools/rsd-package.py \
 		tools/fat32_image.py
-	$(PYTHON) tools/openrfs-package.py install-system \
+	$(PYTHON) tools/rsd-package.py install-system \
 		--output $@ $(NATIVE_TEST_PACKAGE)
 
 $(NATIVE_DATA_IMAGE): tools/fat32_image.py | $(NATIVE_APP_DIR)
 	$(PYTHON) tools/fat32_image.py format data $@
 
 $(CRASH_SYSTEM_IMAGE): $(CRASH_PACKAGE) $(NATIVE_TEST_PACKAGE) \
-		tools/openrfs-package.py tools/fat32_image.py
-	$(PYTHON) tools/openrfs-package.py install-system \
+		tools/rsd-package.py tools/fat32_image.py
+	$(PYTHON) tools/rsd-package.py install-system \
 		--output $@ $(CRASH_PACKAGE) $(NATIVE_TEST_PACKAGE)
 
 $(CRASH_DATA_IMAGE): tools/fat32_image.py | $(CRASH_APP_DIR)
 	$(PYTHON) tools/fat32_image.py format data $@
 
 $(ADMISSION_SYSTEM_IMAGE): $(NATIVE_TEST_PACKAGE) \
-		tools/make-native-admission-fixture.py tools/openrfs-package.py \
+		tools/make-native-admission-fixture.py tools/rsd-package.py \
 		tools/fat32_image.py | $(ADMISSION_DIR)
 	$(PYTHON) tools/make-native-admission-fixture.py \
 		$(NATIVE_TEST_PACKAGE) $@
@@ -932,7 +938,7 @@ $(ADMISSION_DATA_IMAGE): tools/fat32_image.py | $(ADMISSION_DIR)
 
 native-apps: $(NATIVE_TEST_PACKAGE) $(LUA_PACKAGE) $(SQLITE_PACKAGE) \
 	$(NETAPP_PACKAGE) \
-	$(HTTPSAPP_PACKAGE) $(OPENRFSAPP_PACKAGE) $(OPENRFSAPP_REPAIR_PACKAGE) \
+	$(HTTPSAPP_PACKAGE) $(RSDAPP_PACKAGE) $(RSDAPP_REPAIR_PACKAGE) \
 	$(AUDIO_PACKAGE) $(AUDIO_REFUSAL_PACKAGE) $(RUST_APP_PACKAGE) \
 	$(CRASH_PACKAGE) $(SDL_PROOF_PACKAGE) $(SDL_CHESS_PACKAGE) \
 	$(DYNAMIC_PACKAGE)
@@ -948,7 +954,7 @@ native-sdl-proof: $(SDL_PROOF_SYSTEM_IMAGE) $(SDL_PROOF_DATA_IMAGE)
 
 sdl-preference-tests: tools/check-sdl-preference-paths.py \
 		apps/native-sdl/main.c apps/upstream-sdl-chess/main.c \
-		src/kernel/test.c vendor/sdl2/src/filesystem/openrfs/SDL_sysfilesystem.c
+		src/kernel/test.c vendor/sdl2/src/filesystem/rsd/SDL_sysfilesystem.c
 	$(PYTHON) tools/check-sdl-preference-paths.py
 
 native-dynamic-proof: $(DYNAMIC_SYSTEM_IMAGE) $(DYNAMIC_DATA_IMAGE) \
@@ -959,56 +965,56 @@ native-https-proof: $(HTTPSAPP_SYSTEM_IMAGE) $(HTTPSAPP_DATA_IMAGE) \
 		https-tests
 	@echo 'native authenticated HTTPS package and images built'
 
-native-openrfs-proof: $(OPENRFSAPP_SYSTEM_IMAGE) $(OPENRFSAPP_DATA_IMAGE) \
-		$(OPENRFSAPP_REPOSITORY) https-tests
+native-rsd-proof: $(RSDAPP_SYSTEM_IMAGE) $(RSDAPP_DATA_IMAGE) \
+		$(RSDAPP_REPOSITORY) https-tests
 	@echo 'native signed HTTPS package lifecycle proof built'
 
 port-tests: native-apps audio-wav-tests sdl-preference-tests
-	OPENRFS_NATIVE_TEST_ELF='$(abspath $(NATIVE_TEST_APP))' \
+	RSD_NATIVE_TEST_ELF='$(abspath $(NATIVE_TEST_APP))' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/native-image-host-test.rs -o $(RUST_NATIVE_IMAGE_TEST)
 	$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(abspath $(LUA_APP))' \
+	RSD_NATIVE_TEST_ELF='$(abspath $(LUA_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(abspath $(SQLITE_APP))' \
+	RSD_NATIVE_TEST_ELF='$(abspath $(SQLITE_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(abspath $(NETAPP_APP))' \
+	RSD_NATIVE_TEST_ELF='$(abspath $(NETAPP_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(abspath $(HTTPSAPP_APP))' \
+	RSD_NATIVE_TEST_ELF='$(abspath $(HTTPSAPP_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(abspath $(OPENRFSAPP_APP))' \
+	RSD_NATIVE_TEST_ELF='$(abspath $(RSDAPP_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(abspath $(AUDIO_APP))' \
+	RSD_NATIVE_TEST_ELF='$(abspath $(AUDIO_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(abspath $(SDL_PROOF_APP))' \
+	RSD_NATIVE_TEST_ELF='$(abspath $(SDL_PROOF_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(abspath $(SDL_CHESS_APP))' \
+	RSD_NATIVE_TEST_ELF='$(abspath $(SDL_CHESS_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(abspath $(RUST_APP))' \
+	RSD_NATIVE_TEST_ELF='$(abspath $(RUST_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_NATIVE_TEST_ELF='$(abspath $(CRASH_APP))' \
+	RSD_NATIVE_TEST_ELF='$(abspath $(CRASH_APP))' \
 		$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_REQUIRE_ED25519=1 $(PYTHON) -u tools/openrfs_package_host_test.py
-	$(PYTHON) tools/openrfs-package.py inspect $(NATIVE_TEST_PACKAGE)
-	$(PYTHON) tools/openrfs-package.py inspect $(LUA_PACKAGE)
-	$(PYTHON) tools/openrfs-package.py inspect $(SQLITE_PACKAGE)
-	$(PYTHON) tools/openrfs-package.py inspect $(NETAPP_PACKAGE)
-	$(PYTHON) tools/openrfs-package.py inspect $(HTTPSAPP_PACKAGE)
-	$(PYTHON) tools/openrfs-package.py inspect $(OPENRFSAPP_PACKAGE)
-	$(PYTHON) tools/openrfs-package.py inspect $(AUDIO_PACKAGE)
-	$(PYTHON) tools/openrfs-package.py inspect $(AUDIO_REFUSAL_PACKAGE)
-	$(PYTHON) tools/openrfs-package.py inspect $(SDL_PROOF_PACKAGE)
-	$(PYTHON) tools/openrfs-package.py inspect $(SDL_CHESS_PACKAGE)
-	$(PYTHON) tools/openrfs-package.py inspect $(DYNAMIC_PACKAGE)
-	$(PYTHON) tools/openrfs-package.py inspect $(RUST_APP_PACKAGE)
-	$(PYTHON) tools/openrfs-package.py inspect $(CRASH_PACKAGE)
+	RSD_REQUIRE_ED25519=1 $(PYTHON) -u tools/rsd_package_host_test.py
+	$(PYTHON) tools/rsd-package.py inspect $(NATIVE_TEST_PACKAGE)
+	$(PYTHON) tools/rsd-package.py inspect $(LUA_PACKAGE)
+	$(PYTHON) tools/rsd-package.py inspect $(SQLITE_PACKAGE)
+	$(PYTHON) tools/rsd-package.py inspect $(NETAPP_PACKAGE)
+	$(PYTHON) tools/rsd-package.py inspect $(HTTPSAPP_PACKAGE)
+	$(PYTHON) tools/rsd-package.py inspect $(RSDAPP_PACKAGE)
+	$(PYTHON) tools/rsd-package.py inspect $(AUDIO_PACKAGE)
+	$(PYTHON) tools/rsd-package.py inspect $(AUDIO_REFUSAL_PACKAGE)
+	$(PYTHON) tools/rsd-package.py inspect $(SDL_PROOF_PACKAGE)
+	$(PYTHON) tools/rsd-package.py inspect $(SDL_CHESS_PACKAGE)
+	$(PYTHON) tools/rsd-package.py inspect $(DYNAMIC_PACKAGE)
+	$(PYTHON) tools/rsd-package.py inspect $(RUST_APP_PACKAGE)
+	$(PYTHON) tools/rsd-package.py inspect $(CRASH_PACKAGE)
 
 qemu-port-tests: qemu-test-native qemu-test-native-lua qemu-test-native-sqlite \
 	qemu-test-network-native qemu-test-native-rust \
 	qemu-test-native-crash qemu-test-native-elf-refusal \
 	qemu-test-native-digest-refusal qemu-test-native-abi-refusal \
 	qemu-test-native-relaunch qemu-test-native-audio qemu-test-native-sdl \
-	qemu-test-native-dynamic qemu-test-native-https qemu-test-native-openrfs
+	qemu-test-native-dynamic qemu-test-native-https qemu-test-native-rsd
 	@echo 'native userspace, Lua, SQLite, network, HTTPS, signed package lifecycle, audio, SDL, dynamic ELF and Rust QEMU scenarios passed'
 
 contract-counts:
@@ -1027,6 +1033,14 @@ $(BUILD_DIR)/arch_%.o: src/arch/x86_64/%.S | $(BUILD_DIR)
 	$(KERNEL_CC) $(ASFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/%.o: src/kernel/%.c | $(BUILD_DIR)
+	$(KERNEL_CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c $< -o $@
+
+$(BUILD_DIR)/ui-console/%.o: ui/console/src/%.c | $(BUILD_DIR)
+	mkdir -p $(dir $@)
+	$(KERNEL_CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c $< -o $@
+
+$(BUILD_DIR)/ui-desktop/%.o: ui/desktop/src/%.c | $(BUILD_DIR)
+	mkdir -p $(dir $@)
 	$(KERNEL_CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c $< -o $@
 
 $(IPXE_OBJECT_DIR)/vendor/%.o: vendor/%.c ports/ipxe/include/compiler.h
@@ -1175,22 +1189,22 @@ $(RUST_LIB): $(RUST_SOURCES) $(RUST_MANIFEST) $(RUST_LOCKFILE) \
 		.cargo/config.toml $(RUST_VENDOR_SOURCES) \
 		$(LOGO_BLOB) \
 		$(WALLPAPER_BLOB) $(FONT_BLOB) $(UI_FONT_BLOB) | $(BUILD_DIR)
-	OPENRFS_LOGO_BLOB='$(abspath $(LOGO_BLOB))' \
-	OPENRFS_WALLPAPER_BLOB='$(abspath $(WALLPAPER_BLOB))' \
-	OPENRFS_FONT_BLOB='$(abspath $(FONT_BLOB))' \
-	OPENRFS_UI_FONT_BLOB='$(abspath $(UI_FONT_BLOB))' \
+	RSD_LOGO_BLOB='$(abspath $(LOGO_BLOB))' \
+	RSD_WALLPAPER_BLOB='$(abspath $(WALLPAPER_BLOB))' \
+	RSD_FONT_BLOB='$(abspath $(FONT_BLOB))' \
+	RSD_UI_FONT_BLOB='$(abspath $(UI_FONT_BLOB))' \
 	CARGO_TARGET_DIR='$(abspath $(BUILD_DIR))/rust-target' \
 	RUSTFLAGS='$(RUSTFLAGS)' \
 		$(CARGO) build --manifest-path $(RUST_MANIFEST) \
 			--target $(RUST_TARGET) --release --locked --offline
-	cp $(BUILD_DIR)/rust-target/$(RUST_TARGET)/release/libopenrfs.a $@
+	cp $(BUILD_DIR)/rust-target/$(RUST_TARGET)/release/librsd.a $@
 
 $(BUSYBOX_BINARY): tools/build-busybox-proof.sh \
 		tools/check-exercised-instructions.py \
 		userspace/busybox/busybox.config \
 		userspace/busybox/source/busybox-1.38.0.tar.bz2 \
 		userspace/busybox/source/musl-1.2.6.tar.gz
-	OPENRFS_BUSYBOX_BUILD_ONLY=1 bash tools/build-busybox-proof.sh \
+	RSD_BUSYBOX_BUILD_ONLY=1 bash tools/build-busybox-proof.sh \
 		$(BUSYBOX_OUTPUT_DIR) $(BUSYBOX_WORK_DIR)
 
 $(LINUX_ABI_FIXTURE): $(BUSYBOX_BINARY) tools/make-linux-abi-fixture.py
@@ -1203,7 +1217,7 @@ $(BUSYBOX_UNAME_BINARY): tools/build-busybox-uname-proof.sh \
 		userspace/busybox/musl-vfprintf-scalar.h \
 		userspace/busybox/source/busybox-1.38.0.tar.bz2 \
 		userspace/busybox/source/musl-1.2.6.tar.gz
-	OPENRFS_BUSYBOX_BUILD_ONLY=1 bash tools/build-busybox-uname-proof.sh \
+	RSD_BUSYBOX_BUILD_ONLY=1 bash tools/build-busybox-uname-proof.sh \
 		$(BUSYBOX_UNAME_OUTPUT_DIR) $(BUSYBOX_UNAME_WORK_DIR)
 
 $(LINUX_UNAME_FIXTURE): $(BUSYBOX_UNAME_BINARY) \
@@ -1216,20 +1230,20 @@ $(BUSYBOX_CAT_BINARY): tools/build-busybox-cat-proof.sh \
 		userspace/busybox/busybox-cat.config \
 		userspace/busybox/source/busybox-1.38.0.tar.bz2 \
 		userspace/busybox/source/musl-1.2.6.tar.gz
-	OPENRFS_BUSYBOX_BUILD_ONLY=1 bash tools/build-busybox-cat-proof.sh \
+	RSD_BUSYBOX_BUILD_ONLY=1 bash tools/build-busybox-cat-proof.sh \
 		$(BUSYBOX_CAT_OUTPUT_DIR) $(BUSYBOX_CAT_WORK_DIR)
 
-$(OPENRFS_PROOF_USERLAND_IMAGE): $(BUSYBOX_BINARY) $(BUSYBOX_UNAME_BINARY) \
+$(RSD_PROOF_USERLAND_IMAGE): $(BUSYBOX_BINARY) $(BUSYBOX_UNAME_BINARY) \
 		$(BUSYBOX_CAT_BINARY) \
-		tools/make-openrfs-proof-userland.py
+		tools/make-rsd-proof-userland.py
 	mkdir -p $(dir $@)
-	$(PYTHON) tools/make-openrfs-proof-userland.py \
+	$(PYTHON) tools/make-rsd-proof-userland.py \
 		$(BUSYBOX_BINARY) $(BUSYBOX_UNAME_BINARY) $(BUSYBOX_CAT_BINARY) $@
 
-$(OPENRFS_PROOF_USERLAND_NO_CAT_IMAGE): $(BUSYBOX_BINARY) \
-		$(BUSYBOX_UNAME_BINARY) tools/make-openrfs-proof-userland.py
+$(RSD_PROOF_USERLAND_NO_CAT_IMAGE): $(BUSYBOX_BINARY) \
+		$(BUSYBOX_UNAME_BINARY) tools/make-rsd-proof-userland.py
 	mkdir -p $(dir $@)
-	$(PYTHON) tools/make-openrfs-proof-userland.py \
+	$(PYTHON) tools/make-rsd-proof-userland.py \
 		$(BUSYBOX_BINARY) $(BUSYBOX_UNAME_BINARY) --without-cat $@
 
 $(FAT32_SYSTEM_IMAGE): $(BUSYBOX_BINARY) $(BUSYBOX_UNAME_BINARY) \
@@ -1240,10 +1254,10 @@ $(FAT32_SYSTEM_IMAGE): $(BUSYBOX_BINARY) $(BUSYBOX_UNAME_BINARY) \
 		--cat $(BUSYBOX_CAT_BINARY)
 
 $(DESKTOP_SYSTEM_IMAGE): $(BUSYBOX_BINARY) $(BUSYBOX_UNAME_BINARY) \
-		$(BUSYBOX_CAT_BINARY) tools/openrfs-package.py \
+		$(BUSYBOX_CAT_BINARY) tools/rsd-package.py \
 		tools/fat32_image.py
 	mkdir -p $(dir $@)
-	$(PYTHON) tools/openrfs-package.py install-system \
+	$(PYTHON) tools/rsd-package.py install-system \
 		--echo $(BUSYBOX_BINARY) --uname $(BUSYBOX_UNAME_BINARY) \
 		--cat $(BUSYBOX_CAT_BINARY) --output $@
 
@@ -1265,15 +1279,15 @@ fat32-images: $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 $(KERNEL): $(OBJECTS) $(RUST_LIB) linker.ld
 	$(KERNEL_LD) $(LDFLAGS) -o $@ $(OBJECTS) $(RUST_LIB) || { \
 		rm -f $@; \
-		sed -n '/__got_start/,/__got_end/p' $(BUILD_DIR)/openrfs.map; \
+		sed -n '/__got_start/,/__got_end/p' $(BUILD_DIR)/rsd.map; \
 		sed 's/ASSERT(__got_end - __got_start <= 0x400,/ASSERT(1,/' \
 			linker.ld >$(BUILD_DIR)/linker-got-diagnostic.ld; \
 		$(KERNEL_LD) -nostdlib -z max-page-size=0x1000 -z noexecstack \
 			--orphan-handling=error --build-id=none --emit-relocs \
 			-T $(BUILD_DIR)/linker-got-diagnostic.ld \
-			-o $(BUILD_DIR)/openrfs-got-diagnostic.elf \
+			-o $(BUILD_DIR)/rsd-got-diagnostic.elf \
 			$(OBJECTS) $(RUST_LIB) || true; \
-		readelf -W -r $(BUILD_DIR)/openrfs-got-diagnostic.elf \
+		readelf -W -r $(BUILD_DIR)/rsd-got-diagnostic.elf \
 			| grep 'GOT' || true; \
 		$(OBJDUMP) -dr $(RUST_LIB) \
 			| grep -B 8 -A 2 'R_X86_64_GOTPCREL' || true; \
@@ -1306,14 +1320,14 @@ lint:
 	fi
 
 $(WALL_CLOCK_HOST_TEST): tools/wall-clock-host-test.c \
-		src/kernel/wall_clock.c include/openrfs/wall_clock.h
+		src/kernel/wall_clock.c include/rsd/wall_clock.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
 		-Wundef -Wstrict-prototypes -Wmissing-prototypes -Iinclude \
 		tools/wall-clock-host-test.c src/kernel/wall_clock.c -o $@
 
 $(SDK_TIME_HOST_TEST): tools/sdk-time-host-test.c sdk/src/time.c \
-		sdk/include/time.h sdk/include/openrfs/runtime.h
+		sdk/include/time.h sdk/include/rsd/runtime.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
 		-Wundef -Wstrict-prototypes -Wmissing-prototypes \
@@ -1325,25 +1339,25 @@ wall-clock-tests: $(WALL_CLOCK_HOST_TEST) $(SDK_TIME_HOST_TEST)
 	$(SDK_TIME_HOST_TEST)
 
 $(BUILD_DIR)/sdk-filesystem-host-test: tools/sdk-filesystem-host-test.c sdk/src/posix.c sdk/src/runtime.c \
-		sdk/src/internal.h sdk/include/openrfs/runtime.h include/openrfs/abi/storage.h
+		sdk/src/internal.h sdk/include/rsd/runtime.h include/rsd/abi/storage.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections -fvisibility=hidden \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion \
-		-DOPENRFS_HOSTED \
+		-DRSD_HOSTED \
 		-Isdk/include -Iinclude tools/sdk-filesystem-host-test.c sdk/src/posix.c sdk/src/runtime.c \
 		-Wl,--gc-sections -o $@
 
 $(BUILD_DIR)/ext4-vfs-host-test: tools/ext4-vfs-host-test.c \
-		src/kernel/ext4_fs.c include/openrfs/ext4_fs.h include/openrfs/nvme.h \
-		include/openrfs/fat32_fs.h
+		src/kernel/ext4_fs.c include/rsd/ext4_fs.h include/rsd/nvme.h \
+		include/rsd/fat32_fs.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
 		tools/ext4-vfs-host-test.c -Wl,--gc-sections -o $@
 
 $(BUILD_DIR)/ext4-fsync-host-test: tools/ext4-fsync-host-test.c \
-		src/kernel/ext4_fs.c include/openrfs/ext4_fs.h include/openrfs/nvme.h \
-		include/openrfs/fat32_fs.h include/openrfs/slot_claim.h
+		src/kernel/ext4_fs.c include/rsd/ext4_fs.h include/rsd/nvme.h \
+		include/rsd/fat32_fs.h include/rsd/slot_claim.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
@@ -1353,8 +1367,8 @@ ext4-fsync-test: $(BUILD_DIR)/ext4-fsync-host-test
 	$(BUILD_DIR)/ext4-fsync-host-test
 
 $(BUILD_DIR)/ext4-sparse-truncate-host-test: tools/ext4-sparse-truncate-host-test.c \
-		src/kernel/ext4_fs.c include/openrfs/ext4_fs.h include/openrfs/nvme.h \
-		include/openrfs/fat32_fs.h include/openrfs/slot_claim.h include/openrfs/cpu.h
+		src/kernel/ext4_fs.c include/rsd/ext4_fs.h include/rsd/nvme.h \
+		include/rsd/fat32_fs.h include/rsd/slot_claim.h include/rsd/cpu.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
@@ -1362,10 +1376,10 @@ $(BUILD_DIR)/ext4-sparse-truncate-host-test: tools/ext4-sparse-truncate-host-tes
 
 ext4-sparse-truncate-test: $(BUILD_DIR)/ext4-sparse-truncate-host-test tools/ext4_image.py tools/ext4_host_test.py
 	$(BUILD_DIR)/ext4-sparse-truncate-host-test
-	OPENRFS_EXT4_RUST_FIXTURE='$(abspath $(BUILD_DIR))/ext4-rust-fixture.img' \
+	RSD_EXT4_RUST_FIXTURE='$(abspath $(BUILD_DIR))/ext4-rust-fixture.img' \
 		$(PYTHON) -u tools/ext4_host_test.py
 	if test -f '$(BUILD_DIR)/ext4-rust-fixture.img'; then \
-		OPENRFS_EXT4_RUST_FIXTURE='$(abspath $(BUILD_DIR))/ext4-rust-fixture.img' $(CARGO_TEST_ENV) \
+		RSD_EXT4_RUST_FIXTURE='$(abspath $(BUILD_DIR))/ext4-rust-fixture.img' $(CARGO_TEST_ENV) \
 		CARGO_TARGET_DIR='$(abspath $(BUILD_DIR))/ext4-transaction-target' \
 		$(CARGO) test --manifest-path tools/ext4-transaction-tests/Cargo.toml \
 		--locked --offline --test coordinator \
@@ -1375,7 +1389,7 @@ ext4-sparse-truncate-test: $(BUILD_DIR)/ext4-sparse-truncate-host-test tools/ext
 	fi
 
 $(BUILD_DIR)/ext4-handle-claims-host-test: tools/ext4-handle-claims-host-test.c \
-		src/kernel/ext4_fs.c include/openrfs/ext4_fs.h include/openrfs/fat32_fs.h
+		src/kernel/ext4_fs.c include/rsd/ext4_fs.h include/rsd/fat32_fs.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
@@ -1383,60 +1397,60 @@ $(BUILD_DIR)/ext4-handle-claims-host-test: tools/ext4-handle-claims-host-test.c 
 
 $(BUILD_DIR)/vfs-file-claims-host-test $(BUILD_DIR)/vfs-directory-claims-host-test: \
 		tools/ext4-handle-claims-host-test.c src/kernel/vfs.c \
-		include/openrfs/vfs_backend.h include/openrfs/fat32_fs.h include/openrfs/slot_claim.h
+		include/rsd/vfs_backend.h include/rsd/fat32_fs.h include/rsd/slot_claim.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
-		-DOPENRFS_TEST_VFS_$(if $(findstring directory,$@),DIRECTORIES,FILES) \
+		-DRSD_TEST_VFS_$(if $(findstring directory,$@),DIRECTORIES,FILES) \
 		tools/ext4-handle-claims-host-test.c $(HOST_THREAD_FLAGS) -Wl,--gc-sections -o $@
 
 $(BUILD_DIR)/ext4-vfs-host-test $(BUILD_DIR)/ext4-handle-claims-host-test \
 		$(BUILD_DIR)/vfs-mutation-host-test $(BUILD_DIR)/ext4-nvme-close-host-test \
-		$(BUILD_DIR)/ext4-msix-close-host-test: include/openrfs/slot_claim.h include/openrfs/cpu.h
+		$(BUILD_DIR)/ext4-msix-close-host-test: include/rsd/slot_claim.h include/rsd/cpu.h
 
 $(BUILD_DIR)/vfs-mutation-host-test: tools/vfs-mutation-host-test.c \
-		src/kernel/vfs.c include/openrfs/vfs_backend.h include/openrfs/fat32_fs.h
+		src/kernel/vfs.c include/rsd/vfs_backend.h include/rsd/fat32_fs.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
 		tools/vfs-mutation-host-test.c -Wl,--gc-sections -o $@
 
 $(BUILD_DIR)/vfs-vnode-host-test: tools/vfs-vnode-host-test.c src/kernel/vfs.c \
-		include/openrfs/vfs_backend.h include/openrfs/fat32_fs.h include/openrfs/slot_claim.h include/openrfs/cpu.h
+		include/rsd/vfs_backend.h include/rsd/fat32_fs.h include/rsd/slot_claim.h include/rsd/cpu.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
 		tools/vfs-vnode-host-test.c $(HOST_THREAD_FLAGS) -Wl,--gc-sections -o $@
 
 $(BUILD_DIR)/vfs-mount-host-test: tools/vfs-mount-host-test.c src/kernel/vfs.c \
-		include/openrfs/vfs_backend.h include/openrfs/fat32_fs.h include/openrfs/slot_claim.h include/openrfs/cpu.h
+		include/rsd/vfs_backend.h include/rsd/fat32_fs.h include/rsd/slot_claim.h include/rsd/cpu.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
 		tools/vfs-mount-host-test.c $(HOST_THREAD_FLAGS) -Wl,--gc-sections -o $@
 
 $(BUILD_DIR)/vfs-directory-host-test: tools/vfs-directory-host-test.c src/kernel/vfs.c \
-		include/openrfs/vfs_backend.h include/openrfs/fat32_fs.h include/openrfs/slot_claim.h include/openrfs/cpu.h
+		include/rsd/vfs_backend.h include/rsd/fat32_fs.h include/rsd/slot_claim.h include/rsd/cpu.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
 		tools/vfs-directory-host-test.c $(HOST_THREAD_FLAGS) -Wl,--gc-sections -o $@
 
 $(BUILD_DIR)/ext4-append-contention-host-test: tools/ext4-append-contention-host-test.c src/kernel/ext4_fs.c \
-		include/openrfs/ext4_fs.h include/openrfs/nvme.h include/openrfs/slot_claim.h
+		include/rsd/ext4_fs.h include/rsd/nvme.h include/rsd/slot_claim.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
 		tools/ext4-append-contention-host-test.c $(HOST_THREAD_FLAGS) -Wl,--gc-sections -o $@
 
 $(BUILD_DIR)/ext4-registry-host-test: tools/ext4-registry-host-test.c tools/ext4-vfs-host-test.c src/kernel/ext4_fs.c \
-		include/openrfs/ext4_fs.h include/openrfs/nvme.h include/openrfs/slot_claim.h include/openrfs/cpu.h
+		include/rsd/ext4_fs.h include/rsd/nvme.h include/rsd/slot_claim.h include/rsd/cpu.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
 		tools/ext4-registry-host-test.c $(HOST_THREAD_FLAGS) -Wl,--gc-sections -o $@
 
-$(BUILD_DIR)/ext4-storage-cut-host-test: tools/ext4-storage-cut-host-test.c src/kernel/ext4_fs.c include/openrfs/ext4_fs.h include/openrfs/nvme.h
+$(BUILD_DIR)/ext4-storage-cut-host-test: tools/ext4-storage-cut-host-test.c src/kernel/ext4_fs.c include/rsd/ext4_fs.h include/rsd/nvme.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
@@ -1448,7 +1462,7 @@ ext4-tests: $(BUILD_DIR)/vfs-vnode-host-test $(BUILD_DIR)/vfs-mount-host-test $(
 # teardown and native process cleanup, including wrapper reuse after refusal.
 $(BUILD_DIR)/native-%-close-host-test: tools/native-%-close-host-test.c \
         src/kernel/native_handle.c src/kernel/native_process.c \
-        src/kernel/audio.c src/kernel/vfs.c include/openrfs/native_handle.h
+        src/kernel/audio.c src/kernel/vfs.c include/rsd/native_handle.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Iinclude \
@@ -1463,14 +1477,14 @@ native-close-tests: $(BUILD_DIR)/native-file-close-host-test $(BUILD_DIR)/native
 ext4-tests: native-close-tests native-teardown-report-test native-teardown-history-test native-teardown-diagnostics-test
 
 $(BUILD_DIR)/ext4-nvme-close-host-test: tools/ext4-nvme-close-host-test.c \
-		src/kernel/nvme.c include/openrfs/nvme.h include/openrfs/dma.h
+		src/kernel/nvme.c include/rsd/nvme.h include/rsd/dma.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
 		tools/ext4-nvme-close-host-test.c -Wl,--gc-sections -o $@
 
 $(BUILD_DIR)/ext4-msix-close-host-test: tools/ext4-msix-close-host-test.c \
-		src/kernel/msix.c include/openrfs/msix.h include/openrfs/interrupt_vector.h
+		src/kernel/msix.c include/rsd/msix.h include/rsd/interrupt_vector.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
@@ -1478,14 +1492,14 @@ $(BUILD_DIR)/ext4-msix-close-host-test: tools/ext4-msix-close-host-test.c \
 
 
 $(BUILD_DIR)/shell-ext4-host-test: tools/shell-ext4-host-test.c src/kernel/shell.c \
-		include/openrfs/fat32_fs.h
+		include/rsd/fat32_fs.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Iinclude \
 		tools/shell-ext4-host-test.c -Wl,--gc-sections -o $@
 
 
-$(BUILD_DIR)/keyboard-channel-host-test: tools/keyboard-channel-host-test.c src/kernel/keyboard.c include/openrfs/keyboard.h
+$(BUILD_DIR)/keyboard-channel-host-test: tools/keyboard-channel-host-test.c src/kernel/keyboard.c include/rsd/keyboard.h
 	mkdir -p $(BUILD_DIR)
 	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Iinclude \
@@ -1510,10 +1524,10 @@ ext4-tests: tools/ext4_image.py tools/ext4_host_test.py $(BUILD_DIR)/sdk-filesys
 	$(BUILD_DIR)/ext4-nvme-close-host-test
 	$(BUILD_DIR)/ext4-msix-close-host-test
 	$(BUILD_DIR)/shell-ext4-host-test
-	OPENRFS_EXT4_RUST_FIXTURE='$(abspath $(BUILD_DIR))/ext4-rust-fixture.img' \
+	RSD_EXT4_RUST_FIXTURE='$(abspath $(BUILD_DIR))/ext4-rust-fixture.img' \
 		$(PYTHON) -u tools/ext4_host_test.py
 	if test -f '$(BUILD_DIR)/ext4-rust-fixture.img'; then \
-		OPENRFS_EXT4_RUST_FIXTURE='$(abspath $(BUILD_DIR))/ext4-rust-fixture.img' $(CARGO_TEST_ENV) \
+		RSD_EXT4_RUST_FIXTURE='$(abspath $(BUILD_DIR))/ext4-rust-fixture.img' $(CARGO_TEST_ENV) \
 		CARGO_TARGET_DIR='$(abspath $(BUILD_DIR))/ext4-transaction-target' \
 		$(CARGO) test \
 		--manifest-path tools/ext4-transaction-tests/Cargo.toml \
@@ -1522,17 +1536,17 @@ ext4-tests: tools/ext4_image.py tools/ext4_host_test.py $(BUILD_DIR)/sdk-filesys
 		echo "ERROR: required ext4 fixture unavailable"; exit 1; \
 	fi
 
-package-repository-tests: tools/openrfs-repository.py \
-		tools/openrfs_repository_host_test.py tools/openrfs-package.py
-	OPENRFS_REQUIRE_ED25519=1 $(PYTHON) -u tools/openrfs_repository_host_test.py
+package-repository-tests: tools/rsd-repository.py \
+		tools/rsd_repository_host_test.py tools/rsd-package.py
+	RSD_REQUIRE_ED25519=1 $(PYTHON) -u tools/rsd_repository_host_test.py
 
-package-transaction-tests: tools/openrfs-transaction.py \
-		tools/openrfs_transaction_host_test.py tools/openrfs-package.py
-	$(PYTHON) -u tools/openrfs_transaction_host_test.py
+package-transaction-tests: tools/rsd-transaction.py \
+		tools/rsd_transaction_host_test.py tools/rsd-package.py
+	$(PYTHON) -u tools/rsd_transaction_host_test.py
 
 $(PACKAGE_STATE_HOST_TEST): tools/package-state-host-test.c \
 		src/kernel/package_generation.c src/kernel/package_state.c \
-		include/openrfs/package_generation.h include/openrfs/package_state.h
+		include/rsd/package_generation.h include/rsd/package_state.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
 		-Wundef -Wstrict-prototypes -Wmissing-prototypes -Iinclude \
@@ -1545,9 +1559,9 @@ package-state-tests: $(PACKAGE_STATE_HOST_TEST)
 $(PACKAGE_SERVICE_HOST_TEST): tools/package-service-host-test.c \
 		tools/package-state-host-test.c src/kernel/package_service.c \
 		src/kernel/package_generation.c src/kernel/package_state.c \
-		include/openrfs/package_builder.h include/openrfs/package_generation.h \
-		include/openrfs/package_manager.h include/openrfs/package_service.h \
-		include/openrfs/package_state.h include/openrfs/fat32_fs.h include/openrfs/heap.h
+		include/rsd/package_builder.h include/rsd/package_generation.h \
+		include/rsd/package_manager.h include/rsd/package_service.h \
+		include/rsd/package_state.h include/rsd/fat32_fs.h include/rsd/heap.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
 		-Wundef -Wstrict-prototypes -Wmissing-prototypes -Iinclude \
@@ -1560,8 +1574,8 @@ package-service-tests: $(PACKAGE_SERVICE_HOST_TEST)
 $(PACKAGE_UPLOAD_HOST_TEST): tools/package-upload-host-test.c \
 		src/kernel/package_upload.c src/kernel/package_state.c \
 		src/kernel/native_handle.c \
-		include/openrfs/package_upload.h include/openrfs/package_state.h \
-		include/openrfs/fat32_fs.h include/openrfs/native_handle.h
+		include/rsd/package_upload.h include/rsd/package_state.h \
+		include/rsd/fat32_fs.h include/rsd/native_handle.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
 		-Wundef -Wstrict-prototypes -Wmissing-prototypes -Iinclude \
@@ -1570,9 +1584,9 @@ $(PACKAGE_UPLOAD_HOST_TEST): tools/package-upload-host-test.c \
 
 $(TEST_BUILD_DIR)/package-upload-claims-host-test$(HOST_EXEEXT): tools/package-upload-claims-host-test.c \
 		tools/package-upload-host-test.c src/kernel/package_upload.c src/kernel/package_state.c \
-		src/kernel/native_handle.c include/openrfs/package_upload.h \
-		include/openrfs/package_state.h include/openrfs/fat32_fs.h \
-		include/openrfs/native_handle.h
+		src/kernel/native_handle.c include/rsd/package_upload.h \
+		include/rsd/package_state.h include/rsd/fat32_fs.h \
+		include/rsd/native_handle.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
 		-Wundef -Wstrict-prototypes -Wmissing-prototypes $(HOST_THREAD_FLAGS) -Iinclude \
@@ -1585,7 +1599,7 @@ package-upload-tests: $(PACKAGE_UPLOAD_HOST_TEST) $(TEST_BUILD_DIR)/package-uplo
 
 $(NATIVE_TEARDOWN_REPORT_HOST_TEST): tools/native-teardown-report-host-test.c \
 		src/kernel/native_process.c src/kernel/native_handle.c \
-		include/openrfs/native_process.h include/openrfs/native_handle.h
+		include/rsd/native_process.h include/rsd/native_handle.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
 		-Wundef -Wstrict-prototypes -Wmissing-prototypes -Iinclude \
@@ -1602,7 +1616,7 @@ native-teardown-report-test: $(NATIVE_TEARDOWN_REPORT_HOST_TEST)
 
 $(NATIVE_TEARDOWN_HISTORY_HOST_TEST): tools/native-teardown-history-host-test.c \
 		src/kernel/native_process_teardown.c src/kernel/native_handle.c \
-		include/openrfs/native_process.h include/openrfs/native_handle.h
+		include/rsd/native_process.h include/rsd/native_handle.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -ffunction-sections -fdata-sections \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wundef \
@@ -1619,8 +1633,8 @@ $(NATIVE_TEARDOWN_DIAGNOSTICS_HOST_TEST): \
 		tools/native-teardown-diagnostics-host-test.c \
 		src/kernel/native_teardown_diagnostics.c \
 		src/kernel/native_process_teardown.c src/kernel/native_handle.c \
-		include/openrfs/native_teardown_diagnostics.h \
-		include/openrfs/native_process.h include/openrfs/native_handle.h
+		include/rsd/native_teardown_diagnostics.h \
+		include/rsd/native_process.h include/rsd/native_handle.h
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -ffunction-sections -fdata-sections \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wundef \
@@ -1652,9 +1666,9 @@ $(TEST_BUILD_DIR)/monocypher/monocypher-ed25519.o: \
 $(PACKAGE_TRUST_HOST_TEST): tools/package-trust-host-test.c \
 		src/kernel/package_platform_trust.c src/kernel/package_trust.c \
 		src/kernel/package_state.c $(PACKAGE_TRUST_ASSET_C) \
-		include/openrfs/package_platform_trust.h \
-		include/openrfs/package_trust.h include/openrfs/package_manager.h \
-		include/openrfs/package_state.h $(MONOCYPHER_HOST_OBJECTS)
+		include/rsd/package_platform_trust.h \
+		include/rsd/package_trust.h include/rsd/package_manager.h \
+		include/rsd/package_state.h $(MONOCYPHER_HOST_OBJECTS)
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
 		-Wundef -Wstrict-prototypes -Wmissing-prototypes -Iinclude \
@@ -1670,9 +1684,9 @@ package-trust-tests: $(PACKAGE_TRUST_HOST_TEST)
 $(PACKAGE_MANAGER_HOST_TEST): tools/package-manager-host-test.c \
 		src/kernel/package_builder.c src/kernel/package_generation.c \
 		src/kernel/package_manager.c src/kernel/package_trust.c \
-		src/kernel/package_state.c include/openrfs/package_builder.h \
-		include/openrfs/package_generation.h include/openrfs/package_manager.h \
-		include/openrfs/package_trust.h include/openrfs/package_state.h \
+		src/kernel/package_state.c include/rsd/package_builder.h \
+		include/rsd/package_generation.h include/rsd/package_manager.h \
+		include/rsd/package_trust.h include/rsd/package_state.h \
 		$(MONOCYPHER_HOST_OBJECTS)
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
@@ -1687,9 +1701,9 @@ $(PACKAGE_CONTROL_HOST_TEST): tools/package-control-host-test.c \
 		src/kernel/package_control.c src/kernel/package_builder.c \
 		src/kernel/package_generation.c src/kernel/package_manager.c \
 		src/kernel/package_trust.c src/kernel/package_state.c \
-		include/openrfs/package_control.h include/openrfs/package_builder.h \
-		include/openrfs/package_generation.h include/openrfs/package_manager.h \
-		include/openrfs/package_trust.h include/openrfs/package_state.h \
+		include/rsd/package_control.h include/rsd/package_builder.h \
+		include/rsd/package_generation.h include/rsd/package_manager.h \
+		include/rsd/package_trust.h include/rsd/package_state.h \
 		$(MONOCYPHER_HOST_OBJECTS)
 	mkdir -p $(dir $@)
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
@@ -1701,16 +1715,16 @@ $(PACKAGE_CONTROL_HOST_TEST): tools/package-control-host-test.c \
 		src/kernel/package_state.c $(MONOCYPHER_HOST_OBJECTS) -o $@
 
 package-control-tests: $(PACKAGE_MANAGER_HOST_TEST) $(PACKAGE_CONTROL_HOST_TEST) \
-		tools/package_manager_host_test.py tools/openrfs-repository.py \
-		tools/openrfs-package.py
-	OPENRFS_REQUIRE_ED25519=1 $(PYTHON) -u \
+		tools/package_manager_host_test.py tools/rsd-repository.py \
+		tools/rsd-package.py
+	RSD_REQUIRE_ED25519=1 $(PYTHON) -u \
 		tools/package_manager_host_test.py $(PACKAGE_MANAGER_HOST_TEST) \
 			$(PACKAGE_CONTROL_HOST_TEST)
 
 package-manager-tests: package-control-tests
 
 $(ZLIB_HOST_TEST): tools/zlib-host-test.c sdk/src/zlib.c \
-		sdk/include/openrfs/zlib.h $(ZLIB_SOURCE) $(ZLIB_HEADERS)
+		sdk/include/rsd/zlib.h $(ZLIB_SOURCE) $(ZLIB_HEADERS)
 	mkdir -p $(dir $@)
 	$(CC) -Ivendor/zlib/include -Ivendor/zlib/src -idirafter sdk/include \
 		$(ZLIB_DEFINES) -std=c11 -O2 -Wall -Wextra -Werror \
@@ -1727,14 +1741,14 @@ dynamic-elf-tests: src/rust/elf64_dynamic.rs \
 		tools/elf64-dynamic-host-test.rs -o $(RUST_DYNAMIC_ELF64_TEST)
 	$(RUST_DYNAMIC_ELF64_TEST)
 
-$(TLS_HOST_WRAPPER_OBJECT): sdk/src/tls.c sdk/include/openrfs/tls.h
+$(TLS_HOST_WRAPPER_OBJECT): sdk/src/tls.c sdk/include/rsd/tls.h
 	mkdir -p $(dir $@)
 	$(CC) -Isdk/include -Iinclude -Ivendor/bearssl/inc -std=c11 -O2 \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wundef \
 		-Wstrict-prototypes -Wmissing-prototypes -c $< -o $@
 
 $(TLS_HOST_OBJECT): tools/tls-client-host-test.c \
-		sdk/include/openrfs/tls.h
+		sdk/include/rsd/tls.h
 	mkdir -p $(dir $@)
 	$(CC) -Iinclude -Ivendor/bearssl/inc -idirafter sdk/include \
 		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
@@ -1754,7 +1768,7 @@ tls-tests: $(TLS_HOST_TEST) tools/tls_host_test.py \
 	$(PYTHON) -u tools/tls_host_test.py $(TLS_HOST_TEST)
 
 $(HTTPS_HOST_OBJECT): tools/https-client-host-test.c \
-		apps/native-https/trust_anchor.h sdk/include/openrfs/tls.h
+		apps/native-https/trust_anchor.h sdk/include/rsd/tls.h
 	mkdir -p $(dir $@)
 	$(CC) -Iinclude -Ivendor/bearssl/inc -idirafter sdk/include \
 		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -Wshadow \
@@ -1779,9 +1793,9 @@ https-tests: $(HTTPS_HOST_TEST) tools/https_host_test.py \
 	$(PYTHON) -u tools/https_host_test.py $(HTTPS_HOST_TEST)
 
 $(PACKAGE_FETCH_HOST_TEST): tools/package-fetch-host-test.c \
-		sdk/src/package_fetch.c sdk/include/openrfs/package_fetch.h \
-		sdk/include/openrfs/package_upload.h \
-		sdk/include/openrfs/tls.h include/openrfs/abi.h \
+		sdk/src/package_fetch.c sdk/include/rsd/package_fetch.h \
+		sdk/include/rsd/package_upload.h \
+		sdk/include/rsd/tls.h include/rsd/abi.h \
 		$(TLS_HOST_BEARSSL_LIB)
 	mkdir -p $(dir $@)
 	$(CC) -Iinclude -Ivendor/bearssl/inc -idirafter sdk/include \
@@ -1802,36 +1816,32 @@ ext4-images: $(EXT4_FIXTURE)
 INSTALLER_PORT_TEST := $(BUILD_DIR)/tools/installer-port-test
 
 $(INSTALLER_PORT_TEST): tools/installer-port-test.c \
-		src/kernel/orfs_term.c src/kernel/orfs_ui.c src/kernel/orfs_install.c \
-		include/orfs/term.h include/orfs/ui.h include/orfs/install.h \
-		include/orfs/line.h include/orfs/version.h
+		$(RSD_INSTALLER_SOURCES) $(wildcard ui/console/include/rsd/*.h)
 	mkdir -p $(dir $@)
-	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+	$(CC) -Iui/console/include -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
 		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
-		tools/installer-port-test.c src/kernel/orfs_term.c \
-		src/kernel/orfs_ui.c src/kernel/orfs_install.c -o $@
+		tools/installer-port-test.c $(RSD_INSTALLER_SOURCES) -o $@
 
 installer-port-test: $(INSTALLER_PORT_TEST)
 	$(INSTALLER_PORT_TEST)
 
-MINIMAL_DE_HOST_TEST := $(BUILD_DIR)/tools/minimal-de-host-test
+RSD_DESKTOP_HOST_TEST := $(BUILD_DIR)/tools/rsd-desktop-host-test
 
-$(MINIMAL_DE_HOST_TEST): tools/minimal-de-host-test.c \
-		src/kernel/minimal_de.c include/openrfs/minimal_de.h \
-		$(wildcard src/kernel/trait_*.c) \
-		$(wildcard src/kernel/trait_*.h) \
-		$(wildcard include/trait/*.h)
+$(RSD_DESKTOP_HOST_TEST): tools/rsd-desktop-host-test.c \
+		src/kernel/rsd_desktop.c include/rsd/rsd_desktop.h \
+		$(RSD_DESKTOP_SOURCES) \
+		$(wildcard ui/desktop/include/rsd_desktop/*.h)
 	mkdir -p $(dir $@)
-	$(CC) -Iinclude -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+	$(CC) -Iinclude -Iui/desktop/include -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
 		-Wshadow -Wundef -Wstrict-prototypes -Wmissing-prototypes \
-		tools/minimal-de-host-test.c src/kernel/minimal_de.c \
-		$(wildcard src/kernel/trait_*.c) -o $@
+		tools/rsd-desktop-host-test.c src/kernel/rsd_desktop.c \
+		$(RSD_DESKTOP_SOURCES) -o $@
 
-.PHONY: minimal-de-host-test
-minimal-de-host-test: $(MINIMAL_DE_HOST_TEST)
-	$(MINIMAL_DE_HOST_TEST)
+.PHONY: rsd-desktop-host-test
+rsd-desktop-host-test: $(RSD_DESKTOP_HOST_TEST)
+	$(RSD_DESKTOP_HOST_TEST)
 
-verify: toolchain lint installer-port-test minimal-de-host-test
+verify: toolchain lint installer-port-test rsd-desktop-host-test
 ifneq ($(VERIFY_CLEAN),0)
 	$(MAKE) clean
 endif
@@ -1847,13 +1857,13 @@ endif
 	@test '$(LOGO_MAX_DIMENSION)' -eq 280
 	$(PYTHON) tools/make-fat16-fixture.py $(FILESYSTEM_FIXTURE)
 	@test "$$(sha256sum $(FILESYSTEM_FIXTURE) | awk '{ print toupper($$1) }')" = \
-		'34A217787FD60E7C528DEF6E2B4F280A5011465A736730A50FE8FA85845D86A5'
+		'73E31C6FC6A8E33E49CB6662641DEB81EF739512C634AF95154C00BAB9408C0A'
 	$(PYTHON) tools/make-elf64-fixture.py $(PROCESS_ELF)
 	@test "$$(sha256sum $(PROCESS_ELF) | awk '{ print toupper($$1) }')" = \
 		'C923A94F08DF64523D3DB701E4F9FC5FF5B51DFC21447E1DC57586D40D42B8A9'
 	$(PYTHON) tools/make-process-fixture.py $(PROCESS_FIXTURE)
 	@test "$$(sha256sum $(PROCESS_FIXTURE) | awk '{ print toupper($$1) }')" = \
-		'9BDC1FE33DF03F28CA07605F85A28D8C7CDFF240C9304F39007E7D7C1B979ED3'
+		'6FC8F96E7AA4E604DFB81A52069B833BAEB891817519E714FA6D544C4EB072BF'
 	$(RUSTC) --edition 2024 --test -D warnings src/rust/fat16.rs \
 		-o $(RUST_FAT16_TEST)
 	$(RUST_FAT16_TEST)
@@ -1864,27 +1874,27 @@ endif
 	$(RUSTC) --edition 2024 --test -D warnings \
 		tools/native-image-host-test.rs -o $(RUST_NATIVE_IMAGE_TEST)
 	$(RUST_NATIVE_IMAGE_TEST)
-	OPENRFS_REQUIRE_ED25519=1 $(PYTHON) -u tools/openrfs_package_host_test.py
+	RSD_REQUIRE_ED25519=1 $(PYTHON) -u tools/rsd_package_host_test.py
 	$(MAKE) $(LINUX_ABI_FIXTURE)
 	@test "$$(sha256sum $(LINUX_ABI_FIXTURE) | awk '{ print toupper($$1) }')" = \
-		'4E7D0FEB6F6356503E968EA8BBF1A76924CCC2B35BDD4CD245106685A6CFC9FB'
-	OPENRFS_BUSYBOX_BINARY='$(abspath $(BUSYBOX_BINARY))' \
+		'5FB61451D2F6A4965A4729154C53D0342BE389623F87B48E8E19AB9FEC9B22FD'
+	RSD_BUSYBOX_BINARY='$(abspath $(BUSYBOX_BINARY))' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-fat16-host-test.rs -o $(RUST_LINUX_FAT16_TEST)
 	$(RUST_LINUX_FAT16_TEST)
-	OPENRFS_BUSYBOX_BINARY='$(abspath $(BUSYBOX_BINARY))' \
+	RSD_BUSYBOX_BINARY='$(abspath $(BUSYBOX_BINARY))' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-elf64-host-test.rs -o $(RUST_LINUX_ELF64_TEST)
 	$(RUST_LINUX_ELF64_TEST)
 	$(MAKE) $(LINUX_UNAME_FIXTURE)
 	@test "$$(sha256sum $(LINUX_UNAME_FIXTURE) | awk '{ print toupper($$1) }')" = \
-		'FC92FE49F976F42BC2DBDEA2692A220E3F7C46981F269D886A6967AB09445715'
-	OPENRFS_UNAME_BUSYBOX_BINARY='$(abspath $(BUSYBOX_UNAME_BINARY))' \
+		'89A6E941096227B4747205AA96F715503BD61784384253081F649BD3CABB216C'
+	RSD_UNAME_BUSYBOX_BINARY='$(abspath $(BUSYBOX_UNAME_BINARY))' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-uname-fat16-host-test.rs \
 		-o $(RUST_LINUX_UNAME_FAT16_TEST)
 	$(RUST_LINUX_UNAME_FAT16_TEST)
-	OPENRFS_UNAME_BUSYBOX_BINARY='$(abspath $(BUSYBOX_UNAME_BINARY))' \
+	RSD_UNAME_BUSYBOX_BINARY='$(abspath $(BUSYBOX_UNAME_BINARY))' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-uname-elf64-host-test.rs \
 		-o $(RUST_LINUX_UNAME_ELF64_TEST)
@@ -1892,32 +1902,32 @@ endif
 	$(MAKE) $(BUSYBOX_CAT_BINARY)
 	@test "$$(sha256sum $(BUSYBOX_CAT_BINARY) | awk '{ print toupper($$1) }')" = \
 		'8191596A22778B575942895071A2E50CCEEE0F82F4D88B6D986584CE0914FC3E'
-	OPENRFS_CAT_BUSYBOX_BINARY='$(abspath $(BUSYBOX_CAT_BINARY))' \
+	RSD_CAT_BUSYBOX_BINARY='$(abspath $(BUSYBOX_CAT_BINARY))' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-cat-fat16-host-test.rs \
 		-o $(RUST_LINUX_CAT_FAT16_TEST)
 	$(RUST_LINUX_CAT_FAT16_TEST)
-	OPENRFS_CAT_BUSYBOX_BINARY='$(abspath $(BUSYBOX_CAT_BINARY))' \
+	RSD_CAT_BUSYBOX_BINARY='$(abspath $(BUSYBOX_CAT_BINARY))' \
 		$(RUSTC) --edition 2024 --test -D warnings \
 		tools/linux-cat-elf64-host-test.rs \
 		-o $(RUST_LINUX_CAT_ELF64_TEST)
 	$(RUST_LINUX_CAT_ELF64_TEST)
-	$(MAKE) $(OPENRFS_PROOF_USERLAND_IMAGE)
-	@test "$$(sha256sum $(OPENRFS_PROOF_USERLAND_IMAGE) | awk '{ print toupper($$1) }')" = \
-		'29E49384CBF65B9F54516B875ABE183C69072DF461C76F7F6DD8E497055D4D21'
-	$(MAKE) $(OPENRFS_PROOF_USERLAND_NO_CAT_IMAGE)
-	@test "$$(sha256sum $(OPENRFS_PROOF_USERLAND_NO_CAT_IMAGE) | awk '{ print toupper($$1) }')" = \
-		'B2AA321D73954E110BA914254E798832684C4F1F7051D63FB4C18AE0CF848E51'
+	$(MAKE) $(RSD_PROOF_USERLAND_IMAGE)
+	@test "$$(sha256sum $(RSD_PROOF_USERLAND_IMAGE) | awk '{ print toupper($$1) }')" = \
+		'BAD15DF5C1F59BDB12B51DB3CB2B630F8006A8F436DF1BE91DF21AC95AF76D25'
+	$(MAKE) $(RSD_PROOF_USERLAND_NO_CAT_IMAGE)
+	@test "$$(sha256sum $(RSD_PROOF_USERLAND_NO_CAT_IMAGE) | awk '{ print toupper($$1) }')" = \
+		'D53E4DCF7DAC542FC055693EF5347A60646FC1C9CAA4007A2C707CF035F037D3'
 	$(MAKE) $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE) \
 		$(FAT32_FULL_IMAGE) $(FAT32_CORRUPT_IMAGE)
 	@test "$$(sha256sum $(FAT32_SYSTEM_IMAGE) | awk '{ print toupper($$1) }')" = \
-		'CD116CB5755270BF1E6F20FBAA6F1505BACF184C6A8B19F15EA54B6DC16CE310'
+		'F79B78212E93698168BFFFBB85402AC1DE0219E48F0E14A19A4723AED043B70F'
 	@test "$$(sha256sum $(FAT32_DATA_IMAGE) | awk '{ print toupper($$1) }')" = \
-		'87017AF6336746D314B36C57DC9B30B751B9EF017C2FA607E71279F7E38F6DC4'
+		'79490F6DFB22CDECBB4CBD7A3D7282EADE3C4A77AB9DD3851FC7F93D385CA2B6'
 	@test "$$(sha256sum $(FAT32_FULL_IMAGE) | awk '{ print toupper($$1) }')" = \
-		'657B57CC3072853A52EE3A7A54639E49DE3E4FAFAB2E4E2A436D3A46D00CF6DB'
+		'97C87CB59E20AAC541F5B160DE7F56F4D4369B6AF824B038867247A2554E77A1'
 	@test "$$(sha256sum $(FAT32_CORRUPT_IMAGE) | awk '{ print toupper($$1) }')" = \
-		'79077EF749491B0C641E9D45273629508B051E47DAF7A1D49F9BD03992EFB852'
+		'EE4819831CC81412C3D6D7259DB308576D195F20102A62407CDD1D263808767E'
 	rm -rf $(BUILD_DIR)/fat32-reconstruction
 	mkdir -p $(BUILD_DIR)/fat32-reconstruction
 	$(PYTHON) tools/fat32_image.py format system \
@@ -1953,7 +1963,7 @@ endif
 	$(PYTHON) tools/check-multiprocess-image.py
 	@test "$(words $(TEST_SCENARIOS))" -eq \
 		'$(EXPECTED_TEST_SCENARIO_COUNT)'
-	@grep -Fq '#define SHELL_PROMPT "openrfs$$ "' src/kernel/shell.c
+	@grep -Fq '#define SHELL_PROMPT "rsd$$ "' src/kernel/shell.c
 	grub-file --is-x86-multiboot2 $(KERNEL)
 	readelf -h $(KERNEL) | grep -Eq 'Class:[[:space:]]+ELF64'
 	readelf -h $(KERNEL) | grep -Eq 'Machine:[[:space:]]+Advanced Micro Devices X86-64'
@@ -1967,7 +1977,7 @@ endif
 	@$(OBJDUMP) -d $(KERNEL) | grep -Fq 'ltr'
 	@$(OBJDUMP) -d $(KERNEL) | grep -Fq 'lidt'
 	# This inspects the ELF file, and for a long time it was the only thing
-	# behind OpenRFS's W^X claim - while the kernel ran on boot.S's huge pages
+	# behind RSD's W^X claim - while the kernel ran on boot.S's huge pages
 	# with no NX bit enabled at all. It is kept because it catches a bad link
 	# before anything boots, but the guarantee now rests on paging.c walking
 	# the installed tables at runtime.
@@ -1995,55 +2005,55 @@ endif
 	@$(NM) $(KERNEL) | grep -Eq ' [ABDRTt] __data_start$$'
 	# The Rust half has to actually be in the image, and has to have been
 	# linked as ordinary code rather than as something with its own runtime.
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_logo_decode$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_logo_self_test$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_font_glyph$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_font_self_test$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_ui_font_glyph$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_ui_font_self_test$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_fat16_parse_bpb$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_fat16_find_root$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_fat16_parse_fat$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_fat16_validate_extent$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_fat16_validate_payload$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_fat32_parse_bpb$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_fat32_parse_fsinfo$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_fat32_validate_fat_pair$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_fat32_parse_directory_entry$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_linux_fat16_find_root$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_linux_fat16_build_chain$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_linux_fat16_validate_payload$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_linux_elf64_parse$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_linux_elf64_self_test$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_linux_uname_fat16_find_root$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_linux_uname_fat16_build_chain$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_linux_uname_fat16_validate_payload$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_linux_uname_elf64_parse$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_linux_uname_elf64_self_test$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_linux_cat_fat16_find_root$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_linux_cat_fat16_build_chain$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_linux_cat_fat16_validate_payload$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_linux_cat_elf64_parse$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_linux_cat_elf64_self_test$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_elf64_parse$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_elf64_self_test$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_native_image_validate$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_native_image_self_test$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_multiprocess_elf64_parse$$'
-	@$(NM) $(KERNEL) | grep -Eq ' T openrfs_multiprocess_elf64_self_test$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_logo_decode$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_logo_self_test$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_font_glyph$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_font_self_test$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_ui_font_glyph$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_ui_font_self_test$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_fat16_parse_bpb$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_fat16_find_root$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_fat16_parse_fat$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_fat16_validate_extent$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_fat16_validate_payload$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_fat32_parse_bpb$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_fat32_parse_fsinfo$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_fat32_validate_fat_pair$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_fat32_parse_directory_entry$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_linux_fat16_find_root$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_linux_fat16_build_chain$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_linux_fat16_validate_payload$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_linux_elf64_parse$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_linux_elf64_self_test$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_linux_uname_fat16_find_root$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_linux_uname_fat16_build_chain$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_linux_uname_fat16_validate_payload$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_linux_uname_elf64_parse$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_linux_uname_elf64_self_test$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_linux_cat_fat16_find_root$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_linux_cat_fat16_build_chain$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_linux_cat_fat16_validate_payload$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_linux_cat_elf64_parse$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_linux_cat_elf64_self_test$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_elf64_parse$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_elf64_self_test$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_native_image_validate$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_native_image_self_test$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_multiprocess_elf64_parse$$'
+	@$(NM) $(KERNEL) | grep -Eq ' T rsd_multiprocess_elf64_self_test$$'
 	# Hostile ext4 metadata is parsed by safe Rust and may retain compiler-
 	# inserted bounds traps. Those traps are a corruption backstop, not an
-	# unwinding runtime: require every one to terminate through OpenRFS's panic
+	# unwinding runtime: require every one to terminate through RSD's panic
 	# handler and reject any linked exception personality or unwinder.
 	@if $(NM) $(KERNEL) | grep -Eq 'panic_bounds_check'; then \
 		$(NM) $(KERNEL) | grep -Eq ' [tT] .*rust_begin_unwind' && \
 		$(OBJDUMP) -d $(KERNEL) | \
 			awk '/^[[:space:]]*[0-9a-f]+ <[^>]*rust_begin_unwind>:/ { inside = 1; next } \
 				inside && /^[[:space:]]*[0-9a-f]+ <[^>]+>:/ { inside = 0 } \
-				inside && /[[:space:]]call.*<[^>]*openrfs3abi5panic[^>]*>/ { found = 1 } \
+				inside && /[[:space:]]call.*<[^>]*rsd3abi5panic[^>]*>/ { found = 1 } \
 				END { exit !found }' && \
 		$(OBJDUMP) -d $(KERNEL) | \
-			awk '/^[[:space:]]*[0-9a-f]+ <[^>]*openrfs3abi5panic[^>]*>:/ { inside = 1; next } \
+			awk '/^[[:space:]]*[0-9a-f]+ <[^>]*rsd3abi5panic[^>]*>:/ { inside = 1; next } \
 				inside && /^[[:space:]]*[0-9a-f]+ <[^>]+>:/ { inside = 0 } \
 				inside && /[[:space:]]call.*<console_panic>/ { found = 1 } \
 				END { exit !found }'; \
@@ -2056,11 +2066,11 @@ endif
 	# Paging and the scenario runner must stay coupled to one typed aggregate,
 	# never grow hardware-specific parameters or hidden firmware reads again.
 	@grep -Fq 'paging_initialize(const struct paging_device_windows *windows);' \
-		include/openrfs/paging.h
+		include/rsd/paging.h
 	@! grep -Eq 'struct (acpi_topology|acpi_mcfg|boot_framebuffer)' \
 		src/kernel/paging.c
 	@grep -Fq 'const struct kernel_test_context *context' \
-		include/openrfs/test.h
+		include/rsd/test.h
 	# Migrated boot operations are reachable only from typed ledger descriptors.
 	@if grep -ERn \
 		'\b(prove_frame_lifecycle|install_page_tables|prove_paging_lifecycle|prove_write_combining|bring_up_heap|prove_heap_lifecycle|prove_timer_route|retire_legacy_interrupt_path|prove_level_route|prove_pm_timer|prove_apic_timer|prove_tsc|retire_pit|prove_clocks_without_pit|prove_monotonic_time|bring_up_pci|prove_threads|prove_preemption|prove_framebuffer|prove_surface|draw_logo|prove_screen_console|prove_keyboard|prove_shell)[[:space:]]*[(]' \
@@ -2071,7 +2081,7 @@ endif
 		'\b(ui_font_initialize|pointer_initialize|ui_construct|ui_activate)[[:space:]]*[(]' \
 		src/kernel --include='*.c' --exclude=boot_plan.c \
 		--exclude=ui.c --exclude=ui_font.c --exclude=pointer.c; then \
-		echo 'OpenRFS boot stage bypasses the Boot Ledger'; exit 1; \
+		echo 'RSD boot stage bypasses the Boot Ledger'; exit 1; \
 	fi
 	@if grep -ERn \
 		'\b(pci_resource_initialize|interrupt_vector_initialize|dma_initialize|device_substrate_prove)[[:space:]]*[(]' \
@@ -2114,7 +2124,7 @@ endif
 		echo 'HD Audio proof bypasses the Boot Ledger'; exit 1; \
 	fi
 	# The one driver that lets a device write kernel memory has to withdraw
-	# that permission before it reclaims the memory. OpenRFS has no IOMMU, so
+	# that permission before it reclaims the memory. RSD has no IOMMU, so
 	# the order is the whole guarantee: engines stopped, controller reset, bus
 	# mastering disabled, and only then the rings released.
 	@grep -Fq 'PCI_RESOURCE_STATUS_DMA_NOT_PREPARED' src/kernel/audio.c || \
@@ -2145,7 +2155,7 @@ endif
 	# Fifteen drivers, and exactly one of them may write a register: the video
 	# BIOS window needs the ROM shadow bit cleared, and nothing else here has
 	# any business changing a live graphics part.
-	@grep -Fq '#define NVIDIA_DRIVER_COUNT 15U' include/openrfs/nvidia.h
+	@grep -Fq '#define NVIDIA_DRIVER_COUNT 15U' include/rsd/nvidia.h
 	@test "$$(grep -Ec '^        \.name = "NVIDIA ' src/kernel/nvidia.c)" \
 		-eq 15 || \
 		{ echo 'the NVIDIA table does not declare fifteen drivers'; exit 1; }
@@ -2176,7 +2186,7 @@ endif
 		test -n "$$save" && test -n "$$restore" && test -n "$$verify" && \
 		test "$$save" -lt "$$restore" && test "$$restore" -lt "$$verify" || \
 		{ echo 'the NVIDIA ROM shadow bit is not proved restored'; exit 1; }
-	# No driver here may reach memory: OpenRFS has no IOMMU.
+	# No driver here may reach memory: RSD has no IOMMU.
 	@if grep -En \
 		'pci_claim_enable_bus_master|dma_(allocate|mark_initialized|transfer_to_device|transfer_to_cpu|release)' \
 		src/kernel/nvidia.c; then \
@@ -2186,16 +2196,16 @@ endif
 		echo 'an NVIDIA driver wrote configuration space'; exit 1; \
 	fi
 	# C never parses a VBIOS byte; the freestanding Rust validator does.
-	@grep -Fq 'openrfs_nvbios_parse(' src/kernel/nvidia.c || \
+	@grep -Fq 'rsd_nvbios_parse(' src/kernel/nvidia.c || \
 		{ echo 'the NVIDIA driver stopped using the Rust VBIOS boundary'; \
 		exit 1; }
 	@grep -Fq 'NOTHING HERE HAS BEEN RUN AGAINST NVIDIA SILICON' \
-		include/openrfs/nvidia.h || \
+		include/rsd/nvidia.h || \
 		{ echo 'the NVIDIA hardware-testing limit was dropped'; exit 1; }
 	# Five drivers read what an earlier driver established, and the table's
 	# order is those dependencies. The control that states them pair by pair is
 	# what keeps a reordered table from silently producing a weaker result.
-	@grep -Fq '#define NVIDIA_CONTROLLED_CONTROLS 21U' include/openrfs/nvidia.h
+	@grep -Fq '#define NVIDIA_CONTROLLED_CONTROLS 21U' include/rsd/nvidia.h
 	@test "$$(grep -Ec '^            \{ probe_[a-z_]+, probe_[a-z_]+ \}' \
 		src/kernel/nvidia.c)" -eq 5 || \
 		{ echo 'the NVIDIA driver ordering control changed shape'; exit 1; }
@@ -2216,7 +2226,7 @@ endif
 			exit 1; }; \
 	done
 	@grep -Fq '#define CPU_RFLAGS_PROCESSOR_BOOKKEEPING UINT64_C(0x00010000)' \
-		include/openrfs/cpu.h || \
+		include/rsd/cpu.h || \
 		{ echo 'the processor-bookkeeping flag set moved'; exit 1; }
 	# The saved context is normalised, not merely checked: nothing hands the
 	# bit back to a process through an IRETQ.
@@ -2257,7 +2267,7 @@ endif
 		{ echo 'the TCP refusal gained an unreviewed call site'; exit 1; }
 	# A passive open is bounded twice: by the listener's declared backlog and
 	# by the same connection table an active open draws from.
-	@grep -Fq '#define NETWORK_TCP_MAX_BACKLOG 4U' include/openrfs/network.h
+	@grep -Fq '#define NETWORK_TCP_MAX_BACKLOG 4U' include/rsd/network.h
 	@grep -Fq 'if (tcp_pending_count(listener) >= listener->backlog) {' \
 		src/kernel/network.c || \
 		{ echo 'a passive open stopped honouring its backlog'; exit 1; }
@@ -2285,9 +2295,9 @@ endif
 		src/kernel/multiprocess.c || \
 		{ echo 'multiprocess trap handler has an unexpected call site'; \
 		exit 1; }
-	# Thirteen drivers, and no driver may enable bus mastering: OpenRFS has no
+	# Thirteen drivers, and no driver may enable bus mastering: RSD has no
 	# IOMMU, so a register-only driver is one that cannot reach memory at all.
-	@grep -Fq '#define DRIVER_MATRIX_CAPACITY 13U' include/openrfs/driver.h
+	@grep -Fq '#define DRIVER_MATRIX_CAPACITY 13U' include/rsd/driver.h
 	@test "$$(grep -Ec '^        \.name = ' src/kernel/driver.c)" -eq 13 || \
 		{ echo 'the driver matrix does not declare thirteen drivers'; \
 		exit 1; }
@@ -2309,7 +2319,7 @@ endif
 	@if grep -En 'pci_config_write_(port|ecam)' src/kernel/driver.c; then \
 		echo 'a bounded driver wrote configuration space'; exit 1; \
 	fi
-	@grep -Fq '#define PAGING_PROCESS_SPACE_SLOTS 4U' include/openrfs/paging.h
+	@grep -Fq '#define PAGING_PROCESS_SPACE_SLOTS 4U' include/rsd/paging.h
 	@grep -Fq 'newest_owned_alias_order()' src/kernel/paging.c || \
 		{ echo 'private alias restores lost their ordering guard'; exit 1; }
 	@if grep -ERn '\blinux_abi_installed_prove[[:space:]]*[(]' \
@@ -2329,9 +2339,9 @@ endif
 		test "$$(grep -ERh '\blinux_cat_abi_launch[[:space:]]*[(]' \
 		src/kernel --include='*.c' --exclude=linux_cat.c | wc -l)" -eq 1 || \
 		{ echo 'measured launch entry escaped its userspace owner'; exit 1; }
-	@! grep -Eq 'console_(write|putc)[[:space:]]*\([[:space:]]*"(OPENRFS|Linux)' \
+	@! grep -Eq 'console_(write|putc)[[:space:]]*\([[:space:]]*"(Linux|BusyBox)' \
 		src/kernel/shell.c || \
-		{ echo 'OpenRFS shell contains prerecorded userspace output'; exit 1; }
+		{ echo 'RSD shell contains prerecorded userspace output'; exit 1; }
 	@if grep -ERn '\bfilesystem_private_read_(open|close)[[:space:]]*[(]' \
 		src/kernel --include='*.c' --exclude=filesystem.c \
 		--exclude=process.c; then \
@@ -2392,7 +2402,7 @@ endif
 	@$(OBJDUMP) -d --no-show-raw-insn $(BUSYBOX_CAT_BINARY) \
 		| grep -Eq '[[:space:]]syscall[[:space:]]*$$' || \
 		{ echo 'pinned cat BusyBox has no x86-64 syscall instruction'; exit 1; }
-	@if grep -ERn '(^|[^[:alnum:]_])unsafe[[:space:]]*(\{|fn|extern|openrfs|impl)|#\[unsafe' \
+	@if grep -ERn '(^|[^[:alnum:]_])unsafe[[:space:]]*(\{|fn|extern|rsd|impl)|#\[unsafe' \
 		src/rust --include='*.rs' --exclude=abi.rs; then \
 		echo 'unsafe Rust escaped the reviewed FFI boundary'; exit 1; \
 	fi
@@ -2495,53 +2505,53 @@ endif
 		test "$$((guest_exit * 2 + 1))" -eq "$$host_exit" && \
 		test "$$((0x36 * 2 + 1))" -ne "$$host_exit" || \
 		{ echo 'Linux uname ABI guest and host exit contracts disagree'; exit 1; }
-	@grep -Fq 'case KERNEL_TEST_OPENRFS_PROOF_USERLAND:' src/kernel/test.c
+	@grep -Fq 'case KERNEL_TEST_RSD_PROOF_USERLAND:' src/kernel/test.c
 	@grep -Fq '        return UINT8_C(0x38);' src/kernel/test.c
 	@guest_exit=$$(sed -n \
-		'/case KERNEL_TEST_OPENRFS_PROOF_USERLAND:/{n;s/.*UINT8_C(\(0x[0-9A-Fa-f]*\)).*/\1/p;}' \
+		'/case KERNEL_TEST_RSD_PROOF_USERLAND:/{n;s/.*UINT8_C(\(0x[0-9A-Fa-f]*\)).*/\1/p;}' \
 		src/kernel/test.c); \
 		host_exit=$$(sed -n \
-		's/^[[:space:]]*openrfs-proof-userland) expected=\([0-9][0-9]*\) ;;.*/\1/p' \
+		's/^[[:space:]]*rsd-proof-userland) expected=\([0-9][0-9]*\) ;;.*/\1/p' \
 		Makefile | head -n 1); \
 		test -n "$$guest_exit" && test -n "$$host_exit" && \
 		test "$$((guest_exit * 2 + 1))" -eq "$$host_exit" || \
-		{ echo 'OpenRFS userland guest and host exits disagree'; exit 1; }
-	@grep -Fq 'case KERNEL_TEST_OPENRFS_PROOF_USERLAND_ABSENT:' src/kernel/test.c
+		{ echo 'RSD userland guest and host exits disagree'; exit 1; }
+	@grep -Fq 'case KERNEL_TEST_RSD_PROOF_USERLAND_ABSENT:' src/kernel/test.c
 	@grep -Fq '        return UINT8_C(0x39);' src/kernel/test.c
 	@guest_exit=$$(sed -n \
-		'/case KERNEL_TEST_OPENRFS_PROOF_USERLAND_ABSENT:/{n;s/.*UINT8_C(\(0x[0-9A-Fa-f]*\)).*/\1/p;}' \
+		'/case KERNEL_TEST_RSD_PROOF_USERLAND_ABSENT:/{n;s/.*UINT8_C(\(0x[0-9A-Fa-f]*\)).*/\1/p;}' \
 		src/kernel/test.c); \
 		host_exit=$$(sed -n \
-		's/^[[:space:]]*openrfs-proof-userland-absent) expected=\([0-9][0-9]*\) ;;.*/\1/p' \
+		's/^[[:space:]]*rsd-proof-userland-absent) expected=\([0-9][0-9]*\) ;;.*/\1/p' \
 		Makefile | head -n 1); \
 		test -n "$$guest_exit" && test -n "$$host_exit" && \
 		test "$$((guest_exit * 2 + 1))" -eq "$$host_exit" || \
-		{ echo 'OpenRFS absent-volume guest and host exits disagree'; exit 1; }
-	@grep -Fq 'case KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE:' src/kernel/test.c
+		{ echo 'RSD absent-volume guest and host exits disagree'; exit 1; }
+	@grep -Fq 'case KERNEL_TEST_RSD_PROOF_USERLAND_INTERACTIVE:' src/kernel/test.c
 	@grep -Fq '        return UINT8_C(0x3A);' src/kernel/test.c
 	@guest_exit=$$(sed -n \
-		'/case KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE:/{n;s/.*UINT8_C(\(0x[0-9A-Fa-f]*\)).*/\1/p;}' \
+		'/case KERNEL_TEST_RSD_PROOF_USERLAND_INTERACTIVE:/{n;s/.*UINT8_C(\(0x[0-9A-Fa-f]*\)).*/\1/p;}' \
 		src/kernel/test.c); \
 		host_exit=$$(sed -n \
-		's/^[[:space:]]*openrfs-proof-userland-interactive) expected=\([0-9][0-9]*\) ;;.*/\1/p' \
+		's/^[[:space:]]*rsd-proof-userland-interactive) expected=\([0-9][0-9]*\) ;;.*/\1/p' \
 		Makefile | head -n 1); \
 		test -n "$$guest_exit" && test -n "$$host_exit" && \
 		test "$$((guest_exit * 2 + 1))" -eq "$$host_exit" || \
-		{ echo 'Interactive OpenRFS guest and host exits disagree'; exit 1; }
-	@grep -Fq 'case KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE_ABSENT:' src/kernel/test.c
+		{ echo 'Interactive RSD guest and host exits disagree'; exit 1; }
+	@grep -Fq 'case KERNEL_TEST_RSD_PROOF_USERLAND_INTERACTIVE_ABSENT:' src/kernel/test.c
 	@grep -Fq '        return UINT8_C(0x3B);' src/kernel/test.c
 	@guest_exit=$$(sed -n \
-		'/case KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE_ABSENT:/{n;s/.*UINT8_C(\(0x[0-9A-Fa-f]*\)).*/\1/p;}' \
+		'/case KERNEL_TEST_RSD_PROOF_USERLAND_INTERACTIVE_ABSENT:/{n;s/.*UINT8_C(\(0x[0-9A-Fa-f]*\)).*/\1/p;}' \
 		src/kernel/test.c); \
 		host_exit=$$(sed -n \
-		's/^[[:space:]]*openrfs-proof-userland-interactive-absent) expected=\([0-9][0-9]*\) ;;.*/\1/p' \
+		's/^[[:space:]]*rsd-proof-userland-interactive-absent) expected=\([0-9][0-9]*\) ;;.*/\1/p' \
 		Makefile | head -n 1); \
 		test -n "$$guest_exit" && test -n "$$host_exit" && \
 		test "$$((guest_exit * 2 + 1))" -eq "$$host_exit" || \
 		{ echo 'Interactive absent-profile guest and host exits disagree'; exit 1; }
 	@if grep -En '\bframebuffer_(write_pixel|fill|scroll_up)[[:space:]]*[(]' \
 		src/kernel/ui.c src/kernel/ui_font.c src/kernel/pointer.c; then \
-		echo 'OpenRFS bypasses the cached surface'; exit 1; \
+		echo 'RSD bypasses the cached surface'; exit 1; \
 	fi
 	@if grep -En \
 		'\b(ui_process_events|ui_flush|surface_present)[[:space:]]*[(]' \
@@ -2550,37 +2560,37 @@ endif
 	fi
 	@grep -Fq '    cpu_store_fence();' src/kernel/surface.c || \
 		{ echo 'cached-surface WC present lost its sfence'; exit 1; }
-	@grep -Fq 'OpenRFS: installed proof passed' \
+	@grep -Fq 'RSD: installed proof passed' \
 		src/kernel/boot_plan.c
 	$(MAKE) screenshot-proof
 
 screenshot-proof:
-	$(PYTHON) tools/compare-openrfs-proof-screenshot.py --mode clean \
-		--self-test $(OPENRFS_PROOF_IMAGE)
-	$(PYTHON) tools/compare-openrfs-proof-screenshot.py --mode focus \
-		--self-test $(OPENRFS_PROOF_FOCUS_IMAGE)
-	$(PYTHON) tools/compare-openrfs-proof-screenshot.py --mode terminal \
-		--self-test $(OPENRFS_PROOF_TERMINAL_IMAGE)
+	$(PYTHON) tools/compare-rsd-proof-screenshot.py --mode clean \
+		--self-test $(RSD_PROOF_IMAGE)
+	$(PYTHON) tools/compare-rsd-proof-screenshot.py --mode focus \
+		--self-test $(RSD_PROOF_FOCUS_IMAGE)
+	$(PYTHON) tools/compare-rsd-proof-screenshot.py --mode terminal \
+		--self-test $(RSD_PROOF_TERMINAL_IMAGE)
 
-capture-openrfs-proof: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
-	rm -rf $(OPENRFS_PROOF_CAPTURE_DIR)
-	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+capture-rsd-proof: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
+	rm -rf $(RSD_PROOF_CAPTURE_DIR)
+	$(PYTHON) tools/capture-rsd-proof.py --iso $(ISO) \
 		--system $(FAT32_SYSTEM_IMAGE) --data $(FAT32_DATA_IMAGE) \
-		--output $(OPENRFS_PROOF_CAPTURE_DIR)
-	$(PYTHON) tools/compare-openrfs-proof-screenshot.py --mode clean \
-		$(OPENRFS_PROOF_IMAGE) $(OPENRFS_PROOF_CAPTURE_DIR)/openrfs-proof.png
-	$(PYTHON) tools/compare-openrfs-proof-screenshot.py --mode focus \
-		$(OPENRFS_PROOF_FOCUS_IMAGE) \
-		$(OPENRFS_PROOF_CAPTURE_DIR)/openrfs-proof-focus.png
-	$(PYTHON) tools/compare-openrfs-proof-screenshot.py --mode terminal \
-		$(OPENRFS_PROOF_TERMINAL_IMAGE) \
-		$(OPENRFS_PROOF_CAPTURE_DIR)/openrfs-proof-terminal.png
+		--output $(RSD_PROOF_CAPTURE_DIR)
+	$(PYTHON) tools/compare-rsd-proof-screenshot.py --mode clean \
+		$(RSD_PROOF_IMAGE) $(RSD_PROOF_CAPTURE_DIR)/rsd-proof.png
+	$(PYTHON) tools/compare-rsd-proof-screenshot.py --mode focus \
+		$(RSD_PROOF_FOCUS_IMAGE) \
+		$(RSD_PROOF_CAPTURE_DIR)/rsd-proof-focus.png
+	$(PYTHON) tools/compare-rsd-proof-screenshot.py --mode terminal \
+		$(RSD_PROOF_TERMINAL_IMAGE) \
+		$(RSD_PROOF_CAPTURE_DIR)/rsd-proof-terminal.png
 
-capture-openrfs: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
-	rm -rf $(OPENRFS_CAPTURE_DIR)
-	$(PYTHON) tools/capture-openrfs-proof.py --iso $(ISO) \
+capture-rsd: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
+	rm -rf $(RSD_CAPTURE_DIR)
+	$(PYTHON) tools/capture-rsd-proof.py --iso $(ISO) \
 		--system $(FAT32_SYSTEM_IMAGE) --data $(FAT32_DATA_IMAGE) \
-		--output $(OPENRFS_CAPTURE_DIR)
+		--output $(RSD_CAPTURE_DIR)
 
 capture-networking: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 	rm -rf $(NETWORK_CAPTURE_DIR)
@@ -2594,32 +2604,32 @@ capture-boot-video: iso $(FAT32_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 		--system $(FAT32_SYSTEM_IMAGE) \
 		--data $(BUILD_DIR)/capture-video-data-fat32.raw \
 		--screenshot $(BUILD_DIR)/fat32-persistence.png \
-		--video $(OPENRFS_PROOF_BOOT_VIDEO) \
+		--video $(RSD_PROOF_BOOT_VIDEO) \
 		--transcript $(BUILD_DIR)/fat32-persistence.log \
 		--ffmpeg $(FFMPEG)
 
 $(ISO): $(KERNEL) grub/grub.cfg
 	mkdir -p $(ISO_ROOT)/boot/grub
-	cp $(KERNEL) $(ISO_ROOT)/boot/openrfs.elf
+	cp $(KERNEL) $(ISO_ROOT)/boot/rsd.elf
 	cp grub/grub.cfg $(ISO_ROOT)/boot/grub/grub.cfg
 	$(GRUB_MKRESCUE) $(GRUB_MKRESCUE_FLAGS) -o $@ $(ISO_ROOT)
 
 iso: $(ISO)
 
-$(TEST_BUILD_DIR)/%/openrfs.iso: $(KERNEL) Makefile
+$(TEST_BUILD_DIR)/%/rsd.iso: $(KERNEL) Makefile
 	rm -rf $(TEST_BUILD_DIR)/$*
 	mkdir -p $(TEST_BUILD_DIR)/$*/iso-root/boot/grub
-	cp $(KERNEL) $(TEST_BUILD_DIR)/$*/iso-root/boot/openrfs.elf
+	cp $(KERNEL) $(TEST_BUILD_DIR)/$*/iso-root/boot/rsd.elf
 	printf '%s\n' 'set default=0' 'set timeout=0' '' \
-		'menuentry "OpenRFS test" {' \
-		'    multiboot2 /boot/openrfs.elf openrfs.test=$*' \
+		'menuentry "RSD test" {' \
+		'    multiboot2 /boot/rsd.elf rsd.test=$*' \
 		'    boot' '}' >$(TEST_BUILD_DIR)/$*/iso-root/boot/grub/grub.cfg
 	$(GRUB_MKRESCUE) $(GRUB_MKRESCUE_FLAGS) -o $@ $(TEST_BUILD_DIR)/$*/iso-root
 
 # Networking scenarios have an isolated Ethernet peer and packet capture rather
 # than a host-network dependency.  This more-specific pattern is selected ahead
 # of qemu-test-% and keeps the existing 58 scenario recipe unchanged.
-qemu-test-network-%: $(TEST_BUILD_DIR)/network-%/openrfs.iso
+qemu-test-network-%: $(TEST_BUILD_DIR)/network-%/rsd.iso
 	@for tool in qemu-system-x86_64 $(PYTHON); do \
 		command -v $$tool >/dev/null 2>&1 || { echo "missing tool: $$tool"; exit 1; }; \
 	done
@@ -2688,7 +2698,7 @@ qemu-test-network-%: $(TEST_BUILD_DIR)/network-%/openrfs.iso
 		--full '$(FAT32_FULL_IMAGE)' --qemu qemu-system-x86_64 \
 		--python '$(PYTHON)' --accel '$(QEMU_ACCEL)' --timeout "$$timeout"
 
-qemu-test-native-https: $(TEST_BUILD_DIR)/native-https/openrfs.iso
+qemu-test-native-https: $(TEST_BUILD_DIR)/native-https/rsd.iso
 	$(MAKE) '$(HTTPSAPP_SYSTEM_IMAGE)' '$(HTTPSAPP_DATA_IMAGE)'
 	$(PYTHON) tools/run_network_scenario.py \
 		--scenario native-https --expected 11 --iso '$<' \
@@ -2700,17 +2710,17 @@ qemu-test-native-https: $(TEST_BUILD_DIR)/native-https/openrfs.iso
 		--qemu qemu-system-x86_64 --python '$(PYTHON)' \
 		--accel '$(QEMU_ACCEL)' --timeout 180
 
-qemu-test-native-openrfs: $(TEST_BUILD_DIR)/native-openrfs/openrfs.iso
-	$(MAKE) '$(OPENRFSAPP_SYSTEM_IMAGE)' '$(OPENRFSAPP_DATA_IMAGE)' \
-		'$(OPENRFSAPP_REPOSITORY)'
+qemu-test-native-rsd: $(TEST_BUILD_DIR)/native-rsd/rsd.iso
+	$(MAKE) '$(RSDAPP_SYSTEM_IMAGE)' '$(RSDAPP_DATA_IMAGE)' \
+		'$(RSDAPP_REPOSITORY)'
 	$(PYTHON) tools/run_network_scenario.py \
-		--scenario native-openrfs --expected 15 --iso '$<' \
-		--output '$(TEST_BUILD_DIR)/native-openrfs' \
+		--scenario native-rsd --expected 15 --iso '$<' \
+		--output '$(TEST_BUILD_DIR)/native-rsd' \
 		--fixture tools/https_network_fixture.py \
 		--audit tools/network_packet_audit.py \
-		--content-root '$(OPENRFSAPP_DIR)/repository' \
-		--system '$(OPENRFSAPP_SYSTEM_IMAGE)' \
-		--data '$(OPENRFSAPP_DATA_IMAGE)' --data-filesystem ext4 \
+		--content-root '$(RSDAPP_DIR)/repository' \
+		--system '$(RSDAPP_SYSTEM_IMAGE)' \
+		--data '$(RSDAPP_DATA_IMAGE)' --data-filesystem ext4 \
 		--full '$(FAT32_FULL_IMAGE)' \
 		--qemu qemu-system-x86_64 --python '$(PYTHON)' \
 		--accel '$(QEMU_ACCEL)' --timeout 900
@@ -2912,7 +2922,7 @@ qemu-test-ext4-powercuts: $(KERNEL) $(EXT4_FIXTURE) \
 		$(if $(GRUB_MODULE_DIR),--grub-module-dir '$(GRUB_MODULE_DIR)') \
 		--accel '$(QEMU_ACCEL)' --timeout 600 --keep-images
 
-qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
+qemu-test-%: $(TEST_BUILD_DIR)/%/rsd.iso
 	@for tool in qemu-system-x86_64 timeout grep; do \
 		command -v $$tool >/dev/null 2>&1 || { echo "missing tool: $$tool"; exit 1; }; \
 	done
@@ -2950,7 +2960,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 		write-combining) expected=89 ;; \
 		device-windows) expected=91 ;; \
 		boot-ledger) expected=93 ;; \
-		openrfs-proof) expected=95 ;; \
+		rsd-proof) expected=95 ;; \
 		device-substrate) expected=97 ;; \
 		xhci) expected=99 ;; \
 		nvme) expected=101 ;; \
@@ -2958,10 +2968,10 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 		process) expected=105 ;; \
 		linux-abi) expected=109 ;; \
 		linux-abi-uname) expected=111 ;; \
-		openrfs-proof-userland) expected=113 ;; \
-		openrfs-proof-userland-absent) expected=115 ;; \
-		openrfs-proof-userland-interactive) expected=117 ;; \
-		openrfs-proof-userland-interactive-absent) expected=119 ;; \
+		rsd-proof-userland) expected=113 ;; \
+		rsd-proof-userland-absent) expected=115 ;; \
+		rsd-proof-userland-interactive) expected=117 ;; \
+		rsd-proof-userland-interactive-absent) expected=119 ;; \
 		fat32-system) expected=121 ;; \
 		fat32-data) expected=123 ;; \
 		fat32-nested) expected=125 ;; \
@@ -3024,7 +3034,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 					audio_capture=true; \
 					audio_backend="-audiodev wav,id=wav0,path=$$audio_wav,out.frequency=48000,out.channels=2,out.format=s16"; \
 				else audio_backend='-audiodev none,id=wav0'; fi; \
-				hardware="-boot order=d -blockdev driver=file,filename=$(AUDIO_SYSTEM_IMAGE),node-name=audio-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=audio-system-file,node-name=audio-system-raw,read-only=on -device nvme,serial=openrfs-system-fat32,drive=audio-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=audio-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=audio-data-file,node-name=audio-data-raw,read-only=off -device nvme,serial=openrfs-data-fat32,drive=audio-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -device ich9-intel-hda,id=hda -device hda-duplex,bus=hda.0,audiodev=wav0 $$audio_backend" ;; \
+				hardware="-boot order=d -blockdev driver=file,filename=$(AUDIO_SYSTEM_IMAGE),node-name=audio-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=audio-system-file,node-name=audio-system-raw,read-only=on -device nvme,serial=rsd-system-fat32,drive=audio-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=audio-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=audio-data-file,node-name=audio-data-raw,read-only=off -device nvme,serial=rsd-data-fat32,drive=audio-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -device ich9-intel-hda,id=hda -device hda-duplex,bus=hda.0,audiodev=wav0 $$audio_backend" ;; \
 			native-sdl) \
 				$(MAKE) '$(SDL_PROOF_SYSTEM_IMAGE)' '$(SDL_PROOF_DATA_IMAGE)' || exit 1; \
 				cp '$(SDL_PROOF_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
@@ -3033,11 +3043,11 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 					audio_capture=true; \
 					audio_backend="-audiodev wav,id=wav0,path=$$audio_wav,out.frequency=48000,out.channels=2,out.format=s16"; \
 				else audio_backend='-audiodev none,id=wav0'; fi; \
-			hardware="-boot order=d -blockdev driver=file,filename=$(SDL_PROOF_SYSTEM_IMAGE),node-name=sdl-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=sdl-system-file,node-name=sdl-system-raw,read-only=on -device nvme,serial=openrfs-system-fat32,drive=sdl-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=sdl-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=sdl-data-file,node-name=sdl-data-raw,read-only=off -device nvme,serial=openrfs-data-fat32,drive=sdl-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -device ich9-intel-hda,id=hda -device hda-duplex,bus=hda.0,audiodev=wav0 $$audio_backend" ;; \
+			hardware="-boot order=d -blockdev driver=file,filename=$(SDL_PROOF_SYSTEM_IMAGE),node-name=sdl-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=sdl-system-file,node-name=sdl-system-raw,read-only=on -device nvme,serial=rsd-system-fat32,drive=sdl-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=sdl-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=sdl-data-file,node-name=sdl-data-raw,read-only=off -device nvme,serial=rsd-data-fat32,drive=sdl-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -device ich9-intel-hda,id=hda -device hda-duplex,bus=hda.0,audiodev=wav0 $$audio_backend" ;; \
 		native-dynamic) \
 			$(MAKE) '$(DYNAMIC_SYSTEM_IMAGE)' '$(DYNAMIC_DATA_IMAGE)' || exit 1; \
 			cp '$(DYNAMIC_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
-			hardware='-boot order=d -blockdev driver=file,filename=$(DYNAMIC_SYSTEM_IMAGE),node-name=dynamic-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=dynamic-system-file,node-name=dynamic-system-raw,read-only=on -device nvme,serial=openrfs-system-fat32,drive=dynamic-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=dynamic-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=dynamic-data-file,node-name=dynamic-data-raw,read-only=off -device nvme,serial=openrfs-data-fat32,drive=dynamic-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+			hardware='-boot order=d -blockdev driver=file,filename=$(DYNAMIC_SYSTEM_IMAGE),node-name=dynamic-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=dynamic-system-file,node-name=dynamic-system-raw,read-only=on -device nvme,serial=rsd-system-fat32,drive=dynamic-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=dynamic-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=dynamic-data-file,node-name=dynamic-data-raw,read-only=off -device nvme,serial=rsd-data-fat32,drive=dynamic-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			# No emulator models an NVIDIA part, so the nvidia scenario \
 			# attaches display and HD Audio functions of exactly the classes \
 			# these drivers match on, from vendors that are not NVIDIA. \
@@ -3049,27 +3059,27 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 			native|native-relaunch) \
 				$(MAKE) '$(NATIVE_SYSTEM_IMAGE)' '$(NATIVE_DATA_IMAGE)' || exit 1; \
 				cp '$(NATIVE_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(NATIVE_SYSTEM_IMAGE),node-name=native-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=native-system-file,node-name=native-system-raw,read-only=on -device nvme,serial=openrfs-system-fat32,drive=native-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=native-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=native-data-file,node-name=native-data-raw,read-only=off -device nvme,serial=openrfs-data-fat32,drive=native-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(NATIVE_SYSTEM_IMAGE),node-name=native-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=native-system-file,node-name=native-system-raw,read-only=on -device nvme,serial=rsd-system-fat32,drive=native-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=native-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=native-data-file,node-name=native-data-raw,read-only=off -device nvme,serial=rsd-data-fat32,drive=native-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			native-lua) \
 				$(MAKE) '$(LUA_SYSTEM_IMAGE)' '$(LUA_DATA_IMAGE)' || exit 1; \
 				cp '$(LUA_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(LUA_SYSTEM_IMAGE),node-name=lua-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=lua-system-file,node-name=lua-system-raw,read-only=on -device nvme,serial=openrfs-system-fat32,drive=lua-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=lua-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=lua-data-file,node-name=lua-data-raw,read-only=off -device nvme,serial=openrfs-data-fat32,drive=lua-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(LUA_SYSTEM_IMAGE),node-name=lua-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=lua-system-file,node-name=lua-system-raw,read-only=on -device nvme,serial=rsd-system-fat32,drive=lua-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=lua-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=lua-data-file,node-name=lua-data-raw,read-only=off -device nvme,serial=rsd-data-fat32,drive=lua-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			native-sqlite) \
 				$(MAKE) '$(SQLITE_SYSTEM_IMAGE)' '$(SQLITE_DATA_IMAGE)' || exit 1; \
 				cp '$(SQLITE_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(SQLITE_SYSTEM_IMAGE),node-name=sqlite-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=sqlite-system-file,node-name=sqlite-system-raw,read-only=on -device nvme,serial=openrfs-system-fat32,drive=sqlite-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=sqlite-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=sqlite-data-file,node-name=sqlite-data-raw,read-only=off -device nvme,serial=openrfs-data-fat32,drive=sqlite-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(SQLITE_SYSTEM_IMAGE),node-name=sqlite-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=sqlite-system-file,node-name=sqlite-system-raw,read-only=on -device nvme,serial=rsd-system-fat32,drive=sqlite-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=sqlite-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=sqlite-data-file,node-name=sqlite-data-raw,read-only=off -device nvme,serial=rsd-data-fat32,drive=sqlite-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			native-rust) \
 				$(MAKE) '$(RUST_APP_SYSTEM_IMAGE)' '$(RUST_APP_DATA_IMAGE)' || exit 1; \
 				cp '$(RUST_APP_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(RUST_APP_SYSTEM_IMAGE),node-name=rust-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=rust-system-file,node-name=rust-system-raw,read-only=on -device nvme,serial=openrfs-system-fat32,drive=rust-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=rust-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=rust-data-file,node-name=rust-data-raw,read-only=off -device nvme,serial=openrfs-data-fat32,drive=rust-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(RUST_APP_SYSTEM_IMAGE),node-name=rust-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=rust-system-file,node-name=rust-system-raw,read-only=on -device nvme,serial=rsd-system-fat32,drive=rust-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=rust-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=rust-data-file,node-name=rust-data-raw,read-only=off -device nvme,serial=rsd-data-fat32,drive=rust-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			native-crash) \
 				$(MAKE) '$(CRASH_SYSTEM_IMAGE)' '$(CRASH_DATA_IMAGE)' || exit 1; \
 				cp '$(CRASH_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(CRASH_SYSTEM_IMAGE),node-name=crash-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=crash-system-file,node-name=crash-system-raw,read-only=on -device nvme,serial=openrfs-system-fat32,drive=crash-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=crash-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=crash-data-file,node-name=crash-data-raw,read-only=off -device nvme,serial=openrfs-data-fat32,drive=crash-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(CRASH_SYSTEM_IMAGE),node-name=crash-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=crash-system-file,node-name=crash-system-raw,read-only=on -device nvme,serial=rsd-system-fat32,drive=crash-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=crash-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=crash-data-file,node-name=crash-data-raw,read-only=off -device nvme,serial=rsd-data-fat32,drive=crash-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			native-elf-refusal|native-digest-refusal|native-abi-refusal) \
 				$(MAKE) '$(ADMISSION_SYSTEM_IMAGE)' '$(ADMISSION_DATA_IMAGE)' || exit 1; \
 				cp '$(ADMISSION_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(ADMISSION_SYSTEM_IMAGE),node-name=admission-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=admission-system-file,node-name=admission-system-raw,read-only=on -device nvme,serial=openrfs-system-fat32,drive=admission-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=admission-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=admission-data-file,node-name=admission-data-raw,read-only=off -device nvme,serial=openrfs-data-fat32,drive=admission-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(ADMISSION_SYSTEM_IMAGE),node-name=admission-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=admission-system-file,node-name=admission-system-raw,read-only=on -device nvme,serial=rsd-system-fat32,drive=admission-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=admission-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=admission-data-file,node-name=admission-data-raw,read-only=off -device nvme,serial=rsd-data-fat32,drive=admission-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			device-substrate) \
 				hardware='-object rng-builtin,id=rng0 -device virtio-rng-pci,disable-legacy=on,rng=rng0' ;; \
 			xhci) \
@@ -3078,65 +3088,65 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 				rm -f '$(NVME_FIXTURE)' || exit 1; \
 				$(PYTHON) tools/make-nvme-fixture.py '$(NVME_FIXTURE)' || exit 1; \
 				test -f '$(NVME_FIXTURE)' || exit 1; \
-				hardware='-blockdev driver=file,filename=$(NVME_FIXTURE),node-name=nvme-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=nvme-file,node-name=nvme-raw,read-only=on -device nvme,serial=openrfs-fixture,drive=nvme-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-blockdev driver=file,filename=$(NVME_FIXTURE),node-name=nvme-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=nvme-file,node-name=nvme-raw,read-only=on -device nvme,serial=rsd-fixture,drive=nvme-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
 			filesystem) \
 				rm -f '$(FILESYSTEM_FIXTURE)' || exit 1; \
 				$(PYTHON) tools/make-fat16-fixture.py '$(FILESYSTEM_FIXTURE)' || exit 1; \
 				test -f '$(FILESYSTEM_FIXTURE)' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(FILESYSTEM_FIXTURE),node-name=filesystem-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=filesystem-file,node-name=filesystem-raw,read-only=on -device nvme,serial=openrfs-fat16-fixture,drive=filesystem-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(FILESYSTEM_FIXTURE),node-name=filesystem-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=filesystem-file,node-name=filesystem-raw,read-only=on -device nvme,serial=rsd-fat16-fixture,drive=filesystem-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
 			process) \
 				rm -f '$(PROCESS_FIXTURE)' '$(PROCESS_ELF)' || exit 1; \
 				$(PYTHON) tools/make-process-fixture.py '$(PROCESS_FIXTURE)' || exit 1; \
 				test -f '$(PROCESS_FIXTURE)' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(PROCESS_FIXTURE),node-name=process-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=process-file,node-name=process-raw,read-only=on -device nvme,serial=openrfs-process,drive=process-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(PROCESS_FIXTURE),node-name=process-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=process-file,node-name=process-raw,read-only=on -device nvme,serial=rsd-process,drive=process-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
 			linux-abi) \
 				$(MAKE) '$(LINUX_ABI_FIXTURE)' || exit 1; \
 				test -f '$(LINUX_ABI_FIXTURE)' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(LINUX_ABI_FIXTURE),node-name=linux-abi-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=linux-abi-file,node-name=linux-abi-raw,read-only=on -device nvme,serial=openrfs-linux-abi,drive=linux-abi-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(LINUX_ABI_FIXTURE),node-name=linux-abi-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=linux-abi-file,node-name=linux-abi-raw,read-only=on -device nvme,serial=rsd-linux-abi,drive=linux-abi-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
 			linux-abi-uname) \
 				$(MAKE) '$(LINUX_UNAME_FIXTURE)' || exit 1; \
 				test -f '$(LINUX_UNAME_FIXTURE)' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(LINUX_UNAME_FIXTURE),node-name=linux-uname-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=linux-uname-file,node-name=linux-uname-raw,read-only=on -device nvme,serial=openrfs-linux-uname,drive=linux-uname-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(LINUX_UNAME_FIXTURE),node-name=linux-uname-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=linux-uname-file,node-name=linux-uname-raw,read-only=on -device nvme,serial=rsd-linux-uname,drive=linux-uname-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
 			ext4-recovery) \
 				$(MAKE) '$(EXT4_FIXTURE)' || exit 1; \
 				$(PYTHON) tools/ext4_image.py prepare-recovery-marker \
 					'$(EXT4_FIXTURE)' '$(EXT4_RECOVERY_FIXTURE)' \
 					--report '$(EXT4_RECOVERY_FIXTURE).before.json' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(EXT4_RECOVERY_FIXTURE),node-name=ext4-recovery-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=ext4-recovery-file,node-name=ext4-recovery-raw,read-only=off -device nvme,serial=openrfs-ext4-recovery,drive=ext4-recovery-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
-			openrfs-proof-userland) \
-				$(MAKE) '$(OPENRFS_PROOF_USERLAND_IMAGE)' || exit 1; \
-				test -f '$(OPENRFS_PROOF_USERLAND_IMAGE)' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(OPENRFS_PROOF_USERLAND_IMAGE),node-name=openrfs-proof-userland-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=openrfs-proof-userland-file,node-name=openrfs-proof-userland-raw,read-only=on -device nvme,serial=openrfs-userland,drive=openrfs-proof-userland-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
-			openrfs-proof-userland-interactive) \
-				$(MAKE) '$(OPENRFS_PROOF_USERLAND_IMAGE)' || exit 1; \
-				test -f '$(OPENRFS_PROOF_USERLAND_IMAGE)' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(OPENRFS_PROOF_USERLAND_IMAGE),node-name=interactive-userland-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=interactive-userland-file,node-name=interactive-userland-raw,read-only=on -device nvme,serial=openrfs-interactive,drive=interactive-userland-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
-			openrfs-proof-userland-interactive-absent) \
-				$(MAKE) '$(OPENRFS_PROOF_USERLAND_NO_CAT_IMAGE)' || exit 1; \
-				test -f '$(OPENRFS_PROOF_USERLAND_NO_CAT_IMAGE)' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(OPENRFS_PROOF_USERLAND_NO_CAT_IMAGE),node-name=interactive-absent-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=interactive-absent-file,node-name=interactive-absent-raw,read-only=on -device nvme,serial=openrfs-interactive-absent,drive=interactive-absent-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(EXT4_RECOVERY_FIXTURE),node-name=ext4-recovery-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=ext4-recovery-file,node-name=ext4-recovery-raw,read-only=off -device nvme,serial=rsd-ext4-recovery,drive=ext4-recovery-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
+			rsd-proof-userland) \
+				$(MAKE) '$(RSD_PROOF_USERLAND_IMAGE)' || exit 1; \
+				test -f '$(RSD_PROOF_USERLAND_IMAGE)' || exit 1; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(RSD_PROOF_USERLAND_IMAGE),node-name=rsd-proof-userland-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=rsd-proof-userland-file,node-name=rsd-proof-userland-raw,read-only=on -device nvme,serial=rsd-userland,drive=rsd-proof-userland-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
+			rsd-proof-userland-interactive) \
+				$(MAKE) '$(RSD_PROOF_USERLAND_IMAGE)' || exit 1; \
+				test -f '$(RSD_PROOF_USERLAND_IMAGE)' || exit 1; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(RSD_PROOF_USERLAND_IMAGE),node-name=interactive-userland-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=interactive-userland-file,node-name=interactive-userland-raw,read-only=on -device nvme,serial=rsd-interactive,drive=interactive-userland-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
+			rsd-proof-userland-interactive-absent) \
+				$(MAKE) '$(RSD_PROOF_USERLAND_NO_CAT_IMAGE)' || exit 1; \
+				test -f '$(RSD_PROOF_USERLAND_NO_CAT_IMAGE)' || exit 1; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(RSD_PROOF_USERLAND_NO_CAT_IMAGE),node-name=interactive-absent-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=interactive-absent-file,node-name=interactive-absent-raw,read-only=on -device nvme,serial=rsd-interactive-absent,drive=interactive-absent-raw,logical_block_size=4096,physical_block_size=4096,max_ioqpairs=1,msix_qsize=1' ;; \
 			fat32-missing) \
 				$(MAKE) '$(FAT32_SYSTEM_IMAGE)' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(FAT32_SYSTEM_IMAGE),node-name=fat32-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=fat32-system-file,node-name=fat32-system-raw,read-only=on -device nvme,serial=openrfs-system-fat32,drive=fat32-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(FAT32_SYSTEM_IMAGE),node-name=fat32-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=fat32-system-file,node-name=fat32-system-raw,read-only=on -device nvme,serial=rsd-system-fat32,drive=fat32-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			fat32-full) \
 				$(MAKE) '$(FAT32_SYSTEM_IMAGE)' '$(FAT32_FULL_IMAGE)' || exit 1; \
 				cp '$(FAT32_FULL_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(FAT32_SYSTEM_IMAGE),node-name=fat32-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=fat32-system-file,node-name=fat32-system-raw,read-only=on -device nvme,serial=openrfs-system-fat32,drive=fat32-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=fat32-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=fat32-data-file,node-name=fat32-data-raw,read-only=off -device nvme,serial=openrfs-data-fat32,drive=fat32-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(FAT32_SYSTEM_IMAGE),node-name=fat32-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=fat32-system-file,node-name=fat32-system-raw,read-only=on -device nvme,serial=rsd-system-fat32,drive=fat32-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=fat32-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=fat32-data-file,node-name=fat32-data-raw,read-only=off -device nvme,serial=rsd-data-fat32,drive=fat32-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			fat32-corrupt) \
 				$(MAKE) '$(FAT32_SYSTEM_IMAGE)' '$(FAT32_CORRUPT_IMAGE)' || exit 1; \
 				cp '$(FAT32_CORRUPT_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(FAT32_SYSTEM_IMAGE),node-name=fat32-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=fat32-system-file,node-name=fat32-system-raw,read-only=on -device nvme,serial=openrfs-system-fat32,drive=fat32-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=fat32-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=fat32-data-file,node-name=fat32-data-raw,read-only=off -device nvme,serial=openrfs-data-fat32,drive=fat32-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(FAT32_SYSTEM_IMAGE),node-name=fat32-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=fat32-system-file,node-name=fat32-system-raw,read-only=on -device nvme,serial=rsd-system-fat32,drive=fat32-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=fat32-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=fat32-data-file,node-name=fat32-data-raw,read-only=off -device nvme,serial=rsd-data-fat32,drive=fat32-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			fat32-*) \
 				$(MAKE) '$(FAT32_SYSTEM_IMAGE)' '$(FAT32_DATA_IMAGE)' || exit 1; \
 				cp '$(FAT32_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
-				hardware='-boot order=d -blockdev driver=file,filename=$(FAT32_SYSTEM_IMAGE),node-name=fat32-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=fat32-system-file,node-name=fat32-system-raw,read-only=on -device nvme,serial=openrfs-system-fat32,drive=fat32-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=fat32-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=fat32-data-file,node-name=fat32-data-raw,read-only=off -device nvme,serial=openrfs-data-fat32,drive=fat32-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(FAT32_SYSTEM_IMAGE),node-name=fat32-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=fat32-system-file,node-name=fat32-system-raw,read-only=on -device nvme,serial=rsd-system-fat32,drive=fat32-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=fat32-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=fat32-data-file,node-name=fat32-data-raw,read-only=off -device nvme,serial=rsd-data-fat32,drive=fat32-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			*) hardware='' ;; \
 	esac; \
 	log='$(TEST_BUILD_DIR)/$*/serial.log'; \
 	rm -f "$$log"; \
 	timeout_seconds=15; reboot_control='-no-reboot'; \
 	case '$*' in \
-		openrfs-proof) timeout_seconds=60 ;; \
+		rsd-proof) timeout_seconds=60 ;; \
 		fat32-*) timeout_seconds=45 ;; \
 		ext4-recovery) timeout_seconds=600 ;; \
 		native) timeout_seconds=180 ;; \
@@ -3154,14 +3164,14 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 		rm -f "$$monitor_socket"; \
 		monitor_argument='$(QEMU_LUA_MONITOR_ARGUMENT)'; \
 		$(PYTHON) tools/qemu-send-keys.py --monitor "$$monitor_socket" \
-			--serial "$$log" --marker 'OPENRFS LUA INPUT READY' \
-			--text openrfs --enter --timeout 120 & injector=$$!; \
+			--serial "$$log" --marker 'RSD LUA INPUT READY' \
+			--text rsd --enter --timeout 120 & injector=$$!; \
 	elif test '$*' = native-sdl; then \
 		monitor_socket='$(QEMU_SDL_MONITOR_SOCKET)'; \
 		rm -f "$$monitor_socket"; \
 		monitor_argument='$(QEMU_SDL_MONITOR_ARGUMENT)'; \
 		$(PYTHON) tools/qemu-send-keys.py --monitor "$$monitor_socket" \
-			--serial "$$log" --marker 'OPENRFS SDL READY run=1' \
+			--serial "$$log" --marker 'RSD SDL READY run=1' \
 			--text s --hmp 'mouse_move -100 0' \
 			--hmp 'mouse_button 1' \
 			--hmp 'mouse_button 0' \
@@ -3184,124 +3194,124 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 	expected_begin=1; \
 	if test '$*' = fat32-persistence -o '$*' = native-sqlite; then expected_begin=2; fi; \
 	if test $$result -ne $$expected -o $$injection_result -ne 0 -o "$$begin_count" -ne "$$expected_begin" -o "$$pass_count" -ne 1 || \
-		grep -Fq 'ST FAIL' "$$log" || grep -Fq 'OpenRFS PANIC' "$$log"; then \
+		grep -Fq 'ST FAIL' "$$log" || grep -Fq 'RSD PANIC' "$$log"; then \
 		echo 'QEMU scenario $* failed: status='$$result' expected='$$expected; \
 		cat "$$log"; \
 		exit 1; \
 	fi; \
 	if test '$*' = normal && \
-		{ ! grep -Fq 'OpenRFS: ACPI root verified' "$$log" || \
-		  ! grep -Fq 'OpenRFS: ACPI MADT verified' "$$log" || \
-		  ! grep -Fq 'OpenRFS: ACPI topology verified' "$$log" || \
-		  ! grep -Eq '^OpenRFS: ACPI I/O APIC id [0-9]+ at 0x' "$$log" || \
-		  ! grep -Fq 'OpenRFS: local APIC online' "$$log" || \
-		  ! grep -Fq 'OpenRFS: local APIC legacy routing LINT0 ExtINT' "$$log" || \
-		  ! grep -Eq '^OpenRFS: local APIC EOI-broadcast suppression (supported|unsupported) active (yes|no)$$' "$$log" || \
-		  ! grep -Fq 'OpenRFS: I/O APIC online' "$$log" || \
-		  ! grep -Eq '^OpenRFS: I/O APIC id [0-9]+ version 0x[0-9A-F]+ entries [0-9]+ base GSI [0-9]+ directed EOI (yes|no)$$' "$$log" || \
-		  ! grep -Fq 'OpenRFS: I/O APIC delivered eight interrupts' "$$log" || \
-		  ! grep -Fq 'OpenRFS: legacy 8259 retired' "$$log" || \
-		  ! grep -Fq 'OpenRFS: timer survives legacy retirement' "$$log" || \
-		  ! grep -Eq '^OpenRFS: I/O APIC level route id [0-9]+ GSI [0-9]+ vector [0-9]+ active (high|low) acknowledgement (directed|broadcast)$$' "$$log" || \
-		  ! grep -Eq '^OpenRFS: I/O APIC level deliveries [0-9]+ remote IRR [0-9]+ directed EOI [0-9]+ in [0-9]+ ns$$' "$$log" || \
-		  ! grep -Fq 'OpenRFS: I/O APIC delivered eight level-triggered interrupts' "$$log" || \
-		  ! grep -Fq 'OpenRFS: level-triggered routing established' "$$log" || \
-		  ! grep -Eq '^OpenRFS: local APIC timer calibrated at [0-9]+ counts' "$$log" || \
-		  ! grep -Fq 'OpenRFS: local APIC timer delivered eight interrupts' "$$log" || \
-		  ! grep -Eq '^OpenRFS: TSC calibrated at [0-9]+ Hz' "$$log" || \
-		  ! grep -Fq 'OpenRFS: TSC reference established' "$$log" || \
-		  ! grep -Fq 'OpenRFS: ACPI FADT verified' "$$log" || \
-		  ! grep -Fq 'OpenRFS: ACPI MCFG absent' "$$log" || \
-		  ! grep -Fq 'OpenRFS: ACPI configuration windows verified' "$$log" || \
-		  ! grep -Eq '^OpenRFS: ACPI PM timer port 0x[0-9A-F]+ width (24|32) bits address (fixed|extended)$$' "$$log" || \
-		  ! grep -Eq '^OpenRFS: PM timer counted [0-9]+ ticks in [0-9]+ ns$$' "$$log" || \
-		  ! grep -Fq 'OpenRFS: PM timer independent reference established' "$$log" || \
-		  ! grep -Eq '^OpenRFS: clocks agree: PM [0-9]+ ns, APIC timer [0-9]+ ns, TSC [0-9]+ ns$$' "$$log" || \
-		  ! grep -Fq 'OpenRFS: PIT retired' "$$log" || \
-		  ! grep -Fq 'OpenRFS: clocks survive PIT retirement' "$$log" || \
-		  ! grep -Fq 'OpenRFS: monotonic clock on time-stamp counter' "$$log" || \
-		  ! grep -Eq '^OpenRFS: slept [0-9]+ ns for a [0-9]+ ns deadline$$' "$$log" || \
-		  ! grep -Fq 'OpenRFS: deadline timers online' "$$log" || \
-		  ! grep -Fq 'OpenRFS: monotonic time established' "$$log" || \
-		  ! grep -Eq '^OpenRFS: paging root 0x[0-9A-F]+ table frames [0-9]+ regions [0-9]+ NX yes write protect yes$$' "$$log" || \
-		  ! grep -Eq '^OpenRFS: paging leaves [0-9]+ writable [0-9]+ executable [0-9]+ both 0$$' "$$log" || \
-		  ! grep -Fq 'OpenRFS: kernel page tables installed' "$$log" || \
-		  ! grep -Fq 'OpenRFS: no writable executable mapping' "$$log" || \
-		  ! grep -Eq '^OpenRFS: IA32_PAT before 0x[0-9A-F]{16} after 0x[0-9A-F]{16} entry 1 write-combining$$' "$$log" || \
-		  ! grep -Eq '^OpenRFS: framebuffer memory type write-combining pages [1-9][0-9]*$$' "$$log" || \
-		  ! grep -Fq 'OpenRFS: write-combining established' "$$log" || \
-		  ! grep -Fq 'OpenRFS: virtual memory established' "$$log" || \
-		  ! grep -Eq '^OpenRFS: heap window 0x[0-9A-F]+ size [0-9]+ guards 0x[0-9A-F]+ 0x[0-9A-F]+$$' "$$log" || \
-		  ! grep -Eq '^OpenRFS: heap committed [0-9]+ bytes in [0-9]+ pages, live 3$$' "$$log" || \
-		  ! grep -Fq 'OpenRFS: kernel heap online' "$$log" || \
-		  ! grep -Fq 'OpenRFS: heap coalesced to one free block' "$$log" || \
-		  ! grep -Fq 'OpenRFS: kernel heap established' "$$log" || \
-		  ! grep -Eq '^OpenRFS: deadline table of [0-9]+ entries on the heap$$' "$$log" || \
-		  ! grep -Eq '^OpenRFS: PCI mechanism 1 online, no window mapped$$' "$$log" || \
-		  ! grep -Eq '^OpenRFS: PCI buses [1-9][0-9]* functions [1-9][0-9]* bridges [0-9]+$$' "$$log" || \
-		  ! grep -Eq '^OpenRFS: PCI 0:0\.0 vendor 0x[0-9A-F]+ device 0x[0-9A-F]+ class 0x0*6\.0x0* ' "$$log" || \
-		  ! grep -Fq 'OpenRFS: PCI configuration space enumerated' "$$log" || \
-		  ! grep -Fq 'OpenRFS: PCI enumeration established' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: PCI resource ownership negative controls 4/4 passed' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: supervisor NX UC device-MMIO arena established' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: dynamic vector negative controls 4/4 passed' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: dynamic interrupt vector foundation established' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: bounded DMA negative controls 2/2 passed' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: contiguous DMA ownership foundation established' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: xHCI foundation robustness controls 17/17 passed' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: bounded xHCI host-controller foundation established' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: xHCI fixture absent' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: NVMe foundation robustness controls 20/20 passed' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: bounded NVMe block-controller foundation established' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: NVMe fixture absent' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: FAT16 foundation robustness controls 26/26 passed' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: bounded read-only FAT16 foundation established' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: FAT16 fixture absent' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: process address-space foundation controls 8/8 passed' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: ELF64 parser robustness controls 34/34 passed' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: process fixture absent' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: Linux SYSCALL CPU foundation controls 10/10 passed' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: BusyBox image and Linux stack controls 32/32 passed' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: Linux ABI fixture absent' "$$log" || \
-		  ! grep -Eq '^OpenRFS: threads online, 3 ready of [0-9]+ on 12 stack frames$$' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: thread rotation 123123123123' "$$log" || \
-		  ! grep -Eq '^OpenRFS: threads switched [1-9][0-9]* times, 3 exited$$' "$$log" || \
-		  ! grep -Fq 'OpenRFS: kernel threads established' "$$log" || \
-		  ! grep -Eq '^OpenRFS: framebuffer [0-9]+x[0-9]+ at 0x[0-9A-F]+ pitch [0-9]+ RGB [0-9]+/[0-9]+/[0-9]+$$' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: framebuffer verified 786432 pixels' "$$log" || \
-		  ! grep -Fq 'OpenRFS: framebuffer established' "$$log" || \
-		  ! grep -Eq '^OpenRFS: surface [0-9]+x[0-9]+ pitch [0-9]+ buffer [0-9]+ bytes$$' "$$log" || \
-		  ! grep -Eq '^OpenRFS: surface cycles full present [0-9]+ one-line update [0-9]+ scroll [0-9]+$$' "$$log" || \
-		  ! grep -Eq '^OpenRFS: surface split cycles full draw [0-9]+ push [0-9]+ one-line draw [0-9]+ push [0-9]+ scroll draw [0-9]+ push [0-9]+$$' "$$log" || \
-		  ! grep -Eq '^OpenRFS: surface sparse two-corner cycles total [0-9]+ draw [0-9]+ push [0-9]+ union [0-9]+$$' "$$log" || \
-		  ! grep -Eq '^OpenRFS: surface copied [0-9]+ full, [0-9]+ line, [0-9]+ scroll pixels$$' "$$log" || \
-		  ! grep -Fq 'OpenRFS: cached surface established' "$$log" || \
-		  ! grep -Eq '^OpenRFS: screen console [0-9]+x[0-9]+ cells of 8x16, font [0-9]+ bytes$$' "$$log" || \
-		  ! grep -Eq '^OpenRFS: screen console drew [0-9]+ characters and scrolled [0-9]+ times$$' "$$log" || \
-		  ! grep -Fq 'OpenRFS: screen console established' "$$log" || \
-		  ! grep -Fq 'OpenRFS: screen console passed' "$$log" || \
-		  ! grep -Eq '^OpenRFS: keyboard 8042 online, IRQ 1 routed, [0-9]+ interrupts for [0-9]+ events$$' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: keyboard decoded "hiI" from injected scancodes' "$$log" || \
-		  ! grep -Fq 'OpenRFS: keyboard established' "$$log" || \
-		  ! grep -Fq 'OpenRFS: keyboard passed' "$$log" || \
-		  ! grep -Fq 'OpenRFS: BT11 Boot Ledger installed proof passed' "$$log" || \
-		  ! grep -Fq 'OpenRFS: font verified' "$$log" || \
-		  ! grep -Eq '^OpenRFS: PS/2 pointer (available|unavailable: .+)$$' "$$log" || \
-		  ! grep -Fq 'OpenRFS: layout validated' "$$log" || \
-		  ! grep -Fq 'OpenRFS: command line ready; desktop waits for starty' "$$log" || \
-		  ! grep -Fxq 'OpenRFS: shell ran "echo hi" from 8 injected scancodes' "$$log" || \
-		  ! grep -Fq 'OpenRFS: shell output verified on screen' "$$log" || \
-		  ! grep -Fq 'OpenRFS: shell established' "$$log" || \
-		  ! grep -Fq 'OpenRFS: shell passed' "$$log" || \
-		  ! grep -Fq 'OpenRFS: never triple fault milestone passed' "$$log"; }; then \
+		{ ! grep -Fq 'RSD: ACPI root verified' "$$log" || \
+		  ! grep -Fq 'RSD: ACPI MADT verified' "$$log" || \
+		  ! grep -Fq 'RSD: ACPI topology verified' "$$log" || \
+		  ! grep -Eq '^RSD: ACPI I/O APIC id [0-9]+ at 0x' "$$log" || \
+		  ! grep -Fq 'RSD: local APIC online' "$$log" || \
+		  ! grep -Fq 'RSD: local APIC legacy routing LINT0 ExtINT' "$$log" || \
+		  ! grep -Eq '^RSD: local APIC EOI-broadcast suppression (supported|unsupported) active (yes|no)$$' "$$log" || \
+		  ! grep -Fq 'RSD: I/O APIC online' "$$log" || \
+		  ! grep -Eq '^RSD: I/O APIC id [0-9]+ version 0x[0-9A-F]+ entries [0-9]+ base GSI [0-9]+ directed EOI (yes|no)$$' "$$log" || \
+		  ! grep -Fq 'RSD: I/O APIC delivered eight interrupts' "$$log" || \
+		  ! grep -Fq 'RSD: legacy 8259 retired' "$$log" || \
+		  ! grep -Fq 'RSD: timer survives legacy retirement' "$$log" || \
+		  ! grep -Eq '^RSD: I/O APIC level route id [0-9]+ GSI [0-9]+ vector [0-9]+ active (high|low) acknowledgement (directed|broadcast)$$' "$$log" || \
+		  ! grep -Eq '^RSD: I/O APIC level deliveries [0-9]+ remote IRR [0-9]+ directed EOI [0-9]+ in [0-9]+ ns$$' "$$log" || \
+		  ! grep -Fq 'RSD: I/O APIC delivered eight level-triggered interrupts' "$$log" || \
+		  ! grep -Fq 'RSD: level-triggered routing established' "$$log" || \
+		  ! grep -Eq '^RSD: local APIC timer calibrated at [0-9]+ counts' "$$log" || \
+		  ! grep -Fq 'RSD: local APIC timer delivered eight interrupts' "$$log" || \
+		  ! grep -Eq '^RSD: TSC calibrated at [0-9]+ Hz' "$$log" || \
+		  ! grep -Fq 'RSD: TSC reference established' "$$log" || \
+		  ! grep -Fq 'RSD: ACPI FADT verified' "$$log" || \
+		  ! grep -Fq 'RSD: ACPI MCFG absent' "$$log" || \
+		  ! grep -Fq 'RSD: ACPI configuration windows verified' "$$log" || \
+		  ! grep -Eq '^RSD: ACPI PM timer port 0x[0-9A-F]+ width (24|32) bits address (fixed|extended)$$' "$$log" || \
+		  ! grep -Eq '^RSD: PM timer counted [0-9]+ ticks in [0-9]+ ns$$' "$$log" || \
+		  ! grep -Fq 'RSD: PM timer independent reference established' "$$log" || \
+		  ! grep -Eq '^RSD: clocks agree: PM [0-9]+ ns, APIC timer [0-9]+ ns, TSC [0-9]+ ns$$' "$$log" || \
+		  ! grep -Fq 'RSD: PIT retired' "$$log" || \
+		  ! grep -Fq 'RSD: clocks survive PIT retirement' "$$log" || \
+		  ! grep -Fq 'RSD: monotonic clock on time-stamp counter' "$$log" || \
+		  ! grep -Eq '^RSD: slept [0-9]+ ns for a [0-9]+ ns deadline$$' "$$log" || \
+		  ! grep -Fq 'RSD: deadline timers online' "$$log" || \
+		  ! grep -Fq 'RSD: monotonic time established' "$$log" || \
+		  ! grep -Eq '^RSD: paging root 0x[0-9A-F]+ table frames [0-9]+ regions [0-9]+ NX yes write protect yes$$' "$$log" || \
+		  ! grep -Eq '^RSD: paging leaves [0-9]+ writable [0-9]+ executable [0-9]+ both 0$$' "$$log" || \
+		  ! grep -Fq 'RSD: kernel page tables installed' "$$log" || \
+		  ! grep -Fq 'RSD: no writable executable mapping' "$$log" || \
+		  ! grep -Eq '^RSD: IA32_PAT before 0x[0-9A-F]{16} after 0x[0-9A-F]{16} entry 1 write-combining$$' "$$log" || \
+		  ! grep -Eq '^RSD: framebuffer memory type write-combining pages [1-9][0-9]*$$' "$$log" || \
+		  ! grep -Fq 'RSD: write-combining established' "$$log" || \
+		  ! grep -Fq 'RSD: virtual memory established' "$$log" || \
+		  ! grep -Eq '^RSD: heap window 0x[0-9A-F]+ size [0-9]+ guards 0x[0-9A-F]+ 0x[0-9A-F]+$$' "$$log" || \
+		  ! grep -Eq '^RSD: heap committed [0-9]+ bytes in [0-9]+ pages, live 3$$' "$$log" || \
+		  ! grep -Fq 'RSD: kernel heap online' "$$log" || \
+		  ! grep -Fq 'RSD: heap coalesced to one free block' "$$log" || \
+		  ! grep -Fq 'RSD: kernel heap established' "$$log" || \
+		  ! grep -Eq '^RSD: deadline table of [0-9]+ entries on the heap$$' "$$log" || \
+		  ! grep -Eq '^RSD: PCI mechanism 1 online, no window mapped$$' "$$log" || \
+		  ! grep -Eq '^RSD: PCI buses [1-9][0-9]* functions [1-9][0-9]* bridges [0-9]+$$' "$$log" || \
+		  ! grep -Eq '^RSD: PCI 0:0\.0 vendor 0x[0-9A-F]+ device 0x[0-9A-F]+ class 0x0*6\.0x0* ' "$$log" || \
+		  ! grep -Fq 'RSD: PCI configuration space enumerated' "$$log" || \
+		  ! grep -Fq 'RSD: PCI enumeration established' "$$log" || \
+		  ! grep -Fxq 'RSD: PCI resource ownership negative controls 4/4 passed' "$$log" || \
+		  ! grep -Fxq 'RSD: supervisor NX UC device-MMIO arena established' "$$log" || \
+		  ! grep -Fxq 'RSD: dynamic vector negative controls 4/4 passed' "$$log" || \
+		  ! grep -Fxq 'RSD: dynamic interrupt vector foundation established' "$$log" || \
+		  ! grep -Fxq 'RSD: bounded DMA negative controls 2/2 passed' "$$log" || \
+		  ! grep -Fxq 'RSD: contiguous DMA ownership foundation established' "$$log" || \
+		  ! grep -Fxq 'RSD: xHCI foundation robustness controls 17/17 passed' "$$log" || \
+		  ! grep -Fxq 'RSD: bounded xHCI host-controller foundation established' "$$log" || \
+		  ! grep -Fxq 'RSD: xHCI fixture absent' "$$log" || \
+		  ! grep -Fxq 'RSD: NVMe foundation robustness controls 20/20 passed' "$$log" || \
+		  ! grep -Fxq 'RSD: bounded NVMe block-controller foundation established' "$$log" || \
+		  ! grep -Fxq 'RSD: NVMe fixture absent' "$$log" || \
+		  ! grep -Fxq 'RSD: FAT16 foundation robustness controls 26/26 passed' "$$log" || \
+		  ! grep -Fxq 'RSD: bounded read-only FAT16 foundation established' "$$log" || \
+		  ! grep -Fxq 'RSD: FAT16 fixture absent' "$$log" || \
+		  ! grep -Fxq 'RSD: process address-space foundation controls 8/8 passed' "$$log" || \
+		  ! grep -Fxq 'RSD: ELF64 parser robustness controls 34/34 passed' "$$log" || \
+		  ! grep -Fxq 'RSD: process fixture absent' "$$log" || \
+		  ! grep -Fxq 'RSD: Linux SYSCALL CPU foundation controls 10/10 passed' "$$log" || \
+		  ! grep -Fxq 'RSD: BusyBox image and Linux stack controls 32/32 passed' "$$log" || \
+		  ! grep -Fxq 'RSD: Linux ABI fixture absent' "$$log" || \
+		  ! grep -Eq '^RSD: threads online, 3 ready of [0-9]+ on 12 stack frames$$' "$$log" || \
+		  ! grep -Fxq 'RSD: thread rotation 123123123123' "$$log" || \
+		  ! grep -Eq '^RSD: threads switched [1-9][0-9]* times, 3 exited$$' "$$log" || \
+		  ! grep -Fq 'RSD: kernel threads established' "$$log" || \
+		  ! grep -Eq '^RSD: framebuffer [0-9]+x[0-9]+ at 0x[0-9A-F]+ pitch [0-9]+ RGB [0-9]+/[0-9]+/[0-9]+$$' "$$log" || \
+		  ! grep -Fxq 'RSD: framebuffer verified 786432 pixels' "$$log" || \
+		  ! grep -Fq 'RSD: framebuffer established' "$$log" || \
+		  ! grep -Eq '^RSD: surface [0-9]+x[0-9]+ pitch [0-9]+ buffer [0-9]+ bytes$$' "$$log" || \
+		  ! grep -Eq '^RSD: surface cycles full present [0-9]+ one-line update [0-9]+ scroll [0-9]+$$' "$$log" || \
+		  ! grep -Eq '^RSD: surface split cycles full draw [0-9]+ push [0-9]+ one-line draw [0-9]+ push [0-9]+ scroll draw [0-9]+ push [0-9]+$$' "$$log" || \
+		  ! grep -Eq '^RSD: surface sparse two-corner cycles total [0-9]+ draw [0-9]+ push [0-9]+ union [0-9]+$$' "$$log" || \
+		  ! grep -Eq '^RSD: surface copied [0-9]+ full, [0-9]+ line, [0-9]+ scroll pixels$$' "$$log" || \
+		  ! grep -Fq 'RSD: cached surface established' "$$log" || \
+		  ! grep -Eq '^RSD: screen console [0-9]+x[0-9]+ cells of 8x16, font [0-9]+ bytes$$' "$$log" || \
+		  ! grep -Eq '^RSD: screen console drew [0-9]+ characters and scrolled [0-9]+ times$$' "$$log" || \
+		  ! grep -Fq 'RSD: screen console established' "$$log" || \
+		  ! grep -Fq 'RSD: screen console passed' "$$log" || \
+		  ! grep -Eq '^RSD: keyboard 8042 online, IRQ 1 routed, [0-9]+ interrupts for [0-9]+ events$$' "$$log" || \
+		  ! grep -Fxq 'RSD: keyboard decoded "hiI" from injected scancodes' "$$log" || \
+		  ! grep -Fq 'RSD: keyboard established' "$$log" || \
+		  ! grep -Fq 'RSD: keyboard passed' "$$log" || \
+		  ! grep -Fq 'RSD: BT11 Boot Ledger installed proof passed' "$$log" || \
+		  ! grep -Fq 'RSD: font verified' "$$log" || \
+		  ! grep -Eq '^RSD: PS/2 pointer (available|unavailable: .+)$$' "$$log" || \
+		  ! grep -Fq 'RSD: layout validated' "$$log" || \
+		  ! grep -Fq 'RSD: command line ready; desktop waits for starty' "$$log" || \
+		  ! grep -Fxq 'RSD: shell ran "echo hi" from 8 injected scancodes' "$$log" || \
+		  ! grep -Fq 'RSD: shell output verified on screen' "$$log" || \
+		  ! grep -Fq 'RSD: shell established' "$$log" || \
+		  ! grep -Fq 'RSD: shell passed' "$$log" || \
+		  ! grep -Fq 'RSD: never triple fault milestone passed' "$$log"; }; then \
 		echo 'normal scenario did not complete the integrated production path'; \
 		cat "$$log"; \
 		exit 1; \
 	fi; \
 	if test '$*' = normal && \
-		{ grep -Fq 'OpenRFS: desktop constructed' "$$log" || \
-		  grep -Fq 'OpenRFS: desktop activated' "$$log" || \
-		  grep -Fq 'OpenRFS: installed proof passed' "$$log"; }; then \
+		{ grep -Fq 'RSD: desktop constructed' "$$log" || \
+		  grep -Fq 'RSD: desktop activated' "$$log" || \
+		  grep -Fq 'RSD: installed proof passed' "$$log"; }; then \
 		echo 'normal scenario entered the desktop before starty authentication'; \
 		cat "$$log"; \
 		exit 1; \
@@ -3318,7 +3328,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 		unexpected) \
 			grep -Fq '  vector=128 name=unexpected vector' "$$log" || diagnostics_ok=false ;; \
 		double-fault) \
-			grep -Fq 'OpenRFS DOUBLE FAULT - HALTED' "$$log" || diagnostics_ok=false ;; \
+			grep -Fq 'RSD DOUBLE FAULT - HALTED' "$$log" || diagnostics_ok=false ;; \
 		paging) \
 			grep -Fq '  vector=14 name=page fault' "$$log" && \
 			grep -Fq '  cr2=0x0000000200000000' "$$log" && \
@@ -3334,10 +3344,10 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 				diagnostics_ok=false ;; \
 		pci) \
 			grep -Eq '^ST PCI ports functions [0-9]+ buses [0-9]+$$' "$$log" && \
-			! grep -Fq 'OpenRFS: ACPI MCFG at' "$$log" || \
+			! grep -Fq 'RSD: ACPI MCFG at' "$$log" || \
 				diagnostics_ok=false ;; \
 		pci-ecam) \
-			grep -Fq 'OpenRFS: ACPI MCFG at' "$$log" && \
+			grep -Fq 'RSD: ACPI MCFG at' "$$log" && \
 			grep -Eq '^ST PCI window agreed on [0-9]+ registers of [0-9]+ functions across [0-9]+ buses, [0-9]+ with MSI-X$$' "$$log" && \
 			! grep -Eq '^ST PCI window agreed on [0-9]+ registers of 0 functions' "$$log" || \
 				diagnostics_ok=false ;; \
@@ -3358,81 +3368,81 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 				diagnostics_ok=false ;; \
 		boot-ledger) \
 			grep -Eq '^ST LEDGER stages [1-9][0-9]* receipts [1-9][0-9]* capabilities [1-9][0-9]* skips [0-9]+ fingerprint 0x[0-9A-F]{16}$$' "$$log" && \
-			grep -Fxq 'OpenRFS: BT11 Boot Ledger installed proof passed' "$$log" || \
+			grep -Fxq 'RSD: BT11 Boot Ledger installed proof passed' "$$log" || \
 				diagnostics_ok=false ;; \
-		openrfs-proof) \
-		grep -Eq '^ST OPENRFS_PROOF geometry 1024x768 apps 5 events [1-9][0-9]* windows [1-9][0-9]* cursor [1-9][0-9]* damage [1-9][0-9]* fingerprint 0x[0-9A-F]{16}$$' "$$log" && \
-			grep -Fxq 'OpenRFS: installed proof passed' "$$log" || \
+		rsd-proof) \
+		grep -Eq '^ST RSD_PROOF geometry 1024x768 apps 5 events [1-9][0-9]* windows [1-9][0-9]* cursor [1-9][0-9]* damage [1-9][0-9]* fingerprint 0x[0-9A-F]{16}$$' "$$log" && \
+			grep -Fxq 'RSD: installed proof passed' "$$log" || \
 				diagnostics_ok=false ;; \
 		device-substrate) \
 			grep -Fxq 'ST DEVICE_SUBSTRATE dma 64 msix 1 used 0->1 ownership CPU-DEVICE-CPU teardown clean negatives 14' "$$log" && \
-			grep -Fxq 'OpenRFS: device substrate teardown complete' "$$log" && \
-			grep -Eq '^OpenRFS: VirtIO RNG device DMA wrote 64 bytes; nonzero [1-9][0-9]*$$' "$$log" && \
-			grep -Fxq 'OpenRFS: MSI-X delivered 1 interrupt; used ring 0 -> 1' "$$log" || \
+			grep -Fxq 'RSD: device substrate teardown complete' "$$log" && \
+			grep -Eq '^RSD: VirtIO RNG device DMA wrote 64 bytes; nonzero [1-9][0-9]*$$' "$$log" && \
+			grep -Fxq 'RSD: MSI-X delivered 1 interrupt; used ring 0 -> 1' "$$log" || \
 				diagnostics_ok=false ;; \
 		xhci) \
 			grep -Fxq 'ST XHCI descriptor 18 msix 1 ownership CPU-CONTROLLER-CPU teardown clean robustness 19' "$$log" && \
-			grep -Fxq 'OpenRFS: xHCI controller ready' "$$log" && \
-			grep -Fxq 'OpenRFS: USB device descriptor DMA completed: 18 bytes' "$$log" && \
-			grep -Fxq 'OpenRFS: xHCI MSI-X descriptor completion count 1' "$$log" && \
-			grep -Fxq 'OpenRFS: xHCI DMA ownership CPU-CONTROLLER-CPU complete' "$$log" && \
-			grep -Fxq 'OpenRFS: xHCI teardown complete' "$$log" || \
+			grep -Fxq 'RSD: xHCI controller ready' "$$log" && \
+			grep -Fxq 'RSD: USB device descriptor DMA completed: 18 bytes' "$$log" && \
+			grep -Fxq 'RSD: xHCI MSI-X descriptor completion count 1' "$$log" && \
+			grep -Fxq 'RSD: xHCI DMA ownership CPU-CONTROLLER-CPU complete' "$$log" && \
+			grep -Fxq 'RSD: xHCI teardown complete' "$$log" || \
 				diagnostics_ok=false ;; \
 		nvme) \
 			grep -Fxq 'ST NVME read 4096 msix 1 ownership CPU-CONTROLLER-CPU teardown clean robustness 22' "$$log" && \
-			grep -Fxq 'OpenRFS: NVMe controller ready' "$$log" && \
-			grep -Fxq 'OpenRFS: NVMe namespace ready' "$$log" && \
-			grep -Fxq 'OpenRFS: NVMe block read completed: 4096 bytes' "$$log" && \
-			grep -Fxq 'OpenRFS: NVMe MSI-X read completion count 1' "$$log" && \
-			grep -Fxq 'OpenRFS: NVMe DMA ownership CPU-CONTROLLER-CPU complete' "$$log" && \
-				grep -Fxq 'OpenRFS: NVMe teardown complete' "$$log" || \
+			grep -Fxq 'RSD: NVMe controller ready' "$$log" && \
+			grep -Fxq 'RSD: NVMe namespace ready' "$$log" && \
+			grep -Fxq 'RSD: NVMe block read completed: 4096 bytes' "$$log" && \
+			grep -Fxq 'RSD: NVMe MSI-X read completion count 1' "$$log" && \
+			grep -Fxq 'RSD: NVMe DMA ownership CPU-CONTROLLER-CPU complete' "$$log" && \
+				grep -Fxq 'RSD: NVMe teardown complete' "$$log" || \
 				diagnostics_ok=false ;; \
 		filesystem) \
-			grep -Fxq 'ST FAT16 file OPENRFS.BIN bytes 128 reads 4 msix 4 ownership CPU-CONTROLLER-CPU teardown clean robustness 28' "$$log" && \
-			grep -Fxq 'OpenRFS: NVMe fixture absent' "$$log" && \
-			grep -Fxq 'OpenRFS: FAT16 volume ready' "$$log" && \
-			grep -Fxq 'OpenRFS: FAT16 file OPENRFS.BIN read: 128 bytes' "$$log" && \
-			grep -Fxq 'OpenRFS: FAT16 MSI-X completion count 4' "$$log" && \
-			grep -Fxq 'OpenRFS: FAT16 DMA ownership CPU-CONTROLLER-CPU complete' "$$log" && \
-			grep -Fxq 'OpenRFS: FAT16 teardown complete' "$$log" || \
+			grep -Fxq 'ST FAT16 file RSD.BIN bytes 128 reads 4 msix 4 ownership CPU-CONTROLLER-CPU teardown clean robustness 28' "$$log" && \
+			grep -Fxq 'RSD: NVMe fixture absent' "$$log" && \
+			grep -Fxq 'RSD: FAT16 volume ready' "$$log" && \
+			grep -Fxq 'RSD: FAT16 file RSD.BIN read: 128 bytes' "$$log" && \
+			grep -Fxq 'RSD: FAT16 MSI-X completion count 4' "$$log" && \
+			grep -Fxq 'RSD: FAT16 DMA ownership CPU-CONTROLLER-CPU complete' "$$log" && \
+			grep -Fxq 'RSD: FAT16 teardown complete' "$$log" || \
 				diagnostics_ok=false ;; \
 		process) \
-			grep -Fxq 'ST PROCESS ELF64 OPENRFS.BIN bytes 128 segments 1 ring 3 address-space private result valid teardown clean robustness 50' "$$log" && \
-			grep -Fxq 'OpenRFS: NVMe fixture absent' "$$log" && \
-			grep -Fxq 'OpenRFS: FAT16 fixture absent' "$$log" && \
-			grep -Fxq 'OpenRFS: process address-space foundation controls 8/8 passed' "$$log" && \
-			grep -Fxq 'OpenRFS: ELF64 parser robustness controls 34/34 passed' "$$log" || \
+			grep -Fxq 'ST PROCESS ELF64 RSD.BIN bytes 128 segments 1 ring 3 address-space private result valid teardown clean robustness 50' "$$log" && \
+			grep -Fxq 'RSD: NVMe fixture absent' "$$log" && \
+			grep -Fxq 'RSD: FAT16 fixture absent' "$$log" && \
+			grep -Fxq 'RSD: process address-space foundation controls 8/8 passed' "$$log" && \
+			grep -Fxq 'RSD: ELF64 parser robustness controls 34/34 passed' "$$log" || \
 				diagnostics_ok=false ;; \
 		linux-abi) \
-			grep -Fxq 'ST LINUX ABI busybox echo bytes 8 syscalls 9 stdout valid exit 0 ring 3 address-space private teardown clean robustness 72' "$$log" && \
-			grep -Fxq 'OpenRFS: Linux SYSCALL CPU foundation controls 10/10 passed' "$$log" && \
-			grep -Fxq 'OpenRFS: BusyBox image and Linux stack controls 32/32 passed' "$$log" && \
-			grep -Fqx 'OPENRFS' "$$log" || \
+			grep -Fxq 'ST LINUX ABI busybox echo bytes 4 syscalls 9 stdout valid exit 0 ring 3 address-space private teardown clean robustness 72' "$$log" && \
+			grep -Fxq 'RSD: Linux SYSCALL CPU foundation controls 10/10 passed' "$$log" && \
+			grep -Fxq 'RSD: BusyBox image and Linux stack controls 32/32 passed' "$$log" && \
+			grep -Fqx 'RSD' "$$log" || \
 				diagnostics_ok=false ;; \
 		linux-abi-uname) \
 			grep -Fxq 'ST LINUX ABI busybox uname bytes 6 syscalls 6 output valid exit 0 ring 3 address-space private copy-out valid teardown clean robustness 97' "$$log" && \
-			grep -Fxq 'OpenRFS: Linux SYSCALL CPU foundation controls 10/10 passed' "$$log" && \
-			grep -Fxq 'OpenRFS: BusyBox uname image and UTS controls 50/50 passed' "$$log" && \
+			grep -Fxq 'RSD: Linux SYSCALL CPU foundation controls 10/10 passed' "$$log" && \
+			grep -Fxq 'RSD: BusyBox uname image and UTS controls 50/50 passed' "$$log" && \
 			grep -Fqx 'Linux' "$$log" || \
 				diagnostics_ok=false ;; \
-		openrfs-proof-userland) \
-			grep -Fxq 'ST OPENRFS_PROOF_USERLAND shell production echo 2 uname 2 invalid-profile recovered CPL3 SYSCALL stdout exact exit 0 teardown clean prompt restored' "$$log" && \
-			test "$$(grep -Fxc 'OPENRFS' "$$log")" -eq 2 && \
+		rsd-proof-userland) \
+			grep -Fxq 'ST RSD_PROOF_USERLAND shell production echo 2 uname 2 invalid-profile recovered CPL3 SYSCALL stdout exact exit 0 teardown clean prompt restored' "$$log" && \
+			test "$$(grep -Fxc 'RSD' "$$log")" -eq 2 && \
 			test "$$(grep -Fxc 'Linux' "$$log")" -eq 2 && \
 			grep -Fxq 'RW USERLAND launch completed successfully echo ordinal 2' "$$log" && \
 			grep -Fxq 'RW USERLAND launch completed successfully uname ordinal 2' "$$log" && \
-			grep -Fxq 'RW USERLAND OpenRFS prompt restored' "$$log" || \
+			grep -Fxq 'RW USERLAND RSD prompt restored' "$$log" || \
 				diagnostics_ok=false ;; \
-		openrfs-proof-userland-absent) \
+		rsd-proof-userland-absent) \
 			grep -Fxq 'linux: userspace volume unavailable' "$$log" && \
 			grep -Fxq 'still usable' "$$log" && \
-			grep -Fxq 'ST OPENRFS_PROOF_USERLAND_ABSENT concise refusal prompt usable teardown clean' "$$log" && \
+			grep -Fxq 'ST RSD_PROOF_USERLAND_ABSENT concise refusal prompt usable teardown clean' "$$log" && \
 			grep -Fxq 'RW USERLAND launch refused and teardown complete' "$$log" && \
-			grep -Fxq 'RW USERLAND OpenRFS prompt restored' "$$log" || \
+			grep -Fxq 'RW USERLAND RSD prompt restored' "$$log" || \
 				diagnostics_ok=false ;; \
-		openrfs-proof-userland-interactive) \
-			grep -Fxq 'ST OPENRFS_PROOF_USERLAND_INTERACTIVE cat 2 keyboard IRQ read SYSCALL copy-out resume write SYSCALL stdout exact EOF exit 0 teardown clean fresh generation prompt restored' "$$log" && \
-			test "$$(grep -Fxc 'RW USERLAND command accepted through OpenRFS shell linux cat' "$$log")" -eq 2 && \
+		rsd-proof-userland-interactive) \
+			grep -Fxq 'ST RSD_PROOF_USERLAND_INTERACTIVE cat 2 keyboard IRQ read SYSCALL copy-out resume write SYSCALL stdout exact EOF exit 0 teardown clean fresh generation prompt restored' "$$log" && \
+			test "$$(grep -Fxc 'RW USERLAND command accepted through RSD shell linux cat' "$$log")" -eq 2 && \
 			test "$$(grep -Fxc 'RW USERLAND deterministic read-only NVMe/FAT16 profile selected cat CATBOX' "$$log")" -eq 2 && \
 			test "$$(grep -Fxc 'RW USERLAND Rust FAT16 SHA-256 ELF64 validation passed cat bytes 38632' "$$log")" -eq 2 && \
 			test "$$(grep -Fxc 'RW USERLAND private CPL3 address space entered cat' "$$log")" -eq 2 && \
@@ -3448,20 +3458,20 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 			test "$$(grep -Fxc 'RW CAT EOF converted to zero-length read result' "$$log")" -eq 2 && \
 			test "$$(grep -Fxc 'RW CAT exit status zero observed' "$$log")" -eq 2 && \
 			test "$$(grep -Fxc 'RW CAT address-space teardown complete' "$$log")" -eq 2 && \
-			test "$$(grep -Fxc 'RW USERLAND OpenRFS prompt restored' "$$log")" -eq 2 && \
+			test "$$(grep -Fxc 'RW USERLAND RSD prompt restored' "$$log")" -eq 2 && \
 			test "$$(grep -Fxc 'pebble' "$$log")" -eq 2 && \
 			test "$$(grep -Fxc 'again' "$$log")" -eq 2 && \
 			grep -Fxq 'RW USERLAND launch completed successfully cat ordinal 2' "$$log" || \
 				diagnostics_ok=false ;; \
-		openrfs-proof-userland-interactive-absent) \
-			grep -Fxq 'ST OPENRFS_PROOF_USERLAND_INTERACTIVE_ABSENT cat missing echo valid keyboard IRQ refusal recoverable teardown clean prompt usable' "$$log" && \
+		rsd-proof-userland-interactive-absent) \
+			grep -Fxq 'ST RSD_PROOF_USERLAND_INTERACTIVE_ABSENT cat missing echo valid keyboard IRQ refusal recoverable teardown clean prompt usable' "$$log" && \
 			grep -Fxq 'linux: measured profile refused' "$$log" && \
 			grep -Fxq 'RW USERLAND deterministic read-only NVMe/FAT16 profile selected cat CATBOX' "$$log" && \
 			grep -Fxq 'RW USERLAND launch refused and teardown complete' "$$log" && \
-			grep -Fxq 'RW USERLAND command accepted through OpenRFS shell linux echo' "$$log" && \
-			grep -Fqx 'OPENRFS' "$$log" && \
+			grep -Fxq 'RW USERLAND command accepted through RSD shell linux echo' "$$log" && \
+			grep -Fqx 'RSD' "$$log" && \
 			grep -Fxq 'RW USERLAND launch completed successfully echo ordinal 1' "$$log" && \
-			test "$$(grep -Fxc 'RW USERLAND OpenRFS prompt restored' "$$log")" -eq 2 || \
+			test "$$(grep -Fxc 'RW USERLAND RSD prompt restored' "$$log")" -eq 2 || \
 				diagnostics_ok=false ;; \
 		fat32-system) \
 			grep -Fxq 'ST FAT32 SYSTEM authenticated echo uname FAT32 immutable' "$$log" && \
@@ -3491,11 +3501,11 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 		fat32-corrupt) \
 			grep -Fxq 'ST FAT32 CORRUPT refused session usable system executable valid' "$$log" && \
 			grep -Fxq 'data    fat32  unavailable' "$$log" && \
-			grep -Fqx 'OPENRFS' "$$log" || diagnostics_ok=false ;; \
+			grep -Fqx 'RSD' "$$log" || diagnostics_ok=false ;; \
 		fat32-missing) \
 			grep -Fxq 'ST FAT32 MISSING session usable system executable valid' "$$log" && \
 			grep -Fxq 'data    fat32  absent' "$$log" && \
-			grep -Fqx 'OPENRFS' "$$log" || diagnostics_ok=false ;; \
+			grep -Fqx 'RSD' "$$log" || diagnostics_ok=false ;; \
 		fat32-persistence) \
 			grep -Fxq 'ST FAT32 PERSISTENCE synchronized reboot phase' "$$log" && \
 			grep -Fxq 'ST FAT32 PERSISTENCE clean reboot retained exact contents' "$$log" && \
@@ -3505,7 +3515,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 			grep -Fxq 'ST FAT32 CACHE six clusters eviction sync readback exact' "$$log" || diagnostics_ok=false ;; \
 		fat32-immutable) \
 			grep -Fxq 'ST FAT32 IMMUTABLE write refused below shell executable valid' "$$log" && \
-			grep -Fqx 'OPENRFS' "$$log" || diagnostics_ok=false ;; \
+			grep -Fqx 'RSD' "$$log" || diagnostics_ok=false ;; \
 		fat32-handles) \
 			grep -Fxq 'ST FAT32 HANDLES generation stale double-close access bound clean' "$$log" || diagnostics_ok=false ;; \
 		ext4-recovery) \
@@ -3521,73 +3531,73 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 			grep -Fq '  page-fault bits: P=0 W=1 U=0 RSVD=0 I=0' "$$log" || \
 				diagnostics_ok=false ;; \
 		native) \
-			grep -Eq '^OPENRFS PERF syscall iterations=1024 total_ns=[1-9][0-9]* average_ns=[1-9][0-9]*$$' "$$log" && \
-			grep -Eq '^OPENRFS PERF file sequential_bytes=65536 write_ns=[1-9][0-9]* read_ns=[1-9][0-9]*$$' "$$log" && \
-			grep -Eq '^OPENRFS PERF context-switch transitions=[1-9][0-9]* without_fpu_cycles=[1-9][0-9]* with_fpu_cycles=[1-9][0-9]*$$' "$$log" && \
-			grep -Eq '^OPENRFS NATIVE PASS argc=[1-9][0-9]* app=NATIVET.APP$$' "$$log" && \
-			grep -Fxq 'OpenRFS: native general loader, SDK, TLS, threads and FPU passed' "$$log" || \
+			grep -Eq '^RSD PERF syscall iterations=1024 total_ns=[1-9][0-9]* average_ns=[1-9][0-9]*$$' "$$log" && \
+			grep -Eq '^RSD PERF file sequential_bytes=65536 write_ns=[1-9][0-9]* read_ns=[1-9][0-9]*$$' "$$log" && \
+			grep -Eq '^RSD PERF context-switch transitions=[1-9][0-9]* without_fpu_cycles=[1-9][0-9]* with_fpu_cycles=[1-9][0-9]*$$' "$$log" && \
+			grep -Eq '^RSD NATIVE PASS argc=[1-9][0-9]* app=NATIVET.APP$$' "$$log" && \
+			grep -Fxq 'RSD: native general loader, SDK, TLS, threads and FPU passed' "$$log" || \
 				diagnostics_ok=false ;; \
 		native-lua) \
-			grep -Eq '^OPENRFS PERF lua startup_ns=[1-9][0-9]*$$' "$$log" && \
-			grep -Fxq 'OPENRFS LUA INPUT READY' "$$log" && \
-			grep -Fxq 'OPENRFS LUA PASS input=openrfs sum=5050' "$$log" && \
-			grep -Fxq 'OpenRFS: upstream Lua used stdin, Data, math and stdout' "$$log" || \
+			grep -Eq '^RSD PERF lua startup_ns=[1-9][0-9]*$$' "$$log" && \
+			grep -Fxq 'RSD LUA INPUT READY' "$$log" && \
+			grep -Fxq 'RSD LUA PASS input=rsd sum=5050' "$$log" && \
+			grep -Fxq 'RSD: upstream Lua used stdin, Data, math and stdout' "$$log" || \
 				diagnostics_ok=false ;; \
 		native-sqlite) \
-			grep -Eq '^OPENRFS PERF sqlite transaction_ns=[1-9][0-9]*$$' "$$log" && \
-			grep -Eq '^OPENRFS PERF sqlite reopen_query_ns=[1-9][0-9]*$$' "$$log" && \
-			grep -Fxq 'OPENRFS SQLITE PHASE1 PASS rows=3 locking=busy' "$$log" && \
-			grep -Fxq 'OPENRFS SQLITE PHASE2 PASS rows=3 sum=66 integrity=ok' "$$log" && \
-			grep -Fxq 'OpenRFS: upstream SQLite retained and verified three rows after reboot' "$$log" || \
+			grep -Eq '^RSD PERF sqlite transaction_ns=[1-9][0-9]*$$' "$$log" && \
+			grep -Eq '^RSD PERF sqlite reopen_query_ns=[1-9][0-9]*$$' "$$log" && \
+			grep -Fxq 'RSD SQLITE PHASE1 PASS rows=3 locking=busy' "$$log" && \
+			grep -Fxq 'RSD SQLITE PHASE2 PASS rows=3 sum=66 integrity=ok' "$$log" && \
+			grep -Fxq 'RSD: upstream SQLite retained and verified three rows after reboot' "$$log" || \
 				diagnostics_ok=false ;; \
 		native-rust) \
-			grep -Fxq 'OPENRFS RUST PASS alloc file time entropy thread' "$$log" && \
-			grep -Fxq 'OpenRFS: no_std Rust application used native ABI v1 services' "$$log" || \
+			grep -Fxq 'RSD RUST PASS alloc file time entropy thread' "$$log" && \
+			grep -Fxq 'RSD: no_std Rust application used native ABI v1 services' "$$log" || \
 				diagnostics_ok=false ;; \
 		native-crash) \
-			grep -Fxq 'OpenRFS: native crash contained; mappings handles threads windows FS x87 SSE reclaimed' "$$log" || \
+			grep -Fxq 'RSD: native crash contained; mappings handles threads windows FS x87 SSE reclaimed' "$$log" || \
 				diagnostics_ok=false ;; \
 		native-elf-refusal) \
-			grep -Fxq 'OpenRFS: native malformed ELF refused; resource census unchanged' "$$log" || diagnostics_ok=false ;; \
+			grep -Fxq 'RSD: native malformed ELF refused; resource census unchanged' "$$log" || diagnostics_ok=false ;; \
 		native-digest-refusal) \
-			grep -Fxq 'OpenRFS: native manifest digest mismatch refused; resource census unchanged' "$$log" || diagnostics_ok=false ;; \
+			grep -Fxq 'RSD: native manifest digest mismatch refused; resource census unchanged' "$$log" || diagnostics_ok=false ;; \
 		native-abi-refusal) \
-			grep -Fxq 'OpenRFS: native unsupported ABI version refused; resource census unchanged' "$$log" || diagnostics_ok=false ;; \
+			grep -Fxq 'RSD: native unsupported ABI version refused; resource census unchanged' "$$log" || diagnostics_ok=false ;; \
 		native-relaunch) \
-			grep -Fxq 'OpenRFS: native relaunch advanced generation; both resource censuses clean' "$$log" || diagnostics_ok=false ;; \
+			grep -Fxq 'RSD: native relaunch advanced generation; both resource censuses clean' "$$log" || diagnostics_ok=false ;; \
 		native-audio) \
-			grep -Fxq 'OPENRFS AUDIO REFUSAL PASS capability=EACCES' "$$log" && \
-			grep -Fxq 'OPENRFS AUDIO PHASE open-limit-readiness PASS' "$$log" && \
-			grep -Fxq 'OPENRFS AUDIO PHASE two-stream-mix-drain PASS' "$$log" && \
-			grep -Fxq 'OPENRFS AUDIO PHASE cancel-terminal-readiness PASS' "$$log" && \
-			grep -Fxq 'OPENRFS AUDIO PASS frames=1024 format=48000/S16LE/2 close=stale teardown=process' "$$log" && \
-			grep -Fxq 'OpenRFS: native audio ABI capability, mixing, cancellation and teardown passed' "$$log" || diagnostics_ok=false; \
+			grep -Fxq 'RSD AUDIO REFUSAL PASS capability=EACCES' "$$log" && \
+			grep -Fxq 'RSD AUDIO PHASE open-limit-readiness PASS' "$$log" && \
+			grep -Fxq 'RSD AUDIO PHASE two-stream-mix-drain PASS' "$$log" && \
+			grep -Fxq 'RSD AUDIO PHASE cancel-terminal-readiness PASS' "$$log" && \
+			grep -Fxq 'RSD AUDIO PASS frames=1024 format=48000/S16LE/2 close=stale teardown=process' "$$log" && \
+			grep -Fxq 'RSD: native audio ABI capability, mixing, cancellation and teardown passed' "$$log" || diagnostics_ok=false; \
 			if test "$$audio_capture" = true; then \
 				$(PYTHON) -S tools/audio-wav-host-test.py "$$audio_wav" || diagnostics_ok=false; \
-			else echo 'OPENRFS AUDIO WAV SKIP qemu wav backend unavailable'; fi ;; \
+			else echo 'RSD AUDIO WAV SKIP qemu wav backend unavailable'; fi ;; \
 		native-sdl) \
 			test -s '$(TEST_BUILD_DIR)/$*/sdl.png' && \
 			test -s '$(TEST_BUILD_DIR)/$*/sdl.mp4' && \
-			grep -Fxq 'OPENRFS SDL READY run=1 video=openrfs audio=openrfs pref=Data:SDL/DCDB3FF2/' "$$log" && \
-			grep -Fxq 'OPENRFS SDL PASS run=1 present=partial input=key-pointer audio=non-silent persistent=yes' "$$log" && \
-			grep -Fxq 'OPENRFS SDL READY run=2 video=openrfs audio=openrfs pref=Data:SDL/DCDB3FF2/' "$$log" && \
-			grep -Fxq 'OPENRFS SDL PASS run=2 present=partial input=prior-run audio=non-silent persistent=yes' "$$log" && \
-			grep -Fxq 'OpenRFS: SDL 2 window, input, partial damage, PCM and persistence passed' "$$log" || diagnostics_ok=false; \
+			grep -Fxq 'RSD SDL READY run=1 video=rsd audio=rsd pref=Data:SDL/17D75792/' "$$log" && \
+			grep -Fxq 'RSD SDL PASS run=1 present=partial input=key-pointer audio=non-silent persistent=yes' "$$log" && \
+			grep -Fxq 'RSD SDL READY run=2 video=rsd audio=rsd pref=Data:SDL/17D75792/' "$$log" && \
+			grep -Fxq 'RSD SDL PASS run=2 present=partial input=prior-run audio=non-silent persistent=yes' "$$log" && \
+			grep -Fxq 'RSD: SDL 2 window, input, partial damage, PCM and persistence passed' "$$log" || diagnostics_ok=false; \
 			if test "$$audio_capture" = true; then \
 				$(PYTHON) -S tools/audio-wav-host-test.py --profile sdl \
 					"$$audio_wav" || diagnostics_ok=false; \
-			else echo 'OPENRFS SDL WAV SKIP qemu wav backend unavailable'; fi ;; \
+			else echo 'RSD SDL WAV SKIP qemu wav backend unavailable'; fi ;; \
 		native-dynamic) \
-			grep -Eq '^OpenRFS: dynamic immutable RX shared pages [1-9][0-9]*$$' "$$log" && \
-			test "$$(grep -Fxc 'OPENRFS DYNAMIC RING3 PASS' "$$log")" -eq 2 && \
+			grep -Eq '^RSD: dynamic immutable RX shared pages [1-9][0-9]*$$' "$$log" && \
+			test "$$(grep -Fxc 'RSD DYNAMIC RING3 PASS' "$$log")" -eq 2 && \
 			$(PYTHON) -S tools/serial-marker-order.py --count 2 "$$log" \
-				'OPENRFS DYNAMIC LIB INIT' \
-				'OPENRFS DYNAMIC ROOT INIT' \
-				'OPENRFS DYNAMIC RING3 PASS' \
-				'OPENRFS DYNAMIC ROOT FINI' \
-				'OPENRFS DYNAMIC LIB FINI' && \
+				'RSD DYNAMIC LIB INIT' \
+				'RSD DYNAMIC ROOT INIT' \
+				'RSD DYNAMIC RING3 PASS' \
+				'RSD DYNAMIC ROOT FINI' \
+				'RSD DYNAMIC LIB FINI' && \
 			test "$$(grep -Fxc \
-				'OpenRFS: dynamic ELF shared RX, private TLS and lifecycle passed' \
+				'RSD: dynamic ELF shared RX, private TLS and lifecycle passed' \
 				"$$log")" -eq 1 || \
 				diagnostics_ok=false ;; \
 	esac; \
@@ -3629,14 +3639,14 @@ qemu-test-drivers-list:
 		--output '$(DRIVER_TEST_DIR)' --list
 
 # An interactive boot with every compiled upstream driver enabled.
-DRIVER_ISO := $(BUILD_DIR)/openrfs-drivers.iso
+DRIVER_ISO := $(BUILD_DIR)/rsd-drivers.iso
 $(DRIVER_ISO): $(KERNEL)
 	rm -rf $(BUILD_DIR)/iso-drivers
 	mkdir -p $(BUILD_DIR)/iso-drivers/boot/grub
-	cp $(KERNEL) $(BUILD_DIR)/iso-drivers/boot/openrfs.elf
+	cp $(KERNEL) $(BUILD_DIR)/iso-drivers/boot/rsd.elf
 	printf '%s\n' 'set default=0' 'set timeout=0' '' \
-		'menuentry "OpenRFS (upstream drivers)" {' \
-		'    multiboot2 /boot/openrfs.elf openrfs.drivers=auto' \
+		'menuentry "RSD (upstream drivers)" {' \
+		'    multiboot2 /boot/rsd.elf rsd.drivers=auto' \
 		'    boot' '}' >$(BUILD_DIR)/iso-drivers/boot/grub/grub.cfg
 	$(GRUB_MKRESCUE) $(GRUB_MKRESCUE_FLAGS) -o $@ $(BUILD_DIR)/iso-drivers
 
@@ -3645,10 +3655,10 @@ run-drivers: $(DRIVER_ISO) $(DESKTOP_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 	qemu-system-x86_64 -m 256M -smp 1 -boot order=d -cdrom $(DRIVER_ISO) \
 		-blockdev driver=file,filename=$(DESKTOP_SYSTEM_IMAGE),node-name=system-file,read-only=on,auto-read-only=off \
 		-blockdev driver=raw,file=system-file,node-name=system-raw,read-only=on \
-		-device nvme,serial=openrfs-system-fat32,drive=system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
+		-device nvme,serial=rsd-system-fat32,drive=system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
 		-blockdev driver=file,filename=$(FAT32_RUN_DATA_IMAGE),node-name=data-file,read-only=off,auto-read-only=off \
 		-blockdev driver=raw,file=data-file,node-name=data-raw,read-only=off \
-		-device nvme,serial=openrfs-data-fat32,drive=data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
+		-device nvme,serial=rsd-data-fat32,drive=data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
 		-nic user,model=e1000 -serial stdio -no-reboot -no-shutdown
 
 run: iso $(DESKTOP_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
@@ -3656,10 +3666,10 @@ run: iso $(DESKTOP_SYSTEM_IMAGE) $(FAT32_DATA_IMAGE)
 	qemu-system-x86_64 -m 128M -smp 1 -boot order=d -cdrom $(ISO) \
 		-blockdev driver=file,filename=$(DESKTOP_SYSTEM_IMAGE),node-name=system-file,read-only=on,auto-read-only=off \
 		-blockdev driver=raw,file=system-file,node-name=system-raw,read-only=on \
-		-device nvme,serial=openrfs-system-fat32,drive=system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
+		-device nvme,serial=rsd-system-fat32,drive=system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
 		-blockdev driver=file,filename=$(FAT32_RUN_DATA_IMAGE),node-name=data-file,read-only=off,auto-read-only=off \
 		-blockdev driver=raw,file=data-file,node-name=data-raw,read-only=off \
-		-device nvme,serial=openrfs-data-fat32,drive=data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
+		-device nvme,serial=rsd-data-fat32,drive=data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 \
 		-serial stdio -no-reboot -no-shutdown
 
 hooks:

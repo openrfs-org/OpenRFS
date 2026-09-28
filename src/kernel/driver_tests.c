@@ -12,19 +12,19 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/blockdev.h>
-#include <openrfs/clock.h>
-#include <openrfs/console.h>
-#include <openrfs/display.h>
-#include <openrfs/driver_tests.h>
-#include <openrfs/hwdrv.h>
-#include <openrfs/keyboard.h>
-#include <openrfs/netdev.h>
-#include <openrfs/network.h>
-#include <openrfs/pcm.h>
-#include <openrfs/pointer.h>
-#include <openrfs/screen.h>
-#include <openrfs/tpm.h>
+#include <rsd/blockdev.h>
+#include <rsd/clock.h>
+#include <rsd/console.h>
+#include <rsd/display.h>
+#include <rsd/driver_tests.h>
+#include <rsd/hwdrv.h>
+#include <rsd/keyboard.h>
+#include <rsd/netdev.h>
+#include <rsd/network.h>
+#include <rsd/pcm.h>
+#include <rsd/pointer.h>
+#include <rsd/screen.h>
+#include <rsd/tpm.h>
 
 #define DRIVER_TEST_MAX_TOKEN 64U
 #define DRIVER_TEST_DOWNLOAD_BYTES (256U * 1024U)
@@ -368,8 +368,8 @@ static bool network_plan(const struct driver_test_options *options,
  */
 static uint8_t fixture_byte(uint64_t unit, uint32_t offset, bool written)
 {
-    static const char original[8] = { 'O', 'R', 'F', 'S', 'B', 'L', 'K', '1' };
-    static const char rewritten[8] = { 'O', 'R', 'F', 'S', 'W', 'R', 'T', '1' };
+    static const char original[8] = { 'R', 'S', 'D', 'B', 'L', 'K', '0', '1' };
+    static const char rewritten[8] = { 'R', 'S', 'D', 'W', 'R', 'T', '0', '1' };
 
     if (offset < 8U) {
         return (uint8_t)(written ? rewritten[offset] : original[offset]);
@@ -587,10 +587,10 @@ static bool storage_plan(const struct driver_test_options *options,
 }
 
 /*
- * USB HID: the runner types openrfs.drvtext on the emulated keyboard and
+ * USB HID: the runner types rsd.drvtext on the emulated keyboard and
  * moves and clicks the emulated mouse through QEMU's input-send-event, once
  * "ST DRV hid ready" appears. The events must arrive through the USB host
- * controller, the upstream HID driver, and OpenRFS's own keyboard queue and
+ * controller, the upstream HID driver, and RSD's own keyboard queue and
  * pointer decoder - the same path the shell and desktop read.
  */
 static bool hid_plan(const struct driver_test_options *options,
@@ -830,7 +830,7 @@ static bool display_plan(const struct driver_test_options *options,
     bool acknowledged = false;
 
     if (!parse_mode(options->mode, geometry)) {
-        *reason = "openrfs.drvmode must be WIDTHxHEIGHTxBPP";
+        *reason = "rsd.drvmode must be WIDTHxHEIGHTxBPP";
         return false;
     }
     for (size_t slot = 0U; slot < display_count(); ++slot) {
@@ -1356,37 +1356,37 @@ bool driver_tests_run(const char *command_line, size_t length,
     for (size_t index = 0U; index < sizeof(options); ++index) {
         ((uint8_t *)&options)[index] = 0U;
     }
-    if (!token_value(command_line, length, "openrfs.drvtest=", options.plan,
+    if (!token_value(command_line, length, "rsd.drvtest=", options.plan,
             sizeof(options.plan))) {
-        *reason = "no openrfs.drvtest plan was given";
+        *reason = "no rsd.drvtest plan was given";
         return false;
     }
-    (void)token_value(command_line, length, "openrfs.drvdriver=",
+    (void)token_value(command_line, length, "rsd.drvdriver=",
         options.driver, sizeof(options.driver));
-    if (token_value(command_line, length, "openrfs.drvport=", number,
+    if (token_value(command_line, length, "rsd.drvport=", number,
             sizeof(number)) && !parse_decimal(number, &options.port)) {
-        *reason = "openrfs.drvport is not a number";
+        *reason = "rsd.drvport is not a number";
         return false;
     }
-    if (token_value(command_line, length, "openrfs.drvbytes=", number,
+    if (token_value(command_line, length, "rsd.drvbytes=", number,
             sizeof(number)) && !parse_decimal(number, &options.bytes)) {
-        *reason = "openrfs.drvbytes is not a number";
+        *reason = "rsd.drvbytes is not a number";
         return false;
     }
-    (void)token_value(command_line, length, "openrfs.drvkind=",
+    (void)token_value(command_line, length, "rsd.drvkind=",
         options.kind, sizeof(options.kind));
-    (void)token_value(command_line, length, "openrfs.drvtext=",
+    (void)token_value(command_line, length, "rsd.drvtext=",
         options.text, sizeof(options.text));
-    (void)token_value(command_line, length, "openrfs.drvmode=",
+    (void)token_value(command_line, length, "rsd.drvmode=",
         options.mode, sizeof(options.mode));
-    if (token_value(command_line, length, "openrfs.drvunits=", number,
+    if (token_value(command_line, length, "rsd.drvunits=", number,
             sizeof(number)) && !parse_decimal(number, &options.units)) {
-        *reason = "openrfs.drvunits is not a number";
+        *reason = "rsd.drvunits is not a number";
         return false;
     }
-    if (token_value(command_line, length, "openrfs.drvwrite=", number,
+    if (token_value(command_line, length, "rsd.drvwrite=", number,
             sizeof(number)) && !parse_decimal(number, &options.write)) {
-        *reason = "openrfs.drvwrite is not a number";
+        *reason = "rsd.drvwrite is not a number";
         return false;
     }
     console_write("ST DRV framework bindings ");
@@ -1439,6 +1439,6 @@ bool driver_tests_run(const char *command_line, size_t length,
         }
         return true;
     }
-    *reason = "unknown openrfs.drvtest plan";
+    *reason = "unknown rsd.drvtest plan";
     return false;
 }

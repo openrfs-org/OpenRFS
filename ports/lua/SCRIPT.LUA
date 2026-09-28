@@ -1,6 +1,6 @@
-print("OPENRFS LUA INPUT READY")
+print("RSD LUA INPUT READY")
 local input = assert(io.read("*l"), "stdin ended before the test input")
-assert(input == "openrfs", "unexpected stdin value")
+assert(input == "rsd", "unexpected stdin value")
 
 local sum = 0
 for value = 1, 100 do
@@ -15,4 +15,4 @@ assert(output:write(string.format("input=%s\nsum=%d\nmath=ok\n",
   input, sum)))
 assert(output:close())
 
-print("OPENRFS LUA PASS input=" .. input .. " sum=" .. sum)
+print("RSD LUA PASS input=" .. input .. " sum=" .. sum)

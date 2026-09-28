@@ -56,14 +56,14 @@ static void clear_fixture(void)
     memset(ext4_handle_claims, 0, sizeof(ext4_handle_claims));
     memset(durable_bytes, 0, sizeof(durable_bytes));
     memset(pending_bytes, 0, sizeof(pending_bytes));
-    ext4_mounts[OPENRFSFS_VOLUME_DATA].active = true;
-    ext4_mounts[OPENRFSFS_VOLUME_DATA].healthy = true;
-    ext4_mounts[OPENRFSFS_VOLUME_DATA].rust_mount = 1U;
-    ext4_mounts[OPENRFSFS_VOLUME_DATA].generation = 700U;
-    ext4_mounts[OPENRFSFS_VOLUME_DATA].controller_index = 1U;
-    ext4_mounts[OPENRFSFS_VOLUME_DATA].media_bytes = 32768U * 4096U;
-    ext4_mounts[OPENRFSFS_VOLUME_DATA].admitted_media_bytes =
-        ext4_mounts[OPENRFSFS_VOLUME_DATA].media_bytes;
+    ext4_mounts[RSDFS_VOLUME_DATA].active = true;
+    ext4_mounts[RSDFS_VOLUME_DATA].healthy = true;
+    ext4_mounts[RSDFS_VOLUME_DATA].rust_mount = 1U;
+    ext4_mounts[RSDFS_VOLUME_DATA].generation = 700U;
+    ext4_mounts[RSDFS_VOLUME_DATA].controller_index = 1U;
+    ext4_mounts[RSDFS_VOLUME_DATA].media_bytes = 32768U * 4096U;
+    ext4_mounts[RSDFS_VOLUME_DATA].admitted_media_bytes =
+        ext4_mounts[RSDFS_VOLUME_DATA].media_bytes;
     durable_length = 12U;
     memcpy(durable_bytes, "initial data", durable_length);
     durable_size = durable_length;
@@ -128,104 +128,104 @@ enum nvme_status nvme_volume_close(struct nvme_volume_session *session)
     return NVME_STATUS_OK;
 }
 
-int32_t openrfs_ext4_free_bytes(uintptr_t mounted, uint64_t *bytes)
+int32_t rsd_ext4_free_bytes(uintptr_t mounted, uint64_t *bytes)
 {
     assert(mounted == 1U && bytes != NULL);
-    assert(ext4_mounts[OPENRFSFS_VOLUME_DATA].operation_active);
+    assert(ext4_mounts[RSDFS_VOLUME_DATA].operation_active);
     *bytes = 123U * 4096U;
-    return OPENRFS_EXT4_STATUS_OK;
+    return RSD_EXT4_STATUS_OK;
 }
 
-void openrfs_ext4_snapshot_free(uintptr_t snapshot)
+void rsd_ext4_snapshot_free(uintptr_t snapshot)
 {
     assert(snapshot == 0U);
 }
 
-int32_t openrfs_ext4_sync(uintptr_t mounted, const uint64_t *open_inodes,
+int32_t rsd_ext4_sync(uintptr_t mounted, const uint64_t *open_inodes,
     size_t open_count)
 {
     ++sync_calls;
     assert(mounted == 1U && open_inodes != NULL && open_count <= EXT4_MAX_HANDLES);
-    return OPENRFS_EXT4_STATUS_OK;
+    return RSD_EXT4_STATUS_OK;
 }
 
-int32_t openrfs_ext4_stat_inode(uintptr_t mounted, uint64_t inode,
-    struct openrfs_ext4_metadata *metadata)
+int32_t rsd_ext4_stat_inode(uintptr_t mounted, uint64_t inode,
+    struct rsd_ext4_metadata *metadata)
 {
     ++stat_calls;
     assert(mounted == 1U && metadata != NULL);
-    if (stat_failure) return OPENRFS_EXT4_STATUS_IO;
+    if (stat_failure) return RSD_EXT4_STATUS_IO;
     memset(metadata, 0, sizeof(*metadata));
     metadata->inode = inode;
     metadata->size = inode == 42U ? durable_size : 99U;
-    metadata->file_type = OPENRFS_EXT4_FILE_REGULAR;
-    return OPENRFS_EXT4_STATUS_OK;
+    metadata->file_type = RSD_EXT4_FILE_REGULAR;
+    return RSD_EXT4_STATUS_OK;
 }
 
-int32_t openrfs_ext4_fsync(uintptr_t mounted, uint64_t inode)
+int32_t rsd_ext4_fsync(uintptr_t mounted, uint64_t inode)
 {
     ++fsync_calls;
     assert(mounted == 1U && inode != 0U);
-    if (inode != requested_inode) return OPENRFS_EXT4_STATUS_BUSY;
-    if (failure_boundary != FSYNC_FAILURE_NONE) return OPENRFS_EXT4_STATUS_IO;
+    if (inode != requested_inode) return RSD_EXT4_STATUS_BUSY;
+    if (failure_boundary != FSYNC_FAILURE_NONE) return RSD_EXT4_STATUS_IO;
     if (pending) {
         memcpy(durable_bytes, pending_bytes, pending_length);
         durable_length = pending_length;
         durable_size = pending_size;
         pending = false;
     }
-    return OPENRFS_EXT4_STATUS_OK;
+    return RSD_EXT4_STATUS_OK;
 }
 
-static openrfsfs_handle open_file(uint64_t inode, enum openrfsfs_access access)
+static rsdfs_handle open_file(uint64_t inode, enum rsdfs_access access)
 {
-    openrfsfs_handle handle = 0U;
-    assert(allocate_handle(OPENRFSFS_VOLUME_DATA, inode == 42U ? "file" : "other",
-        inode, durable_size, access, false, 0U, &handle) == OPENRFSFS_STATUS_OK);
+    rsdfs_handle handle = 0U;
+    assert(allocate_handle(RSDFS_VOLUME_DATA, inode == 42U ? "file" : "other",
+        inode, durable_size, access, false, 0U, &handle) == RSDFS_STATUS_OK);
     return handle;
 }
 
-static openrfsfs_handle open_directory(void)
+static rsdfs_handle open_directory(void)
 {
-    openrfsfs_handle handle = 0U;
-    assert(allocate_handle(OPENRFSFS_VOLUME_DATA, "directory", 7U, 0U,
-        OPENRFSFS_ACCESS_READ, true, 0U, &handle) == OPENRFSFS_STATUS_OK);
+    rsdfs_handle handle = 0U;
+    assert(allocate_handle(RSDFS_VOLUME_DATA, "directory", 7U, 0U,
+        RSDFS_ACCESS_READ, true, 0U, &handle) == RSDFS_STATUS_OK);
     return handle;
 }
 
-static void close_file(openrfsfs_handle handle)
+static void close_file(rsdfs_handle handle)
 {
-    assert(ext4_backend_close(handle) == OPENRFSFS_STATUS_OK);
+    assert(ext4_backend_close(handle) == RSDFS_STATUS_OK);
 }
 
 static void assert_clean_operation_counts(unsigned old_fsync,
     uint64_t old_completion)
 {
     assert(fsync_calls == old_fsync);
-    assert(ext4_mounts[OPENRFSFS_VOLUME_DATA].completion_count == old_completion);
+    assert(ext4_mounts[RSDFS_VOLUME_DATA].completion_count == old_completion);
     assert(opens == closes);
 }
 
 static void test_clean_idempotence_and_shared_inode(void)
 {
-    openrfsfs_handle first;
-    openrfsfs_handle second;
-    const uint64_t before = ext4_mounts[OPENRFSFS_VOLUME_DATA].completion_count;
+    rsdfs_handle first;
+    rsdfs_handle second;
+    const uint64_t before = ext4_mounts[RSDFS_VOLUME_DATA].completion_count;
 
-    first = open_file(42U, OPENRFSFS_ACCESS_READ);
-    second = open_file(42U, OPENRFSFS_ACCESS_READ_WRITE);
-    assert(ext4_backend_fsync(first) == OPENRFSFS_STATUS_OK);
-    assert(ext4_backend_fsync(second) == OPENRFSFS_STATUS_OK);
-    assert(ext4_backend_fsync(second) == OPENRFSFS_STATUS_OK);
+    first = open_file(42U, RSDFS_ACCESS_READ);
+    second = open_file(42U, RSDFS_ACCESS_READ_WRITE);
+    assert(ext4_backend_fsync(first) == RSDFS_STATUS_OK);
+    assert(ext4_backend_fsync(second) == RSDFS_STATUS_OK);
+    assert(ext4_backend_fsync(second) == RSDFS_STATUS_OK);
     assert(fsync_calls == 3U);
     assert(sync_calls == 0U);
-    assert(ext4_mounts[OPENRFSFS_VOLUME_DATA].completion_count == before + 3U);
+    assert(ext4_mounts[RSDFS_VOLUME_DATA].completion_count == before + 3U);
     assert_durable_bytes("initial data");
     assert(ext4_handles[(first & 0xffU) - 1U].size == durable_size);
     assert(ext4_handles[(second & 0xffU) - 1U].size == durable_size);
     close_file(first);
     close_file(second);
-    assert(ext4_backend_sync(OPENRFSFS_VOLUME_DATA) == OPENRFSFS_STATUS_OK);
+    assert(ext4_backend_sync(RSDFS_VOLUME_DATA) == RSDFS_STATUS_OK);
     assert(sync_calls == 1U);
 }
 
@@ -243,18 +243,18 @@ static void test_each_durability_boundary_retries(void)
         "ordered retry", "journal retry", "commit retry", "checkpoint retry",
         "tail retry", "flush retry",
     };
-    openrfsfs_handle first = open_file(42U, OPENRFSFS_ACCESS_READ_WRITE);
-    openrfsfs_handle second = open_file(42U, OPENRFSFS_ACCESS_READ_WRITE);
+    rsdfs_handle first = open_file(42U, RSDFS_ACCESS_READ_WRITE);
+    rsdfs_handle second = open_file(42U, RSDFS_ACCESS_READ_WRITE);
 
     for (size_t index = 0U; index < sizeof(boundaries) / sizeof(boundaries[0]); ++index) {
         const unsigned old_fsync = fsync_calls;
-        const uint64_t old_completion = ext4_mounts[OPENRFSFS_VOLUME_DATA].completion_count;
+        const uint64_t old_completion = ext4_mounts[RSDFS_VOLUME_DATA].completion_count;
         const size_t old_length = durable_length;
         uint8_t old_bytes[sizeof(durable_bytes)];
         memcpy(old_bytes, durable_bytes, sizeof(old_bytes));
         stage_bytes(payloads[index]);
         failure_boundary = boundaries[index];
-        assert(ext4_backend_fsync(first) == OPENRFSFS_STATUS_IO);
+        assert(ext4_backend_fsync(first) == RSDFS_STATUS_IO);
         assert(pending && (durable_length != pending_length ||
             memcmp(durable_bytes, pending_bytes, durable_length < pending_length ?
                 durable_length : pending_length) != 0));
@@ -262,10 +262,10 @@ static void test_each_durability_boundary_retries(void)
         assert(memcmp(durable_bytes, old_bytes, old_length) == 0);
         assert_clean_operation_counts(old_fsync + 1U, old_completion);
         failure_boundary = FSYNC_FAILURE_NONE;
-        assert(ext4_backend_fsync(second) == OPENRFSFS_STATUS_OK);
+        assert(ext4_backend_fsync(second) == RSDFS_STATUS_OK);
         assert(!pending);
         assert_durable_bytes(payloads[index]);
-        assert(ext4_mounts[OPENRFSFS_VOLUME_DATA].completion_count == old_completion + 1U);
+        assert(ext4_mounts[RSDFS_VOLUME_DATA].completion_count == old_completion + 1U);
         assert(ext4_handles[(first & 0xffU) - 1U].size == pending_size);
         assert(ext4_handles[(second & 0xffU) - 1U].size == pending_size);
     }
@@ -275,83 +275,83 @@ static void test_each_durability_boundary_retries(void)
 
 static void test_unrelated_inode_and_statuses(void)
 {
-    openrfsfs_handle file = open_file(42U, OPENRFSFS_ACCESS_READ_WRITE);
-    openrfsfs_handle other = open_file(84U, OPENRFSFS_ACCESS_READ_WRITE);
-    openrfsfs_handle directory = open_directory();
-    openrfsfs_handle wrong_volume = 0U;
+    rsdfs_handle file = open_file(42U, RSDFS_ACCESS_READ_WRITE);
+    rsdfs_handle other = open_file(84U, RSDFS_ACCESS_READ_WRITE);
+    rsdfs_handle directory = open_directory();
+    rsdfs_handle wrong_volume = 0U;
     const unsigned old_fsync = fsync_calls;
-    const uint64_t old_completion = ext4_mounts[OPENRFSFS_VOLUME_DATA].completion_count;
+    const uint64_t old_completion = ext4_mounts[RSDFS_VOLUME_DATA].completion_count;
 
-    assert(allocate_handle(OPENRFSFS_VOLUME_SYSTEM, "system-file", 42U, durable_size,
-        OPENRFSFS_ACCESS_READ_WRITE, false, 0U, &wrong_volume) == OPENRFSFS_STATUS_OK);
-    assert(ext4_backend_fsync(wrong_volume) == OPENRFSFS_STATUS_STALE_HANDLE);
+    assert(allocate_handle(RSDFS_VOLUME_SYSTEM, "system-file", 42U, durable_size,
+        RSDFS_ACCESS_READ_WRITE, false, 0U, &wrong_volume) == RSDFS_STATUS_OK);
+    assert(ext4_backend_fsync(wrong_volume) == RSDFS_STATUS_STALE_HANDLE);
     assert(fsync_calls == old_fsync);
     assert(ext4_handles[(file & 0xffU) - 1U].generation != 0U);
-    assert(ext4_backend_fsync(file ^ UINT64_C(0x100)) == OPENRFSFS_STATUS_STALE_HANDLE);
+    assert(ext4_backend_fsync(file ^ UINT64_C(0x100)) == RSDFS_STATUS_STALE_HANDLE);
     assert(fsync_calls == old_fsync);
 
     stage_bytes("file only");
-    assert(ext4_backend_fsync(other) == OPENRFSFS_STATUS_BUSY);
+    assert(ext4_backend_fsync(other) == RSDFS_STATUS_BUSY);
     assert(pending);
     assert_clean_operation_counts(old_fsync + 1U, old_completion);
-    assert(ext4_backend_fsync(directory) == OPENRFSFS_STATUS_IS_DIRECTORY);
+    assert(ext4_backend_fsync(directory) == RSDFS_STATUS_IS_DIRECTORY);
     assert_clean_operation_counts(old_fsync + 1U, old_completion);
-    assert(ext4_backend_fsync(file) == OPENRFSFS_STATUS_OK);
+    assert(ext4_backend_fsync(file) == RSDFS_STATUS_OK);
     assert(!pending);
     assert_durable_bytes("file only");
     close_file(other);
     close_file(file);
-    assert(ext4_backend_close(wrong_volume) == OPENRFSFS_STATUS_STALE_HANDLE);
-    assert(ext4_backend_fsync(file) == OPENRFSFS_STATUS_STALE_HANDLE);
-    assert(ext4_backend_fsync(UINT64_C(0x1234)) == OPENRFSFS_STATUS_STALE_HANDLE);
+    assert(ext4_backend_close(wrong_volume) == RSDFS_STATUS_STALE_HANDLE);
+    assert(ext4_backend_fsync(file) == RSDFS_STATUS_STALE_HANDLE);
+    assert(ext4_backend_fsync(UINT64_C(0x1234)) == RSDFS_STATUS_STALE_HANDLE);
 }
 
 static void test_storage_open_close_and_reload_retry(void)
 {
-    openrfsfs_handle file = open_file(42U, OPENRFSFS_ACCESS_READ_WRITE);
-    const uint64_t before = ext4_mounts[OPENRFSFS_VOLUME_DATA].completion_count;
+    rsdfs_handle file = open_file(42U, RSDFS_ACCESS_READ_WRITE);
+    const uint64_t before = ext4_mounts[RSDFS_VOLUME_DATA].completion_count;
     const unsigned old_fsync = fsync_calls;
     stage_bytes("open refusal");
     open_failure = true;
-    assert(ext4_backend_fsync(file) == OPENRFSFS_STATUS_IO);
+    assert(ext4_backend_fsync(file) == RSDFS_STATUS_IO);
     assert(pending && fsync_calls == old_fsync);
-    assert(ext4_mounts[OPENRFSFS_VOLUME_DATA].completion_count == before);
+    assert(ext4_mounts[RSDFS_VOLUME_DATA].completion_count == before);
     open_failure = false;
-    assert(ext4_backend_fsync(file) == OPENRFSFS_STATUS_OK);
+    assert(ext4_backend_fsync(file) == RSDFS_STATUS_OK);
     assert(!pending && fsync_calls == old_fsync + 1U);
 
     stage_bytes("close refusal");
     close_failure = true;
-    assert(ext4_backend_fsync(file) == OPENRFSFS_STATUS_IO);
+    assert(ext4_backend_fsync(file) == RSDFS_STATUS_IO);
     assert(!pending);
     assert_durable_bytes("close refusal");
-    assert(ext4_mounts[OPENRFSFS_VOLUME_DATA].close_failed);
+    assert(ext4_mounts[RSDFS_VOLUME_DATA].close_failed);
     close_failure = false;
-    assert(ext4_backend_fsync(file) == OPENRFSFS_STATUS_OK);
-    assert(!ext4_mounts[OPENRFSFS_VOLUME_DATA].close_failed);
+    assert(ext4_backend_fsync(file) == RSDFS_STATUS_OK);
+    assert(!ext4_mounts[RSDFS_VOLUME_DATA].close_failed);
     close_file(file);
 }
 
 static void test_refresh_failure_does_not_publish_size(void)
 {
-    openrfsfs_handle first = open_file(42U, OPENRFSFS_ACCESS_READ_WRITE);
-    openrfsfs_handle second = open_file(42U, OPENRFSFS_ACCESS_READ_WRITE);
+    rsdfs_handle first = open_file(42U, RSDFS_ACCESS_READ_WRITE);
+    rsdfs_handle second = open_file(42U, RSDFS_ACCESS_READ_WRITE);
     const size_t first_slot = (size_t)((first & 0xffU) - 1U);
     const size_t second_slot = (size_t)((second & 0xffU) - 1U);
     const uint64_t old_first_size = ext4_handles[first_slot].size;
     const uint64_t old_second_size = ext4_handles[second_slot].size;
-    const uint64_t old_completion = ext4_mounts[OPENRFSFS_VOLUME_DATA].completion_count;
+    const uint64_t old_completion = ext4_mounts[RSDFS_VOLUME_DATA].completion_count;
 
     stage_bytes("refresh retry");
     stat_failure = true;
-    assert(ext4_backend_fsync(first) == OPENRFSFS_STATUS_IO);
+    assert(ext4_backend_fsync(first) == RSDFS_STATUS_IO);
     assert(!pending);
     assert_durable_bytes("refresh retry");
     assert(ext4_handles[first_slot].size == old_first_size);
     assert(ext4_handles[second_slot].size == old_second_size);
-    assert(ext4_mounts[OPENRFSFS_VOLUME_DATA].completion_count == old_completion);
+    assert(ext4_mounts[RSDFS_VOLUME_DATA].completion_count == old_completion);
     stat_failure = false;
-    assert(ext4_backend_fsync(second) == OPENRFSFS_STATUS_OK);
+    assert(ext4_backend_fsync(second) == RSDFS_STATUS_OK);
     assert(ext4_handles[first_slot].size == durable_size);
     assert(ext4_handles[second_slot].size == durable_size);
     close_file(first);

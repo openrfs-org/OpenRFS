@@ -3,14 +3,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/clock.h>
-#include <openrfs/console.h>
-#include <openrfs/cpu.h>
-#include <openrfs/heap.h>
-#include <openrfs/memory.h>
-#include <openrfs/paging.h>
-#include <openrfs/thread.h>
-#include <openrfs/timer.h>
+#include <rsd/clock.h>
+#include <rsd/console.h>
+#include <rsd/cpu.h>
+#include <rsd/heap.h>
+#include <rsd/memory.h>
+#include <rsd/paging.h>
+#include <rsd/thread.h>
+#include <rsd/timer.h>
 
 /*
  * Single-core thread scheduler. Scheduling begins cooperatively and becomes

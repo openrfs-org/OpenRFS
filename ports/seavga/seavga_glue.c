@@ -3,7 +3,7 @@
  * The SeaBIOS-facing half of one SeaBIOS VGA build.
  *
  * In SeaBIOS, vgainit.c probes the adapter, vgabios.c answers INT 10h and
- * vbe.c answers the VESA calls. None of those are compiled here: OpenRFS
+ * vbe.c answers the VESA calls. None of those are compiled here: RSD
  * calls the card driver directly, vgahw_setup() when the kernel binds the
  * adapter and vgahw_find_mode()/vgahw_set_mode() when it asks for a mode.
  * This file supplies what the card drivers reach for outside themselves:
@@ -18,8 +18,8 @@
  */
 #include <stdarg.h>
 
-#include <openrfs/seabios_host.h>
-#include <openrfs/seavga_host.h>
+#include <rsd/seabios_host.h>
+#include <rsd/seavga_host.h>
 
 #include "biosvar.h"
 #include "byteorder.h"
@@ -66,8 +66,8 @@ u16 _rom_header_ati_table_anchor;
  * VGA_CUSTOM_BDA). Like the storage layer's, this copy is private: segment
  * 0x40 resolves here, never to physical 0x400.
  */
-struct bios_data_area_s openrfs_seabios_bda;
-struct rmode_IVT openrfs_seabios_ivt;
+struct bios_data_area_s rsd_seabios_bda;
+struct rmode_IVT rsd_seabios_ivt;
 
 _Static_assert(sizeof(struct bios_data_area_s) >=
                VGA_CUSTOM_BDA + sizeof(struct vga_bda_s),
@@ -81,7 +81,7 @@ static int glue_bar_sizing[GLUE_BAR_COUNT];
  * Diagnostics (output.c)
  ****************************************************************/
 
-int openrfs_seabios_vsnprintf(char *buffer, size_t size, const char *fmt,
+int rsd_seabios_vsnprintf(char *buffer, size_t size, const char *fmt,
                               va_list args);
 
 static int at_line_start = 1;
@@ -119,7 +119,7 @@ void __dprintf(const char *fmt, ...)
     va_list args;
 
     va_start(args, fmt);
-    openrfs_seabios_vsnprintf(text, sizeof(text), fmt, args);
+    rsd_seabios_vsnprintf(text, sizeof(text), fmt, args);
     va_end(args);
     glue_puts(text);
 }
@@ -130,7 +130,7 @@ void panic(const char *fmt, ...)
     va_list args;
 
     va_start(args, fmt);
-    openrfs_seabios_vsnprintf(text, sizeof(text), fmt, args);
+    rsd_seabios_vsnprintf(text, sizeof(text), fmt, args);
     va_end(args);
     seabios_host_panic(text);
 }
@@ -171,10 +171,10 @@ static void *glue_far(u16 seg, const volatile void *offset, u32 size)
     if (!seg)
         return (void *)offset;
     if (seg == SEG_BDA) {
-        if (off > sizeof(openrfs_seabios_bda) ||
-            size > sizeof(openrfs_seabios_bda) - off)
+        if (off > sizeof(rsd_seabios_bda) ||
+            size > sizeof(rsd_seabios_bda) - off)
             panic("SeaBIOS VGA: BDA access at 0x%x (%u bytes)", off, size);
-        return (u8 *)&openrfs_seabios_bda + off;
+        return (u8 *)&rsd_seabios_bda + off;
     }
     if (seg >= SEG_GRAPH && seg <= 0xBFFF && off <= 0xFFFF) {
         u32 linear = ((u32)seg << 4) + off;
@@ -184,7 +184,7 @@ static void *glue_far(u16 seg, const volatile void *offset, u32 size)
     panic("SeaBIOS VGA: far access to %04x:%04x (%u bytes)", seg, off, size);
 }
 
-void *openrfs_seavga_far(u16 seg, const volatile void *offset, u32 size)
+void *rsd_seavga_far(u16 seg, const volatile void *offset, u32 size)
 {
     return glue_far(seg, offset, size);
 }

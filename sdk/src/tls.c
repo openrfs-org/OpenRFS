@@ -1,27 +1,27 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#include <openrfs/tls.h>
+#include <rsd/tls.h>
 
 #include <limits.h>
-#include <openrfs/network.h>
-#include <openrfs/runtime.h>
+#include <rsd/network.h>
+#include <rsd/runtime.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define OPENRFS_TLS_MAX_HOSTNAME 253U
-#define OPENRFS_TLS_MAX_LABEL 63U
-#define OPENRFS_TLS_MAX_TRUST_ANCHORS 16U
-#define OPENRFS_TLS_MAX_TRUST_BYTES 81920U
-#define OPENRFS_TLS_MAX_HANDSHAKE_STEPS 4096U
-#define OPENRFS_TLS_MAX_HANDSHAKE_BYTES 131072U
-#define OPENRFS_TLS_MAX_CHAIN_CERTIFICATES 4U
-#define OPENRFS_TLS_MAX_CHAIN_BYTES 65536U
-#define OPENRFS_TLS_UNIX_EPOCH_DAYS UINT64_C(719528)
-#define OPENRFS_TLS_ENTROPY_BYTES 32U
-#define OPENRFS_TLS_CLOCK_MIN UINT64_C(1577836800)
-#define OPENRFS_TLS_CLOCK_MAX UINT64_C(4102444799)
-#define OPENRFS_HTTPS_REQUEST_BYTES 1536U
-#define OPENRFS_HTTPS_BODY_CHUNK_BYTES 4096U
+#define RSD_TLS_MAX_HOSTNAME 253U
+#define RSD_TLS_MAX_LABEL 63U
+#define RSD_TLS_MAX_TRUST_ANCHORS 16U
+#define RSD_TLS_MAX_TRUST_BYTES 81920U
+#define RSD_TLS_MAX_HANDSHAKE_STEPS 4096U
+#define RSD_TLS_MAX_HANDSHAKE_BYTES 131072U
+#define RSD_TLS_MAX_CHAIN_CERTIFICATES 4U
+#define RSD_TLS_MAX_CHAIN_BYTES 65536U
+#define RSD_TLS_UNIX_EPOCH_DAYS UINT64_C(719528)
+#define RSD_TLS_ENTROPY_BYTES 32U
+#define RSD_TLS_CLOCK_MIN UINT64_C(1577836800)
+#define RSD_TLS_CLOCK_MAX UINT64_C(4102444799)
+#define RSD_HTTPS_REQUEST_BYTES 1536U
+#define RSD_HTTPS_BODY_CHUNK_BYTES 4096U
 
 struct bounded_x509 {
     const br_x509_class *vtable;
@@ -31,20 +31,20 @@ struct bounded_x509 {
     bool exceeded;
 };
 
-struct openrfs_tls_client {
+struct rsd_tls_client {
     br_ssl_client_context ssl;
     br_x509_minimal_context x509;
     struct bounded_x509 bounded_x509;
     br_sslio_context io;
     unsigned char buffer[BR_SSL_BUFSIZE_BIDI];
-    br_x509_trust_anchor anchors[OPENRFS_TLS_MAX_TRUST_ANCHORS];
+    br_x509_trust_anchor anchors[RSD_TLS_MAX_TRUST_ANCHORS];
     unsigned char *anchor_storage;
     size_t anchor_storage_length;
-    char hostname[OPENRFS_TLS_MAX_HOSTNAME + 1U];
-    openrfs_handle_t stream;
+    char hostname[RSD_TLS_MAX_HOSTNAME + 1U];
+    rsd_handle_t stream;
     uint64_t deadline_ns;
     long transport_error;
-    enum openrfs_tls_status status;
+    enum rsd_tls_status status;
     bool tls_ready;
     bool peer_closed;
     bool canceled;
@@ -71,8 +71,8 @@ static void bounded_start_cert(const br_x509_class **context, uint32_t length)
     if (bounded->exceeded) {
         return;
     }
-    if (++bounded->certificates > OPENRFS_TLS_MAX_CHAIN_CERTIFICATES ||
-        length > OPENRFS_TLS_MAX_CHAIN_BYTES - bounded->bytes) {
+    if (++bounded->certificates > RSD_TLS_MAX_CHAIN_CERTIFICATES ||
+        length > RSD_TLS_MAX_CHAIN_BYTES - bounded->bytes) {
         bounded->exceeded = true;
         return;
     }
@@ -165,15 +165,15 @@ static bool hostname_valid(const char *hostname)
     if (hostname == NULL) {
         return false;
     }
-    length = bounded_text_length(hostname, OPENRFS_TLS_MAX_HOSTNAME);
-    if (length == 0U || length > OPENRFS_TLS_MAX_HOSTNAME) {
+    length = bounded_text_length(hostname, RSD_TLS_MAX_HOSTNAME);
+    if (length == 0U || length > RSD_TLS_MAX_HOSTNAME) {
         return false;
     }
     for (size_t index = 0U; index < length; ++index) {
         const unsigned char value = (unsigned char)hostname[index];
 
         if (value == '.') {
-            if (label == 0U || label > OPENRFS_TLS_MAX_LABEL ||
+            if (label == 0U || label > RSD_TLS_MAX_LABEL ||
                 hostname[index - 1U] == '-') {
                 return false;
             }
@@ -187,7 +187,7 @@ static bool hostname_valid(const char *hostname)
         }
         ++label;
     }
-    return label != 0U && label <= OPENRFS_TLS_MAX_LABEL &&
+    return label != 0U && label <= RSD_TLS_MAX_LABEL &&
         hostname[length - 1U] != '-';
 }
 
@@ -235,7 +235,7 @@ static bool trust_storage_size(const br_x509_trust_anchor *anchors,
         }
         if (!size_add(used, anchor->dn.len, &used) ||
             !size_add(used, key_bytes, &used) ||
-            used > OPENRFS_TLS_MAX_TRUST_BYTES) {
+            used > RSD_TLS_MAX_TRUST_BYTES) {
             return false;
         }
     }
@@ -243,7 +243,7 @@ static bool trust_storage_size(const br_x509_trust_anchor *anchors,
     return true;
 }
 
-static bool copy_trust_anchors(struct openrfs_tls_client *client,
+static bool copy_trust_anchors(struct rsd_tls_client *client,
     const br_x509_trust_anchor *source, size_t count)
 {
     unsigned char *cursor;
@@ -283,7 +283,7 @@ static bool copy_trust_anchors(struct openrfs_tls_client *client,
     return (size_t)(cursor - client->anchor_storage) == total;
 }
 
-static void diagnostics_clear(struct openrfs_tls_diagnostics *diagnostics)
+static void diagnostics_clear(struct rsd_tls_diagnostics *diagnostics)
 {
     if (diagnostics != NULL) {
         diagnostics->bearssl_error = 0;
@@ -291,8 +291,8 @@ static void diagnostics_clear(struct openrfs_tls_diagnostics *diagnostics)
     }
 }
 
-static void diagnostics_capture(const struct openrfs_tls_client *client,
-    struct openrfs_tls_diagnostics *diagnostics)
+static void diagnostics_capture(const struct rsd_tls_client *client,
+    struct rsd_tls_diagnostics *diagnostics)
 {
     if (client != NULL && diagnostics != NULL) {
         diagnostics->bearssl_error =
@@ -301,25 +301,25 @@ static void diagnostics_capture(const struct openrfs_tls_client *client,
     }
 }
 
-static long deadline_error(struct openrfs_tls_client *client)
+static long deadline_error(struct rsd_tls_client *client)
 {
     if (__atomic_load_n(&client->canceled, __ATOMIC_ACQUIRE)) {
-        return -(long)OPENRFS_ECANCELED;
+        return -(long)RSD_ECANCELED;
     }
-    if (client->deadline_ns <= openrfs_monotonic_ns()) {
-        return -(long)OPENRFS_ETIMEDOUT;
+    if (client->deadline_ns <= rsd_monotonic_ns()) {
+        return -(long)RSD_ETIMEDOUT;
     }
     return 0;
 }
 
-static bool set_operation_deadline(struct openrfs_tls_client *client,
+static bool set_operation_deadline(struct rsd_tls_client *client,
     uint64_t deadline_ns)
 {
     client->deadline_ns = deadline_ns;
     client->transport_error = 0;
-    if (deadline_ns <= openrfs_monotonic_ns()) {
-        client->transport_error = -(long)OPENRFS_ETIMEDOUT;
-        client->status = OPENRFS_TLS_IO;
+    if (deadline_ns <= rsd_monotonic_ns()) {
+        client->transport_error = -(long)RSD_ETIMEDOUT;
+        client->status = RSD_TLS_IO;
         return false;
     }
     return true;
@@ -327,33 +327,33 @@ static bool set_operation_deadline(struct openrfs_tls_client *client,
 
 static int transport_read(void *context, unsigned char *buffer, size_t length)
 {
-    struct openrfs_tls_client *client = context;
+    struct rsd_tls_client *client = context;
     long count = deadline_error(client);
 
     if (!client->tls_ready) {
-        if (client->handshake_bytes >= OPENRFS_TLS_MAX_HANDSHAKE_BYTES) {
-            client->transport_error = -(long)OPENRFS_ENOSPC;
+        if (client->handshake_bytes >= RSD_TLS_MAX_HANDSHAKE_BYTES) {
+            client->transport_error = -(long)RSD_ENOSPC;
             return -1;
         }
-        if (length > OPENRFS_TLS_MAX_HANDSHAKE_BYTES -
+        if (length > RSD_TLS_MAX_HANDSHAKE_BYTES -
                 client->handshake_bytes) {
-            length = OPENRFS_TLS_MAX_HANDSHAKE_BYTES -
+            length = RSD_TLS_MAX_HANDSHAKE_BYTES -
                 client->handshake_bytes;
         }
     }
 
     if (count == 0) {
-        count = openrfs_stream_read(client->stream, buffer, length,
+        count = rsd_stream_read(client->stream, buffer, length,
             client->deadline_ns);
     }
     if (count <= 0 || count > INT_MAX || (size_t)count > length) {
-        if (count == -(long)OPENRFS_EIO &&
+        if (count == -(long)RSD_EIO &&
             client->received_transport_bytes) {
             /* A reset after record bytes is an authenticated-stream
              * truncation; a reset before any bytes remains a reset. */
-            count = -(long)OPENRFS_EPIPE;
+            count = -(long)RSD_EPIPE;
         }
-        client->transport_error = count == 0 ? -(long)OPENRFS_EPIPE : count;
+        client->transport_error = count == 0 ? -(long)RSD_EPIPE : count;
         return -1;
     }
     client->received_transport_bytes = true;
@@ -366,27 +366,27 @@ static int transport_read(void *context, unsigned char *buffer, size_t length)
 static int transport_write(void *context, const unsigned char *buffer,
     size_t length)
 {
-    struct openrfs_tls_client *client = context;
+    struct rsd_tls_client *client = context;
     long count = deadline_error(client);
 
     if (!client->tls_ready) {
-        if (client->handshake_bytes >= OPENRFS_TLS_MAX_HANDSHAKE_BYTES) {
-            client->transport_error = -(long)OPENRFS_ENOSPC;
+        if (client->handshake_bytes >= RSD_TLS_MAX_HANDSHAKE_BYTES) {
+            client->transport_error = -(long)RSD_ENOSPC;
             return -1;
         }
-        if (length > OPENRFS_TLS_MAX_HANDSHAKE_BYTES -
+        if (length > RSD_TLS_MAX_HANDSHAKE_BYTES -
                 client->handshake_bytes) {
-            length = OPENRFS_TLS_MAX_HANDSHAKE_BYTES -
+            length = RSD_TLS_MAX_HANDSHAKE_BYTES -
                 client->handshake_bytes;
         }
     }
 
     if (count == 0) {
-        count = openrfs_stream_write(client->stream, buffer, length,
+        count = rsd_stream_write(client->stream, buffer, length,
             client->deadline_ns);
     }
     if (count <= 0 || count > INT_MAX || (size_t)count > length) {
-        client->transport_error = count == 0 ? -(long)OPENRFS_EPIPE : count;
+        client->transport_error = count == 0 ? -(long)RSD_EPIPE : count;
         return -1;
     }
     if (!client->tls_ready) {
@@ -395,17 +395,17 @@ static int transport_write(void *context, const unsigned char *buffer,
     return (int)count;
 }
 
-static enum openrfs_tls_status drive_handshake(struct openrfs_tls_client *client)
+static enum rsd_tls_status drive_handshake(struct rsd_tls_client *client)
 {
-    for (size_t step = 0U; step < OPENRFS_TLS_MAX_HANDSHAKE_STEPS; ++step) {
+    for (size_t step = 0U; step < RSD_TLS_MAX_HANDSHAKE_STEPS; ++step) {
         const unsigned state = br_ssl_engine_current_state(&client->ssl.eng);
         size_t length = 0U;
 
         if ((state & BR_SSL_CLOSED) != 0U) {
-            return OPENRFS_TLS_HANDSHAKE;
+            return RSD_TLS_HANDSHAKE;
         }
         if ((state & (BR_SSL_SENDAPP | BR_SSL_RECVAPP)) != 0U) {
-            return OPENRFS_TLS_OK;
+            return RSD_TLS_OK;
         }
         if ((state & BR_SSL_SENDREC) != 0U) {
             unsigned char *data = br_ssl_engine_sendrec_buf(
@@ -413,11 +413,11 @@ static enum openrfs_tls_status drive_handshake(struct openrfs_tls_client *client
             int count;
 
             if (data == NULL || length == 0U) {
-                return OPENRFS_TLS_HANDSHAKE;
+                return RSD_TLS_HANDSHAKE;
             }
             count = transport_write(client, data, length);
             if (count <= 0) {
-                return OPENRFS_TLS_TRANSPORT;
+                return RSD_TLS_TRANSPORT;
             }
             br_ssl_engine_sendrec_ack(&client->ssl.eng, (size_t)count);
             continue;
@@ -428,31 +428,31 @@ static enum openrfs_tls_status drive_handshake(struct openrfs_tls_client *client
             int count;
 
             if (data == NULL || length == 0U) {
-                return OPENRFS_TLS_HANDSHAKE;
+                return RSD_TLS_HANDSHAKE;
             }
             count = transport_read(client, data, length);
             if (count <= 0) {
-                return OPENRFS_TLS_TRANSPORT;
+                return RSD_TLS_TRANSPORT;
             }
             br_ssl_engine_recvrec_ack(&client->ssl.eng, (size_t)count);
             continue;
         }
-        return OPENRFS_TLS_HANDSHAKE;
+        return RSD_TLS_HANDSHAKE;
     }
-    return OPENRFS_TLS_HANDSHAKE;
+    return RSD_TLS_HANDSHAKE;
 }
 
-static void release_client(struct openrfs_tls_client *client,
+static void release_client(struct rsd_tls_client *client,
     uint64_t deadline_ns)
 {
     if (client == NULL) {
         return;
     }
-    if (client->stream != OPENRFS_HANDLE_INVALID) {
-        (void)openrfs_stream_shutdown(client->stream,
-            OPENRFS_SHUTDOWN_WRITE | OPENRFS_SHUTDOWN_READ, deadline_ns);
-        (void)openrfs_handle_close(client->stream);
-        client->stream = OPENRFS_HANDLE_INVALID;
+    if (client->stream != RSD_HANDLE_INVALID) {
+        (void)rsd_stream_shutdown(client->stream,
+            RSD_SHUTDOWN_WRITE | RSD_SHUTDOWN_READ, deadline_ns);
+        (void)rsd_handle_close(client->stream);
+        client->stream = RSD_HANDLE_INVALID;
     }
     if (client->anchor_storage != NULL) {
         secure_zero(client->anchor_storage, client->anchor_storage_length);
@@ -463,89 +463,89 @@ static void release_client(struct openrfs_tls_client *client,
     free(client);
 }
 
-enum openrfs_tls_status openrfs_tls_client_open_diagnostic(
-    const struct openrfs_tls_client_config *config,
-    struct openrfs_tls_diagnostics *diagnostics,
-    struct openrfs_tls_client **result)
+enum rsd_tls_status rsd_tls_client_open_diagnostic(
+    const struct rsd_tls_client_config *config,
+    struct rsd_tls_diagnostics *diagnostics,
+    struct rsd_tls_client **result)
 {
-    struct openrfs_tls_client *client;
-    struct openrfs_ipv4_endpoint endpoint;
-    unsigned char entropy[OPENRFS_TLS_ENTROPY_BYTES];
+    struct rsd_tls_client *client;
+    struct rsd_ipv4_endpoint endpoint;
+    unsigned char entropy[RSD_TLS_ENTROPY_BYTES];
     size_t hostname_length;
     long realtime;
     long resolved;
     long opened;
     long connected;
-    enum openrfs_tls_status status;
+    enum rsd_tls_status status;
 
     diagnostics_clear(diagnostics);
     if (result == NULL) {
-        return OPENRFS_TLS_ARGUMENT;
+        return RSD_TLS_ARGUMENT;
     }
     *result = NULL;
     if (config == NULL || config->reserved != 0U || config->port == 0U ||
         !hostname_valid(config->hostname) ||
         config->trust_anchors == NULL || config->trust_anchor_count == 0U ||
-        config->trust_anchor_count > OPENRFS_TLS_MAX_TRUST_ANCHORS ||
-        config->deadline_ns <= openrfs_monotonic_ns()) {
-        return OPENRFS_TLS_ARGUMENT;
+        config->trust_anchor_count > RSD_TLS_MAX_TRUST_ANCHORS ||
+        config->deadline_ns <= rsd_monotonic_ns()) {
+        return RSD_TLS_ARGUMENT;
     }
     for (size_t index = 0U; index < config->trust_anchor_count; ++index) {
         if (!trust_anchor_valid(&config->trust_anchors[index])) {
-            return OPENRFS_TLS_TRUST;
+            return RSD_TLS_TRUST;
         }
     }
-    realtime = openrfs_realtime_seconds();
-    if (realtime < 0 || (uint64_t)realtime < OPENRFS_TLS_CLOCK_MIN ||
-        (uint64_t)realtime > OPENRFS_TLS_CLOCK_MAX ||
+    realtime = rsd_realtime_seconds();
+    if (realtime < 0 || (uint64_t)realtime < RSD_TLS_CLOCK_MIN ||
+        (uint64_t)realtime > RSD_TLS_CLOCK_MAX ||
         (uint64_t)realtime / UINT64_C(86400) >
-            UINT32_MAX - OPENRFS_TLS_UNIX_EPOCH_DAYS) {
-        return OPENRFS_TLS_CLOCK;
+            UINT32_MAX - RSD_TLS_UNIX_EPOCH_DAYS) {
+        return RSD_TLS_CLOCK;
     }
     client = calloc(1U, sizeof(*client));
     if (client == NULL) {
-        return OPENRFS_TLS_NO_MEMORY;
+        return RSD_TLS_NO_MEMORY;
     }
-    client->stream = OPENRFS_HANDLE_INVALID;
+    client->stream = RSD_HANDLE_INVALID;
     client->deadline_ns = config->deadline_ns;
     hostname_length = strlen(config->hostname);
     (void)memcpy(client->hostname, config->hostname, hostname_length + 1U);
     if (!copy_trust_anchors(client, config->trust_anchors,
             config->trust_anchor_count)) {
         release_client(client, config->deadline_ns);
-        return OPENRFS_TLS_NO_MEMORY;
+        return RSD_TLS_NO_MEMORY;
     }
-    if (openrfs_random_strong(entropy, sizeof(entropy)) !=
+    if (rsd_random_strong(entropy, sizeof(entropy)) !=
             (long)sizeof(entropy)) {
         secure_zero(entropy, sizeof(entropy));
         release_client(client, config->deadline_ns);
-        return OPENRFS_TLS_ENTROPY;
+        return RSD_TLS_ENTROPY;
     }
-    resolved = openrfs_dns_resolve(client->hostname, config->deadline_ns);
+    resolved = rsd_dns_resolve(client->hostname, config->deadline_ns);
     if (resolved <= 0 || (uint64_t)resolved > UINT32_MAX) {
         secure_zero(entropy, sizeof(entropy));
         release_client(client, config->deadline_ns);
-        return OPENRFS_TLS_DNS;
+        return RSD_TLS_DNS;
     }
-    opened = openrfs_stream_open();
+    opened = rsd_stream_open();
     if (opened < 0) {
         secure_zero(entropy, sizeof(entropy));
         client->transport_error = opened;
         diagnostics_capture(client, diagnostics);
         release_client(client, config->deadline_ns);
-        return OPENRFS_TLS_TRANSPORT;
+        return RSD_TLS_TRANSPORT;
     }
-    client->stream = (openrfs_handle_t)opened;
-    endpoint = (struct openrfs_ipv4_endpoint){
+    client->stream = (rsd_handle_t)opened;
+    endpoint = (struct rsd_ipv4_endpoint){
         (uint32_t)resolved, config->port, 0U};
-    connected = openrfs_stream_connect(client->stream, &endpoint,
+    connected = rsd_stream_connect(client->stream, &endpoint,
         config->deadline_ns);
     if (connected < 0) {
         secure_zero(entropy, sizeof(entropy));
         client->transport_error = connected;
         diagnostics_capture(client, diagnostics);
         release_client(client, config->deadline_ns);
-        return OPENRFS_TLS_TRANSPORT;
+        return RSD_TLS_TRANSPORT;
     }
 
     br_ssl_client_init_full(&client->ssl, &client->x509,
@@ -566,17 +566,17 @@ enum openrfs_tls_status openrfs_tls_client_open_diagnostic(
     br_x509_minimal_set_hash(&client->x509, br_sha224_ID, NULL);
     br_x509_minimal_set_time(&client->x509,
         (uint32_t)((uint64_t)realtime / UINT64_C(86400) +
-            OPENRFS_TLS_UNIX_EPOCH_DAYS),
+            RSD_TLS_UNIX_EPOCH_DAYS),
         (uint32_t)((uint64_t)realtime % UINT64_C(86400)));
     br_ssl_engine_inject_entropy(&client->ssl.eng, entropy, sizeof(entropy));
     secure_zero(entropy, sizeof(entropy));
     if (!br_ssl_client_reset(&client->ssl, client->hostname, 0)) {
         diagnostics_capture(client, diagnostics);
         release_client(client, config->deadline_ns);
-        return OPENRFS_TLS_HANDSHAKE;
+        return RSD_TLS_HANDSHAKE;
     }
     status = drive_handshake(client);
-    if (status != OPENRFS_TLS_OK) {
+    if (status != RSD_TLS_OK) {
         client->status = status;
         diagnostics_capture(client, diagnostics);
         release_client(client, config->deadline_ns);
@@ -585,19 +585,19 @@ enum openrfs_tls_status openrfs_tls_client_open_diagnostic(
     br_sslio_init(&client->io, &client->ssl.eng, transport_read, client,
         transport_write, client);
     client->tls_ready = true;
-    client->status = OPENRFS_TLS_OK;
+    client->status = RSD_TLS_OK;
     *result = client;
-    return OPENRFS_TLS_OK;
+    return RSD_TLS_OK;
 }
 
-enum openrfs_tls_status openrfs_tls_client_open(
-    const struct openrfs_tls_client_config *config,
-    struct openrfs_tls_client **result)
+enum rsd_tls_status rsd_tls_client_open(
+    const struct rsd_tls_client_config *config,
+    struct rsd_tls_client **result)
 {
-    return openrfs_tls_client_open_diagnostic(config, NULL, result);
+    return rsd_tls_client_open_diagnostic(config, NULL, result);
 }
 
-long openrfs_tls_client_read(struct openrfs_tls_client *client, void *buffer,
+long rsd_tls_client_read(struct rsd_tls_client *client, void *buffer,
     size_t length, uint64_t deadline_ns)
 {
     int count;
@@ -619,13 +619,13 @@ long openrfs_tls_client_read(struct openrfs_tls_client *client, void *buffer,
             client->peer_closed = true;
             return 0;
         }
-        client->status = OPENRFS_TLS_IO;
+        client->status = RSD_TLS_IO;
         return -1;
     }
     return count;
 }
 
-long openrfs_tls_client_write(struct openrfs_tls_client *client,
+long rsd_tls_client_write(struct rsd_tls_client *client,
     const void *buffer, size_t length, uint64_t deadline_ns)
 {
     int count;
@@ -642,57 +642,57 @@ long openrfs_tls_client_write(struct openrfs_tls_client *client,
     }
     count = br_sslio_write(&client->io, buffer, length);
     if (count < 0) {
-        client->status = OPENRFS_TLS_IO;
+        client->status = RSD_TLS_IO;
         return -1;
     }
     return count;
 }
 
-enum openrfs_tls_status openrfs_tls_client_flush(
-    struct openrfs_tls_client *client, uint64_t deadline_ns)
+enum rsd_tls_status rsd_tls_client_flush(
+    struct rsd_tls_client *client, uint64_t deadline_ns)
 {
     if (client == NULL || !client->tls_ready || client->peer_closed) {
-        return OPENRFS_TLS_ARGUMENT;
+        return RSD_TLS_ARGUMENT;
     }
     if (!set_operation_deadline(client, deadline_ns)) {
-        return OPENRFS_TLS_IO;
+        return RSD_TLS_IO;
     }
     if (br_sslio_flush(&client->io) != 0) {
-        client->status = OPENRFS_TLS_IO;
+        client->status = RSD_TLS_IO;
     }
     return client->status;
 }
 
-long openrfs_tls_client_cancel(struct openrfs_tls_client *client)
+long rsd_tls_client_cancel(struct rsd_tls_client *client)
 {
     long result;
 
-    if (client == NULL || client->stream == OPENRFS_HANDLE_INVALID) {
-        return -(long)OPENRFS_EINVAL;
+    if (client == NULL || client->stream == RSD_HANDLE_INVALID) {
+        return -(long)RSD_EINVAL;
     }
     __atomic_store_n(&client->canceled, true, __ATOMIC_RELEASE);
-    result = openrfs_network_cancel(client->stream);
+    result = rsd_network_cancel(client->stream);
     return result;
 }
 
-static enum openrfs_tls_status close_client(
-    struct openrfs_tls_client *client, uint64_t deadline_ns,
-    struct openrfs_tls_diagnostics *diagnostics)
+static enum rsd_tls_status close_client(
+    struct rsd_tls_client *client, uint64_t deadline_ns,
+    struct rsd_tls_diagnostics *diagnostics)
 {
-    enum openrfs_tls_status status;
+    enum rsd_tls_status status;
 
     diagnostics_clear(diagnostics);
     if (client == NULL) {
-        return OPENRFS_TLS_ARGUMENT;
+        return RSD_TLS_ARGUMENT;
     }
     status = client->status;
     if (client->tls_ready &&
         !__atomic_load_n(&client->canceled, __ATOMIC_ACQUIRE)) {
         if (!set_operation_deadline(client, deadline_ns)) {
-            status = OPENRFS_TLS_IO;
+            status = RSD_TLS_IO;
         } else if (br_sslio_close(&client->io) == 0 &&
-                status == OPENRFS_TLS_OK) {
-            status = OPENRFS_TLS_CLOSE;
+                status == RSD_TLS_OK) {
+            status = RSD_TLS_CLOSE;
         }
     }
     diagnostics_capture(client, diagnostics);
@@ -700,29 +700,29 @@ static enum openrfs_tls_status close_client(
     return status;
 }
 
-enum openrfs_tls_status openrfs_tls_client_close(
-    struct openrfs_tls_client *client, uint64_t deadline_ns)
+enum rsd_tls_status rsd_tls_client_close(
+    struct rsd_tls_client *client, uint64_t deadline_ns)
 {
     return close_client(client, deadline_ns, NULL);
 }
 
-enum openrfs_tls_status openrfs_tls_client_status(
-    const struct openrfs_tls_client *client)
+enum rsd_tls_status rsd_tls_client_status(
+    const struct rsd_tls_client *client)
 {
-    return client == NULL ? OPENRFS_TLS_ARGUMENT : client->status;
+    return client == NULL ? RSD_TLS_ARGUMENT : client->status;
 }
 
-int openrfs_tls_client_bearssl_error(const struct openrfs_tls_client *client)
+int rsd_tls_client_bearssl_error(const struct rsd_tls_client *client)
 {
     return client == NULL ? -1 : br_ssl_engine_last_error(&client->ssl.eng);
 }
 
-long openrfs_tls_client_transport_error(const struct openrfs_tls_client *client)
+long rsd_tls_client_transport_error(const struct rsd_tls_client *client)
 {
     return client == NULL ? 0 : client->transport_error;
 }
 
-const char *openrfs_tls_status_string(enum openrfs_tls_status status)
+const char *rsd_tls_status_string(enum rsd_tls_status status)
 {
     static const char *const names[] = {
         "ok", "invalid TLS argument", "TLS allocation failed",
@@ -736,78 +736,78 @@ const char *openrfs_tls_status_string(enum openrfs_tls_status status)
         names[status] : "unknown TLS status";
 }
 
-static enum openrfs_https_status transport_https_status(long error,
-    enum openrfs_https_status fallback)
+static enum rsd_https_status transport_https_status(long error,
+    enum rsd_https_status fallback)
 {
-    if (error == -(long)OPENRFS_ETIMEDOUT) {
-        return OPENRFS_HTTPS_TIMEOUT;
+    if (error == -(long)RSD_ETIMEDOUT) {
+        return RSD_HTTPS_TIMEOUT;
     }
-    if (error == -(long)OPENRFS_ECANCELED) {
-        return OPENRFS_HTTPS_CANCELED;
+    if (error == -(long)RSD_ECANCELED) {
+        return RSD_HTTPS_CANCELED;
     }
-    if (error == -(long)OPENRFS_EIO) {
-        return OPENRFS_HTTPS_RESET;
+    if (error == -(long)RSD_EIO) {
+        return RSD_HTTPS_RESET;
     }
-    if (error == -(long)OPENRFS_EPIPE) {
-        return OPENRFS_HTTPS_TRUNCATED;
+    if (error == -(long)RSD_EPIPE) {
+        return RSD_HTTPS_TRUNCATED;
     }
     return fallback;
 }
 
-static enum openrfs_https_status handshake_https_status(
-    enum openrfs_tls_status status, const struct openrfs_tls_diagnostics *details)
+static enum rsd_https_status handshake_https_status(
+    enum rsd_tls_status status, const struct rsd_tls_diagnostics *details)
 {
-    if (status == OPENRFS_TLS_ARGUMENT) {
-        return OPENRFS_HTTPS_ARGUMENT;
+    if (status == RSD_TLS_ARGUMENT) {
+        return RSD_HTTPS_ARGUMENT;
     }
-    if (status == OPENRFS_TLS_NO_MEMORY) {
-        return OPENRFS_HTTPS_NO_MEMORY;
+    if (status == RSD_TLS_NO_MEMORY) {
+        return RSD_HTTPS_NO_MEMORY;
     }
-    if (status == OPENRFS_TLS_TRUST) {
-        return OPENRFS_HTTPS_TRUST;
+    if (status == RSD_TLS_TRUST) {
+        return RSD_HTTPS_TRUST;
     }
-    if (status == OPENRFS_TLS_CLOCK) {
-        return OPENRFS_HTTPS_CLOCK;
+    if (status == RSD_TLS_CLOCK) {
+        return RSD_HTTPS_CLOCK;
     }
-    if (status == OPENRFS_TLS_ENTROPY) {
-        return OPENRFS_HTTPS_ENTROPY;
+    if (status == RSD_TLS_ENTROPY) {
+        return RSD_HTTPS_ENTROPY;
     }
-    if (status == OPENRFS_TLS_DNS) {
-        return OPENRFS_HTTPS_DNS;
+    if (status == RSD_TLS_DNS) {
+        return RSD_HTTPS_DNS;
     }
     if (details->bearssl_error == BR_ERR_X509_BAD_SERVER_NAME ||
         details->bearssl_error == BR_ERR_X509_DN_MISMATCH) {
-        return OPENRFS_HTTPS_HOSTNAME;
+        return RSD_HTTPS_HOSTNAME;
     }
     if (details->bearssl_error == BR_ERR_X509_EXPIRED ||
         details->bearssl_error == BR_ERR_X509_BAD_TIME ||
         details->bearssl_error == BR_ERR_X509_TIME_UNKNOWN) {
-        return OPENRFS_HTTPS_CERTIFICATE_TIME;
+        return RSD_HTTPS_CERTIFICATE_TIME;
     }
     if (details->bearssl_error == BR_ERR_X509_NOT_TRUSTED ||
         details->bearssl_error == BR_ERR_X509_BAD_SIGNATURE ||
         details->bearssl_error == BR_ERR_X509_NOT_CA) {
-        return OPENRFS_HTTPS_AUTHENTICATION;
+        return RSD_HTTPS_AUTHENTICATION;
     }
-    if (status == OPENRFS_TLS_TRANSPORT) {
+    if (status == RSD_TLS_TRANSPORT) {
         return transport_https_status(details->transport_error,
-            OPENRFS_HTTPS_TRANSPORT);
+            RSD_HTTPS_TRANSPORT);
     }
-    return OPENRFS_HTTPS_HANDSHAKE;
+    return RSD_HTTPS_HANDSHAKE;
 }
 
-static enum openrfs_https_status client_io_status(
-    struct openrfs_tls_client *client, enum openrfs_https_status fallback)
+static enum rsd_https_status client_io_status(
+    struct rsd_tls_client *client, enum rsd_https_status fallback)
 {
     return transport_https_status(
-        openrfs_tls_client_transport_error(client), fallback);
+        rsd_tls_client_transport_error(client), fallback);
 }
 
-static void abort_client(struct openrfs_tls_client *client,
+static void abort_client(struct rsd_tls_client *client,
     uint64_t deadline_ns)
 {
     if (client != NULL) {
-        (void)openrfs_tls_client_cancel(client);
+        (void)rsd_tls_client_cancel(client);
         release_client(client, deadline_ns);
     }
 }
@@ -819,8 +819,8 @@ static bool path_valid(const char *path, size_t *length)
     if (path == NULL || length == NULL) {
         return false;
     }
-    used = bounded_text_length(path, OPENRFS_HTTPS_MAX_PATH_BYTES);
-    if (used == 0U || used > OPENRFS_HTTPS_MAX_PATH_BYTES || path[0] != '/') {
+    used = bounded_text_length(path, RSD_HTTPS_MAX_PATH_BYTES);
+    if (used == 0U || used > RSD_HTTPS_MAX_PATH_BYTES || path[0] != '/') {
         return false;
     }
     for (size_t index = 0U; index < used; ++index) {
@@ -871,7 +871,7 @@ static bool append_port(char *output, size_t capacity, size_t *used,
     return true;
 }
 
-static bool make_http_request(const struct openrfs_https_stream_request *request,
+static bool make_http_request(const struct rsd_https_stream_request *request,
     char *output, size_t capacity, size_t *length)
 {
     size_t path_length;
@@ -938,9 +938,9 @@ static bool decimal_size(const unsigned char *text, size_t length,
     return true;
 }
 
-static enum openrfs_https_status parse_http_headers(
+static enum rsd_https_status parse_http_headers(
     const unsigned char *header, size_t length, size_t body_capacity,
-    struct openrfs_https_response *response)
+    struct rsd_https_response *response)
 {
     size_t line_start = 0U;
     size_t line_end = 0U;
@@ -954,7 +954,7 @@ static enum openrfs_https_status parse_http_headers(
             (value == '\r' &&
              (index + 1U >= length || header[index + 1U] != '\n')) ||
             (value == '\n' && (index == 0U || header[index - 1U] != '\r'))) {
-            return OPENRFS_HTTPS_HTTP_HEADERS;
+            return RSD_HTTPS_HTTP_HEADERS;
         }
     }
     while (line_end + 1U < length &&
@@ -967,12 +967,12 @@ static enum openrfs_https_status parse_http_headers(
         header[10] < '0' || header[10] > '9' ||
         header[11] < '0' || header[11] > '9' ||
         (line_end > 12U && header[12] != ' ')) {
-        return OPENRFS_HTTPS_HTTP_VERSION;
+        return RSD_HTTPS_HTTP_VERSION;
     }
     response->status_code = (uint16_t)((header[9] - '0') * 100U +
         (header[10] - '0') * 10U + (header[11] - '0'));
     if (response->status_code != 200U) {
-        return OPENRFS_HTTPS_HTTP_STATUS;
+        return RSD_HTTPS_HTTP_STATUS;
     }
     line_start = line_end + 2U;
     while (line_start + 1U < length) {
@@ -990,7 +990,7 @@ static enum openrfs_https_status parse_http_headers(
         }
         if (line_end + 1U >= length || line_end == line_start ||
             header[line_start] == ' ' || header[line_start] == '\t') {
-            return OPENRFS_HTTPS_HTTP_HEADERS;
+            return RSD_HTTPS_HTTP_HEADERS;
         }
         colon = line_start;
         while (colon < line_end && header[colon] != ':') {
@@ -999,12 +999,12 @@ static enum openrfs_https_status parse_http_headers(
             if (!((value >= 'a' && value <= 'z') ||
                     (value >= 'A' && value <= 'Z') ||
                     (value >= '0' && value <= '9') || value == '-')) {
-                return OPENRFS_HTTPS_HTTP_HEADERS;
+                return RSD_HTTPS_HTTP_HEADERS;
             }
             ++colon;
         }
         if (colon == line_start || colon == line_end) {
-            return OPENRFS_HTTPS_HTTP_HEADERS;
+            return RSD_HTTPS_HTTP_HEADERS;
         }
         value_start = colon + 1U;
         while (value_start < line_end &&
@@ -1022,102 +1022,102 @@ static enum openrfs_https_status parse_http_headers(
             if (content_length_seen ||
                 !decimal_size(header + value_start, value_end - value_start,
                     &response->content_length)) {
-                return OPENRFS_HTTPS_HTTP_HEADERS;
+                return RSD_HTTPS_HTTP_HEADERS;
             }
             content_length_seen = true;
         } else if (ascii_equal_case(header + line_start,
                 colon - line_start, "transfer-encoding")) {
-            return OPENRFS_HTTPS_HTTP_HEADERS;
+            return RSD_HTTPS_HTTP_HEADERS;
         } else if (ascii_equal_case(header + line_start,
                 colon - line_start, "content-encoding") &&
             !ascii_equal_case(header + value_start, value_end - value_start,
                 "identity")) {
-            return OPENRFS_HTTPS_HTTP_HEADERS;
+            return RSD_HTTPS_HTTP_HEADERS;
         }
         line_start = line_end + 2U;
     }
     if (!content_length_seen) {
-        return OPENRFS_HTTPS_CONTENT_LENGTH_REQUIRED;
+        return RSD_HTTPS_CONTENT_LENGTH_REQUIRED;
     }
     if (response->content_length > body_capacity) {
-        return OPENRFS_HTTPS_CONTENT_TOO_LARGE;
+        return RSD_HTTPS_CONTENT_TOO_LARGE;
     }
-    return OPENRFS_HTTPS_OK;
+    return RSD_HTTPS_OK;
 }
 
-static void capture_response_diagnostics(struct openrfs_tls_client *client,
-    struct openrfs_https_response *response)
+static void capture_response_diagnostics(struct rsd_tls_client *client,
+    struct rsd_https_response *response)
 {
-    response->bearssl_error = openrfs_tls_client_bearssl_error(client);
-    response->transport_error = openrfs_tls_client_transport_error(client);
+    response->bearssl_error = rsd_tls_client_bearssl_error(client);
+    response->transport_error = rsd_tls_client_transport_error(client);
 }
 
-enum openrfs_https_status openrfs_https_get_stream(
-    const struct openrfs_https_stream_request *request,
-    struct openrfs_https_response *response)
+enum rsd_https_status rsd_https_get_stream(
+    const struct rsd_https_stream_request *request,
+    struct rsd_https_response *response)
 {
-    struct openrfs_tls_client_config tls_config;
-    struct openrfs_tls_diagnostics diagnostics;
-    struct openrfs_tls_client *client = NULL;
-    unsigned char header[OPENRFS_HTTPS_MAX_HEADER_BYTES];
-    unsigned char body[OPENRFS_HTTPS_BODY_CHUNK_BYTES];
-    char wire_request[OPENRFS_HTTPS_REQUEST_BYTES];
+    struct rsd_tls_client_config tls_config;
+    struct rsd_tls_diagnostics diagnostics;
+    struct rsd_tls_client *client = NULL;
+    unsigned char header[RSD_HTTPS_MAX_HEADER_BYTES];
+    unsigned char body[RSD_HTTPS_BODY_CHUNK_BYTES];
+    char wire_request[RSD_HTTPS_REQUEST_BYTES];
     size_t request_length;
     size_t sent = 0U;
     size_t header_length = 0U;
     unsigned delimiter = 0U;
-    enum openrfs_tls_status tls_status;
-    enum openrfs_https_status status;
+    enum rsd_tls_status tls_status;
+    enum rsd_https_status status;
 
     if (response == NULL) {
-        return OPENRFS_HTTPS_ARGUMENT;
+        return RSD_HTTPS_ARGUMENT;
     }
     (void)memset(response, 0, sizeof(*response));
     if (request == NULL || request->reserved != 0U ||
         !hostname_valid(request->hostname) || request->port == 0U ||
         request->trust_anchors == NULL || request->trust_anchor_count == 0U ||
-        request->deadline_ns <= openrfs_monotonic_ns() ||
+        request->deadline_ns <= rsd_monotonic_ns() ||
         request->write_body == NULL ||
         !make_http_request(request, wire_request, sizeof(wire_request),
             &request_length)) {
-        return OPENRFS_HTTPS_ARGUMENT;
+        return RSD_HTTPS_ARGUMENT;
     }
-    tls_config = (struct openrfs_tls_client_config){
+    tls_config = (struct rsd_tls_client_config){
         request->hostname, request->port, 0U, request->trust_anchors,
         request->trust_anchor_count, request->deadline_ns};
-    tls_status = openrfs_tls_client_open_diagnostic(&tls_config, &diagnostics,
+    tls_status = rsd_tls_client_open_diagnostic(&tls_config, &diagnostics,
         &client);
-    if (tls_status != OPENRFS_TLS_OK) {
+    if (tls_status != RSD_TLS_OK) {
         response->bearssl_error = diagnostics.bearssl_error;
         response->transport_error = diagnostics.transport_error;
         return handshake_https_status(tls_status, &diagnostics);
     }
     while (sent < request_length) {
-        const long count = openrfs_tls_client_write(client,
+        const long count = rsd_tls_client_write(client,
             wire_request + sent, request_length - sent, request->deadline_ns);
 
         if (count <= 0) {
-            status = client_io_status(client, OPENRFS_HTTPS_IO);
+            status = client_io_status(client, RSD_HTTPS_IO);
             capture_response_diagnostics(client, response);
             abort_client(client, request->deadline_ns);
             return status;
         }
         sent += (size_t)count;
     }
-    if (openrfs_tls_client_flush(client, request->deadline_ns) !=
-            OPENRFS_TLS_OK) {
-        status = client_io_status(client, OPENRFS_HTTPS_IO);
+    if (rsd_tls_client_flush(client, request->deadline_ns) !=
+            RSD_TLS_OK) {
+        status = client_io_status(client, RSD_HTTPS_IO);
         capture_response_diagnostics(client, response);
         abort_client(client, request->deadline_ns);
         return status;
     }
     while (header_length < sizeof(header) && delimiter != 4U) {
-        long count = openrfs_tls_client_read(client, &header[header_length], 1U,
+        long count = rsd_tls_client_read(client, &header[header_length], 1U,
             request->deadline_ns);
 
         if (count <= 0) {
-            status = count == 0 ? OPENRFS_HTTPS_TRUNCATED :
-                client_io_status(client, OPENRFS_HTTPS_IO);
+            status = count == 0 ? RSD_HTTPS_TRUNCATED :
+                client_io_status(client, RSD_HTTPS_IO);
             capture_response_diagnostics(client, response);
             abort_client(client, request->deadline_ns);
             return status;
@@ -1135,11 +1135,11 @@ enum openrfs_https_status openrfs_https_get_stream(
     }
     if (delimiter != 4U) {
         abort_client(client, request->deadline_ns);
-        return OPENRFS_HTTPS_HTTP_HEADERS;
+        return RSD_HTTPS_HTTP_HEADERS;
     }
     status = parse_http_headers(header, header_length,
         request->body_limit, response);
-    if (status != OPENRFS_HTTPS_OK) {
+    if (status != RSD_HTTPS_OK) {
         capture_response_diagnostics(client, response);
         abort_client(client, request->deadline_ns);
         return status;
@@ -1147,16 +1147,16 @@ enum openrfs_https_status openrfs_https_get_stream(
     while (response->body_length < response->content_length) {
         size_t remaining = response->content_length - response->body_length;
         size_t requested = remaining < sizeof(body) ? remaining : sizeof(body);
-        long count = openrfs_tls_client_read(client,
+        long count = rsd_tls_client_read(client,
             body, requested, request->deadline_ns);
 
         if (count <= 0) {
-            if (count == 0 || openrfs_tls_client_transport_error(client) ==
-                    -(long)OPENRFS_EPIPE) {
-                status = OPENRFS_HTTPS_BODY_TRUNCATED;
+            if (count == 0 || rsd_tls_client_transport_error(client) ==
+                    -(long)RSD_EPIPE) {
+                status = RSD_HTTPS_BODY_TRUNCATED;
             } else {
                 status = client_io_status(client,
-                    OPENRFS_HTTPS_BODY_TRUNCATED);
+                    RSD_HTTPS_BODY_TRUNCATED);
             }
             capture_response_diagnostics(client, response);
             abort_client(client, request->deadline_ns);
@@ -1166,22 +1166,22 @@ enum openrfs_https_status openrfs_https_get_stream(
                 (size_t)count) != count) {
             capture_response_diagnostics(client, response);
             abort_client(client, request->deadline_ns);
-            return OPENRFS_HTTPS_BODY_WRITE;
+            return RSD_HTTPS_BODY_WRITE;
         }
         response->body_length += (size_t)count;
     }
     {
         unsigned char extra;
-        const long count = openrfs_tls_client_read(client, &extra, 1U,
+        const long count = rsd_tls_client_read(client, &extra, 1U,
             request->deadline_ns);
 
         if (count > 0) {
             capture_response_diagnostics(client, response);
             abort_client(client, request->deadline_ns);
-            return OPENRFS_HTTPS_BODY_EXTRA;
+            return RSD_HTTPS_BODY_EXTRA;
         }
         if (count < 0) {
-            status = client_io_status(client, OPENRFS_HTTPS_TRUNCATED);
+            status = client_io_status(client, RSD_HTTPS_TRUNCATED);
             capture_response_diagnostics(client, response);
             abort_client(client, request->deadline_ns);
             return status;
@@ -1190,9 +1190,9 @@ enum openrfs_https_status openrfs_https_get_stream(
     tls_status = close_client(client, request->deadline_ns, &diagnostics);
     response->bearssl_error = diagnostics.bearssl_error;
     response->transport_error = diagnostics.transport_error;
-    return tls_status == OPENRFS_TLS_OK ? OPENRFS_HTTPS_OK :
+    return tls_status == RSD_TLS_OK ? RSD_HTTPS_OK :
         transport_https_status(diagnostics.transport_error,
-            OPENRFS_HTTPS_CLOSE);
+            RSD_HTTPS_CLOSE);
 }
 
 struct https_buffer_sink {
@@ -1218,32 +1218,32 @@ static long write_buffer_body(
     return (long)byte_count;
 }
 
-enum openrfs_https_status openrfs_https_get(
-    const struct openrfs_https_request *request,
-    struct openrfs_https_response *response)
+enum rsd_https_status rsd_https_get(
+    const struct rsd_https_request *request,
+    struct rsd_https_response *response)
 {
     struct https_buffer_sink sink;
-    struct openrfs_https_stream_request stream;
+    struct rsd_https_stream_request stream;
     if (response == NULL) {
-        return OPENRFS_HTTPS_ARGUMENT;
+        return RSD_HTTPS_ARGUMENT;
     }
     (void)memset(response, 0, sizeof(*response));
     if (request == NULL ||
         (request->body == NULL && request->body_capacity != 0U)) {
-        return OPENRFS_HTTPS_ARGUMENT;
+        return RSD_HTTPS_ARGUMENT;
     }
     sink = (struct https_buffer_sink){
         request->body, request->body_capacity, 0U
     };
-    stream = (struct openrfs_https_stream_request){
+    stream = (struct rsd_https_stream_request){
         request->hostname, request->port, request->reserved, request->path,
         request->trust_anchors, request->trust_anchor_count,
         request->deadline_ns, request->body_capacity, write_buffer_body, &sink
     };
-    return openrfs_https_get_stream(&stream, response);
+    return rsd_https_get_stream(&stream, response);
 }
 
-const char *openrfs_https_status_string(enum openrfs_https_status status)
+const char *rsd_https_status_string(enum rsd_https_status status)
 {
     static const char *const names[] = {
         "ok", "invalid HTTPS argument", "HTTPS allocation failed",

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # SeaBIOS VGA drivers. SeaBIOS builds one VGA BIOS per card type, and so
-# does OpenRFS: vendor/seabios/vgasrc is compiled once per card below, each
+# does RSD: vendor/seabios/vgasrc is compiled once per card below, each
 # build choosing its driver with one SEAVGA_VARIANT_* definition, and each
 # linked into its own object whose only global symbol is
 # seavga_<card>_dispatch. Every card falls back on the standard VGA code.

@@ -11,9 +11,9 @@
 #include <pthread.h>
 #include <sched.h>
 #endif
-#if defined(OPENRFS_TEST_VFS_FILES) || defined(OPENRFS_TEST_VFS_DIRECTORIES)
+#if defined(RSD_TEST_VFS_FILES) || defined(RSD_TEST_VFS_DIRECTORIES)
 #include "../src/kernel/vfs.c"
-#ifdef OPENRFS_TEST_VFS_FILES
+#ifdef RSD_TEST_VFS_FILES
 #define TEST_CAPACITY VFS_MAX_OPEN_FILES
 #define TEST_CLAIMS open_file_claims
 #define TEST_STATES open_files
@@ -26,11 +26,11 @@
 #define TEST_GENERATION next_directory_generation
 #define TEST_LABEL "VFS directory"
 #endif
-static size_t claim_test_slot(void) { return openrfs_slot_claim(TEST_CLAIMS, TEST_CAPACITY); }
+static size_t claim_test_slot(void) { return rsd_slot_claim(TEST_CLAIMS, TEST_CAPACITY); }
 static void retire_test_slot(size_t slot)
 {
     zero_bytes(&TEST_STATES[slot], sizeof(TEST_STATES[slot]));
-    openrfs_slot_release(TEST_CLAIMS, slot);
+    rsd_slot_release(TEST_CLAIMS, slot);
 }
 static uint64_t issue_generation(uint64_t *counter) { return next_generation(counter, UINT64_MAX >> 8U); }
 static uint64_t initialize_test_slot(size_t slot, size_t worker, size_t round)
@@ -63,9 +63,9 @@ static uint64_t issue_generation(uint64_t *counter) { return generation(counter)
 static uint64_t initialize_test_slot(size_t slot, size_t worker, size_t round)
 {
     assert(!ext4_handles[slot].active && ext4_handles[slot].inode == 0U);
-    openrfsfs_handle handle = 0U;
-    initialize_reserved_handle(slot, (enum openrfsfs_volume)(worker % OPENRFSFS_VOLUME_COUNT),
-        "owned", worker + 1U, round, OPENRFSFS_ACCESS_READ, false, 0U, &handle);
+    rsdfs_handle handle = 0U;
+    initialize_reserved_handle(slot, (enum rsdfs_volume)(worker % RSDFS_VOLUME_COUNT),
+        "owned", worker + 1U, round, RSDFS_ACCESS_READ, false, 0U, &handle);
     return handle >> 8U;
 }
 static void check_test_slot(size_t slot, size_t worker, size_t round, uint64_t token)

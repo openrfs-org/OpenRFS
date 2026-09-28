@@ -6,18 +6,18 @@
  */
 #include <stdint.h>
 
-#include <openrfs/boot_ledger.h>
-#include <openrfs/boot_plan.h>
-#include <openrfs/console.h>
-#include <openrfs/ext4_fs.h>
-#include <openrfs/fat32_fs.h>
-#include <openrfs/native_process.h>
-#include <openrfs/package_platform_trust.h>
-#include <openrfs/package_service.h>
-#include <openrfs/package_upload.h>
-#include <openrfs/shell.h>
-#include <openrfs/test.h>
-#include <openrfs/ui.h>
+#include <rsd/boot_ledger.h>
+#include <rsd/boot_plan.h>
+#include <rsd/console.h>
+#include <rsd/ext4_fs.h>
+#include <rsd/fat32_fs.h>
+#include <rsd/native_process.h>
+#include <rsd/package_platform_trust.h>
+#include <rsd/package_service.h>
+#include <rsd/package_upload.h>
+#include <rsd/shell.h>
+#include <rsd/test.h>
+#include <rsd/ui.h>
 
 _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information);
 
@@ -40,12 +40,12 @@ static void initialize_package_trust(void)
 
 static void recover_package_state(void)
 {
-    enum openrfsfs_status filesystem_status = openrfsfs_mount(OPENRFSFS_VOLUME_DATA);
+    enum rsdfs_status filesystem_status = rsdfs_mount(RSDFS_VOLUME_DATA);
 
-    if (filesystem_status != OPENRFSFS_STATUS_OK &&
-        filesystem_status != OPENRFSFS_STATUS_ALREADY_MOUNTED) {
-        console_write("OpenRFS: package recovery unavailable: ");
-        console_write(openrfsfs_status_string(filesystem_status));
+    if (filesystem_status != RSDFS_STATUS_OK &&
+        filesystem_status != RSDFS_STATUS_ALREADY_MOUNTED) {
+        console_write("RSD: package recovery unavailable: ");
+        console_write(rsdfs_status_string(filesystem_status));
         console_putc('\n');
         return;
     }
@@ -53,20 +53,20 @@ static void recover_package_state(void)
     enum package_service_status status = package_service_recover(&report);
 
     if (status == PACKAGE_SERVICE_STATUS_ABSENT) {
-        console_write("OpenRFS: package transaction state absent\n");
+        console_write("RSD: package transaction state absent\n");
         return;
     }
     if (status != PACKAGE_SERVICE_STATUS_OK) {
-        console_write("OpenRFS: package recovery refused: ");
+        console_write("RSD: package recovery refused: ");
         console_write(package_service_status_string(status));
         console_write("; state ");
         console_write(package_state_status_string(report.state_status));
         console_write("; filesystem ");
-        console_write(openrfsfs_status_string(report.filesystem_status));
+        console_write(rsdfs_status_string(report.filesystem_status));
         console_putc('\n');
         console_panic("unsafe package transaction state");
     }
-    console_write("OpenRFS: package generation ");
+    console_write("RSD: package generation ");
     console_write_u64(report.generation);
     console_write(" verified files ");
     console_write_u64(report.files_verified);
@@ -79,10 +79,10 @@ static void initialize_package_uploads(void)
     enum package_upload_status status = package_upload_initialize(&report);
 
     if (status != PACKAGE_UPLOAD_STATUS_OK) {
-        console_write("OpenRFS: package upload service unavailable: ");
+        console_write("RSD: package upload service unavailable: ");
         console_write(package_upload_status_string(status));
         console_write("; filesystem ");
-        console_write(openrfsfs_status_string(report.filesystem_status));
+        console_write(rsdfs_status_string(report.filesystem_status));
         console_putc('\n');
     }
 }
@@ -92,7 +92,7 @@ static void report_ledger_refusal(
     const struct boot_context *context
 )
 {
-    console_write("OpenRFS: BT11 Boot Ledger refusal: ");
+    console_write("RSD: BT11 Boot Ledger refusal: ");
     console_write(boot_ledger_status_string(ledger->status));
 
     if (ledger->refusal_stage != BOOT_STAGE_INVALID) {
@@ -155,11 +155,11 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
     }
 
     boot_ledger_publish(&installed_ledger);
-    console_write("OpenRFS: BT11 Boot Ledger installed proof passed\n");
-    if (!openrfsfs_self_test(&filesystem_tests)) {
+    console_write("RSD: BT11 Boot Ledger installed proof passed\n");
+    if (!rsdfs_self_test(&filesystem_tests)) {
         console_panic("FAT32 store self-test failed");
     }
-    console_write("OpenRFS: FAT32 store controls ");
+    console_write("RSD: FAT32 store controls ");
     console_write_u64(filesystem_tests);
     console_write("/6 passed\n");
     if (installed_context.test_scenario == KERNEL_TEST_EXT4_RECOVERY &&
@@ -168,7 +168,7 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
             installed_context.information.command_line_length)) {
         console_panic("invalid ext4 power-cut configuration");
     }
-    openrfsfs_initialize();
+    rsdfs_initialize();
     if (installed_context.test_scenario == KERNEL_TEST_NORMAL) {
         recover_package_state();
         initialize_package_uploads();
@@ -176,11 +176,11 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
     if (!native_process_self_test(&native_process_tests)) {
         console_panic("native userspace foundation self-test failed");
     }
-    console_write("OpenRFS: native userspace controls ");
+    console_write("RSD: native userspace controls ");
     console_write_u64(native_process_tests);
     console_write(" passed\n");
     if (ui_is_active() && ui_flush() != UI_STATUS_OK) {
-        console_write("OpenRFS: ledger status redraw failed\n");
+        console_write("RSD: ledger status redraw failed\n");
     }
 
     if (installed_context.test_scenario == KERNEL_TEST_NORMAL) {
@@ -191,8 +191,8 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
         kernel_test_complete_boot_ledger(&installed_context);
     }
 
-    if (installed_context.test_scenario == KERNEL_TEST_OPENRFS_PROOF) {
-        kernel_test_complete_openrfs_proof();
+    if (installed_context.test_scenario == KERNEL_TEST_RSD_PROOF) {
+        kernel_test_complete_rsd_proof();
     }
 
     if (installed_context.test_scenario == KERNEL_TEST_DEVICE_SUBSTRATE) {
@@ -223,23 +223,23 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
         kernel_test_complete_linux_uname();
     }
 
-    if (installed_context.test_scenario == KERNEL_TEST_OPENRFS_PROOF_USERLAND) {
-        kernel_test_complete_openrfs_proof_userland();
+    if (installed_context.test_scenario == KERNEL_TEST_RSD_PROOF_USERLAND) {
+        kernel_test_complete_rsd_proof_userland();
     }
 
     if (installed_context.test_scenario ==
-            KERNEL_TEST_OPENRFS_PROOF_USERLAND_ABSENT) {
-        kernel_test_complete_openrfs_proof_userland_absent();
+            KERNEL_TEST_RSD_PROOF_USERLAND_ABSENT) {
+        kernel_test_complete_rsd_proof_userland_absent();
     }
 
     if (installed_context.test_scenario ==
-            KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE) {
-        kernel_test_complete_openrfs_proof_userland_interactive();
+            KERNEL_TEST_RSD_PROOF_USERLAND_INTERACTIVE) {
+        kernel_test_complete_rsd_proof_userland_interactive();
     }
 
     if (installed_context.test_scenario ==
-            KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE_ABSENT) {
-        kernel_test_complete_openrfs_proof_userland_interactive_absent();
+            KERNEL_TEST_RSD_PROOF_USERLAND_INTERACTIVE_ABSENT) {
+        kernel_test_complete_rsd_proof_userland_interactive_absent();
     }
 
     if (installed_context.test_scenario >= KERNEL_TEST_FAT32_SYSTEM &&
@@ -315,8 +315,8 @@ _Noreturn void kernel_main(uint32_t magic, uintptr_t boot_information)
         kernel_test_complete_native_https();
     }
 
-    if (installed_context.test_scenario == KERNEL_TEST_NATIVE_OPENRFS) {
-        kernel_test_complete_native_openrfs();
+    if (installed_context.test_scenario == KERNEL_TEST_NATIVE_RSD) {
+        kernel_test_complete_native_rsd();
     }
 
     if (installed_context.test_scenario == KERNEL_TEST_EXT4_RECOVERY) {

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * OpenRFS environment for the vendored SeaBIOS drivers: basic types.
+ * RSD environment for the vendored SeaBIOS drivers: basic types.
  *
  * SeaBIOS's own types.h (not vendored) targets a 32-bit flat or 16-bit
  * segmented build and defines size_t as u32. Here the drivers are compiled
@@ -9,8 +9,8 @@
  * below 4 GiB and identity-mapped, which is what their u32 casts of
  * pointers assume.
  */
-#ifndef OPENRFS_SEABIOS_TYPES_H
-#define OPENRFS_SEABIOS_TYPES_H
+#ifndef RSD_SEABIOS_TYPES_H
+#define RSD_SEABIOS_TYPES_H
 
 #ifndef MODE16
 #define MODE16 0
@@ -28,7 +28,7 @@ typedef signed int s32;
 typedef unsigned long long u64;
 typedef signed long long s64;
 typedef __SIZE_TYPE__ size_t;
-typedef __UINTPTR_TYPE__ openrfs_seabios_uintptr;
+typedef __UINTPTR_TYPE__ rsd_seabios_uintptr;
 
 union u64_u32_u {
     struct { u32 lo, hi; };

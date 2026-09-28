@@ -8,8 +8,8 @@
  * virtual addresses are equal for every buffer a driver can obtain, because
  * all of them come from the identity-mapped DMA arena.
  */
-#ifndef OPENRFS_IPXE_IO_H
-#define OPENRFS_IPXE_IO_H
+#ifndef RSD_IPXE_IO_H
+#define RSD_IPXE_IO_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -60,23 +60,23 @@ bus_to_phys(unsigned long bus_address)
 void *ioremap(unsigned long bus_address, size_t length);
 void iounmap(volatile const void *io_address);
 
-#define OPENRFS_IPXE_MMIO(type, address) \
+#define RSD_IPXE_MMIO(type, address) \
     ((volatile type *)(uintptr_t)(address))
 
-#define readb(address) (*OPENRFS_IPXE_MMIO(uint8_t, address))
-#define readw(address) (*OPENRFS_IPXE_MMIO(uint16_t, address))
-#define readl(address) (*OPENRFS_IPXE_MMIO(uint32_t, address))
-#define readq(address) (*OPENRFS_IPXE_MMIO(uint64_t, address))
+#define readb(address) (*RSD_IPXE_MMIO(uint8_t, address))
+#define readw(address) (*RSD_IPXE_MMIO(uint16_t, address))
+#define readl(address) (*RSD_IPXE_MMIO(uint32_t, address))
+#define readq(address) (*RSD_IPXE_MMIO(uint64_t, address))
 #define writeb(data, address) \
-    (*OPENRFS_IPXE_MMIO(uint8_t, address) = (uint8_t)(data))
+    (*RSD_IPXE_MMIO(uint8_t, address) = (uint8_t)(data))
 #define writew(data, address) \
-    (*OPENRFS_IPXE_MMIO(uint16_t, address) = (uint16_t)(data))
+    (*RSD_IPXE_MMIO(uint16_t, address) = (uint16_t)(data))
 #define writel(data, address) \
-    (*OPENRFS_IPXE_MMIO(uint32_t, address) = (uint32_t)(data))
+    (*RSD_IPXE_MMIO(uint32_t, address) = (uint32_t)(data))
 #define writeq(data, address) \
-    (*OPENRFS_IPXE_MMIO(uint64_t, address) = (uint64_t)(data))
+    (*RSD_IPXE_MMIO(uint64_t, address) = (uint64_t)(data))
 
-static inline __attribute__((always_inline)) uint8_t openrfs_ipxe_inb(
+static inline __attribute__((always_inline)) uint8_t rsd_ipxe_inb(
     uint16_t port)
 {
     uint8_t value;
@@ -85,7 +85,7 @@ static inline __attribute__((always_inline)) uint8_t openrfs_ipxe_inb(
     return value;
 }
 
-static inline __attribute__((always_inline)) uint16_t openrfs_ipxe_inw(
+static inline __attribute__((always_inline)) uint16_t rsd_ipxe_inw(
     uint16_t port)
 {
     uint16_t value;
@@ -94,7 +94,7 @@ static inline __attribute__((always_inline)) uint16_t openrfs_ipxe_inw(
     return value;
 }
 
-static inline __attribute__((always_inline)) uint32_t openrfs_ipxe_inl(
+static inline __attribute__((always_inline)) uint32_t rsd_ipxe_inl(
     uint16_t port)
 {
     uint32_t value;
@@ -103,71 +103,71 @@ static inline __attribute__((always_inline)) uint32_t openrfs_ipxe_inl(
     return value;
 }
 
-static inline __attribute__((always_inline)) void openrfs_ipxe_outb(
+static inline __attribute__((always_inline)) void rsd_ipxe_outb(
     uint8_t value, uint16_t port)
 {
     __asm__ __volatile__ ("outb %b0, %w1" : : "a"(value), "Nd"(port));
 }
 
-static inline __attribute__((always_inline)) void openrfs_ipxe_outw(
+static inline __attribute__((always_inline)) void rsd_ipxe_outw(
     uint16_t value, uint16_t port)
 {
     __asm__ __volatile__ ("outw %w0, %w1" : : "a"(value), "Nd"(port));
 }
 
-static inline __attribute__((always_inline)) void openrfs_ipxe_outl(
+static inline __attribute__((always_inline)) void rsd_ipxe_outl(
     uint32_t value, uint16_t port)
 {
     __asm__ __volatile__ ("outl %k0, %w1" : : "a"(value), "Nd"(port));
 }
 
-#define OPENRFS_IPXE_PORT(address) ((uint16_t)(uintptr_t)(address))
-#define inb(address) openrfs_ipxe_inb(OPENRFS_IPXE_PORT(address))
-#define inw(address) openrfs_ipxe_inw(OPENRFS_IPXE_PORT(address))
-#define inl(address) openrfs_ipxe_inl(OPENRFS_IPXE_PORT(address))
+#define RSD_IPXE_PORT(address) ((uint16_t)(uintptr_t)(address))
+#define inb(address) rsd_ipxe_inb(RSD_IPXE_PORT(address))
+#define inw(address) rsd_ipxe_inw(RSD_IPXE_PORT(address))
+#define inl(address) rsd_ipxe_inl(RSD_IPXE_PORT(address))
 #define outb(data, address) \
-    openrfs_ipxe_outb((uint8_t)(data), OPENRFS_IPXE_PORT(address))
+    rsd_ipxe_outb((uint8_t)(data), RSD_IPXE_PORT(address))
 #define outw(data, address) \
-    openrfs_ipxe_outw((uint16_t)(data), OPENRFS_IPXE_PORT(address))
+    rsd_ipxe_outw((uint16_t)(data), RSD_IPXE_PORT(address))
 #define outl(data, address) \
-    openrfs_ipxe_outl((uint32_t)(data), OPENRFS_IPXE_PORT(address))
+    rsd_ipxe_outl((uint32_t)(data), RSD_IPXE_PORT(address))
 
-static inline __attribute__((always_inline)) void openrfs_ipxe_insb(
+static inline __attribute__((always_inline)) void rsd_ipxe_insb(
     uint16_t port, void *data, unsigned int count)
 {
     __asm__ __volatile__ ("rep insb" : "+D"(data), "+c"(count)
         : "d"(port) : "memory");
 }
 
-static inline __attribute__((always_inline)) void openrfs_ipxe_insw(
+static inline __attribute__((always_inline)) void rsd_ipxe_insw(
     uint16_t port, void *data, unsigned int count)
 {
     __asm__ __volatile__ ("rep insw" : "+D"(data), "+c"(count)
         : "d"(port) : "memory");
 }
 
-static inline __attribute__((always_inline)) void openrfs_ipxe_insl(
+static inline __attribute__((always_inline)) void rsd_ipxe_insl(
     uint16_t port, void *data, unsigned int count)
 {
     __asm__ __volatile__ ("rep insl" : "+D"(data), "+c"(count)
         : "d"(port) : "memory");
 }
 
-static inline __attribute__((always_inline)) void openrfs_ipxe_outsb(
+static inline __attribute__((always_inline)) void rsd_ipxe_outsb(
     uint16_t port, const void *data, unsigned int count)
 {
     __asm__ __volatile__ ("rep outsb" : "+S"(data), "+c"(count)
         : "d"(port) : "memory");
 }
 
-static inline __attribute__((always_inline)) void openrfs_ipxe_outsw(
+static inline __attribute__((always_inline)) void rsd_ipxe_outsw(
     uint16_t port, const void *data, unsigned int count)
 {
     __asm__ __volatile__ ("rep outsw" : "+S"(data), "+c"(count)
         : "d"(port) : "memory");
 }
 
-static inline __attribute__((always_inline)) void openrfs_ipxe_outsl(
+static inline __attribute__((always_inline)) void rsd_ipxe_outsl(
     uint16_t port, const void *data, unsigned int count)
 {
     __asm__ __volatile__ ("rep outsl" : "+S"(data), "+c"(count)
@@ -175,17 +175,17 @@ static inline __attribute__((always_inline)) void openrfs_ipxe_outsl(
 }
 
 #define insb(address, data, count) \
-    openrfs_ipxe_insb(OPENRFS_IPXE_PORT(address), (data), (count))
+    rsd_ipxe_insb(RSD_IPXE_PORT(address), (data), (count))
 #define insw(address, data, count) \
-    openrfs_ipxe_insw(OPENRFS_IPXE_PORT(address), (data), (count))
+    rsd_ipxe_insw(RSD_IPXE_PORT(address), (data), (count))
 #define insl(address, data, count) \
-    openrfs_ipxe_insl(OPENRFS_IPXE_PORT(address), (data), (count))
+    rsd_ipxe_insl(RSD_IPXE_PORT(address), (data), (count))
 #define outsb(address, data, count) \
-    openrfs_ipxe_outsb(OPENRFS_IPXE_PORT(address), (data), (count))
+    rsd_ipxe_outsb(RSD_IPXE_PORT(address), (data), (count))
 #define outsw(address, data, count) \
-    openrfs_ipxe_outsw(OPENRFS_IPXE_PORT(address), (data), (count))
+    rsd_ipxe_outsw(RSD_IPXE_PORT(address), (data), (count))
 #define outsl(address, data, count) \
-    openrfs_ipxe_outsl(OPENRFS_IPXE_PORT(address), (data), (count))
+    rsd_ipxe_outsl(RSD_IPXE_PORT(address), (data), (count))
 
 static inline __attribute__((always_inline)) void iodelay(void)
 {

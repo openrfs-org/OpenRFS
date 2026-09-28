@@ -3,9 +3,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/boot.h>
-#include <openrfs/framebuffer.h>
-#include <openrfs/paging.h>
+#include <rsd/boot.h>
+#include <rsd/framebuffer.h>
+#include <rsd/paging.h>
 
 /*
  * Every pixel on the screen, addressable, and nothing above that.

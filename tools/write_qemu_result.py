@@ -31,7 +31,7 @@ def main() -> int:
         and begin == args.expected_begins
         and passed == 1
         and "ST FAIL" not in transcript
-        and "OpenRFS PANIC" not in transcript
+        and "RSD PANIC" not in transcript
     )
     result = {
         "scenario": args.scenario,

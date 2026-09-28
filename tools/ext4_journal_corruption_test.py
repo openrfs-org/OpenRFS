@@ -75,7 +75,7 @@ def run(args):
     recovery._build_iso(kernel, cut_iso, args.grub_mkrescue, args.grub_module_dir, 7)
     status, trace = recovery._run_qemu(args.qemu, args.accel, cut_iso, seed, output / "commit.log", args.timeout)
     if status != recovery.POWER_CUT_EXIT_STATUS or trace.count("ST EXT4 POWER CUT 7 commit\n") != 1 or \
-            "ST FAIL" in trace or recovery.PASS_MARKER in trace or "OpenRFS PANIC" in trace:
+            "ST FAIL" in trace or recovery.PASS_MARKER in trace or "RSD PANIC" in trace:
         raise RuntimeError("journal seed did not stop exactly after its commit flush")
     data = seed.read_bytes()
     if not ext4_image.parse_superblock(data)["needs_recovery"]:
@@ -93,7 +93,7 @@ def run(args):
     cuts.verify_exit(status, trace, "ST EXT4 RECOVERY marker cleared transaction committed")
     recovery._verify_guest_result(intact, tools, output)
     report = ext4_image.inspect_image(intact, tools=tools)
-    expected = (b"OpenRFS deterministic ext4 fixture\n").ljust(4096, b"\0") + b"X"
+    expected = (b"RSD deterministic ext4 fixture\n").ljust(4096, b"\0") + b"X"
     report["linux_kernel_read"] = ext4_kernel_read.verify_files(intact, output / "intact-linux",
         {"system/README.TXT": {"bytes": len(expected), "sha256": hashlib.sha256(expected).hexdigest()}})
     report["image_sha256"] = ext4_kernel_read.digest(intact)

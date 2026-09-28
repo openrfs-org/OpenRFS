@@ -28,9 +28,9 @@
 #ifndef SDL_platform_h_
 #define SDL_platform_h_
 
-#if defined(__openrfs__) || defined(__OPENRFS__)
-#undef __OPENRFS__
-#define __OPENRFS__ 1
+#if defined(__rsd__) || defined(__RSD__)
+#undef __RSD__
+#define __RSD__ 1
 #endif
 
 #if defined(_AIX)

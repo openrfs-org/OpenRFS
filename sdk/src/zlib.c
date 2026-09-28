@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#include <openrfs/zlib.h>
+#include <rsd/zlib.h>
 
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-static voidpf openrfs_zlib_allocate(voidpf opaque, uInt items, uInt size)
+static voidpf rsd_zlib_allocate(voidpf opaque, uInt items, uInt size)
 {
     size_t bytes;
 
@@ -17,19 +17,19 @@ static voidpf openrfs_zlib_allocate(voidpf opaque, uInt items, uInt size)
     return calloc(bytes == 0U ? 1U : bytes, 1U);
 }
 
-static void openrfs_zlib_free(voidpf opaque, voidpf address)
+static void rsd_zlib_free(voidpf opaque, voidpf address)
 {
     (void)opaque;
     free(address);
 }
 
-int openrfs_zlib_stream_prepare(z_streamp stream)
+int rsd_zlib_stream_prepare(z_streamp stream)
 {
     if (stream == Z_NULL) {
         return -1;
     }
     (void)memset(stream, 0, sizeof(*stream));
-    stream->zalloc = openrfs_zlib_allocate;
-    stream->zfree = openrfs_zlib_free;
+    stream->zalloc = rsd_zlib_allocate;
+    stream->zfree = rsd_zlib_free;
     return 0;
 }

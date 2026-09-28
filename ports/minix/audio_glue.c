@@ -32,7 +32,7 @@
 #include <stdarg.h>
 #include <stdbool.h>
 
-#include <openrfs/minix_host.h>
+#include <rsd/minix_host.h>
 
 #include <machine/pci.h>
 #include <minix/drivers.h>

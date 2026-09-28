@@ -3,8 +3,8 @@
  * Physically contiguous allocation for iPXE drivers (include/ipxe/malloc.h).
  * Served from the layer's DMA arena; see ports/ipxe/ipxe_glue.c.
  */
-#ifndef OPENRFS_IPXE_MALLOC_H
-#define OPENRFS_IPXE_MALLOC_H
+#ifndef RSD_IPXE_MALLOC_H
+#define RSD_IPXE_MALLOC_H
 
 #include <stddef.h>
 #include <stdlib.h>

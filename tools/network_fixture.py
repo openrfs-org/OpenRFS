@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Deterministic, offline Ethernet peer for OpenRFS's QEMU socket backend."""
+"""Deterministic, offline Ethernet peer for RSD's QEMU socket backend."""
 
 from __future__ import annotations
 
@@ -23,15 +23,15 @@ GATEWAY_IP = ipaddress.IPv4Address("10.0.2.2").packed
 DNS_IP = ipaddress.IPv4Address("10.0.2.3").packed
 HTTP_IP = ipaddress.IPv4Address("10.0.2.20").packed
 BROADCAST_IP = b"\xff" * 4
-WELCOME = b"hello from the OpenRFS network\n"
+WELCOME = b"hello from the RSD network\n"
 
-# OpenRFS announces a port it is listening on, or one it deliberately is not,
+# RSD announces a port it is listening on, or one it deliberately is not,
 # over UDP; this peer then opens a TCP connection *to* the guest. The guest is
 # the server in those two scenarios, which is the only way to exercise a
 # passive open from outside.
 KNOCK_PORT = 4243
 KNOCK_MAGIC = b"ORF1"
-LISTEN_REQUEST = b"OPENRFS LISTEN\n"
+LISTEN_REQUEST = b"RSD LISTEN\n"
 REFUSAL_NOTICE = b"REFUSED"
 CLIENT_PORT = 50100
 CLIENT_ISN = 0x71000000
@@ -383,7 +383,7 @@ class Fixture:
                 answer = identifier + struct.pack("!HHHHH", 0x8180, 1, 1, 0, 0)
                 answer += question + bytes((0xC0, owner_offset)) + address[2:]
             elif name == b"unrelated.test":
-                wrong = dns_wire_name(b"openrfs.test") + b"\x00\x01\x00\x01"
+                wrong = dns_wire_name(b"rsd.test") + b"\x00\x01\x00\x01"
                 answer = identifier + struct.pack("!HHHHH", 0x8180, 1, 1, 0, 0)
                 answer += wrong + address
             elif name == b"wrong-source.test":
@@ -422,12 +422,12 @@ class Fixture:
             datagram = udp(DNS_IP, source_ip, 53, source_port, answer)
             self.send_ipv4(GUEST_MAC, DNS_IP, source_ip, 17, datagram)
             return
-        if self.mode == "dns-nxdomain" or name != b"openrfs.test":
+        if self.mode == "dns-nxdomain" or name != b"rsd.test":
             flags, answers, suffix = 0x8183, 0, b""
         elif self.mode == "dns-truncated":
             flags, answers, suffix = 0x8380, 0, b""
         elif self.mode == "dns-cname":
-            alias = dns_wire_name(b"alias.openrfs.test")
+            alias = dns_wire_name(b"alias.rsd.test")
             cname = (b"\xc0\x0c\x00\x05\x00\x01\x00\x00\x00\x3c" +
                      struct.pack("!H", len(alias)) + alias)
             address = (alias + b"\x00\x01\x00\x01\x00\x00\x00\x3c"
@@ -460,9 +460,9 @@ class Fixture:
         if self.mode == "http-malformed":
             return b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nContent-Length: 3\r\n\r\nno"
         if self.mode == "http-redirect-loop":
-            return b"HTTP/1.1 302 Found\r\nLocation: http://openrfs.test/loop\r\nContent-Length: 0\r\n\r\n"
+            return b"HTTP/1.1 302 Found\r\nLocation: http://rsd.test/loop\r\nContent-Length: 0\r\n\r\n"
         if self.mode == "http-redirect" and b"GET /start " in request:
-            return b"HTTP/1.1 302 Found\r\nLocation: http://openrfs.test/welcome.txt\r\nContent-Length: 0\r\n\r\n"
+            return b"HTTP/1.1 302 Found\r\nLocation: http://rsd.test/welcome.txt\r\nContent-Length: 0\r\n\r\n"
         return (b"HTTP/1.1 200 OK\r\nContent-Length: " +
                 str(len(WELCOME)).encode() + b"\r\nConnection: close\r\n\r\n" + WELCOME)
 
@@ -665,7 +665,7 @@ class Fixture:
 
 
 def self_test() -> int:
-    sample = udp(GATEWAY_IP, GUEST_IP, 67, 68, b"openrfs")
+    sample = udp(GATEWAY_IP, GUEST_IP, 67, 68, b"rsd")
     pseudo = GATEWAY_IP + GUEST_IP + struct.pack("!BBH", 0, 17, len(sample))
     assert checksum(pseudo + sample) == 0
     segment = tcp(HTTP_IP, GUEST_IP, 80, 49152, 1, 2, 0x12,
@@ -677,9 +677,9 @@ def self_test() -> int:
     assert len(arp_reply(GUEST_MAC, GUEST_IP, GATEWAY_IP)) == 42
     knock = KNOCK_MAGIC + struct.pack("!H", 7777)
     assert len(knock) == 6 and struct.unpack_from("!H", knock, 4)[0] == 7777
-    alias = dns_wire_name(b"alias.openrfs.test")
+    alias = dns_wire_name(b"alias.rsd.test")
     question = b"\x00" * 12 + alias + b"\x00\x01\x00\x01"
-    assert dns_question(question) == (b"alias.openrfs.test", len(question))
+    assert dns_question(question) == (b"alias.rsd.test", len(question))
     try:
         dns_wire_name(b".".join((b"a" * 63,) * 4))
     except ValueError:

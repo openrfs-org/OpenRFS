@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * OpenRFS environment for the vendored SeaBIOS drivers: processor and I/O
+ * RSD environment for the vendored SeaBIOS drivers: processor and I/O
  * access. The same operations SeaBIOS's x86.h provides, written for x86-64
  * (64-bit flags, no segment or GDT helpers, which no vendored driver uses).
  */
-#ifndef OPENRFS_SEABIOS_X86_H
-#define OPENRFS_SEABIOS_X86_H
+#ifndef RSD_SEABIOS_X86_H
+#define RSD_SEABIOS_X86_H
 
 #include "types.h"
 

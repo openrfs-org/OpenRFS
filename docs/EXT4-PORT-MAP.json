@@ -91,19 +91,19 @@
     },
     {
       "source": "include/phipia/abi/base.h",
-      "target": "include/openrfs/abi/base.h",
+      "target": "include/rsd/abi/base.h",
       "three_way_conflicts_resolved": 0,
       "resolution": "preserve current main identity and UI; port filesystem semantics"
     },
     {
       "source": "include/phipia/abi/storage.h",
-      "target": "include/openrfs/abi/storage.h",
+      "target": "include/rsd/abi/storage.h",
       "three_way_conflicts_resolved": 0,
       "resolution": "preserve current main identity and UI; port filesystem semantics"
     },
     {
       "source": "include/phipia/audio.h",
-      "target": "include/openrfs/audio.h",
+      "target": "include/rsd/audio.h",
       "three_way_conflicts_resolved": 0,
       "resolution": "preserve current main identity and UI; port filesystem semantics"
     },
@@ -113,55 +113,55 @@
     },
     {
       "source": "include/phipia/ext4_fs.h",
-      "target": "include/openrfs/ext4_fs.h",
+      "target": "include/rsd/ext4_fs.h",
       "three_way_conflicts_resolved": 0,
       "resolution": "preserve current main identity and UI; port filesystem semantics"
     },
     {
       "source": "include/phipia/fat32_fs.h",
-      "target": "include/openrfs/fat32_fs.h",
+      "target": "include/rsd/fat32_fs.h",
       "three_way_conflicts_resolved": 0,
       "resolution": "preserve current main identity and UI; port filesystem semantics"
     },
     {
       "source": "include/phipia/keyboard.h",
-      "target": "include/openrfs/keyboard.h",
+      "target": "include/rsd/keyboard.h",
       "three_way_conflicts_resolved": 0,
       "resolution": "preserve current main identity and UI; port filesystem semantics"
     },
     {
       "source": "include/phipia/msix.h",
-      "target": "include/openrfs/msix.h",
+      "target": "include/rsd/msix.h",
       "three_way_conflicts_resolved": 0,
       "resolution": "preserve current main identity and UI; port filesystem semantics"
     },
     {
       "source": "include/phipia/native_handle.h",
-      "target": "include/openrfs/native_handle.h",
+      "target": "include/rsd/native_handle.h",
       "three_way_conflicts_resolved": 0,
       "resolution": "preserve current main identity and UI; port filesystem semantics"
     },
     {
       "source": "include/phipia/native_process.h",
-      "target": "include/openrfs/native_process.h",
+      "target": "include/rsd/native_process.h",
       "three_way_conflicts_resolved": 0,
       "resolution": "preserve current main identity and UI; port filesystem semantics"
     },
     {
       "source": "include/phipia/native_teardown_diagnostics.h",
-      "target": "include/openrfs/native_teardown_diagnostics.h",
+      "target": "include/rsd/native_teardown_diagnostics.h",
       "three_way_conflicts_resolved": 0,
       "resolution": "preserve current main identity and UI; port filesystem semantics"
     },
     {
       "source": "include/phipia/package_upload.h",
-      "target": "include/openrfs/package_upload.h",
+      "target": "include/rsd/package_upload.h",
       "three_way_conflicts_resolved": 0,
       "resolution": "preserve current main identity and UI; port filesystem semantics"
     },
     {
       "source": "include/phipia/slot_claim.h",
-      "target": "include/openrfs/slot_claim.h",
+      "target": "include/rsd/slot_claim.h",
       "three_way_conflicts_resolved": 0,
       "resolution": "preserve current main identity and UI; port filesystem semantics"
     },
@@ -171,7 +171,7 @@
     },
     {
       "source": "include/phipia/vfs_backend.h",
-      "target": "include/openrfs/vfs_backend.h",
+      "target": "include/rsd/vfs_backend.h",
       "three_way_conflicts_resolved": 0,
       "resolution": "preserve current main identity and UI; port filesystem semantics"
     },
@@ -195,7 +195,7 @@
     },
     {
       "source": "sdk/include/phipia/runtime.h",
-      "target": "sdk/include/openrfs/runtime.h",
+      "target": "sdk/include/rsd/runtime.h",
       "three_way_conflicts_resolved": 0,
       "resolution": "preserve current main identity and UI; port filesystem semantics"
     },
@@ -325,7 +325,7 @@
       "source": "src/kernel/test.c",
       "target": "src/kernel/test.c",
       "three_way_conflicts_resolved": 3,
-      "resolution": "port all filesystem probes; preserve main UI and native OpenRFS package scenarios"
+      "resolution": "port all filesystem probes; preserve main UI and native RSD package scenarios"
     },
     {
       "target": "src/kernel/ui.c",
@@ -665,7 +665,7 @@
     },
     {
       "source": "vendor/ext4plus/PHIPIA-PORT.md",
-      "target": "vendor/ext4plus/OPENRFS-PORT.md",
+      "target": "vendor/ext4plus/RSD-PORT.md",
       "three_way_conflicts_resolved": 0,
       "resolution": "preserve current main identity and UI; port filesystem semantics"
     },
@@ -806,7 +806,7 @@
       "action": "add minimal redraw-pending query required by shell wakeup; preserve main UI"
     },
     {
-      "target": "include/openrfs/ui.h",
+      "target": "include/rsd/ui.h",
       "action": "declare redraw-pending query"
     }
   ]

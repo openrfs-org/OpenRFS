@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * OpenRFS's bounded VFS object layer. The public openrfsfs_* names are retained as
+ * RSD's bounded VFS object layer. The public rsdfs_* names are retained as
  * the native ABI v1 compatibility surface, while concrete filesystem handles
  * and path rules remain behind a backend contract.
  */
@@ -8,16 +8,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/fat32_backend.h>
-#include <openrfs/fat32_fs.h>
-#include <openrfs/ext4_fs.h>
-#include <openrfs/vfs_backend.h>
-#include <openrfs/slot_claim.h>
-#include <openrfs/cpu.h>
+#include <rsd/fat32_backend.h>
+#include <rsd/fat32_fs.h>
+#include <rsd/ext4_fs.h>
+#include <rsd/vfs_backend.h>
+#include <rsd/slot_claim.h>
+#include <rsd/cpu.h>
 
 #define VFS_MAX_VNODES 128U
 #define VFS_VNODE_BUCKETS 64U
-#define VFS_MAX_OPEN_FILES OPENRFSFS_MAX_HANDLES
+#define VFS_MAX_OPEN_FILES RSDFS_MAX_HANDLES
 #define VFS_MAX_DIRECTORY_ITERATORS 32U
 #define VFS_NO_INDEX UINT16_MAX
 
@@ -25,20 +25,20 @@ struct vfs_mount_state {
     const struct vfs_backend_ops *backend;
     uint64_t generation;
     size_t references;
-    enum openrfsfs_volume volume;
+    enum rsdfs_volume volume;
     bool active;
     bool mounting;
     bool unmounting;
 };
 
 struct vfs_vnode_state {
-    struct openrfsfs_stat stat;
+    struct rsdfs_stat stat;
     uint64_t generation;
     uint64_t mount_generation;
     size_t references;
     uint16_t next_bucket;
-    enum openrfsfs_volume volume;
-    char path[OPENRFSFS_MAX_PATH];
+    enum rsdfs_volume volume;
+    char path[RSDFS_MAX_PATH];
     bool active;
 };
 
@@ -46,7 +46,7 @@ struct vfs_open_file_state {
     const struct vfs_backend_ops *backend;
     uint64_t generation;
     uint64_t vnode_generation;
-    openrfsfs_handle backend_handle;
+    rsdfs_handle backend_handle;
     uint16_t vnode_index;
     bool active;
     bool opening;
@@ -54,9 +54,9 @@ struct vfs_open_file_state {
 };
 
 struct vfs_directory_state {
-    struct openrfsfs_list_entry entries[OPENRFSFS_MAX_LIST_ENTRIES];
+    struct rsdfs_list_entry entries[RSDFS_MAX_LIST_ENTRIES];
     const struct vfs_backend_ops *backend;
-    openrfsfs_handle backend_handle;
+    rsdfs_handle backend_handle;
     uint64_t generation;
     uint64_t vnode_generation;
     size_t count;
@@ -67,7 +67,7 @@ struct vfs_directory_state {
     bool opening;
 };
 
-static struct vfs_mount_state mounts[OPENRFSFS_VOLUME_COUNT];
+static struct vfs_mount_state mounts[RSDFS_VOLUME_COUNT];
 static struct vfs_vnode_state vnodes[VFS_MAX_VNODES];
 static bool vnode_reservations[VFS_MAX_VNODES];
 static struct vfs_open_file_state open_files[VFS_MAX_OPEN_FILES];
@@ -155,7 +155,7 @@ static const struct vfs_backend_ops ext4_backend_ops = {
     .readlink = ext4_backend_readlink,
 };
 
-static const struct vfs_backend_ops *volume_backends[OPENRFSFS_VOLUME_COUNT];
+static const struct vfs_backend_ops *volume_backends[RSDFS_VOLUME_COUNT];
 
 _Static_assert(VFS_MAX_OPEN_FILES <= UINT8_MAX,
     "VFS open-file index no longer fits encoded handle");
@@ -184,9 +184,9 @@ static void copy_bytes(void *destination, const void *source, size_t length)
     }
 }
 
-static bool valid_volume(enum openrfsfs_volume volume)
+static bool valid_volume(enum rsdfs_volume volume)
 {
-    return volume >= OPENRFSFS_VOLUME_SYSTEM && volume < OPENRFSFS_VOLUME_COUNT;
+    return volume >= RSDFS_VOLUME_SYSTEM && volume < RSDFS_VOLUME_COUNT;
 }
 
 static size_t text_length(const char *text)
@@ -194,9 +194,9 @@ static size_t text_length(const char *text)
     size_t length = 0U;
 
     if (text == NULL) {
-        return OPENRFSFS_MAX_PATH;
+        return RSDFS_MAX_PATH;
     }
-    while (length < OPENRFSFS_MAX_PATH && text[length] != '\0') {
+    while (length < RSDFS_MAX_PATH && text[length] != '\0') {
         ++length;
     }
     return length;
@@ -209,7 +209,7 @@ static bool text_equal(const char *left, const char *right)
     if (left == NULL || right == NULL) {
         return false;
     }
-    while (index < OPENRFSFS_MAX_PATH && left[index] == right[index]) {
+    while (index < RSDFS_MAX_PATH && left[index] == right[index]) {
         if (left[index] == '\0') {
             return true;
         }
@@ -229,26 +229,26 @@ static uint64_t next_generation(uint64_t *counter, uint64_t maximum)
     }
 }
 
-static enum openrfsfs_status canonicalize_path(
+static enum rsdfs_status canonicalize_path(
     const char *path,
     bool case_sensitive,
     bool preserve_components,
-    char canonical[OPENRFSFS_MAX_PATH]
+    char canonical[RSDFS_MAX_PATH]
 )
 {
-    size_t component_starts[OPENRFSFS_MAX_DEPTH];
+    size_t component_starts[RSDFS_MAX_DEPTH];
     const size_t length = text_length(path);
     size_t component_count = 0U;
     size_t walked_components = 0U;
     size_t used = 0U;
     size_t index = 0U;
 
-    if (length >= OPENRFSFS_MAX_PATH) return OPENRFSFS_STATUS_NAME_TOO_LONG;
+    if (length >= RSDFS_MAX_PATH) return RSDFS_STATUS_NAME_TOO_LONG;
     if (canonical == NULL || length == 0U ||
         path[0] == '/' || path[0] == '\\') {
-        return OPENRFSFS_STATUS_PATH;
+        return RSDFS_STATUS_PATH;
     }
-    zero_bytes(canonical, OPENRFSFS_MAX_PATH);
+    zero_bytes(canonical, RSDFS_MAX_PATH);
     while (index < length) {
         size_t start = index;
         size_t component_length;
@@ -258,23 +258,23 @@ static enum openrfsfs_status canonicalize_path(
 
             if ((!preserve_components && byte > UINT8_C(0x7F)) || path[index] == '\\' ||
                 path[index] == ':') {
-                return OPENRFSFS_STATUS_PATH;
+                return RSDFS_STATUS_PATH;
             }
             ++index;
         }
         component_length = index - start;
         if (component_length == 0U) {
-            return OPENRFSFS_STATUS_PATH;
+            return RSDFS_STATUS_PATH;
         }
-        if (preserve_components && ++walked_components > OPENRFSFS_MAX_DEPTH) {
-            return OPENRFSFS_STATUS_PATH;
+        if (preserve_components && ++walked_components > RSDFS_MAX_DEPTH) {
+            return RSDFS_STATUS_PATH;
         }
         if (component_length == 1U && path[start] == '.') {
             /* A mount-relative dot is the retained current vnode. */
         } else if (component_length == 2U && path[start] == '.' &&
                 path[start + 1U] == '.') {
             if (component_count == 0U) {
-                return OPENRFSFS_STATUS_PATH;
+                return RSDFS_STATUS_PATH;
             }
             used = component_starts[--component_count];
             if (used != 0U) {
@@ -282,10 +282,10 @@ static enum openrfsfs_status canonicalize_path(
             }
             canonical[used] = '\0';
         } else {
-            if (component_count >= OPENRFSFS_MAX_DEPTH ||
+            if (component_count >= RSDFS_MAX_DEPTH ||
                 used + component_length + (used == 0U ? 0U : 1U) >=
-                    OPENRFSFS_MAX_PATH) {
-                return OPENRFSFS_STATUS_PATH;
+                    RSDFS_MAX_PATH) {
+                return RSDFS_STATUS_PATH;
             }
             if (used != 0U) {
                 canonical[used++] = '/';
@@ -304,7 +304,7 @@ static enum openrfsfs_status canonicalize_path(
         if (index < length) {
             ++index;
             if (index == length) {
-                return OPENRFSFS_STATUS_PATH;
+                return RSDFS_STATUS_PATH;
             }
         }
     }
@@ -321,10 +321,10 @@ static enum openrfsfs_status canonicalize_path(
             canonical[byte] = value;
         }
     }
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-static size_t vnode_bucket(enum openrfsfs_volume volume, const char *path,
+static size_t vnode_bucket(enum rsdfs_volume volume, const char *path,
     uint64_t object_id)
 {
     uint64_t hash = UINT64_C(1469598103934665603) ^ (uint64_t)volume;
@@ -358,7 +358,7 @@ static void vnode_metadata_release(bool restore_interrupts)
     if (restore_interrupts) cpu_interrupt_enable();
 }
 
-static bool mount_retain(enum openrfsfs_volume volume)
+static bool mount_retain(enum rsdfs_volume volume)
 {
     size_t references = __atomic_load_n(&mounts[volume].references, __ATOMIC_RELAXED);
     while (references != SIZE_MAX) {
@@ -368,22 +368,22 @@ static bool mount_retain(enum openrfsfs_volume volume)
     return false;
 }
 
-static void mount_release(enum openrfsfs_volume volume)
+static void mount_release(enum rsdfs_volume volume)
 {
     size_t references = __atomic_load_n(&mounts[volume].references, __ATOMIC_RELAXED);
     while (references != 0U && !__atomic_compare_exchange_n(&mounts[volume].references, &references,
             references - 1U, false, __ATOMIC_RELEASE, __ATOMIC_RELAXED)) { }
 }
 
-static enum openrfsfs_status mount_pin(enum openrfsfs_volume volume, const struct vfs_backend_ops **backend)
+static enum rsdfs_status mount_pin(enum rsdfs_volume volume, const struct vfs_backend_ops **backend)
 {
-    if (!valid_volume(volume) || backend == NULL) return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    if (!valid_volume(volume) || backend == NULL) return RSDFS_STATUS_INVALID_ARGUMENT;
     *backend = NULL;
     const bool restore_interrupts = vnode_metadata_acquire();
-    enum openrfsfs_status status = OPENRFSFS_STATUS_NOT_MOUNTED;
+    enum rsdfs_status status = RSDFS_STATUS_NOT_MOUNTED;
     if (mounts[volume].active && !mounts[volume].mounting && !mounts[volume].unmounting) {
-        status = mount_retain(volume) ? OPENRFSFS_STATUS_OK : OPENRFSFS_STATUS_BUSY;
-        if (status == OPENRFSFS_STATUS_OK) *backend = mounts[volume].backend;
+        status = mount_retain(volume) ? RSDFS_STATUS_OK : RSDFS_STATUS_BUSY;
+        if (status == RSDFS_STATUS_OK) *backend = mounts[volume].backend;
     }
     vnode_metadata_release(restore_interrupts);
     return status;
@@ -448,10 +448,10 @@ static void vnode_remove_from_bucket(size_t vnode_index)
     }
 }
 
-static enum openrfsfs_status vnode_retain_reserved_locked(
-    enum openrfsfs_volume volume,
+static enum rsdfs_status vnode_retain_reserved_locked(
+    enum rsdfs_volume volume,
     const char *canonical,
-    const struct openrfsfs_stat *stat,
+    const struct rsdfs_stat *stat,
     size_t *vnode_index,
     size_t reserved
 )
@@ -462,7 +462,7 @@ static enum openrfsfs_status vnode_retain_reserved_locked(
 
     if (stat == NULL || vnode_index == NULL || !valid_volume(volume) ||
         !mounts[volume].active) {
-        return OPENRFSFS_STATUS_NOT_MOUNTED;
+        return RSDFS_STATUS_NOT_MOUNTED;
     }
     bucket = vnode_bucket(volume, canonical, stat->object_id);
     current = vnode_buckets[bucket];
@@ -476,12 +476,12 @@ static enum openrfsfs_status vnode_retain_reserved_locked(
                 vnode->stat.object_id == stat->object_id) ||
              (stat->object_id == 0U && text_equal(vnode->path, canonical)))) {
             if (vnode->references == SIZE_MAX) {
-                return OPENRFSFS_STATUS_BUSY;
+                return RSDFS_STATUS_BUSY;
             }
             ++vnode->references;
             vnode->stat = *stat;
             *vnode_index = current;
-            return OPENRFSFS_STATUS_OK;
+            return RSDFS_STATUS_OK;
         }
         current = vnode->next_bucket;
     }
@@ -492,7 +492,7 @@ static enum openrfsfs_status vnode_retain_reserved_locked(
         }
     }
     if (free_index == VFS_MAX_VNODES || !mount_retain(volume)) {
-        return OPENRFSFS_STATUS_NO_HANDLES;
+        return RSDFS_STATUS_NO_HANDLES;
     }
     zero_bytes(&vnodes[free_index], sizeof(vnodes[free_index]));
     vnodes[free_index].stat = *stat;
@@ -507,20 +507,20 @@ static enum openrfsfs_status vnode_retain_reserved_locked(
     vnodes[free_index].active = true;
     vnode_buckets[bucket] = (uint16_t)free_index;
     *vnode_index = free_index;
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-static enum openrfsfs_status vnode_retain_reserved(enum openrfsfs_volume volume,
-    const char *canonical, const struct openrfsfs_stat *stat, size_t *vnode_index, size_t reserved)
+static enum rsdfs_status vnode_retain_reserved(enum rsdfs_volume volume,
+    const char *canonical, const struct rsdfs_stat *stat, size_t *vnode_index, size_t reserved)
 {
     const bool restore_interrupts = vnode_metadata_acquire();
-    const enum openrfsfs_status status = vnode_retain_reserved_locked(volume, canonical, stat, vnode_index, reserved);
+    const enum rsdfs_status status = vnode_retain_reserved_locked(volume, canonical, stat, vnode_index, reserved);
     vnode_metadata_release(restore_interrupts);
     return status;
 }
 
-static enum openrfsfs_status vnode_retain(enum openrfsfs_volume volume,
-    const char *canonical, const struct openrfsfs_stat *stat, size_t *vnode_index)
+static enum rsdfs_status vnode_retain(enum rsdfs_volume volume,
+    const char *canonical, const struct rsdfs_stat *stat, size_t *vnode_index)
 {
     return vnode_retain_reserved(volume, canonical, stat, vnode_index, VFS_MAX_VNODES);
 }
@@ -553,33 +553,33 @@ static void vnode_release(size_t vnode_index, uint64_t generation)
     vnode_metadata_release(restore_interrupts);
 }
 
-static enum openrfsfs_status resolve_path(
-    enum openrfsfs_volume volume,
+static enum rsdfs_status resolve_path(
+    enum rsdfs_volume volume,
     const char *path,
-    char canonical[OPENRFSFS_MAX_PATH],
+    char canonical[RSDFS_MAX_PATH],
     size_t *vnode_index
 )
 {
-    char partial[OPENRFSFS_MAX_PATH];
-    struct openrfsfs_stat stat;
-    enum openrfsfs_status status;
+    char partial[RSDFS_MAX_PATH];
+    struct rsdfs_stat stat;
+    enum rsdfs_status status;
     size_t length;
 
     if (!valid_volume(volume) || canonical == NULL || vnode_index == NULL) {
-        return OPENRFSFS_STATUS_NOT_MOUNTED;
+        return RSDFS_STATUS_NOT_MOUNTED;
     }
     const struct vfs_backend_ops *backend;
     status = mount_pin(volume, &backend);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    if (status != RSDFS_STATUS_OK) return status;
     status = canonicalize_path(path, backend->case_sensitive,
         backend->validates_mutation_paths, canonical);
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (status != RSDFS_STATUS_OK) {
         goto finished;
     }
     if (backend->validates_mutation_paths ||
         (canonical[0] == '.' && canonical[1] == '\0')) {
         status = backend->stat_path(volume, canonical, &stat);
-        if (status == OPENRFSFS_STATUS_OK) status = vnode_retain(volume, canonical, &stat, vnode_index);
+        if (status == RSDFS_STATUS_OK) status = vnode_retain(volume, canonical, &stat, vnode_index);
         goto finished;
     }
     zero_bytes(partial, sizeof(partial));
@@ -591,11 +591,11 @@ static enum openrfsfs_status resolve_path(
         }
         partial[index] = '\0';
         status = backend->stat_path(volume, partial, &stat);
-        if (status != OPENRFSFS_STATUS_OK) {
+        if (status != RSDFS_STATUS_OK) {
             goto finished;
         }
         if (index != length && !stat.directory) {
-            status = OPENRFSFS_STATUS_NOT_DIRECTORY;
+            status = RSDFS_STATUS_NOT_DIRECTORY;
             goto finished;
         }
         if (index != length) {
@@ -608,38 +608,38 @@ finished:
     return status;
 }
 
-static enum openrfsfs_status resolve_metadata_path(enum openrfsfs_volume volume,
-    const char *path, char canonical[OPENRFSFS_MAX_PATH])
+static enum rsdfs_status resolve_metadata_path(enum rsdfs_volume volume,
+    const char *path, char canonical[RSDFS_MAX_PATH])
 {
-    if (!valid_volume(volume)) return OPENRFSFS_STATUS_NOT_MOUNTED;
+    if (!valid_volume(volume)) return RSDFS_STATUS_NOT_MOUNTED;
     const bool restore_interrupts = vnode_metadata_acquire();
     const struct vfs_backend_ops *backend = mounts[volume].active && !mounts[volume].mounting &&
         !mounts[volume].unmounting ? mounts[volume].backend : NULL;
     vnode_metadata_release(restore_interrupts);
     return backend != NULL ? canonicalize_path(path, backend->case_sensitive,
-        backend->validates_mutation_paths, canonical) : OPENRFSFS_STATUS_NOT_MOUNTED;
+        backend->validates_mutation_paths, canonical) : RSDFS_STATUS_NOT_MOUNTED;
 }
 
-static enum openrfsfs_status resolve_parent(
-    enum openrfsfs_volume volume,
+static enum rsdfs_status resolve_parent(
+    enum rsdfs_volume volume,
     const char *path,
-    char canonical[OPENRFSFS_MAX_PATH]
+    char canonical[RSDFS_MAX_PATH]
 )
 {
-    char parent[OPENRFSFS_MAX_PATH];
-    char resolved_parent[OPENRFSFS_MAX_PATH];
+    char parent[RSDFS_MAX_PATH];
+    char resolved_parent[RSDFS_MAX_PATH];
     size_t vnode_index;
     size_t split = SIZE_MAX;
-    enum openrfsfs_status status = resolve_metadata_path(volume, path, canonical);
+    enum rsdfs_status status = resolve_metadata_path(volume, path, canonical);
 
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (status != RSDFS_STATUS_OK) {
         return status;
     }
     if (canonical[0] == '.' && canonical[1] == '\0') {
-        return OPENRFSFS_STATUS_ACCESS;
+        return RSDFS_STATUS_ACCESS;
     }
     if (mounts[volume].backend->validates_mutation_paths) {
-        return OPENRFSFS_STATUS_OK;
+        return RSDFS_STATUS_OK;
     }
     for (size_t index = 0U; canonical[index] != '\0'; ++index) {
         if (canonical[index] == '/') {
@@ -655,22 +655,22 @@ static enum openrfsfs_status resolve_parent(
         parent[split] = '\0';
     }
     status = resolve_path(volume, parent, resolved_parent, &vnode_index);
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (status != RSDFS_STATUS_OK) {
         return status;
     }
     if (!vnode_snapshot(vnode_index).stat.directory) {
-        status = OPENRFSFS_STATUS_NOT_DIRECTORY;
+        status = RSDFS_STATUS_NOT_DIRECTORY;
     }
     vnode_release(vnode_index, vnode_snapshot(vnode_index).generation);
     return status;
 }
 
 static void install_mount(
-    enum openrfsfs_volume volume,
+    enum rsdfs_volume volume,
     const struct vfs_backend_ops *backend
 )
 {
-    struct openrfsfs_drive_info drive;
+    struct rsdfs_drive_info drive;
 
     if (backend == NULL) {
         return;
@@ -688,13 +688,13 @@ static void install_mount(
     vnode_metadata_release(restore_interrupts);
 }
 
-static openrfsfs_handle encode_handle(size_t index, uint64_t generation)
+static rsdfs_handle encode_handle(size_t index, uint64_t generation)
 {
     return generation << 8U | (uint64_t)(index + 1U);
 }
 
-static enum openrfsfs_status open_file_state(
-    openrfsfs_handle handle,
+static enum rsdfs_status open_file_state(
+    rsdfs_handle handle,
     struct vfs_open_file_state **state
 )
 {
@@ -704,29 +704,29 @@ static enum openrfsfs_status open_file_state(
 
     if (state == NULL || encoded_index == 0U ||
         encoded_index > VFS_MAX_OPEN_FILES || generation == 0U) {
-        return OPENRFSFS_STATUS_STALE_HANDLE;
+        return RSDFS_STATUS_STALE_HANDLE;
     }
     index = (size_t)(encoded_index - 1U);
     if (!open_files[index].active ||
         open_files[index].generation != generation) {
-        return OPENRFSFS_STATUS_STALE_HANDLE;
+        return RSDFS_STATUS_STALE_HANDLE;
     }
     *state = &open_files[index];
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
 /* Caller owns vnode_metadata_owned. Never export this pointer over a callback. */
-static enum openrfsfs_status checked_open_file_state(openrfsfs_handle handle,
+static enum rsdfs_status checked_open_file_state(rsdfs_handle handle,
     struct vfs_open_file_state **state)
 {
-    const enum openrfsfs_status status = open_file_state(handle, state);
-    if (status != OPENRFSFS_STATUS_OK) return status;
-    if ((*state)->vnode_index >= VFS_MAX_VNODES) return OPENRFSFS_STATUS_STALE_HANDLE;
+    const enum rsdfs_status status = open_file_state(handle, state);
+    if (status != RSDFS_STATUS_OK) return status;
+    if ((*state)->vnode_index >= VFS_MAX_VNODES) return RSDFS_STATUS_STALE_HANDLE;
     const struct vfs_vnode_state *vnode = &vnodes[(*state)->vnode_index];
     if (!vnode->active || vnode->generation != (*state)->vnode_generation ||
         !mounts[vnode->volume].active || vnode->mount_generation != mounts[vnode->volume].generation)
-        return OPENRFSFS_STATUS_STALE_HANDLE;
-    return OPENRFSFS_STATUS_OK;
+        return RSDFS_STATUS_STALE_HANDLE;
+    return RSDFS_STATUS_OK;
 }
 
 struct vfs_file_snapshot {
@@ -734,15 +734,15 @@ struct vfs_file_snapshot {
     struct vfs_vnode_state vnode;
 };
 
-static enum openrfsfs_status file_snapshot_pin(openrfsfs_handle handle,
+static enum rsdfs_status file_snapshot_pin(rsdfs_handle handle,
     struct vfs_file_snapshot *snapshot)
 {
     const bool restore_interrupts = vnode_metadata_acquire();
     struct vfs_open_file_state *state;
-    enum openrfsfs_status status = checked_open_file_state(handle, &state);
-    if (status == OPENRFSFS_STATUS_OK) {
+    enum rsdfs_status status = checked_open_file_state(handle, &state);
+    if (status == RSDFS_STATUS_OK) {
         const struct vfs_vnode_state *vnode = &vnodes[state->vnode_index];
-        if (!mount_retain(vnode->volume)) status = OPENRFSFS_STATUS_BUSY;
+        if (!mount_retain(vnode->volume)) status = RSDFS_STATUS_BUSY;
         else {
             snapshot->file = *state;
             snapshot->vnode = *vnode;
@@ -752,8 +752,8 @@ static enum openrfsfs_status file_snapshot_pin(openrfsfs_handle handle,
     return status;
 }
 
-static enum openrfsfs_status directory_state(
-    openrfsfs_directory_handle handle,
+static enum rsdfs_status directory_state(
+    rsdfs_directory_handle handle,
     struct vfs_directory_state **state
 )
 {
@@ -763,28 +763,28 @@ static enum openrfsfs_status directory_state(
 
     if (state == NULL || encoded_index == 0U ||
         encoded_index > VFS_MAX_DIRECTORY_ITERATORS || generation == 0U) {
-        return OPENRFSFS_STATUS_STALE_HANDLE;
+        return RSDFS_STATUS_STALE_HANDLE;
     }
     index = (size_t)(encoded_index - 1U);
     if (!directories[index].active ||
         directories[index].generation != generation) {
-        return OPENRFSFS_STATUS_STALE_HANDLE;
+        return RSDFS_STATUS_STALE_HANDLE;
     }
     *state = &directories[index];
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-bool openrfsfs_self_test(size_t *completed_tests)
+bool rsdfs_self_test(size_t *completed_tests)
 {
     return fat32_backend_self_test(completed_tests);
 }
 
-bool openrfsfs_resources_released(void)
+bool rsdfs_resources_released(void)
 {
     if (!vnode_resources_released()) return false;
     const bool restore_interrupts = vnode_metadata_acquire();
     bool released = true;
-    for (size_t index = 0U; index < OPENRFSFS_VOLUME_COUNT; ++index)
+    for (size_t index = 0U; index < RSDFS_VOLUME_COUNT; ++index)
         if (mounts[index].active || mounts[index].mounting || mounts[index].unmounting ||
             __atomic_load_n(&mounts[index].references, __ATOMIC_ACQUIRE) != 0U) released = false;
     for (size_t index = 0U; index < VFS_MAX_OPEN_FILES; ++index)
@@ -797,7 +797,7 @@ bool openrfsfs_resources_released(void)
     return released;
 }
 
-void openrfsfs_initialize(void)
+void rsdfs_initialize(void)
 {
     zero_bytes(mounts, sizeof(mounts));
     zero_bytes(vnodes, sizeof(vnodes));
@@ -811,11 +811,11 @@ void openrfsfs_initialize(void)
     }
     fat32_backend_initialize();
     ext4_backend_initialize();
-    for (enum openrfsfs_volume volume = OPENRFSFS_VOLUME_SYSTEM;
-         volume < OPENRFSFS_VOLUME_COUNT; ++volume) {
+    for (enum rsdfs_volume volume = RSDFS_VOLUME_SYSTEM;
+         volume < RSDFS_VOLUME_COUNT; ++volume) {
         if (fat32_backend_drive(volume).mounted) {
             volume_backends[volume] = &fat32_backend_ops;
-        } else if (ext4_backend_mount(volume) == OPENRFSFS_STATUS_OK) {
+        } else if (ext4_backend_mount(volume) == RSDFS_STATUS_OK) {
             volume_backends[volume] = &ext4_backend_ops;
         } else {
             volume_backends[volume] = &fat32_backend_ops;
@@ -824,24 +824,24 @@ void openrfsfs_initialize(void)
     }
 }
 
-enum openrfsfs_status openrfsfs_mount(enum openrfsfs_volume volume)
+enum rsdfs_status rsdfs_mount(enum rsdfs_volume volume)
 {
     const struct vfs_backend_ops *backend;
-    enum openrfsfs_status status;
+    enum rsdfs_status status;
 
     if (!valid_volume(volume)) {
-        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+        return RSDFS_STATUS_INVALID_ARGUMENT;
     }
     bool restore_interrupts = vnode_metadata_acquire();
     backend = volume_backends[volume];
-    if (mounts[volume].mounting || mounts[volume].unmounting) status = OPENRFSFS_STATUS_BUSY;
-    else if (mounts[volume].active) status = OPENRFSFS_STATUS_ALREADY_MOUNTED;
-    else if (backend == NULL) status = OPENRFSFS_STATUS_NOT_MOUNTED;
-    else { mounts[volume].mounting = true; status = OPENRFSFS_STATUS_OK; }
+    if (mounts[volume].mounting || mounts[volume].unmounting) status = RSDFS_STATUS_BUSY;
+    else if (mounts[volume].active) status = RSDFS_STATUS_ALREADY_MOUNTED;
+    else if (backend == NULL) status = RSDFS_STATUS_NOT_MOUNTED;
+    else { mounts[volume].mounting = true; status = RSDFS_STATUS_OK; }
     vnode_metadata_release(restore_interrupts);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    if (status != RSDFS_STATUS_OK) return status;
     status = backend->mount(volume);
-    if (status == OPENRFSFS_STATUS_OK) {
+    if (status == RSDFS_STATUS_OK) {
         install_mount(volume, backend);
     }
     restore_interrupts = vnode_metadata_acquire();
@@ -850,20 +850,20 @@ enum openrfsfs_status openrfsfs_mount(enum openrfsfs_volume volume)
     return status;
 }
 
-enum openrfsfs_status openrfsfs_unmount(enum openrfsfs_volume volume)
+enum rsdfs_status rsdfs_unmount(enum rsdfs_volume volume)
 {
-    enum openrfsfs_status status;
+    enum rsdfs_status status;
     const struct vfs_backend_ops *backend = NULL;
 
     if (!valid_volume(volume)) {
-        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+        return RSDFS_STATUS_INVALID_ARGUMENT;
     }
     bool restore_interrupts = vnode_metadata_acquire();
-    if (mounts[volume].mounting || mounts[volume].unmounting) status = OPENRFSFS_STATUS_BUSY;
-    else if (!mounts[volume].active) status = OPENRFSFS_STATUS_NOT_MOUNTED;
-    else if (__atomic_load_n(&mounts[volume].references, __ATOMIC_ACQUIRE) != 0U) status = OPENRFSFS_STATUS_BUSY;
-    else { backend = mounts[volume].backend; status = OPENRFSFS_STATUS_OK; }
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (mounts[volume].mounting || mounts[volume].unmounting) status = RSDFS_STATUS_BUSY;
+    else if (!mounts[volume].active) status = RSDFS_STATUS_NOT_MOUNTED;
+    else if (__atomic_load_n(&mounts[volume].references, __ATOMIC_ACQUIRE) != 0U) status = RSDFS_STATUS_BUSY;
+    else { backend = mounts[volume].backend; status = RSDFS_STATUS_OK; }
+    if (status != RSDFS_STATUS_OK) {
         vnode_metadata_release(restore_interrupts);
         return status;
     }
@@ -875,7 +875,7 @@ enum openrfsfs_status openrfsfs_unmount(enum openrfsfs_volume volume)
     vnode_metadata_release(restore_interrupts);
     status = backend->unmount(volume);
     restore_interrupts = vnode_metadata_acquire();
-    if (status == OPENRFSFS_STATUS_OK) {
+    if (status == RSDFS_STATUS_OK) {
         zero_bytes(&mounts[volume], sizeof(mounts[volume]));
     } else {
         mounts[volume].active = true;
@@ -885,19 +885,19 @@ enum openrfsfs_status openrfsfs_unmount(enum openrfsfs_volume volume)
     return status;
 }
 
-enum openrfsfs_status openrfsfs_sync(enum openrfsfs_volume volume)
+enum rsdfs_status rsdfs_sync(enum rsdfs_volume volume)
 {
     const struct vfs_backend_ops *backend;
-    enum openrfsfs_status status = mount_pin(volume, &backend);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = mount_pin(volume, &backend);
+    if (status != RSDFS_STATUS_OK) return status;
     status = backend->sync(volume);
     mount_release(volume);
     return status;
 }
 
-struct openrfsfs_drive_info openrfsfs_drive(enum openrfsfs_volume volume)
+struct rsdfs_drive_info rsdfs_drive(enum rsdfs_volume volume)
 {
-    const struct openrfsfs_drive_info absent = {0};
+    const struct rsdfs_drive_info absent = {0};
     const struct vfs_backend_ops *backend;
 
     if (!valid_volume(volume)) {
@@ -912,7 +912,7 @@ struct openrfsfs_drive_info openrfsfs_drive(enum openrfsfs_volume volume)
     return backend != NULL ? backend->drive(volume) : absent;
 }
 
-uint64_t openrfsfs_completion_count(enum openrfsfs_volume volume)
+uint64_t rsdfs_completion_count(enum rsdfs_volume volume)
 {
     const struct vfs_backend_ops *backend;
 
@@ -926,48 +926,48 @@ uint64_t openrfsfs_completion_count(enum openrfsfs_volume volume)
     return backend != NULL ? backend->completion_count(volume) : 0U;
 }
 
-enum openrfsfs_status openrfsfs_open(
-    enum openrfsfs_volume volume,
+enum rsdfs_status rsdfs_open(
+    enum rsdfs_volume volume,
     const char *path,
-    enum openrfsfs_access access,
-    openrfsfs_handle *handle
+    enum rsdfs_access access,
+    rsdfs_handle *handle
 )
 {
-    return openrfsfs_open_options(volume, path, access, 0U, 0644U, handle);
+    return rsdfs_open_options(volume, path, access, 0U, 0644U, handle);
 }
 
-enum openrfsfs_status openrfsfs_open_options(enum openrfsfs_volume volume, const char *path,
-    enum openrfsfs_access access, uint8_t flags, uint16_t mode, openrfsfs_handle *handle)
+enum rsdfs_status rsdfs_open_options(enum rsdfs_volume volume, const char *path,
+    enum rsdfs_access access, uint8_t flags, uint16_t mode, rsdfs_handle *handle)
 {
-    char canonical[OPENRFSFS_MAX_PATH];
-    openrfsfs_handle backend_handle = 0U;
+    char canonical[RSDFS_MAX_PATH];
+    rsdfs_handle backend_handle = 0U;
     size_t vnode_index = VFS_NO_INDEX;
     size_t slot = VFS_MAX_OPEN_FILES;
     size_t reserved_vnode = VFS_MAX_VNODES;
-    enum openrfsfs_status status;
+    enum rsdfs_status status;
 
     if (handle == NULL) {
-        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+        return RSDFS_STATUS_INVALID_ARGUMENT;
     }
     *handle = 0U;
-    if ((flags & ~(OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_TRUNCATE | OPENRFSFS_OPEN_EXCLUSIVE)) != 0U || (mode & ~07777U) != 0U ||
-        ((flags & OPENRFSFS_OPEN_EXCLUSIVE) != 0U && (flags & OPENRFSFS_OPEN_CREATE) == 0U) ||
-        (access != OPENRFSFS_ACCESS_READ && access != OPENRFSFS_ACCESS_WRITE && access != OPENRFSFS_ACCESS_READ_WRITE))
-        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
-    if ((flags & OPENRFSFS_OPEN_TRUNCATE) != 0U && (access & OPENRFSFS_ACCESS_WRITE) == 0U)
-        return OPENRFSFS_STATUS_ACCESS;
+    if ((flags & ~(RSDFS_OPEN_CREATE | RSDFS_OPEN_TRUNCATE | RSDFS_OPEN_EXCLUSIVE)) != 0U || (mode & ~07777U) != 0U ||
+        ((flags & RSDFS_OPEN_EXCLUSIVE) != 0U && (flags & RSDFS_OPEN_CREATE) == 0U) ||
+        (access != RSDFS_ACCESS_READ && access != RSDFS_ACCESS_WRITE && access != RSDFS_ACCESS_READ_WRITE))
+        return RSDFS_STATUS_INVALID_ARGUMENT;
+    if ((flags & RSDFS_OPEN_TRUNCATE) != 0U && (access & RSDFS_ACCESS_WRITE) == 0U)
+        return RSDFS_STATUS_ACCESS;
     const struct vfs_backend_ops *backend;
     status = mount_pin(volume, &backend);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    if (status != RSDFS_STATUS_OK) return status;
     status = resolve_metadata_path(volume, path, canonical);
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (status != RSDFS_STATUS_OK) {
         mount_release(volume);
         return status;
     }
-    slot = openrfs_slot_claim(open_file_claims, VFS_MAX_OPEN_FILES);
+    slot = rsd_slot_claim(open_file_claims, VFS_MAX_OPEN_FILES);
     if (slot == VFS_MAX_OPEN_FILES) {
         mount_release(volume);
-        return OPENRFSFS_STATUS_NO_HANDLES;
+        return RSDFS_STATUS_NO_HANDLES;
     }
     // Backend callbacks can reenter VFS, including on another volume. Reserve
     // the description before any create/truncate or open and pin this mount
@@ -981,30 +981,30 @@ enum openrfsfs_status openrfsfs_open_options(enum openrfsfs_volume volume, const
         // before the backend can commit. Other callbacks must not consume it.
         reserved_vnode = vnode_reserve();
         if (reserved_vnode == VFS_MAX_VNODES) {
-            status = OPENRFSFS_STATUS_NO_HANDLES;
+            status = RSDFS_STATUS_NO_HANDLES;
             goto failed;
         }
     }
-    struct openrfsfs_stat opened_stat;
+    struct rsdfs_stat opened_stat;
     if (backend->open_options == NULL) {
         // Compatibility backends retain their checked parent traversal.
-        if ((flags & OPENRFSFS_OPEN_CREATE) != 0U) {
-            status = (flags & OPENRFSFS_OPEN_EXCLUSIVE) != 0U ? OPENRFSFS_STATUS_NOT_FOUND :
-                openrfsfs_stat_path(volume, path, &opened_stat);
-            if (status == OPENRFSFS_STATUS_NOT_FOUND) status = openrfsfs_create_mode(volume, path, mode);
-            if (status != OPENRFSFS_STATUS_OK) goto failed;
+        if ((flags & RSDFS_OPEN_CREATE) != 0U) {
+            status = (flags & RSDFS_OPEN_EXCLUSIVE) != 0U ? RSDFS_STATUS_NOT_FOUND :
+                rsdfs_stat_path(volume, path, &opened_stat);
+            if (status == RSDFS_STATUS_NOT_FOUND) status = rsdfs_create_mode(volume, path, mode);
+            if (status != RSDFS_STATUS_OK) goto failed;
         }
         /* Legacy backends do not expose an inode-bound ftruncate callback.
          * Truncate before opening so their path truncate does not reject the
          * newly opened handle as busy. */
-        if ((flags & OPENRFSFS_OPEN_TRUNCATE) != 0U) {
+        if ((flags & RSDFS_OPEN_TRUNCATE) != 0U) {
             status = backend->truncate(volume, canonical, 0U);
-            if (status != OPENRFSFS_STATUS_OK) goto failed;
+            if (status != RSDFS_STATUS_OK) goto failed;
         }
         status = resolve_path(volume, path, canonical, &vnode_index);
-        if (status != OPENRFSFS_STATUS_OK) goto failed;
+        if (status != RSDFS_STATUS_OK) goto failed;
         if (vnode_snapshot(vnode_index).stat.directory) {
-            status = OPENRFSFS_STATUS_IS_DIRECTORY;
+            status = RSDFS_STATUS_IS_DIRECTORY;
             goto failed;
         }
     }
@@ -1017,7 +1017,7 @@ enum openrfsfs_status openrfsfs_open_options(enum openrfsfs_volume volume, const
     } else {
         status = backend->open(volume, canonical, access, &backend_handle);
     }
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (status != RSDFS_STATUS_OK) {
         goto failed;
     }
     if (backend->open_options != NULL || backend->open_with_stat != NULL) {
@@ -1026,7 +1026,7 @@ enum openrfsfs_status openrfsfs_open_options(enum openrfsfs_volume volume, const
         if (vnode_index != VFS_NO_INDEX) vnode_release(vnode_index, vnode_snapshot(vnode_index).generation);
         vnode_index = VFS_NO_INDEX;
         status = vnode_retain_reserved(volume, canonical, &opened_stat, &vnode_index, reserved_vnode);
-        if (status != OPENRFSFS_STATUS_OK) {
+        if (status != RSDFS_STATUS_OK) {
             (void)backend->close(backend_handle);
             goto failed;
         }
@@ -1044,7 +1044,7 @@ enum openrfsfs_status openrfsfs_open_options(enum openrfsfs_volume volume, const
     vnode_metadata_release(restore_interrupts);
     vnode_unreserve(reserved_vnode);
     mount_release(volume);
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 failed:
     vnode_unreserve(reserved_vnode);
     if (vnode_index != VFS_NO_INDEX) vnode_release(vnode_index, vnode_snapshot(vnode_index).generation);
@@ -1052,29 +1052,29 @@ failed:
     open_files[slot].opening = false;
     vnode_metadata_release(restore_failure_interrupts);
     mount_release(volume);
-    openrfs_slot_release(open_file_claims, slot);
+    rsd_slot_release(open_file_claims, slot);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_close(openrfsfs_handle handle)
+enum rsdfs_status rsdfs_close(rsdfs_handle handle)
 {
     bool consumed;
-    return openrfsfs_close_report(handle, &consumed);
+    return rsdfs_close_report(handle, &consumed);
 }
 
-enum openrfsfs_status openrfsfs_close_report(openrfsfs_handle handle, bool *consumed)
+enum rsdfs_status rsdfs_close_report(rsdfs_handle handle, bool *consumed)
 {
-    if (consumed == NULL) return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    if (consumed == NULL) return RSDFS_STATUS_INVALID_ARGUMENT;
     *consumed = false;
     const bool restore_interrupts = vnode_metadata_acquire();
     struct vfs_open_file_state *state;
-    openrfsfs_handle backend_handle;
+    rsdfs_handle backend_handle;
     const struct vfs_backend_ops *backend;
     uint64_t vnode_generation;
     uint16_t vnode_index;
-    enum openrfsfs_status status = open_file_state(handle, &state);
+    enum rsdfs_status status = open_file_state(handle, &state);
 
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (status != RSDFS_STATUS_OK) {
         vnode_metadata_release(restore_interrupts);
         return status;
     }
@@ -1082,13 +1082,13 @@ enum openrfsfs_status openrfsfs_close_report(openrfsfs_handle handle, bool *cons
     backend = state->backend;
     vnode_generation = state->vnode_generation;
     vnode_index = state->vnode_index;
-    const enum openrfsfs_volume volume = vnodes[vnode_index].volume;
+    const enum rsdfs_volume volume = vnodes[vnode_index].volume;
     const bool pin = vnodes[vnode_index].active &&
         vnodes[vnode_index].generation == vnode_generation && mounts[volume].active &&
         vnodes[vnode_index].mount_generation == mounts[volume].generation;
     if (pin && !mount_retain(volume)) {
         vnode_metadata_release(restore_interrupts);
-        return OPENRFSFS_STATUS_BUSY;
+        return RSDFS_STATUS_BUSY;
     }
     *consumed = true;
     state->active = false;
@@ -1096,20 +1096,20 @@ enum openrfsfs_status openrfsfs_close_report(openrfsfs_handle handle, bool *cons
     // Retire the VFS identity before final-close cleanup can free and reuse
     // the backend inode number during a subsequent namespace operation.
     vnode_release_locked(vnode_index, vnode_generation);
-    openrfs_slot_release(open_file_claims, (size_t)(state - open_files));
+    rsd_slot_release(open_file_claims, (size_t)(state - open_files));
     vnode_metadata_release(restore_interrupts);
     status = backend->close(backend_handle);
     if (pin) mount_release(volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_fstat(openrfsfs_handle handle, struct openrfsfs_stat *stat)
+enum rsdfs_status rsdfs_fstat(rsdfs_handle handle, struct rsdfs_stat *stat)
 {
     struct vfs_file_snapshot snapshot;
-    if (stat == NULL) return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    if (stat == NULL) return RSDFS_STATUS_INVALID_ARGUMENT;
     zero_bytes(stat, sizeof(*stat));
-    enum openrfsfs_status status = file_snapshot_pin(handle, &snapshot);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = file_snapshot_pin(handle, &snapshot);
+    if (status != RSDFS_STATUS_OK) return status;
     const struct vfs_open_file_state *state = &snapshot.file;
     const struct vfs_vnode_state *vnode = &snapshot.vnode;
     status = state->backend->fstat != NULL ? state->backend->fstat(state->backend_handle, stat) :
@@ -1118,43 +1118,43 @@ enum openrfsfs_status openrfsfs_fstat(openrfsfs_handle handle, struct openrfsfs_
     return status;
 }
 
-enum openrfsfs_status openrfsfs_publish_file(openrfsfs_handle handle, const char *source, const char *destination)
+enum rsdfs_status rsdfs_publish_file(rsdfs_handle handle, const char *source, const char *destination)
 {
     struct vfs_file_snapshot snapshot;
-    char from[OPENRFSFS_MAX_PATH];
-    char to[OPENRFSFS_MAX_PATH];
-    enum openrfsfs_status status = file_snapshot_pin(handle, &snapshot);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    char from[RSDFS_MAX_PATH];
+    char to[RSDFS_MAX_PATH];
+    enum rsdfs_status status = file_snapshot_pin(handle, &snapshot);
+    if (status != RSDFS_STATUS_OK) return status;
     const struct vfs_open_file_state *state = &snapshot.file;
     const struct vfs_vnode_state *vnode = &snapshot.vnode;
-    status = state->backend->publish_file == NULL ? OPENRFSFS_STATUS_ACCESS :
+    status = state->backend->publish_file == NULL ? RSDFS_STATUS_ACCESS :
         resolve_metadata_path(vnode->volume, source, from);
-    if (status == OPENRFSFS_STATUS_OK) status = resolve_metadata_path(vnode->volume, destination, to);
-    if (status == OPENRFSFS_STATUS_OK) status = state->backend->publish_file(state->backend_handle, from, to);
+    if (status == RSDFS_STATUS_OK) status = resolve_metadata_path(vnode->volume, destination, to);
+    if (status == RSDFS_STATUS_OK) status = state->backend->publish_file(state->backend_handle, from, to);
     mount_release(vnode->volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_unlink_held_file(openrfsfs_handle handle, const char *path)
+enum rsdfs_status rsdfs_unlink_held_file(rsdfs_handle handle, const char *path)
 {
     struct vfs_file_snapshot snapshot;
-    char canonical[OPENRFSFS_MAX_PATH];
-    enum openrfsfs_status status = file_snapshot_pin(handle, &snapshot);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    char canonical[RSDFS_MAX_PATH];
+    enum rsdfs_status status = file_snapshot_pin(handle, &snapshot);
+    if (status != RSDFS_STATUS_OK) return status;
     const struct vfs_open_file_state *state = &snapshot.file;
     const struct vfs_vnode_state *vnode = &snapshot.vnode;
-    status = state->backend->unlink_held_file == NULL ? OPENRFSFS_STATUS_ACCESS :
+    status = state->backend->unlink_held_file == NULL ? RSDFS_STATUS_ACCESS :
         resolve_metadata_path(vnode->volume, path, canonical);
-    if (status == OPENRFSFS_STATUS_OK) status = state->backend->unlink_held_file(state->backend_handle, canonical);
+    if (status == RSDFS_STATUS_OK) status = state->backend->unlink_held_file(state->backend_handle, canonical);
     mount_release(vnode->volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_fsync(openrfsfs_handle handle)
+enum rsdfs_status rsdfs_fsync(rsdfs_handle handle)
 {
     struct vfs_file_snapshot snapshot;
-    enum openrfsfs_status status = file_snapshot_pin(handle, &snapshot);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = file_snapshot_pin(handle, &snapshot);
+    if (status != RSDFS_STATUS_OK) return status;
     const struct vfs_open_file_state *state = &snapshot.file;
     const struct vfs_vnode_state *vnode = &snapshot.vnode;
     /* A backend fsync receives the live handle cookie, not merely its volume.
@@ -1162,13 +1162,13 @@ enum openrfsfs_status openrfsfs_fsync(openrfsfs_handle handle)
      * fallback remains the legacy volume barrier for backends without a file
      * operation. */
     status = state->backend->fsync != NULL ? state->backend->fsync(state->backend_handle) :
-        openrfsfs_sync(vnode->volume);
+        rsdfs_sync(vnode->volume);
     mount_release(vnode->volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_read(
-    openrfsfs_handle handle,
+enum rsdfs_status rsdfs_read(
+    rsdfs_handle handle,
     uint8_t *destination,
     size_t capacity,
     size_t *read_bytes
@@ -1176,15 +1176,15 @@ enum openrfsfs_status openrfsfs_read(
 {
     if (read_bytes != NULL) *read_bytes = 0U;
     struct vfs_file_snapshot snapshot;
-    enum openrfsfs_status status = file_snapshot_pin(handle, &snapshot);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = file_snapshot_pin(handle, &snapshot);
+    if (status != RSDFS_STATUS_OK) return status;
     status = snapshot.file.backend->read(snapshot.file.backend_handle, destination, capacity, read_bytes);
     mount_release(snapshot.vnode.volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_pread(
-    openrfsfs_handle handle,
+enum rsdfs_status rsdfs_pread(
+    rsdfs_handle handle,
     uint8_t *destination,
     size_t capacity,
     uint64_t offset,
@@ -1193,15 +1193,15 @@ enum openrfsfs_status openrfsfs_pread(
 {
     if (read_bytes != NULL) *read_bytes = 0U;
     struct vfs_file_snapshot snapshot;
-    enum openrfsfs_status status = file_snapshot_pin(handle, &snapshot);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = file_snapshot_pin(handle, &snapshot);
+    if (status != RSDFS_STATUS_OK) return status;
     status = snapshot.file.backend->pread(snapshot.file.backend_handle, destination, capacity, offset, read_bytes);
     mount_release(snapshot.vnode.volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_write(
-    openrfsfs_handle handle,
+enum rsdfs_status rsdfs_write(
+    rsdfs_handle handle,
     const uint8_t *source,
     size_t source_bytes,
     size_t *written_bytes
@@ -1209,13 +1209,13 @@ enum openrfsfs_status openrfsfs_write(
 {
     if (written_bytes != NULL) *written_bytes = 0U;
     struct vfs_file_snapshot snapshot;
-    enum openrfsfs_status status = file_snapshot_pin(handle, &snapshot);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = file_snapshot_pin(handle, &snapshot);
+    if (status != RSDFS_STATUS_OK) return status;
     const struct vfs_open_file_state *state = &snapshot.file;
 
-    if (status == OPENRFSFS_STATUS_OK && state->append) {
+    if (status == RSDFS_STATUS_OK && state->append) {
         if (written_bytes == NULL || (source_bytes != 0U && source == NULL)) {
-            status = OPENRFSFS_STATUS_INVALID_ARGUMENT;
+            status = RSDFS_STATUS_INVALID_ARGUMENT;
             goto finished;
         }
         *written_bytes = 0U;
@@ -1225,98 +1225,98 @@ enum openrfsfs_status openrfsfs_write(
             goto finished;
         }
         uint64_t position;
-        status = state->backend->seek(state->backend_handle, 0, OPENRFSFS_SEEK_END, &position);
+        status = state->backend->seek(state->backend_handle, 0, RSDFS_SEEK_END, &position);
     }
-    if (status == OPENRFSFS_STATUS_OK) status = state->backend->write(
+    if (status == RSDFS_STATUS_OK) status = state->backend->write(
         state->backend_handle, source, source_bytes, written_bytes);
 finished:
     mount_release(snapshot.vnode.volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_set_append(openrfsfs_handle handle, bool append)
+enum rsdfs_status rsdfs_set_append(rsdfs_handle handle, bool append)
 {
     const bool restore_interrupts = vnode_metadata_acquire();
     struct vfs_open_file_state *state;
-    enum openrfsfs_status status = checked_open_file_state(handle, &state);
+    enum rsdfs_status status = checked_open_file_state(handle, &state);
 
-    if (status == OPENRFSFS_STATUS_OK) state->append = append;
+    if (status == RSDFS_STATUS_OK) state->append = append;
     vnode_metadata_release(restore_interrupts);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_seek(
-    openrfsfs_handle handle,
+enum rsdfs_status rsdfs_seek(
+    rsdfs_handle handle,
     int64_t offset,
-    enum openrfsfs_seek_origin origin,
+    enum rsdfs_seek_origin origin,
     uint64_t *position
 )
 {
     if (position != NULL) *position = 0U;
     struct vfs_file_snapshot snapshot;
-    enum openrfsfs_status status = file_snapshot_pin(handle, &snapshot);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = file_snapshot_pin(handle, &snapshot);
+    if (status != RSDFS_STATUS_OK) return status;
     status = snapshot.file.backend->seek(snapshot.file.backend_handle, offset, origin, position);
     mount_release(snapshot.vnode.volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_stat_path(
-    enum openrfsfs_volume volume,
+enum rsdfs_status rsdfs_stat_path(
+    enum rsdfs_volume volume,
     const char *path,
-    struct openrfsfs_stat *stat
+    struct rsdfs_stat *stat
 )
 {
-    char canonical[OPENRFSFS_MAX_PATH];
+    char canonical[RSDFS_MAX_PATH];
     size_t vnode_index;
-    enum openrfsfs_status status;
+    enum rsdfs_status status;
 
     if (stat == NULL) {
-        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+        return RSDFS_STATUS_INVALID_ARGUMENT;
     }
     zero_bytes(stat, sizeof(*stat));
     status = resolve_path(volume, path, canonical, &vnode_index);
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (status != RSDFS_STATUS_OK) {
         return status;
     }
     *stat = vnode_snapshot(vnode_index).stat;
     vnode_release(vnode_index, vnode_snapshot(vnode_index).generation);
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-static enum openrfsfs_status vfs_lstat_path_pinned(enum openrfsfs_volume volume,
-    const char *path, struct openrfsfs_stat *stat)
+static enum rsdfs_status vfs_lstat_path_pinned(enum rsdfs_volume volume,
+    const char *path, struct rsdfs_stat *stat)
 {
-    char canonical[OPENRFSFS_MAX_PATH];
-    if (stat == NULL) return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    char canonical[RSDFS_MAX_PATH];
+    if (stat == NULL) return RSDFS_STATUS_INVALID_ARGUMENT;
     zero_bytes(stat, sizeof(*stat));
-    const enum openrfsfs_status status = resolve_metadata_path(volume, path, canonical);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    const enum rsdfs_status status = resolve_metadata_path(volume, path, canonical);
+    if (status != RSDFS_STATUS_OK) return status;
     const struct vfs_backend_ops *backend = mounts[volume].backend;
     // Backends without symlinks keep their ordinary path traversal checks.
     return backend->lstat_path != NULL ? backend->lstat_path(volume, canonical, stat) :
-        openrfsfs_stat_path(volume, canonical, stat);
+        rsdfs_stat_path(volume, canonical, stat);
 }
 
-enum openrfsfs_status openrfsfs_list(
-    enum openrfsfs_volume volume,
+enum rsdfs_status rsdfs_list(
+    enum rsdfs_volume volume,
     const char *path,
-    struct openrfsfs_list_entry *entries,
+    struct rsdfs_list_entry *entries,
     size_t capacity,
     size_t *entry_count
 )
 {
-    char canonical[OPENRFSFS_MAX_PATH];
+    char canonical[RSDFS_MAX_PATH];
     size_t vnode_index;
-    enum openrfsfs_status status = resolve_path(
+    enum rsdfs_status status = resolve_path(
         volume, path, canonical, &vnode_index);
 
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (status != RSDFS_STATUS_OK) {
         return status;
     }
     if (!vnode_snapshot(vnode_index).stat.directory) {
         vnode_release(vnode_index, vnode_snapshot(vnode_index).generation);
-        return OPENRFSFS_STATUS_NOT_DIRECTORY;
+        return RSDFS_STATUS_NOT_DIRECTORY;
     }
     status = mounts[volume].backend->list(volume, canonical, entries, capacity,
         entry_count);
@@ -1324,33 +1324,33 @@ enum openrfsfs_status openrfsfs_list(
     return status;
 }
 
-static enum openrfsfs_status vfs_directory_open_pinned(
-    enum openrfsfs_volume volume,
+static enum rsdfs_status vfs_directory_open_pinned(
+    enum rsdfs_volume volume,
     const char *path,
-    openrfsfs_directory_handle *handle
+    rsdfs_directory_handle *handle
 )
 {
-    char canonical[OPENRFSFS_MAX_PATH];
+    char canonical[RSDFS_MAX_PATH];
     size_t vnode_index;
     size_t slot = VFS_MAX_DIRECTORY_ITERATORS;
-    enum openrfsfs_status status;
+    enum rsdfs_status status;
 
     if (handle == NULL) {
-        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+        return RSDFS_STATUS_INVALID_ARGUMENT;
     }
     *handle = 0U;
     status = resolve_path(volume, path, canonical, &vnode_index);
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (status != RSDFS_STATUS_OK) {
         return status;
     }
     if (!vnode_snapshot(vnode_index).stat.directory) {
         vnode_release(vnode_index, vnode_snapshot(vnode_index).generation);
-        return OPENRFSFS_STATUS_NOT_DIRECTORY;
+        return RSDFS_STATUS_NOT_DIRECTORY;
     }
-    slot = openrfs_slot_claim(directory_claims, VFS_MAX_DIRECTORY_ITERATORS);
+    slot = rsd_slot_claim(directory_claims, VFS_MAX_DIRECTORY_ITERATORS);
     if (slot == VFS_MAX_DIRECTORY_ITERATORS) {
         vnode_release(vnode_index, vnode_snapshot(vnode_index).generation);
-        return OPENRFSFS_STATUS_NO_HANDLES;
+        return RSDFS_STATUS_NO_HANDLES;
     }
     bool restore_interrupts = vnode_metadata_acquire();
     directories[slot].opening = true;
@@ -1359,13 +1359,13 @@ static enum openrfsfs_status vfs_directory_open_pinned(
     directories[slot].count = 0U;
     directories[slot].backend_handle = 0U;
     vnode_metadata_release(restore_interrupts);
-    struct openrfsfs_stat opened_stat;
+    struct rsdfs_stat opened_stat;
     const struct vfs_backend_ops *backend = mounts[volume].backend;
     const bool streaming =
         (backend->directory_open != NULL || backend->directory_open_with_stat != NULL) &&
         mounts[volume].backend->directory_read != NULL &&
         mounts[volume].backend->directory_close != NULL;
-    openrfsfs_handle backend_handle = 0U;
+    rsdfs_handle backend_handle = 0U;
     size_t count = 0U;
     if (streaming) {
         if (backend->directory_open_with_stat != NULL) {
@@ -1377,25 +1377,25 @@ static enum openrfsfs_status vfs_directory_open_pinned(
         }
     } else {
         status = mounts[volume].backend->list(volume, canonical,
-            directories[slot].entries, OPENRFSFS_MAX_LIST_ENTRIES,
+            directories[slot].entries, RSDFS_MAX_LIST_ENTRIES,
             &count);
     }
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (status != RSDFS_STATUS_OK) {
         vnode_release(vnode_index, vnode_snapshot(vnode_index).generation);
         restore_interrupts = vnode_metadata_acquire();
         directories[slot].opening = false;
-        openrfs_slot_release(directory_claims, slot);
+        rsd_slot_release(directory_claims, slot);
         vnode_metadata_release(restore_interrupts);
         return status;
     }
     if (streaming && backend->directory_open_with_stat != NULL) {
         vnode_release(vnode_index, vnode_snapshot(vnode_index).generation);
         status = vnode_retain(volume, canonical, &opened_stat, &vnode_index);
-        if (status != OPENRFSFS_STATUS_OK) {
+        if (status != RSDFS_STATUS_OK) {
             (void)backend->directory_close(backend_handle);
             restore_interrupts = vnode_metadata_acquire();
             directories[slot].opening = false;
-            openrfs_slot_release(directory_claims, slot);
+            rsd_slot_release(directory_claims, slot);
             vnode_metadata_release(restore_interrupts);
             return status;
         }
@@ -1412,26 +1412,26 @@ static enum openrfsfs_status vfs_directory_open_pinned(
     directories[slot].opening = false;
     *handle = encode_handle(slot, directories[slot].generation);
     vnode_metadata_release(restore_interrupts);
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_directory_read(
-    openrfsfs_directory_handle handle,
-    struct openrfsfs_list_entry *entry,
+enum rsdfs_status rsdfs_directory_read(
+    rsdfs_directory_handle handle,
+    struct rsdfs_list_entry *entry,
     bool *present
 )
 {
     struct vfs_directory_state *state;
-    enum openrfsfs_status status;
+    enum rsdfs_status status;
 
     if (entry == NULL || present == NULL) {
-        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+        return RSDFS_STATUS_INVALID_ARGUMENT;
     }
     zero_bytes(entry, sizeof(*entry));
     *present = false;
     const bool restore_interrupts = vnode_metadata_acquire();
     status = directory_state(handle, &state);
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (status != RSDFS_STATUS_OK) {
         vnode_metadata_release(restore_interrupts);
         return status;
     }
@@ -1439,21 +1439,21 @@ enum openrfsfs_status openrfsfs_directory_read(
     if (!vnode->active || vnode->generation != state->vnode_generation ||
         !mounts[vnode->volume].active || vnode->mount_generation != mounts[vnode->volume].generation) {
         vnode_metadata_release(restore_interrupts);
-        return OPENRFSFS_STATUS_STALE_HANDLE;
+        return RSDFS_STATUS_STALE_HANDLE;
     }
     if (state->streaming) {
-        const enum openrfsfs_volume volume = vnode->volume;
+        const enum rsdfs_volume volume = vnode->volume;
         const struct vfs_backend_ops *backend = state->backend;
-        const openrfsfs_handle backend_handle = state->backend_handle;
+        const rsdfs_handle backend_handle = state->backend_handle;
         const bool pinned = mount_retain(volume);
         vnode_metadata_release(restore_interrupts);
-        if (!pinned) return OPENRFSFS_STATUS_BUSY;
+        if (!pinned) return RSDFS_STATUS_BUSY;
         status = backend->directory_read(backend_handle, entry, present);
         mount_release(volume);
         return status;
     }
-    if (state->cursor > state->count || state->count > OPENRFSFS_MAX_LIST_ENTRIES) {
-        status = OPENRFSFS_STATUS_CORRUPT;
+    if (state->cursor > state->count || state->count > RSDFS_MAX_LIST_ENTRIES) {
+        status = RSDFS_STATUS_CORRUPT;
     } else if (state->cursor < state->count) {
         *entry = state->entries[state->cursor++];
         *present = true;
@@ -1462,28 +1462,28 @@ enum openrfsfs_status openrfsfs_directory_read(
     return status;
 }
 
-enum openrfsfs_status openrfsfs_directory_close(openrfsfs_directory_handle handle)
+enum rsdfs_status rsdfs_directory_close(rsdfs_directory_handle handle)
 {
     bool consumed;
-    return openrfsfs_directory_close_report(handle, &consumed);
+    return rsdfs_directory_close_report(handle, &consumed);
 }
 
-enum openrfsfs_status openrfsfs_directory_close_report(
-    openrfsfs_directory_handle handle, bool *consumed
+enum rsdfs_status rsdfs_directory_close_report(
+    rsdfs_directory_handle handle, bool *consumed
 )
 {
-    if (consumed == NULL) return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    if (consumed == NULL) return RSDFS_STATUS_INVALID_ARGUMENT;
     *consumed = false;
     const bool restore_interrupts = vnode_metadata_acquire();
     struct vfs_directory_state *state;
     const struct vfs_backend_ops *backend;
-    openrfsfs_handle backend_handle;
+    rsdfs_handle backend_handle;
     bool streaming;
     uint64_t vnode_generation;
     uint16_t vnode_index;
-    enum openrfsfs_status status = directory_state(handle, &state);
+    enum rsdfs_status status = directory_state(handle, &state);
 
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (status != RSDFS_STATUS_OK) {
         vnode_metadata_release(restore_interrupts);
         return status;
     }
@@ -1492,48 +1492,48 @@ enum openrfsfs_status openrfsfs_directory_close_report(
     backend = state->backend;
     backend_handle = state->backend_handle;
     streaming = state->streaming;
-    const enum openrfsfs_volume volume = vnodes[vnode_index].volume;
+    const enum rsdfs_volume volume = vnodes[vnode_index].volume;
     const bool pin = streaming && vnodes[vnode_index].active &&
         vnodes[vnode_index].generation == vnode_generation && mounts[volume].active &&
         vnodes[vnode_index].mount_generation == mounts[volume].generation;
     if (pin && !mount_retain(volume)) {
         vnode_metadata_release(restore_interrupts);
-        return OPENRFSFS_STATUS_BUSY;
+        return RSDFS_STATUS_BUSY;
     }
     *consumed = true;
     state->active = false;
     state->backend_handle = 0U;
     vnode_release_locked(vnode_index, vnode_generation);
-    openrfs_slot_release(directory_claims, (size_t)(state - directories));
+    rsd_slot_release(directory_claims, (size_t)(state - directories));
     vnode_metadata_release(restore_interrupts);
     if (streaming) status = backend->directory_close(backend_handle);
     if (pin) mount_release(volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_create(enum openrfsfs_volume volume, const char *path)
+enum rsdfs_status rsdfs_create(enum rsdfs_volume volume, const char *path)
 {
-    return openrfsfs_create_mode(volume, path, UINT16_C(0644));
+    return rsdfs_create_mode(volume, path, UINT16_C(0644));
 }
 
-static enum openrfsfs_status vfs_create_mode_pinned(enum openrfsfs_volume volume,
+static enum rsdfs_status vfs_create_mode_pinned(enum rsdfs_volume volume,
     const char *path, uint16_t mode)
 {
-    char canonical[OPENRFSFS_MAX_PATH];
-    enum openrfsfs_status status = resolve_parent(volume, path, canonical);
+    char canonical[RSDFS_MAX_PATH];
+    enum rsdfs_status status = resolve_parent(volume, path, canonical);
 
     if ((mode & (uint16_t)~UINT16_C(07777)) != 0U) {
-        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+        return RSDFS_STATUS_INVALID_ARGUMENT;
     }
-    return status == OPENRFSFS_STATUS_OK ?
+    return status == RSDFS_STATUS_OK ?
         mounts[volume].backend->create(volume, canonical, mode) : status;
 }
 
-enum openrfsfs_status openrfsfs_ftruncate(openrfsfs_handle handle, uint64_t size)
+enum rsdfs_status rsdfs_ftruncate(rsdfs_handle handle, uint64_t size)
 {
     struct vfs_file_snapshot snapshot;
-    enum openrfsfs_status status = file_snapshot_pin(handle, &snapshot);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = file_snapshot_pin(handle, &snapshot);
+    if (status != RSDFS_STATUS_OK) return status;
     const struct vfs_open_file_state *state = &snapshot.file;
     const struct vfs_vnode_state *vnode = &snapshot.vnode;
     status = state->backend->ftruncate != NULL ? state->backend->ftruncate(state->backend_handle, size) :
@@ -1542,108 +1542,108 @@ enum openrfsfs_status openrfsfs_ftruncate(openrfsfs_handle handle, uint64_t size
     return status;
 }
 
-static enum openrfsfs_status vfs_truncate_pinned(
-    enum openrfsfs_volume volume,
+static enum rsdfs_status vfs_truncate_pinned(
+    enum rsdfs_volume volume,
     const char *path,
     uint64_t size
 )
 {
-    char canonical[OPENRFSFS_MAX_PATH];
+    char canonical[RSDFS_MAX_PATH];
     if (valid_volume(volume) && mounts[volume].active &&
         mounts[volume].backend->validates_mutation_paths) {
-        enum openrfsfs_status result = resolve_parent(volume, path, canonical);
-        return result == OPENRFSFS_STATUS_OK ?
+        enum rsdfs_status result = resolve_parent(volume, path, canonical);
+        return result == RSDFS_STATUS_OK ?
             mounts[volume].backend->truncate(volume, canonical, size) : result;
     }
     size_t vnode_index;
-    enum openrfsfs_status status = resolve_path(
+    enum rsdfs_status status = resolve_path(
         volume, path, canonical, &vnode_index);
 
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (status != RSDFS_STATUS_OK) {
         return status;
     }
     if (vnode_snapshot(vnode_index).stat.directory) {
-        status = OPENRFSFS_STATUS_IS_DIRECTORY;
+        status = RSDFS_STATUS_IS_DIRECTORY;
     }
     vnode_release(vnode_index, vnode_snapshot(vnode_index).generation);
-    return status == OPENRFSFS_STATUS_OK ?
+    return status == RSDFS_STATUS_OK ?
         mounts[volume].backend->truncate(volume, canonical, size) : status;
 }
 
-enum openrfsfs_status openrfsfs_mkdir(enum openrfsfs_volume volume, const char *path)
+enum rsdfs_status rsdfs_mkdir(enum rsdfs_volume volume, const char *path)
 {
-    return openrfsfs_mkdir_mode(volume, path, 0755U);
+    return rsdfs_mkdir_mode(volume, path, 0755U);
 }
 
-static enum openrfsfs_status vfs_mkdir_mode_pinned(enum openrfsfs_volume volume, const char *path, uint16_t mode)
+static enum rsdfs_status vfs_mkdir_mode_pinned(enum rsdfs_volume volume, const char *path, uint16_t mode)
 {
-    char canonical[OPENRFSFS_MAX_PATH];
-    if ((mode & ~07777U) != 0U) return OPENRFSFS_STATUS_INVALID_ARGUMENT;
-    enum openrfsfs_status status = resolve_parent(volume, path, canonical);
+    char canonical[RSDFS_MAX_PATH];
+    if ((mode & ~07777U) != 0U) return RSDFS_STATUS_INVALID_ARGUMENT;
+    enum rsdfs_status status = resolve_parent(volume, path, canonical);
 
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    if (status != RSDFS_STATUS_OK) return status;
     const struct vfs_backend_ops *backend = mounts[volume].backend;
     return backend->mkdir_mode != NULL ? backend->mkdir_mode(volume, canonical, mode) :
         backend->mkdir(volume, canonical);
 }
 
-static enum openrfsfs_status vfs_rename_pinned(
-    enum openrfsfs_volume volume,
+static enum rsdfs_status vfs_rename_pinned(
+    enum rsdfs_volume volume,
     const char *source,
     const char *destination
 )
 {
-    char source_canonical[OPENRFSFS_MAX_PATH];
-    char destination_canonical[OPENRFSFS_MAX_PATH];
-    enum openrfsfs_status status = resolve_parent(volume, source, source_canonical);
+    char source_canonical[RSDFS_MAX_PATH];
+    char destination_canonical[RSDFS_MAX_PATH];
+    enum rsdfs_status status = resolve_parent(volume, source, source_canonical);
 
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (status != RSDFS_STATUS_OK) {
         return status;
     }
     status = resolve_parent(volume, destination, destination_canonical);
-    return status == OPENRFSFS_STATUS_OK ? mounts[volume].backend->rename(volume,
+    return status == RSDFS_STATUS_OK ? mounts[volume].backend->rename(volume,
         source_canonical, destination_canonical) : status;
 }
 
-static enum openrfsfs_status vfs_unlink_pinned(enum openrfsfs_volume volume, const char *path)
+static enum rsdfs_status vfs_unlink_pinned(enum rsdfs_volume volume, const char *path)
 {
-    char canonical[OPENRFSFS_MAX_PATH];
-    enum openrfsfs_status status = resolve_parent(volume, path, canonical);
-    return status == OPENRFSFS_STATUS_OK ?
+    char canonical[RSDFS_MAX_PATH];
+    enum rsdfs_status status = resolve_parent(volume, path, canonical);
+    return status == RSDFS_STATUS_OK ?
         mounts[volume].backend->unlink(volume, canonical) : status;
 }
 
-static enum openrfsfs_status vfs_remove_pinned(enum openrfsfs_volume volume, const char *path)
+static enum rsdfs_status vfs_remove_pinned(enum rsdfs_volume volume, const char *path)
 {
-    char canonical[OPENRFSFS_MAX_PATH];
-    enum openrfsfs_status status = resolve_parent(volume, path, canonical);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    char canonical[RSDFS_MAX_PATH];
+    enum rsdfs_status status = resolve_parent(volume, path, canonical);
+    if (status != RSDFS_STATUS_OK) return status;
     if (mounts[volume].backend->remove != NULL) {
         return mounts[volume].backend->remove(volume, canonical);
     }
-    status = openrfsfs_unlink(volume, canonical);
-    return status == OPENRFSFS_STATUS_IS_DIRECTORY ? openrfsfs_rmdir(volume, canonical) : status;
+    status = rsdfs_unlink(volume, canonical);
+    return status == RSDFS_STATUS_IS_DIRECTORY ? rsdfs_rmdir(volume, canonical) : status;
 }
 
-static enum openrfsfs_status vfs_rename_replace_pinned(enum openrfsfs_volume volume,
+static enum rsdfs_status vfs_rename_replace_pinned(enum rsdfs_volume volume,
     const char *source, const char *destination)
 {
-    char from[OPENRFSFS_MAX_PATH];
-    char to[OPENRFSFS_MAX_PATH];
-    enum openrfsfs_status status = resolve_parent(volume, source, from);
+    char from[RSDFS_MAX_PATH];
+    char to[RSDFS_MAX_PATH];
+    enum rsdfs_status status = resolve_parent(volume, source, from);
 
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (status != RSDFS_STATUS_OK) {
         return status;
     }
     status = resolve_parent(volume, destination, to);
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (status != RSDFS_STATUS_OK) {
         return status;
     }
-    return mounts[volume].backend->rename_replace == NULL ? OPENRFSFS_STATUS_ACCESS :
+    return mounts[volume].backend->rename_replace == NULL ? RSDFS_STATUS_ACCESS :
         mounts[volume].backend->rename_replace(volume, from, to);
 }
 
-bool openrfsfs_has_atomic_replace(enum openrfsfs_volume volume)
+bool rsdfs_has_atomic_replace(enum rsdfs_volume volume)
 {
     if (!valid_volume(volume)) return false;
     const bool restore_interrupts = vnode_metadata_acquire();
@@ -1653,344 +1653,344 @@ bool openrfsfs_has_atomic_replace(enum openrfsfs_volume volume)
     return supported;
 }
 
-static enum openrfsfs_status vfs_rmdir_pinned(enum openrfsfs_volume volume, const char *path)
+static enum rsdfs_status vfs_rmdir_pinned(enum rsdfs_volume volume, const char *path)
 {
-    char canonical[OPENRFSFS_MAX_PATH];
+    char canonical[RSDFS_MAX_PATH];
     if (valid_volume(volume) && mounts[volume].active &&
         mounts[volume].backend->validates_mutation_paths) {
-        enum openrfsfs_status result = resolve_parent(volume, path, canonical);
-        return result == OPENRFSFS_STATUS_OK ?
+        enum rsdfs_status result = resolve_parent(volume, path, canonical);
+        return result == RSDFS_STATUS_OK ?
             mounts[volume].backend->rmdir(volume, canonical) : result;
     }
     size_t vnode_index;
-    enum openrfsfs_status status = resolve_path(
+    enum rsdfs_status status = resolve_path(
         volume, path, canonical, &vnode_index);
 
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (status != RSDFS_STATUS_OK) {
         return status;
     }
     if (!vnode_snapshot(vnode_index).stat.directory) {
-        status = OPENRFSFS_STATUS_NOT_DIRECTORY;
+        status = RSDFS_STATUS_NOT_DIRECTORY;
     } else if (vnode_snapshot(vnode_index).references != 1U) {
-        status = OPENRFSFS_STATUS_BUSY;
+        status = RSDFS_STATUS_BUSY;
     }
     vnode_release(vnode_index, vnode_snapshot(vnode_index).generation);
-    return status == OPENRFSFS_STATUS_OK ?
+    return status == RSDFS_STATUS_OK ?
         mounts[volume].backend->rmdir(volume, canonical) : status;
 }
 
-static enum openrfsfs_status vfs_link_pinned(
-    enum openrfsfs_volume volume,
+static enum rsdfs_status vfs_link_pinned(
+    enum rsdfs_volume volume,
     const char *source,
     const char *destination
 )
 {
-    char source_canonical[OPENRFSFS_MAX_PATH];
-    char destination_canonical[OPENRFSFS_MAX_PATH];
-    enum openrfsfs_status status = resolve_parent(volume, source, source_canonical);
+    char source_canonical[RSDFS_MAX_PATH];
+    char destination_canonical[RSDFS_MAX_PATH];
+    enum rsdfs_status status = resolve_parent(volume, source, source_canonical);
 
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (status != RSDFS_STATUS_OK) {
         return status;
     }
     status = resolve_parent(volume, destination, destination_canonical);
-    return status == OPENRFSFS_STATUS_OK ? mounts[volume].backend->link(volume,
+    return status == RSDFS_STATUS_OK ? mounts[volume].backend->link(volume,
         source_canonical, destination_canonical) : status;
 }
 
-static enum openrfsfs_status vfs_set_times_pinned(enum openrfsfs_volume volume, const char *path,
-    const struct openrfsfs_times *times)
+static enum rsdfs_status vfs_set_times_pinned(enum rsdfs_volume volume, const char *path,
+    const struct rsdfs_times *times)
 {
-    char canonical[OPENRFSFS_MAX_PATH];
-    enum openrfsfs_status status = resolve_metadata_path(volume, path, canonical);
-    if (status != OPENRFSFS_STATUS_OK) return status;
-    return mounts[volume].backend->set_times == NULL ? OPENRFSFS_STATUS_ACCESS :
+    char canonical[RSDFS_MAX_PATH];
+    enum rsdfs_status status = resolve_metadata_path(volume, path, canonical);
+    if (status != RSDFS_STATUS_OK) return status;
+    return mounts[volume].backend->set_times == NULL ? RSDFS_STATUS_ACCESS :
         mounts[volume].backend->set_times(volume, canonical, times);
 }
 
-static enum openrfsfs_status vfs_chmod_pinned(enum openrfsfs_volume volume, const char *path, uint16_t mode)
+static enum rsdfs_status vfs_chmod_pinned(enum rsdfs_volume volume, const char *path, uint16_t mode)
 {
-    char canonical[OPENRFSFS_MAX_PATH];
-    enum openrfsfs_status status = resolve_metadata_path(volume, path, canonical);
-    if (status != OPENRFSFS_STATUS_OK) return status;
-    return mounts[volume].backend->chmod == NULL ? OPENRFSFS_STATUS_ACCESS :
+    char canonical[RSDFS_MAX_PATH];
+    enum rsdfs_status status = resolve_metadata_path(volume, path, canonical);
+    if (status != RSDFS_STATUS_OK) return status;
+    return mounts[volume].backend->chmod == NULL ? RSDFS_STATUS_ACCESS :
         mounts[volume].backend->chmod(volume, canonical, mode);
 }
 
-static enum openrfsfs_status vfs_set_xattr_pinned(enum openrfsfs_volume volume, const char *path,
+static enum rsdfs_status vfs_set_xattr_pinned(enum rsdfs_volume volume, const char *path,
     const char *name, const uint8_t *value, size_t length, bool remove)
 {
-    char canonical[OPENRFSFS_MAX_PATH];
-    enum openrfsfs_status status = resolve_metadata_path(volume, path, canonical);
-    if (status != OPENRFSFS_STATUS_OK) return status;
-    return mounts[volume].backend->set_xattr == NULL ? OPENRFSFS_STATUS_ACCESS :
+    char canonical[RSDFS_MAX_PATH];
+    enum rsdfs_status status = resolve_metadata_path(volume, path, canonical);
+    if (status != RSDFS_STATUS_OK) return status;
+    return mounts[volume].backend->set_xattr == NULL ? RSDFS_STATUS_ACCESS :
         mounts[volume].backend->set_xattr(volume, canonical, name, value, length, remove);
 }
 
-static enum openrfsfs_status vfs_get_xattr_pinned(enum openrfsfs_volume volume, const char *path,
+static enum rsdfs_status vfs_get_xattr_pinned(enum rsdfs_volume volume, const char *path,
     const char *name, uint8_t *output, size_t capacity, size_t *length)
 {
-    char canonical[OPENRFSFS_MAX_PATH];
-    if (length == NULL) return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    char canonical[RSDFS_MAX_PATH];
+    if (length == NULL) return RSDFS_STATUS_INVALID_ARGUMENT;
     *length = 0U;
-    enum openrfsfs_status status = resolve_metadata_path(volume, path, canonical);
-    if (status != OPENRFSFS_STATUS_OK) return status;
-    status = mounts[volume].backend->get_xattr == NULL ? OPENRFSFS_STATUS_ACCESS :
+    enum rsdfs_status status = resolve_metadata_path(volume, path, canonical);
+    if (status != RSDFS_STATUS_OK) return status;
+    status = mounts[volume].backend->get_xattr == NULL ? RSDFS_STATUS_ACCESS :
         mounts[volume].backend->get_xattr(volume, canonical, name, output, capacity, length);
-    if (status != OPENRFSFS_STATUS_OK) *length = 0U;
+    if (status != RSDFS_STATUS_OK) *length = 0U;
     return status;
 }
 
-static enum openrfsfs_status vfs_symlink_pinned(enum openrfsfs_volume volume,
+static enum rsdfs_status vfs_symlink_pinned(enum rsdfs_volume volume,
     const char *path, const char *target)
 {
-    char canonical[OPENRFSFS_MAX_PATH];
-    enum openrfsfs_status status = resolve_parent(volume, path, canonical);
+    char canonical[RSDFS_MAX_PATH];
+    enum rsdfs_status status = resolve_parent(volume, path, canonical);
 
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (status != RSDFS_STATUS_OK) {
         return status;
     }
-    return mounts[volume].backend->symlink == NULL ? OPENRFSFS_STATUS_ACCESS :
+    return mounts[volume].backend->symlink == NULL ? RSDFS_STATUS_ACCESS :
         mounts[volume].backend->symlink(volume, canonical, target);
 }
 
-static enum openrfsfs_status vfs_readlink_pinned(enum openrfsfs_volume volume,
+static enum rsdfs_status vfs_readlink_pinned(enum rsdfs_volume volume,
     const char *path, uint8_t *output, size_t capacity, size_t *read_bytes)
 {
-    char canonical[OPENRFSFS_MAX_PATH];
-    enum openrfsfs_status status;
+    char canonical[RSDFS_MAX_PATH];
+    enum rsdfs_status status;
 
-    if (read_bytes == NULL) return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    if (read_bytes == NULL) return RSDFS_STATUS_INVALID_ARGUMENT;
     *read_bytes = 0U;
     if (output == NULL || capacity == 0U) {
-        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+        return RSDFS_STATUS_INVALID_ARGUMENT;
     }
     /* Resolve only the parent so dangling and looping final links are readable. */
     status = resolve_parent(volume, path, canonical);
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (status != RSDFS_STATUS_OK) {
         return status;
     }
-    return mounts[volume].backend->readlink == NULL ? OPENRFSFS_STATUS_ACCESS :
+    return mounts[volume].backend->readlink == NULL ? RSDFS_STATUS_ACCESS :
         mounts[volume].backend->readlink(volume, canonical, output, capacity, read_bytes);
 }
 
 /* Keep the mount identity stable through all path validation and backend
  * results. These wrappers own references, not a lock across storage calls. */
-enum openrfsfs_status openrfsfs_lstat_path(enum openrfsfs_volume volume,
-    const char *path, struct openrfsfs_stat *stat)
+enum rsdfs_status rsdfs_lstat_path(enum rsdfs_volume volume,
+    const char *path, struct rsdfs_stat *stat)
 {
-    if (stat == NULL) return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    if (stat == NULL) return RSDFS_STATUS_INVALID_ARGUMENT;
     zero_bytes(stat, sizeof(*stat));
-    if (!valid_volume(volume)) return OPENRFSFS_STATUS_NOT_MOUNTED;
+    if (!valid_volume(volume)) return RSDFS_STATUS_NOT_MOUNTED;
     const struct vfs_backend_ops *backend;
-    enum openrfsfs_status status = mount_pin(volume, &backend);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = mount_pin(volume, &backend);
+    if (status != RSDFS_STATUS_OK) return status;
     status = vfs_lstat_path_pinned(volume, path, stat);
     mount_release(volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_directory_open(
-    enum openrfsfs_volume volume,
+enum rsdfs_status rsdfs_directory_open(
+    enum rsdfs_volume volume,
     const char *path,
-    openrfsfs_directory_handle *handle
+    rsdfs_directory_handle *handle
 )
 {
-    if (handle == NULL) return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    if (handle == NULL) return RSDFS_STATUS_INVALID_ARGUMENT;
     *handle = 0U;
-    if (!valid_volume(volume)) return OPENRFSFS_STATUS_NOT_MOUNTED;
+    if (!valid_volume(volume)) return RSDFS_STATUS_NOT_MOUNTED;
     const struct vfs_backend_ops *backend;
-    enum openrfsfs_status status = mount_pin(volume, &backend);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = mount_pin(volume, &backend);
+    if (status != RSDFS_STATUS_OK) return status;
     status = vfs_directory_open_pinned(volume, path, handle);
     mount_release(volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_create_mode(enum openrfsfs_volume volume,
+enum rsdfs_status rsdfs_create_mode(enum rsdfs_volume volume,
     const char *path, uint16_t mode)
 {
-    if (!valid_volume(volume)) return OPENRFSFS_STATUS_NOT_MOUNTED;
+    if (!valid_volume(volume)) return RSDFS_STATUS_NOT_MOUNTED;
     const struct vfs_backend_ops *backend;
-    enum openrfsfs_status status = mount_pin(volume, &backend);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = mount_pin(volume, &backend);
+    if (status != RSDFS_STATUS_OK) return status;
     status = vfs_create_mode_pinned(volume, path, mode);
     mount_release(volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_truncate(
-    enum openrfsfs_volume volume,
+enum rsdfs_status rsdfs_truncate(
+    enum rsdfs_volume volume,
     const char *path,
     uint64_t size
 )
 {
-    if (!valid_volume(volume)) return OPENRFSFS_STATUS_NOT_MOUNTED;
+    if (!valid_volume(volume)) return RSDFS_STATUS_NOT_MOUNTED;
     const struct vfs_backend_ops *backend;
-    enum openrfsfs_status status = mount_pin(volume, &backend);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = mount_pin(volume, &backend);
+    if (status != RSDFS_STATUS_OK) return status;
     status = vfs_truncate_pinned(volume, path, size);
     mount_release(volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_mkdir_mode(enum openrfsfs_volume volume, const char *path, uint16_t mode)
+enum rsdfs_status rsdfs_mkdir_mode(enum rsdfs_volume volume, const char *path, uint16_t mode)
 {
-    if ((mode & ~07777U) != 0U) return OPENRFSFS_STATUS_INVALID_ARGUMENT;
-    if (!valid_volume(volume)) return OPENRFSFS_STATUS_NOT_MOUNTED;
+    if ((mode & ~07777U) != 0U) return RSDFS_STATUS_INVALID_ARGUMENT;
+    if (!valid_volume(volume)) return RSDFS_STATUS_NOT_MOUNTED;
     const struct vfs_backend_ops *backend;
-    enum openrfsfs_status status = mount_pin(volume, &backend);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = mount_pin(volume, &backend);
+    if (status != RSDFS_STATUS_OK) return status;
     status = vfs_mkdir_mode_pinned(volume, path, mode);
     mount_release(volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_rename(
-    enum openrfsfs_volume volume,
+enum rsdfs_status rsdfs_rename(
+    enum rsdfs_volume volume,
     const char *source,
     const char *destination
 )
 {
-    if (!valid_volume(volume)) return OPENRFSFS_STATUS_NOT_MOUNTED;
+    if (!valid_volume(volume)) return RSDFS_STATUS_NOT_MOUNTED;
     const struct vfs_backend_ops *backend;
-    enum openrfsfs_status status = mount_pin(volume, &backend);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = mount_pin(volume, &backend);
+    if (status != RSDFS_STATUS_OK) return status;
     status = vfs_rename_pinned(volume, source, destination);
     mount_release(volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_unlink(enum openrfsfs_volume volume, const char *path)
+enum rsdfs_status rsdfs_unlink(enum rsdfs_volume volume, const char *path)
 {
-    if (!valid_volume(volume)) return OPENRFSFS_STATUS_NOT_MOUNTED;
+    if (!valid_volume(volume)) return RSDFS_STATUS_NOT_MOUNTED;
     const struct vfs_backend_ops *backend;
-    enum openrfsfs_status status = mount_pin(volume, &backend);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = mount_pin(volume, &backend);
+    if (status != RSDFS_STATUS_OK) return status;
     status = vfs_unlink_pinned(volume, path);
     mount_release(volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_remove(enum openrfsfs_volume volume, const char *path)
+enum rsdfs_status rsdfs_remove(enum rsdfs_volume volume, const char *path)
 {
-    if (!valid_volume(volume)) return OPENRFSFS_STATUS_NOT_MOUNTED;
+    if (!valid_volume(volume)) return RSDFS_STATUS_NOT_MOUNTED;
     const struct vfs_backend_ops *backend;
-    enum openrfsfs_status status = mount_pin(volume, &backend);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = mount_pin(volume, &backend);
+    if (status != RSDFS_STATUS_OK) return status;
     status = vfs_remove_pinned(volume, path);
     mount_release(volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_rename_replace(enum openrfsfs_volume volume,
+enum rsdfs_status rsdfs_rename_replace(enum rsdfs_volume volume,
     const char *source, const char *destination)
 {
-    if (!valid_volume(volume)) return OPENRFSFS_STATUS_NOT_MOUNTED;
+    if (!valid_volume(volume)) return RSDFS_STATUS_NOT_MOUNTED;
     const struct vfs_backend_ops *backend;
-    enum openrfsfs_status status = mount_pin(volume, &backend);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = mount_pin(volume, &backend);
+    if (status != RSDFS_STATUS_OK) return status;
     status = vfs_rename_replace_pinned(volume, source, destination);
     mount_release(volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_rmdir(enum openrfsfs_volume volume, const char *path)
+enum rsdfs_status rsdfs_rmdir(enum rsdfs_volume volume, const char *path)
 {
-    if (!valid_volume(volume)) return OPENRFSFS_STATUS_NOT_MOUNTED;
+    if (!valid_volume(volume)) return RSDFS_STATUS_NOT_MOUNTED;
     const struct vfs_backend_ops *backend;
-    enum openrfsfs_status status = mount_pin(volume, &backend);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = mount_pin(volume, &backend);
+    if (status != RSDFS_STATUS_OK) return status;
     status = vfs_rmdir_pinned(volume, path);
     mount_release(volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_link(
-    enum openrfsfs_volume volume,
+enum rsdfs_status rsdfs_link(
+    enum rsdfs_volume volume,
     const char *source,
     const char *destination
 )
 {
-    if (!valid_volume(volume)) return OPENRFSFS_STATUS_NOT_MOUNTED;
+    if (!valid_volume(volume)) return RSDFS_STATUS_NOT_MOUNTED;
     const struct vfs_backend_ops *backend;
-    enum openrfsfs_status status = mount_pin(volume, &backend);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = mount_pin(volume, &backend);
+    if (status != RSDFS_STATUS_OK) return status;
     status = vfs_link_pinned(volume, source, destination);
     mount_release(volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_set_times(enum openrfsfs_volume volume, const char *path,
-    const struct openrfsfs_times *times)
+enum rsdfs_status rsdfs_set_times(enum rsdfs_volume volume, const char *path,
+    const struct rsdfs_times *times)
 {
-    if (!valid_volume(volume)) return OPENRFSFS_STATUS_NOT_MOUNTED;
+    if (!valid_volume(volume)) return RSDFS_STATUS_NOT_MOUNTED;
     const struct vfs_backend_ops *backend;
-    enum openrfsfs_status status = mount_pin(volume, &backend);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = mount_pin(volume, &backend);
+    if (status != RSDFS_STATUS_OK) return status;
     status = vfs_set_times_pinned(volume, path, times);
     mount_release(volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_chmod(enum openrfsfs_volume volume, const char *path, uint16_t mode)
+enum rsdfs_status rsdfs_chmod(enum rsdfs_volume volume, const char *path, uint16_t mode)
 {
-    if (!valid_volume(volume)) return OPENRFSFS_STATUS_NOT_MOUNTED;
+    if (!valid_volume(volume)) return RSDFS_STATUS_NOT_MOUNTED;
     const struct vfs_backend_ops *backend;
-    enum openrfsfs_status status = mount_pin(volume, &backend);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = mount_pin(volume, &backend);
+    if (status != RSDFS_STATUS_OK) return status;
     status = vfs_chmod_pinned(volume, path, mode);
     mount_release(volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_set_xattr(enum openrfsfs_volume volume, const char *path,
+enum rsdfs_status rsdfs_set_xattr(enum rsdfs_volume volume, const char *path,
     const char *name, const uint8_t *value, size_t length, bool remove)
 {
-    if (!valid_volume(volume)) return OPENRFSFS_STATUS_NOT_MOUNTED;
+    if (!valid_volume(volume)) return RSDFS_STATUS_NOT_MOUNTED;
     const struct vfs_backend_ops *backend;
-    enum openrfsfs_status status = mount_pin(volume, &backend);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = mount_pin(volume, &backend);
+    if (status != RSDFS_STATUS_OK) return status;
     status = vfs_set_xattr_pinned(volume, path, name, value, length, remove);
     mount_release(volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_get_xattr(enum openrfsfs_volume volume, const char *path,
+enum rsdfs_status rsdfs_get_xattr(enum rsdfs_volume volume, const char *path,
     const char *name, uint8_t *output, size_t capacity, size_t *length)
 {
-    if (length == NULL) return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    if (length == NULL) return RSDFS_STATUS_INVALID_ARGUMENT;
     *length = 0U;
-    if (!valid_volume(volume)) return OPENRFSFS_STATUS_NOT_MOUNTED;
+    if (!valid_volume(volume)) return RSDFS_STATUS_NOT_MOUNTED;
     const struct vfs_backend_ops *backend;
-    enum openrfsfs_status status = mount_pin(volume, &backend);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = mount_pin(volume, &backend);
+    if (status != RSDFS_STATUS_OK) return status;
     status = vfs_get_xattr_pinned(volume, path, name, output, capacity, length);
     mount_release(volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_symlink(enum openrfsfs_volume volume,
+enum rsdfs_status rsdfs_symlink(enum rsdfs_volume volume,
     const char *path, const char *target)
 {
-    if (!valid_volume(volume)) return OPENRFSFS_STATUS_NOT_MOUNTED;
+    if (!valid_volume(volume)) return RSDFS_STATUS_NOT_MOUNTED;
     const struct vfs_backend_ops *backend;
-    enum openrfsfs_status status = mount_pin(volume, &backend);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = mount_pin(volume, &backend);
+    if (status != RSDFS_STATUS_OK) return status;
     status = vfs_symlink_pinned(volume, path, target);
     mount_release(volume);
     return status;
 }
 
-enum openrfsfs_status openrfsfs_readlink(enum openrfsfs_volume volume,
+enum rsdfs_status rsdfs_readlink(enum rsdfs_volume volume,
     const char *path, uint8_t *output, size_t capacity, size_t *read_bytes)
 {
-    if (read_bytes == NULL) return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    if (read_bytes == NULL) return RSDFS_STATUS_INVALID_ARGUMENT;
     *read_bytes = 0U;
-    if (output == NULL || capacity == 0U) return OPENRFSFS_STATUS_INVALID_ARGUMENT;
-    if (!valid_volume(volume)) return OPENRFSFS_STATUS_NOT_MOUNTED;
+    if (output == NULL || capacity == 0U) return RSDFS_STATUS_INVALID_ARGUMENT;
+    if (!valid_volume(volume)) return RSDFS_STATUS_NOT_MOUNTED;
     const struct vfs_backend_ops *backend;
-    enum openrfsfs_status status = mount_pin(volume, &backend);
-    if (status != OPENRFSFS_STATUS_OK) return status;
+    enum rsdfs_status status = mount_pin(volume, &backend);
+    if (status != RSDFS_STATUS_OK) return status;
     status = vfs_readlink_pinned(volume, path, output, capacity, read_bytes);
     mount_release(volume);
     return status;

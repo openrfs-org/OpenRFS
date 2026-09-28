@@ -1,34 +1,34 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * OpenRFS environment for the vendored SeaBIOS drivers: BIOS variables.
+ * RSD environment for the vendored SeaBIOS drivers: BIOS variables.
  *
  * Globals are ordinary variables in flat mode. The BIOS Data Area is not the
  * machine's: the few fields the drivers keep there (the floppy controller's
  * recalibration and motor state, the disk control byte) live in a private
  * copy the glue owns, so no driver writes physical page zero.
  */
-#ifndef OPENRFS_SEABIOS_BIOSVAR_H
-#define OPENRFS_SEABIOS_BIOSVAR_H
+#ifndef RSD_SEABIOS_BIOSVAR_H
+#define RSD_SEABIOS_BIOSVAR_H
 
 #include "config.h"
 #include "farptr.h"
 #include "std/bda.h"
 #include "types.h"
 
-extern struct bios_data_area_s openrfs_seabios_bda;
+extern struct bios_data_area_s rsd_seabios_bda;
 
-#define GET_BDA(var) (openrfs_seabios_bda.var)
-#define SET_BDA(var, val) do { openrfs_seabios_bda.var = (val); } while (0)
+#define GET_BDA(var) (rsd_seabios_bda.var)
+#define SET_BDA(var, val) do { rsd_seabios_bda.var = (val); } while (0)
 
 /*
  * Real-mode vectors live in a private table too: floppy.c points 1E at its
  * parameter table and the VGA code reads and sets the font vectors 1F and
  * 43. Nothing ever executes through them.
  */
-extern struct rmode_IVT openrfs_seabios_ivt;
-#define GET_IVT(vector) (openrfs_seabios_ivt.ivec[(vector)])
+extern struct rmode_IVT rsd_seabios_ivt;
+#define GET_IVT(vector) (rsd_seabios_ivt.ivec[(vector)])
 #define SET_IVT(vector, segoff) \
-    do { openrfs_seabios_ivt.ivec[(vector)] = (segoff); } while (0)
+    do { rsd_seabios_ivt.ivec[(vector)] = (segoff); } while (0)
 #define FUNC16(func) SEGOFF(0, 0)
 
 #define SEG_LOW 0

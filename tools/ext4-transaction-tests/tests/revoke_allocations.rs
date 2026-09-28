@@ -159,10 +159,10 @@ fn recovery_allocation_refusals_return_errors_and_preserve_identical_retry() {
 }
 
 #[test]
-#[ignore = "requires the Linux-created OPENRFS_EXT4_RUST_FIXTURE; required by Linux CI"]
+#[ignore = "requires the Linux-created RSD_EXT4_RUST_FIXTURE; required by Linux CI"]
 fn recovery_checkpoint_allocation_refusals_preserve_marker_and_retry() {
     use ext4plus::{Ext4, JournalFlush, load_journal_inode_map};
-    let path = std::env::var("OPENRFS_EXT4_RUST_FIXTURE").expect("real ext4 fixture is required");
+    let path = std::env::var("RSD_EXT4_RUST_FIXTURE").expect("real ext4 fixture is required");
     let filesystem = Ext4::load(Box::new(std::fs::read(path).unwrap())).unwrap();
     let map = load_journal_inode_map(&filesystem).unwrap();
     let marker = map.filesystem_superblock().with_recovery_state(true);

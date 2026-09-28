@@ -2,13 +2,13 @@
 
 # Networking
 
-OpenRFS 2.4.0 has a bounded IPv4 networking foundation for one modern
+RSD 2.4.0 has a bounded IPv4 networking foundation for one modern
 `virtio-net-pci` device under QEMU. Packets cross the normal PCI claim, mapped
 BAR, MSI-X, split virtqueue, DMA-ownership, protocol, syscall or Terminal, and
 FAT32/NVMe paths. The deterministic peer is a host-side Ethernet endpoint; it
 does not inject results into private kernel helpers.
 
-This is not an Internet-security claim. OpenRFS has no IPv6, general-purpose
+This is not an Internet-security claim. RSD has no IPv6, general-purpose
 transport TLS, firewall, routing, Wi-Fi, physical-NIC support, or browser. A
 separate bounded TLS 1.2/HTTPS SDK profile is documented in `TLS.md` and
 `HTTPS.md`.
@@ -99,7 +99,7 @@ NICs remain unsupported.
 
 ## Passive open
 
-Until 2.2.0 OpenRFS could only be a TCP client. It can now also be the side that
+Until 2.2.0 RSD could only be a TCP client. It can now also be the side that
 waits. A socket enters `LISTEN` on one port with a declared backlog of at most
 four; a SYN arriving for that port with no connection already matching its
 four-tuple produces a child connection in `SYN_RECEIVED`, drawn from the same
@@ -185,7 +185,7 @@ immutable system volume are QEMU-tested.
 
 ## Public kernel and syscall bounds
 
-`include/openrfs/network.h` is native ABI version 1. It exposes explicit owners,
+`include/rsd/network.h` is native ABI version 1. It exposes explicit owners,
 generation-authenticated handles, deadlines, readiness and cancellation. The
 global bounds are eight UDP sockets, eight TCP connections, 32 timers, eight
 poll handles per call, four queued datagrams per UDP socket, and 512 bytes per
@@ -194,7 +194,7 @@ disjoint tagged domains. Stream syscalls return a completed positive byte count
 when an earlier bounded chunk succeeded and a later chunk failed; the stable
 error is returned by the next call. Datagram operations remain atomic.
 
-`include/openrfs/network_syscall.h` is an experimental OpenRFS-private ABI version
+`include/rsd/network_syscall.h` is an experimental RSD-private ABI version
 1 for future native processes. At most four authenticated process contexts may
 exist. A request transfers at most 4,096 bytes, random requests at most 256
 bytes, and any deadline at most 30 seconds. Before the first copy, every page of
@@ -227,8 +227,8 @@ dhcp
 ip 10.0.2.15 255.255.255.0 10.0.2.2 10.0.2.3
 arp
 ping 10.0.2.2 1
-resolve openrfs.test
-http http://openrfs.test/welcome.txt NETCAP.TXT
+resolve rsd.test
+http http://rsd.test/welcome.txt NETCAP.TXT
 netstat
 ```
 
@@ -254,7 +254,7 @@ silence/timeouts, NAK, NXDOMAIN, truncation, CNAME, bad checksum, ARP conflict,
 TCP reset/retransmission, HTTP chunking/redirect/truncation/malformed framing,
 redirect loops, and malformed floods. Two modes reverse the roles: the guest
 announces a port over UDP and the peer opens a TCP connection *to* it, either to
-a port OpenRFS is listening on or to one with no listener. It writes
+a port RSD is listening on or to one with no listener. It writes
 classic PCAP with deterministic packet timestamps.
 
 `tools/network_packet_audit.py` independently reconstructs the captured

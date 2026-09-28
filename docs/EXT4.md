@@ -8,7 +8,7 @@ and unresolved failure cases are recorded in the
 final-tree evidence and normal protected integration are complete. Commit-specific
 receipts below are historical implementation evidence, not current-tree passes.
 
-OpenRFS has one ext4 implementation: the audited, pinned `ext4plus` source under
+RSD has one ext4 implementation: the audited, pinned `ext4plus` source under
 `vendor/ext4plus`. It is built `no_std`, synchronously, and with default
 features disabled. Cargo is locked and forced offline through `.cargo/config.toml`;
 the exact registry closure is under `vendor/rust-crates`.
@@ -32,8 +32,8 @@ successful byte count or cursor advance; the destination buffer is unspecified.
 No-replace file/directory rename can therefore preserve open handles, including
 descendants of moved directories; directory iterators own their snapshots. Hard-linked
 paths report the same inode identity to the vnode table. Symlinks are resolved
-by ext4plus for lookup and open. VFS `openrfsfs_symlink` journals literal targets
-shorter than 128 bytes; `openrfsfs_readlink` copies the literal target without a
+by ext4plus for lookup and open. VFS `rsdfs_symlink` journals literal targets
+shorter than 128 bytes; `rsdfs_readlink` copies the literal target without a
 trailing NUL and supports short output buffers. The Rust coordinator accepts
 targets up to 4,095 bytes. Dangling and looping links remain valid on remount;
 unlink/rename and hard-link creation inspect the final link itself. Unlinking
@@ -50,7 +50,7 @@ The remove-any API resumes the retained file or directory transaction directly;
 SDK unlink and rmdir select file-only and directory-only semantics. VFS mutations
 defer component validation to the journal coordinator, allowing retries while
 the staged view is hidden. Native PATH_LINK and SDK link expose hard links.
-`openrfsfs_rename` retains no-replace behavior; `openrfsfs_rename_replace` publishes
+`rsdfs_rename` retains no-replace behavior; `rsdfs_rename_replace` publishes
 replacement in one transaction, preserving same-inode no-ops and refusing
 nonempty directory destinations or incompatible file/directory types. The
 destination's freed blocks are revoked with the namespace change. An open regular
@@ -66,7 +66,7 @@ operation when ext4 is admitted, and SDK `rename()` uses that syscall. Errors
 from the ext4 transaction return directly; they never trigger the multi-step
 backup-name replacement used by backends without atomic replacement.
 
-VFS `openrfsfs_unlink_held_file` removes a name only if it still names the caller's
+VFS `rsdfs_unlink_held_file` removes a name only if it still names the caller's
 writable regular-file handle. The coordinator compares the final entry without
 following a symlink before arming recovery and binds the inode into a distinct
 retry key. Final-link removal uses the existing open-orphan chain; ordinary
@@ -107,7 +107,7 @@ zero-link inodes are refused before recovery home writes. Recovery validates
 the post-replay view, checkpoints the journal while retaining the marker,
 then journals each orphan deletion before clearing recovery state.
 Ext4plus then
-validates the superblock, group descriptors, and existing journal. OpenRFS walks
+validates the superblock, group descriptors, and existing journal. RSD walks
 the reachable namespace (at most 8,192 entries and 512 queued directories),
 validating directory blocks,
 inode metadata and timestamps, extended-attribute names and values, symlink
@@ -133,7 +133,7 @@ and rejects any result outside the filesystem image. Committed mutations reload
 that view after checkpointing, so package capacity checks observe filesystem
 space rather than unused bytes at the end of the NVMe namespace.
 
-OpenRFS's VFS currently admits ASCII mount-relative paths shorter than 128 bytes
+RSD's VFS currently admits ASCII mount-relative paths shorter than 128 bytes
 and at most 16 components. Directory names may be 255 bytes on disk; entries
 that cannot fit the current VFS path contract can be enumerated but cannot be
 opened through ABI v1. VFS directory handles own bounded snapshots of up to
@@ -211,9 +211,9 @@ This restriction matches the executed QEMU profile; completed-command power
 cuts do not prove torn-sector or volatile-cache-loss behavior on real hardware.
 
 Upstream reads an existing JBD2 journal but does not journal new mutations, so
-OpenRFS gives ext4plus only a bounded `JournalMutationStage` as its reader and
+RSD gives ext4plus only a bounded `JournalMutationStage` as its reader and
 writer. That copy-on-write overlay cannot write through to its immutable
-NVMe-backed reader. After OpenRFS has durably set the recovery marker, the
+NVMe-backed reader. After RSD has durably set the recovery marker, the
 coordinator retains the same overlay while continuing to refuse permanent or
 unsupported read-only conditions. The ordered journal executor is the only
 platform writer. Public VFS mutations route through that coordinator. Directory
@@ -229,7 +229,7 @@ The VFS write path was admitted only after all of the following were present:
    namespace/resource census checks; and
 5. refusal tests for unsupported feature combinations and corrupt metadata.
 
-The vendored port record in `vendor/ext4plus/OPENRFS-PORT.md` tracks the delta
+The vendored port record in `vendor/ext4plus/RSD-PORT.md` tracks the delta
 from the pinned upstream commit.
 
 ## Ordered transaction foundation
@@ -290,7 +290,7 @@ stored checksum.
 
 The Rust mount path performs the same journal-inode discovery and JBD2 admission
 before exposing the filesystem to VFS. A clean filesystem must map into a
-complete clean ring. For a filesystem carrying ext4's recovery bit, OpenRFS
+complete clean ring. For a filesystem carrying ext4's recovery bit, RSD
 reads the bounded physical ring, independently validates and collapses every
 committed transaction, checkpoints the returned home images, flushes them,
 persists and flushes the returned clean JBD2 superblock, and only then clears
@@ -300,7 +300,7 @@ validated replay image so recovered allocation counters cannot be replaced by
 the mount-time snapshot. It reloads and re-admits the clean filesystem before
 walking the namespace or exposing the mount.
 
-`recover_committed_ring` implements the bounded live-ring reader for OpenRFS's
+`recover_committed_ring` implements the bounded live-ring reader for RSD's
 single-descriptor transaction profile. It starts at the admitted JBD2 sequence
 and live block, follows consecutive committed records across one wrap, validates
 every descriptor, data tag, optional revoke, and commit checksum, discards an
@@ -335,7 +335,7 @@ backend is writable through ordinary VFS calls after the boundary sweep.
 
 `qemu-test-ext4-rename-device-powercuts` and its `rename-cross-device`
 counterpart additionally cut after each completed NVMe block-write command and
-flush. The private `openrfs.ext4-storage-cut` test option traces command ordinals
+flush. The private `rsd.ext4-storage-cut` test option traces command ordinals
 and LBAs (or flush boundary identifiers); zero records the baseline, and a
 positive ordinal exits immediately at that command. It cannot be combined with
 the flush-only cut or storage-refusal injector. Failed commands do not count as
@@ -421,7 +421,7 @@ Allocation checksum handling is pinned to Linux
 and e2fsprogs
 [`csum.c`](https://github.com/tytso/e2fsprogs/blob/master/lib/ext2fs/csum.c):
 the block-bitmap CRC32C covers `clusters_per_group / 8` bytes, not the padded
-remainder of the bitmap's 4 KiB home block. OpenRFS rejects bigalloc, so this is
+remainder of the bitmap's 4 KiB home block. RSD rejects bigalloc, so this is
 `blocks_per_group / 8` at the retained filesystem checksum seed.
 
 Metadata home blocks appear only after `Flush(Commit)`, and slots are reused
@@ -626,7 +626,7 @@ Milestone 2 interoperability and crash matrix.
 
 The append backend selects the live inode's EOF under the exclusive writable
 volume lease, ignoring the handle's seek position. Retained journal retries
-reuse the original append offset and payload. Native `OPENRFS_OPEN_APPEND`,
+reuse the original append offset and payload. Native `RSD_OPEN_APPEND`,
 POSIX `O_APPEND`, and stdio append modes use this operation. Native append
 syscalls return at most one 4096-byte copied chunk; callers must handle short
 writes. Direct backend requests remain bounded to 256 KiB and can checkpoint

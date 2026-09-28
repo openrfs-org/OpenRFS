@@ -6,7 +6,7 @@ Git tree: 0bbafb335224fb1dbfc28a8cbad3216a17c67aee
 Licence: per-file FILE_LICENCE declarations (COPYING, COPYING.GPLv2,
 COPYING.UBDL). Every vendored file declares GPL-2.0-or-later,
 GPL-2.0-or-later OR UBDL-1.0, GPL-any-version or BSD-2-Clause, each of which
-may be distributed under GPL-3.0 as part of OpenRFS.
+may be distributed under GPL-3.0 as part of RSD.
 
 Vendored paths (byte-for-byte upstream; SOURCE-MANIFEST.sha256):
   src/drivers/net/intel.c, intel.h        GPL2_OR_LATER_OR_UBDL
@@ -27,7 +27,7 @@ Vendored paths (byte-for-byte upstream; SOURCE-MANIFEST.sha256):
     spi,spi_bit,threewire}.h
                                           GPL2_OR_LATER(_OR_UBDL)
 
-  src/include/mii.h is excluded: it declares GPL2_ONLY. The OpenRFS-owned
+  src/include/mii.h is excluded: it declares GPL2_ONLY. The RSD-owned
   ports/ipxe/include/mii.h supplies only the needed IEEE MII register values.
 
   USB stack (all GPL2_OR_LATER_OR_UBDL; Michael Brown, 2014-2015):
@@ -56,13 +56,13 @@ Vendored paths (byte-for-byte upstream; SOURCE-MANIFEST.sha256):
 
 Deliberately excluded: every GPL2_ONLY file (for example sky2, skge,
 myri10ge, cs89x0, tg3, bnxt and the vxge core), because GPL-2.0-only code
-cannot be combined with OpenRFS's GPL-3.0-only licence; iPXE's network stack,
-settings tree, console, timers and build system, which OpenRFS replaces.
+cannot be combined with RSD's GPL-3.0-only licence; iPXE's network stack,
+settings tree, console, timers and build system, which RSD replaces.
 
 Also not vendored: virtio-net. The implementation iPXE shipped until May 2026
 (src/drivers/net/virtio-net.c with src/drivers/bus/virtio-pci.c and
 virtio-ring.c) is the one with years of use, but virtio-pci.c and its headers
 carry no licence declaration, so their compatibility with GPL-3.0-only
 cannot be established from the files; its replacement (commit ca85200,
-2026-05-13, GPL2_OR_LATER_OR_UBDL) is in no iPXE release yet. OpenRFS keeps
+2026-05-13, GPL2_OR_LATER_OR_UBDL) is in no iPXE release yet. RSD keeps
 its own virtio-net driver.

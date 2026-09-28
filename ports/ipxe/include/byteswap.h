@@ -3,8 +3,8 @@
  * Byte order conversion with iPXE's names (include/byteswap.h). x86-64 is
  * little-endian, so the little-endian conversions are identities.
  */
-#ifndef OPENRFS_IPXE_BYTESWAP_H
-#define OPENRFS_IPXE_BYTESWAP_H
+#ifndef RSD_IPXE_BYTESWAP_H
+#define RSD_IPXE_BYTESWAP_H
 
 #include <stdint.h>
 #include <endian.h>

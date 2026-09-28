@@ -3,8 +3,8 @@
  * Reference counting (include/ipxe/refcnt.h). A count of zero means one
  * reference, as in iPXE; ref_put() below zero calls the free method.
  */
-#ifndef OPENRFS_IPXE_REFCNT_H
-#define OPENRFS_IPXE_REFCNT_H
+#ifndef RSD_IPXE_REFCNT_H
+#define RSD_IPXE_REFCNT_H
 
 struct refcnt {
     int count;

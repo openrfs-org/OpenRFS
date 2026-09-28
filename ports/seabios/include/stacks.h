@@ -1,14 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * OpenRFS environment for the vendored SeaBIOS drivers: threads.
+ * RSD environment for the vendored SeaBIOS drivers: threads.
  *
- * SeaBIOS can run device detection in cooperative threads. OpenRFS builds
+ * SeaBIOS can run device detection in cooperative threads. RSD builds
  * the drivers with CONFIG_THREADS off, which is a configuration SeaBIOS
  * supports: run_thread runs the function to completion before returning,
  * yield only relaxes the processor, and the mutexes are never contended.
  */
-#ifndef OPENRFS_SEABIOS_STACKS_H
-#define OPENRFS_SEABIOS_STACKS_H
+#ifndef RSD_SEABIOS_STACKS_H
+#define RSD_SEABIOS_STACKS_H
 
 #include "types.h"
 
@@ -16,7 +16,7 @@ struct mutex_s { u32 isLocked; };
 
 /*
  * ata.c builds bus-master PRD tables here, but only with CONFIG_ATA_DMA,
- * which OpenRFS leaves at its default of off; the symbol is deliberately
+ * which RSD leaves at its default of off; the symbol is deliberately
  * never defined, so enabling that path fails to link rather than using
  * memory no device owns.
  */

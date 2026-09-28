@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef OPENRFS_NATIVE_DYNAMIC_PROOF_H
-#define OPENRFS_NATIVE_DYNAMIC_PROOF_H
+#ifndef RSD_NATIVE_DYNAMIC_PROOF_H
+#define RSD_NATIVE_DYNAMIC_PROOF_H
 
 #include <stddef.h>
 

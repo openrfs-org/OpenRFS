@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 .section .text, "ax", @progbits
-.macro OPENRFS_STUB name, count
+.macro RSD_STUB name, count
 .global \name
 .type \name, @function
 \name:
@@ -27,11 +27,11 @@
     ret
 .size \name, . - \name
 .endm
-OPENRFS_STUB openrfs_syscall0, 0
-OPENRFS_STUB openrfs_syscall1, 1
-OPENRFS_STUB openrfs_syscall2, 2
-OPENRFS_STUB openrfs_syscall3, 3
-OPENRFS_STUB openrfs_syscall4, 4
-OPENRFS_STUB openrfs_syscall5, 5
-OPENRFS_STUB openrfs_syscall6, 6
+RSD_STUB rsd_syscall0, 0
+RSD_STUB rsd_syscall1, 1
+RSD_STUB rsd_syscall2, 2
+RSD_STUB rsd_syscall3, 3
+RSD_STUB rsd_syscall4, 4
+RSD_STUB rsd_syscall5, 5
+RSD_STUB rsd_syscall6, 6
 .section .note.GNU-stack, "", @progbits

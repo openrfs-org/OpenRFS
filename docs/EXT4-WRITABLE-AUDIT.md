@@ -12,10 +12,10 @@ everyday-use operating-system certification.
 
 The implementation is ported from writable-ext4plus
 `8dcaf7d81d4b0ebdde554402c1f9e48103748891`, relative to its foundation
-`804c6ac065d92813e604b971f912383c3addf350`, onto OpenRFS main
+`804c6ac065d92813e604b971f912383c3addf350`, onto RSD main
 `05ff3fe48be0b60d0d47d41f4a9898e4a2386e56`. Main includes the subsequently
 squashed foundation fixes and product rename; the port uses three-way content
-integration after mapping legacy identifiers to main's OpenRFS identifiers.
+integration after mapping legacy identifiers to main's RSD identifiers.
 The exact file mapping and exclusions are in `EXT4-PORT-MAP.json`.
 
 The filesystem changes include the project-maintained `vendor/ext4plus` fork;
@@ -67,8 +67,8 @@ or unavailable evidence, never passes.
 
 ## Public operation and gap map
 
-Public `openrfsfs_*` operations in `src/kernel/vfs.c` dispatch through
-`include/openrfs/vfs_backend.h` to `src/kernel/ext4_fs.c`. Rust ABI wrappers in
+Public `rsdfs_*` operations in `src/kernel/vfs.c` dispatch through
+`include/rsd/vfs_backend.h` to `src/kernel/ext4_fs.c`. Rust ABI wrappers in
 `src/rust/abi.rs` and `lib.rs` enter `src/rust/ext4.rs`. Mutation endpoints use
 the shared `JournalMutationStage` and retained JBD2 executor; direct upstream
 writes never receive the device writer.
@@ -147,7 +147,7 @@ not cause sync to apply the rejected write.
 Required local targets: clean `make verify`, `make ext4-tests`,
 `make ext4-fsync-test`, `make ext4-sparse-truncate-test`, all transaction,
 coordinator and revoke-allocation tests including ignored allocation proofs,
-with `OPENRFS_EXT4_KERNEL_INTEROP=1` and a generated fixture. Run representative
+with `RSD_EXT4_KERNEL_INTEROP=1` and a generated fixture. Run representative
 QEMU recovery, normal VFS, capacity, error, physical-cut and remount scenarios
 for changed behavior; inspect bytes, fsck, allocator and journal state.
 

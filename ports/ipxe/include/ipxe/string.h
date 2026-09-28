@@ -4,8 +4,8 @@
  * sources use is declared; ports/ipxe/libc.c implements it as upstream's
  * core/string.c does.
  */
-#ifndef OPENRFS_IPXE_IPXE_STRING_H
-#define OPENRFS_IPXE_IPXE_STRING_H
+#ifndef RSD_IPXE_IPXE_STRING_H
+#define RSD_IPXE_IPXE_STRING_H
 
 unsigned int digit_value(unsigned int digit);
 

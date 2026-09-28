@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef OPENRFS_SIGNAL_H
-#define OPENRFS_SIGNAL_H
+#ifndef RSD_SIGNAL_H
+#define RSD_SIGNAL_H
 
 typedef void (*sighandler_t)(int);
 typedef int sig_atomic_t;

@@ -1,0 +1,19 @@
+THE MARK
+========
+
+rsd-mark.png is the RSD wordmark: the project owner's own, supplied by
+him and used at his direction.
+
+  2224 x 1008, PNG with an alpha channel.
+  sha256 79973fb0f2814bfb9d148e390acc8b3027403b2296cee9af591694f28cda8788
+
+  The letterforms are one flat colour, #7B0100 - a dark red - and that
+  is the brand red everything else takes. The panel's launcher, the
+  fetch's art and the website all read it from here rather than each
+  holding their own idea of what red means.
+
+The current name is RSD - Root Software Distribution - and the mark is
+the wordmark above. Older unused logo files have been removed.
+
+The ASCII the fetch prints is captured from this file rather than
+traced; see assets/ascii/SOURCE.txt.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Run one deterministic OpenRFS networking scenario under QEMU."""
+"""Run one deterministic RSD networking scenario under QEMU."""
 
 from __future__ import annotations
 
@@ -39,12 +39,12 @@ STORAGE = {
     "network-persistence",
     "network-native",
     "native-https",
-    "native-openrfs",
+    "native-rsd",
 }
 
 FIXTURE_MODE = {
     "native-https": "https",
-    "native-openrfs": "packages-lifecycle",
+    "native-rsd": "packages-lifecycle",
     "network-dhcp-timeout": "dhcp-timeout",
     "network-dhcp": "dhcp-adversarial",
     "network-udp": "udp-queue",
@@ -168,10 +168,10 @@ def storage_arguments(args: argparse.Namespace, output: Path) -> list[str]:
         "-boot", "order=d",
         "-blockdev", f"driver=file,filename={args.system},node-name=system-file,read-only=on,auto-read-only=off",
         "-blockdev", "driver=raw,file=system-file,node-name=system-raw,read-only=on",
-        "-device", "nvme,serial=openrfs-system-fat32,drive=system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1",
+        "-device", "nvme,serial=rsd-system-fat32,drive=system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1",
         "-blockdev", f"driver=file,filename={data},node-name=data-file,read-only=off,auto-read-only=off",
         "-blockdev", "driver=raw,file=data-file,node-name=data-raw,read-only=off",
-        "-device", f"nvme,serial=openrfs-data-{args.data_filesystem},drive=data-raw,logical_block_size={data_block_size},physical_block_size={data_block_size},max_ioqpairs=1,msix_qsize=1",
+        "-device", f"nvme,serial=rsd-data-{args.data_filesystem},drive=data-raw,logical_block_size={data_block_size},physical_block_size={data_block_size},max_ioqpairs=1,msix_qsize=1",
     ]
 
 
@@ -201,12 +201,12 @@ def boot_arguments(args: argparse.Namespace, output: Path) -> list[str]:
     if root.exists():
         shutil.rmtree(root)
     shutil.copytree(args.efi_root, root)
-    shutil.copyfile(args.kernel, root / "boot" / "openrfs.elf")
+    shutil.copyfile(args.kernel, root / "boot" / "rsd.elf")
     configuration = (
         "set default=0\n"
         "set timeout=0\n\n"
-        'menuentry "OpenRFS test" {\n'
-        f"    multiboot2 /boot/openrfs.elf openrfs.test={args.scenario}\n"
+        'menuentry "RSD test" {\n'
+        f"    multiboot2 /boot/rsd.elf rsd.test={args.scenario}\n"
         "    boot\n"
         "}\n"
     )
@@ -246,11 +246,11 @@ def run(args: argparse.Namespace) -> int:
         "-monitor", "none", "-serial", "stdio", "-device",
         "isa-debug-exit,iobase=0xf4,iosize=0x04",
     ]
-    if args.scenario in ("native-https", "native-openrfs"):
+    if args.scenario in ("native-https", "native-rsd"):
         qemu.extend([
             "-cpu", "max",
             "-rtc", "base=" + (
-                "2027-01-15T08:01:00" if args.scenario == "native-openrfs"
+                "2027-01-15T08:01:00" if args.scenario == "native-rsd"
                 else "2026-08-31T00:00:00"
             ) + ",clock=vm",
         ])
@@ -273,19 +273,19 @@ def run(args: argparse.Namespace) -> int:
         )
         wait_ready(ready, fixture)
         nic_device = (
-            "virtio-net-pci,id=virtio-net0,netdev=openrfsnet,"
+            "virtio-net-pci,id=virtio-net0,netdev=rsdnet,"
             "mac=52:54:00:12:34:56,disable-legacy=on,mrg_rxbuf=off"
         )
         if args.scenario == "network-nic-reset":
             qemu.extend([
                 "-global",
                 "ICH9-LPC.acpi-pci-hotplug-with-bridge-support=off",
-                "-device", "pcie-root-port,id=openrfs-net-root,"
+                "-device", "pcie-root-port,id=rsd-net-root,"
                 "chassis=1,slot=1",
             ])
-            nic_device += ",bus=openrfs-net-root"
+            nic_device += ",bus=rsd-net-root"
         qemu.extend([
-            "-netdev", "dgram,id=openrfsnet,local.type=inet,local.host=127.0.0.1,local.port="
+            "-netdev", "dgram,id=rsdnet,local.type=inet,local.host=127.0.0.1,local.port="
             f"{guest_port},remote.type=inet,remote.host=127.0.0.1,remote.port={peer_port}",
             "-device", nic_device,
         ])
@@ -297,10 +297,10 @@ def run(args: argparse.Namespace) -> int:
             qemu.extend([
                 "-qmp", f"tcp:{qmp_endpoint[0]}:{qmp_endpoint[1]},server=on,wait=off"
             ])
-    if args.scenario not in ("network-persistence", "native-openrfs"):
+    if args.scenario not in ("network-persistence", "native-rsd"):
         qemu.append("-no-reboot")
 
-    expected_begins = 3 if args.scenario == "native-openrfs" else (
+    expected_begins = 3 if args.scenario == "native-rsd" else (
         2 if args.scenario == "network-persistence" else 1
     )
     try:
@@ -341,22 +341,22 @@ def run(args: argparse.Namespace) -> int:
     passed = transcript.count(f"ST PASS {args.scenario}\n")
     healthy = (result == args.expected and begin == expected_begins and
                passed == 1 and "ST FAIL" not in transcript and
-               "OpenRFS PANIC" not in transcript and
+               "RSD PANIC" not in transcript and
                "ST NETWORK production path bounded and recoverable" in transcript)
     if (args.scenario.startswith("network-") or args.scenario in
-            ("native-https", "native-openrfs")) and healthy:
-        teardown_receipts = (3 if args.scenario == "native-openrfs" else
+            ("native-https", "native-rsd")) and healthy:
+        teardown_receipts = (3 if args.scenario == "native-rsd" else
                              2 if args.scenario == "network-persistence" else 1)
         healthy = transcript.count(
             "ST NETWORK resource and teardown census clean\n") == teardown_receipts
     if args.scenario == "network-native" and healthy:
         healthy = (
             transcript.count(
-                "OPENRFS NETAPP PASS dns=10.0.2.20 http=31 udp=echo "
+                "RSD NETAPP PASS dns=10.0.2.20 http=27 udp=echo "
                 "timeout reset cancel malformed-dns\n"
             ) == 1
             and transcript.count(
-                "OpenRFS: native DNS, TCP, UDP, timeout, reset and "
+                "RSD: native DNS, TCP, UDP, timeout, reset and "
                 "cancellation passed\n"
             ) == 1
         )
@@ -386,7 +386,7 @@ def run(args: argparse.Namespace) -> int:
                 "refused\n"
             ) == 1
             and all(f"DNS control {name}" in fixture_text for name in (
-                "openrfs.test", "mismatch.test", "poison.test",
+                "rsd.test", "mismatch.test", "poison.test",
                 "compression.test", "unrelated.test", "wrong-source.test",
                 "wrong-source-port.test", "wrong-destination-port.test",
                 "wrong-type.test", "wrong-class.test", "timeout.test"
@@ -407,13 +407,13 @@ def run(args: argparse.Namespace) -> int:
         ) == 1
     if args.scenario == "native-https" and healthy:
         required = (
-            "OPENRFS HTTPSAPP PHASE start\n",
-            "OPENRFS HTTPSAPP PHASE authenticated-download PASS\n",
-            "OPENRFS HTTPSAPP PHASE durable-output PASS\n",
-            "OPENRFS HTTPSAPP PHASE kernel-upload PASS\n",
-            "OPENRFS HTTPSAPP PASS hostname time trust length close upload\n",
-            "OpenRFS: HTTPS strong hardware entropy passed\n",
-            "OpenRFS: HTTPS TLS 1.2 hostname time trust framing close and "
+            "RSD HTTPSAPP PHASE start\n",
+            "RSD HTTPSAPP PHASE authenticated-download PASS\n",
+            "RSD HTTPSAPP PHASE durable-output PASS\n",
+            "RSD HTTPSAPP PHASE kernel-upload PASS\n",
+            "RSD HTTPSAPP PASS hostname time trust length close upload\n",
+            "RSD: HTTPS strong hardware entropy passed\n",
+            "RSD: HTTPS TLS 1.2 hostname time trust framing close and "
             "teardown passed\n",
         )
         healthy = all(transcript.count(marker) == 1 for marker in required)
@@ -423,30 +423,30 @@ def run(args: argparse.Namespace) -> int:
                 "--https", "--json", str(audit),
             ], check=False)
             healthy = audited.returncode == 0
-    if args.scenario == "native-openrfs" and healthy:
+    if args.scenario == "native-rsd" and healthy:
         required = (
-            "OPENRFS PACKAGE PHASE signed-plan-refused PASS\n",
-            "OPENRFS PACKAGE PHASE committed generation=1 PASS\n",
-            "OPENRFS PACKAGE PHASE committed generation=2 PASS\n",
-            "OPENRFS PACKAGE PHASE repair-plan PASS\n",
-            "OPENRFS PACKAGE PHASE repaired generation=3 PASS\n",
-            "OPENRFS PACKAGE REPAIR PASS trust payload transaction cleanup\n",
-            "OpenRFS: signed HTTPS package install synchronized reboot phase\n",
-            "OpenRFS: signed HTTPS package update synchronized reboot phase\n",
-            "OpenRFS: damaged package generation quarantined before repair "
+            "RSD PACKAGE PHASE signed-plan-refused PASS\n",
+            "RSD PACKAGE PHASE committed generation=1 PASS\n",
+            "RSD PACKAGE PHASE committed generation=2 PASS\n",
+            "RSD PACKAGE PHASE repair-plan PASS\n",
+            "RSD PACKAGE PHASE repaired generation=3 PASS\n",
+            "RSD PACKAGE REPAIR PASS trust payload transaction cleanup\n",
+            "RSD: signed HTTPS package install synchronized reboot phase\n",
+            "RSD: signed HTTPS package update synchronized reboot phase\n",
+            "RSD: damaged package generation quarantined before repair "
             "passed\n",
-            "OPENRFS SDL CHESS PASS upstream=release-2.32.10 "
+            "RSD SDL CHESS PASS upstream=release-2.32.10 "
             "frames=8 persistent=yes\n",
-            "OpenRFS: damaged SDL package repaired authenticated and launched "
+            "RSD: damaged SDL package repaired authenticated and launched "
             "from writable ext4 passed\n",
         )
         healthy = all(transcript.count(marker) == 1 for marker in required)
         healthy = healthy and all(
             transcript.count(marker) == count for marker, count in (
-                ("OPENRFS PACKAGE PHASE start\n", 4),
-                ("OPENRFS PACKAGE PHASE signed-plan PASS\n", 2),
-                ("OPENRFS PACKAGE PHASE payloads-authenticated PASS\n", 3),
-                ("OPENRFS PACKAGE PASS https trust plan payload transaction "
+                ("RSD PACKAGE PHASE start\n", 4),
+                ("RSD PACKAGE PHASE signed-plan PASS\n", 2),
+                ("RSD PACKAGE PHASE payloads-authenticated PASS\n", 3),
+                ("RSD PACKAGE PASS https trust plan payload transaction "
                  "cleanup\n", 2),
             )
         )

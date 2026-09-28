@@ -8,13 +8,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <openrfs/heap.h>
-#include <openrfs/package_control.h>
-#include <openrfs/package_generation.h>
-#include <openrfs/package_platform_trust.h>
-#include <openrfs/package_state.h>
-#include <openrfs/package_trust.h>
-#include <openrfs/wall_clock.h>
+#include <rsd/heap.h>
+#include <rsd/package_control.h>
+#include <rsd/package_generation.h>
+#include <rsd/package_platform_trust.h>
+#include <rsd/package_state.h>
+#include <rsd/package_trust.h>
+#include <rsd/wall_clock.h>
 
 #define CHECK(condition) do { \
     if (!(condition)) { \
@@ -498,7 +498,7 @@ static void probe_controller_reentry(void)
 {
     struct package_control_report report;
     struct package_control_item item;
-    static const uint8_t identifier[] = "org.openrfs.app";
+    static const uint8_t identifier[] = "org.rsd.app";
     upload_observer = NULL;
     ++reentry_count;
     memset(&item, 0xff, sizeof(item));
@@ -582,14 +582,14 @@ int main(int argc, char **argv)
     changed_repository_upload = register_upload(&changed_repository);
     CHECK(changed_repository_upload != 0U &&
         package_control_open_install(TEST_OWNER, changed_repository_upload,
-            (const uint8_t *)"org.openrfs.app", 15U, &report) ==
+            (const uint8_t *)"org.rsd.app", 11U, &report) ==
                 PACKAGE_CONTROL_STATUS_MANAGER &&
         report.manager_status == PACKAGE_MANAGER_STATUS_DIGEST &&
         package_control_resources_released() && live_allocations == 0U);
 
     upload_observer = probe_controller_reentry;
     CHECK(package_control_open_install(TEST_OWNER, repository_upload,
-        (const uint8_t *)"org.openrfs.app", 15U, &report) ==
+        (const uint8_t *)"org.rsd.app", 11U, &report) ==
             PACKAGE_CONTROL_STATUS_OK &&
         report.repository_version == FIXTURE_REPOSITORY_VERSION &&
         report.plan_count == 2U && report.attached_count == 0U);
@@ -598,20 +598,20 @@ int main(int argc, char **argv)
     control = report.token;
     CHECK(control != 0U &&
         package_control_open_install(TEST_OWNER, repository_upload,
-            (const uint8_t *)"org.openrfs.app", 15U, &report) ==
+            (const uint8_t *)"org.rsd.app", 11U, &report) ==
                 PACKAGE_CONTROL_STATUS_NO_SLOT &&
         package_control_item(OTHER_OWNER, control, 0U, &item, &report) ==
             PACKAGE_CONTROL_STATUS_STALE && item.identifier_bytes == 0U &&
-        find_plan_item(control, "org.openrfs.lib", &library_index) == 0);
+        find_plan_item(control, "org.rsd.lib", &library_index) == 0);
     CHECK(package_control_attach(TEST_OWNER, control, library_index,
         application_upload, &report) == PACKAGE_CONTROL_STATUS_UPLOAD &&
         (report.upload_status == PACKAGE_UPLOAD_STATUS_LENGTH ||
             report.upload_status == PACKAGE_UPLOAD_STATUS_DIGEST) &&
         report.attached_count == 0U);
-    CHECK(attach_named(control, "org.openrfs.lib", library_upload) == 0 &&
+    CHECK(attach_named(control, "org.rsd.lib", library_upload) == 0 &&
         package_control_attach(TEST_OWNER, control, library_index,
             library_upload, &report) == PACKAGE_CONTROL_STATUS_STATE &&
-        attach_named(control, "org.openrfs.app", application_upload) == 0);
+        attach_named(control, "org.rsd.app", application_upload) == 0);
     fail_floor_once = true;
     CHECK(package_control_commit(TEST_OWNER, control, &report) ==
             PACKAGE_CONTROL_STATUS_SERVICE &&
@@ -629,20 +629,20 @@ int main(int argc, char **argv)
             PACKAGE_CONTROL_STATUS_STALE);
 
     CHECK(package_control_open_install(TEST_OWNER, repository_upload,
-        (const uint8_t *)"org.openrfs.app", 15U, &report) ==
+        (const uint8_t *)"org.rsd.app", 11U, &report) ==
             PACKAGE_CONTROL_STATUS_MANAGER &&
         report.manager_status == PACKAGE_MANAGER_STATUS_ALREADY_INSTALLED &&
         package_control_resources_released() && live_allocations == 0U);
 
     CHECK(package_control_open_install(TEST_OWNER, update_repository_upload,
-        (const uint8_t *)"org.openrfs.app", 15U, &report) ==
+        (const uint8_t *)"org.rsd.app", 11U, &report) ==
             PACKAGE_CONTROL_STATUS_OK && report.plan_count == 2U &&
         report.generation == 1U && report.repository_version ==
             FIXTURE_UPDATE_REPOSITORY_VERSION);
     control = report.token;
-    CHECK(attach_named(control, "org.openrfs.newlib", update_library_upload) ==
+    CHECK(attach_named(control, "org.rsd.newlib", update_library_upload) ==
             0 &&
-        attach_named(control, "org.openrfs.app", update_application_upload) ==
+        attach_named(control, "org.rsd.app", update_application_upload) ==
             0);
     fail_commit_once = true;
     CHECK(package_control_commit(TEST_OWNER, control, &report) ==
@@ -662,7 +662,7 @@ int main(int argc, char **argv)
         service_repository_floor == FIXTURE_UPDATE_REPOSITORY_VERSION);
 
     CHECK(package_control_open_install(TEST_OWNER, repository_upload,
-        (const uint8_t *)"org.openrfs.app", 15U, &report) ==
+        (const uint8_t *)"org.rsd.app", 11U, &report) ==
             PACKAGE_CONTROL_STATUS_MANAGER &&
         report.manager_status == PACKAGE_MANAGER_STATUS_ROLLBACK &&
         package_control_resources_released() && live_allocations == 0U);
@@ -671,9 +671,9 @@ int main(int argc, char **argv)
         &report) == PACKAGE_CONTROL_STATUS_OK && report.plan_count == 2U &&
         report.attached_count == 0U && report.generation == 2U);
     control = report.token;
-    CHECK(attach_named(control, "org.openrfs.newlib", update_library_upload) ==
+    CHECK(attach_named(control, "org.rsd.newlib", update_library_upload) ==
             0 &&
-        attach_named(control, "org.openrfs.app", update_application_upload) ==
+        attach_named(control, "org.rsd.app", update_application_upload) ==
             0 &&
         package_control_commit(TEST_OWNER, control, &report) ==
             PACKAGE_CONTROL_STATUS_OK && report.prepared && report.committed &&
@@ -699,7 +699,7 @@ int main(int argc, char **argv)
     free(update_library.bytes);
     free(changed_repository.bytes);
     CHECK(package_control_open_remove(TEST_OWNER,
-        (const uint8_t *)"org.openrfs.app", 15U, &report) ==
+        (const uint8_t *)"org.rsd.app", 11U, &report) ==
             PACKAGE_CONTROL_STATUS_OK && report.plan_count == 2U &&
         report.attached_count == 0U && report.generation == 3U);
     control = report.token;
@@ -714,10 +714,10 @@ int main(int argc, char **argv)
             &installed) == PACKAGE_STATE_STATUS_OK &&
         installed.generation == 4U && installed.package_count == 0U);
     CHECK(package_control_open_remove(TEST_OWNER,
-        (const uint8_t *)"org.openrfs.app", 15U, &report) ==
+        (const uint8_t *)"org.rsd.app", 11U, &report) ==
             PACKAGE_CONTROL_STATUS_MANAGER &&
         report.manager_status == PACKAGE_MANAGER_STATUS_NOT_FOUND &&
         package_control_resources_released() && live_allocations == 0U);
-    (void)puts("OpenRFS privileged package controller signed lifecycle tests passed");
+    (void)puts("RSD privileged package controller signed lifecycle tests passed");
     return 0;
 }

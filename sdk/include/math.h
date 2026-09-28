@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef OPENRFS_MATH_H
-#define OPENRFS_MATH_H
+#ifndef RSD_MATH_H
+#define RSD_MATH_H
 
 #define HUGE_VAL (__builtin_huge_val())
 #define INFINITY (__builtin_inff())

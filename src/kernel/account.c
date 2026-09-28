@@ -3,14 +3,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/account.h>
-#include <openrfs/fat32_fs.h>
-#include <openrfs/package_state.h>
-#include <openrfs/random.h>
+#include <rsd/account.h>
+#include <rsd/fat32_fs.h>
+#include <rsd/package_state.h>
+#include <rsd/random.h>
 
-#define ACCOUNT_DIRECTORY "OPENRFS"
-#define ACCOUNT_PATH "OPENRFS/LOGIN.DAT"
-#define ACCOUNT_TEMP_PATH "OPENRFS/LOGIN.NEW"
+#define ACCOUNT_DIRECTORY "RSD"
+#define ACCOUNT_PATH "RSD/LOGIN.DAT"
+#define ACCOUNT_TEMP_PATH "RSD/LOGIN.NEW"
 #define ACCOUNT_RECORD_BYTES 124U
 #define ACCOUNT_CHECKSUM_OFFSET 92U
 #define ACCOUNT_SALT_OFFSET 12U
@@ -21,7 +21,7 @@
 #define ACCOUNT_KDF_ROUNDS UINT32_C(32768)
 
 static const uint8_t account_magic[4] = { 'O', 'G', 'A', '1' };
-static const uint8_t account_domain[] = "OpenRFS account password v1";
+static const uint8_t account_domain[] = "RSD account password v1";
 
 static void copy_bytes(uint8_t *destination, const uint8_t *source, size_t length)
 {
@@ -189,34 +189,34 @@ static enum account_status read_record(uint8_t record[ACCOUNT_RECORD_BYTES])
     uint8_t extra = 0U;
     size_t completed = 0U;
     size_t read_bytes = 0U;
-    openrfsfs_handle handle;
-    enum openrfsfs_status status = openrfsfs_open(OPENRFSFS_VOLUME_DATA,
-        ACCOUNT_PATH, OPENRFSFS_ACCESS_READ, &handle);
+    rsdfs_handle handle;
+    enum rsdfs_status status = rsdfs_open(RSDFS_VOLUME_DATA,
+        ACCOUNT_PATH, RSDFS_ACCESS_READ, &handle);
 
-    if (status == OPENRFSFS_STATUS_NOT_FOUND) {
+    if (status == RSDFS_STATUS_NOT_FOUND) {
         return ACCOUNT_STATUS_NOT_CONFIGURED;
     }
-    if (status != OPENRFSFS_STATUS_OK) {
-        return status == OPENRFSFS_STATUS_NOT_MOUNTED ||
-            status == OPENRFSFS_STATUS_ABSENT ?
+    if (status != RSDFS_STATUS_OK) {
+        return status == RSDFS_STATUS_NOT_MOUNTED ||
+            status == RSDFS_STATUS_ABSENT ?
             ACCOUNT_STATUS_STORAGE_UNAVAILABLE : ACCOUNT_STATUS_IO;
     }
-    while (completed < ACCOUNT_RECORD_BYTES && status == OPENRFSFS_STATUS_OK) {
-        status = openrfsfs_read(handle, record + completed,
+    while (completed < ACCOUNT_RECORD_BYTES && status == RSDFS_STATUS_OK) {
+        status = rsdfs_read(handle, record + completed,
             ACCOUNT_RECORD_BYTES - completed, &read_bytes);
         if (read_bytes == 0U) {
             break;
         }
         completed += read_bytes;
     }
-    if (status == OPENRFSFS_STATUS_OK && completed == ACCOUNT_RECORD_BYTES) {
-        status = openrfsfs_read(handle, &extra, 1U, &read_bytes);
+    if (status == RSDFS_STATUS_OK && completed == ACCOUNT_RECORD_BYTES) {
+        status = rsdfs_read(handle, &extra, 1U, &read_bytes);
     }
-    if (openrfsfs_close(handle) != OPENRFSFS_STATUS_OK &&
-            status == OPENRFSFS_STATUS_OK) {
-        status = OPENRFSFS_STATUS_STALE_HANDLE;
+    if (rsdfs_close(handle) != RSDFS_STATUS_OK &&
+            status == RSDFS_STATUS_OK) {
+        status = RSDFS_STATUS_STALE_HANDLE;
     }
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (status != RSDFS_STATUS_OK) {
         return ACCOUNT_STATUS_IO;
     }
     if (completed != ACCOUNT_RECORD_BYTES || read_bytes != 0U) {
@@ -258,53 +258,53 @@ static enum account_status load_record(uint8_t record[ACCOUNT_RECORD_BYTES])
 
 static enum account_status persist_record(const uint8_t record[ACCOUNT_RECORD_BYTES])
 {
-    struct openrfsfs_stat stat;
-    openrfsfs_handle handle;
+    struct rsdfs_stat stat;
+    rsdfs_handle handle;
     size_t written = 0U;
     bool opened = false;
-    enum openrfsfs_status status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA,
+    enum rsdfs_status status = rsdfs_stat_path(RSDFS_VOLUME_DATA,
         ACCOUNT_DIRECTORY, &stat);
 
-    if (status == OPENRFSFS_STATUS_NOT_FOUND) {
-        status = openrfsfs_mkdir(OPENRFSFS_VOLUME_DATA, ACCOUNT_DIRECTORY);
-    } else if (status == OPENRFSFS_STATUS_OK && !stat.directory) {
+    if (status == RSDFS_STATUS_NOT_FOUND) {
+        status = rsdfs_mkdir(RSDFS_VOLUME_DATA, ACCOUNT_DIRECTORY);
+    } else if (status == RSDFS_STATUS_OK && !stat.directory) {
         return ACCOUNT_STATUS_STORAGE_CORRUPT;
     }
-    if (status != OPENRFSFS_STATUS_OK) {
-        return status == OPENRFSFS_STATUS_NOT_MOUNTED ||
-            status == OPENRFSFS_STATUS_ABSENT ||
-            status == OPENRFSFS_STATUS_READ_ONLY ?
+    if (status != RSDFS_STATUS_OK) {
+        return status == RSDFS_STATUS_NOT_MOUNTED ||
+            status == RSDFS_STATUS_ABSENT ||
+            status == RSDFS_STATUS_READ_ONLY ?
             ACCOUNT_STATUS_STORAGE_UNAVAILABLE : ACCOUNT_STATUS_IO;
     }
-    status = openrfsfs_unlink(OPENRFSFS_VOLUME_DATA, ACCOUNT_TEMP_PATH);
-    if (status != OPENRFSFS_STATUS_OK && status != OPENRFSFS_STATUS_NOT_FOUND) {
+    status = rsdfs_unlink(RSDFS_VOLUME_DATA, ACCOUNT_TEMP_PATH);
+    if (status != RSDFS_STATUS_OK && status != RSDFS_STATUS_NOT_FOUND) {
         return ACCOUNT_STATUS_IO;
     }
-    status = openrfsfs_create(OPENRFSFS_VOLUME_DATA, ACCOUNT_TEMP_PATH);
-    if (status == OPENRFSFS_STATUS_OK) {
-        status = openrfsfs_open(OPENRFSFS_VOLUME_DATA, ACCOUNT_TEMP_PATH,
-            OPENRFSFS_ACCESS_WRITE, &handle);
-        opened = status == OPENRFSFS_STATUS_OK;
+    status = rsdfs_create(RSDFS_VOLUME_DATA, ACCOUNT_TEMP_PATH);
+    if (status == RSDFS_STATUS_OK) {
+        status = rsdfs_open(RSDFS_VOLUME_DATA, ACCOUNT_TEMP_PATH,
+            RSDFS_ACCESS_WRITE, &handle);
+        opened = status == RSDFS_STATUS_OK;
     }
-    if (status == OPENRFSFS_STATUS_OK) {
-        status = openrfsfs_write(handle, record, ACCOUNT_RECORD_BYTES, &written);
+    if (status == RSDFS_STATUS_OK) {
+        status = rsdfs_write(handle, record, ACCOUNT_RECORD_BYTES, &written);
     }
-    if (opened && openrfsfs_close(handle) != OPENRFSFS_STATUS_OK &&
-            status == OPENRFSFS_STATUS_OK) {
-        status = OPENRFSFS_STATUS_STALE_HANDLE;
+    if (opened && rsdfs_close(handle) != RSDFS_STATUS_OK &&
+            status == RSDFS_STATUS_OK) {
+        status = RSDFS_STATUS_STALE_HANDLE;
     }
-    if (status == OPENRFSFS_STATUS_OK && written == ACCOUNT_RECORD_BYTES) {
-        status = openrfsfs_sync(OPENRFSFS_VOLUME_DATA);
+    if (status == RSDFS_STATUS_OK && written == ACCOUNT_RECORD_BYTES) {
+        status = rsdfs_sync(RSDFS_VOLUME_DATA);
     }
-    if (status == OPENRFSFS_STATUS_OK) {
-        status = openrfsfs_rename(OPENRFSFS_VOLUME_DATA, ACCOUNT_TEMP_PATH,
+    if (status == RSDFS_STATUS_OK) {
+        status = rsdfs_rename(RSDFS_VOLUME_DATA, ACCOUNT_TEMP_PATH,
             ACCOUNT_PATH);
     }
-    if (status == OPENRFSFS_STATUS_OK) {
-        status = openrfsfs_sync(OPENRFSFS_VOLUME_DATA);
+    if (status == RSDFS_STATUS_OK) {
+        status = rsdfs_sync(RSDFS_VOLUME_DATA);
     }
-    if (status != OPENRFSFS_STATUS_OK || written != ACCOUNT_RECORD_BYTES) {
-        (void)openrfsfs_unlink(OPENRFSFS_VOLUME_DATA, ACCOUNT_TEMP_PATH);
+    if (status != RSDFS_STATUS_OK || written != ACCOUNT_RECORD_BYTES) {
+        (void)rsdfs_unlink(RSDFS_VOLUME_DATA, ACCOUNT_TEMP_PATH);
         return ACCOUNT_STATUS_IO;
     }
     return ACCOUNT_STATUS_OK;
@@ -458,10 +458,10 @@ const char *account_status_string(enum account_status status)
         "null account argument",
         "username must start with a letter or number and use only letters, numbers, '-' or '_'",
         "password must contain 8-64 printable characters",
-        "an OpenRFS account already exists",
-        "no OpenRFS account exists",
+        "an RSD account already exists",
+        "no RSD account exists",
         "the writable data volume is unavailable",
-        "the OpenRFS account record is corrupt",
+        "the RSD account record is corrupt",
         "the account salt source is unavailable",
         "account storage failed",
         "invalid username or password"

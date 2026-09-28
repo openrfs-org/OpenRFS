@@ -6,8 +6,8 @@
  * its host controller and function drivers and its process scheduler never
  * meet the kernel's own symbols.
  */
-#ifndef OPENRFS_IPXE_USB_GLUE_H
-#define OPENRFS_IPXE_USB_GLUE_H
+#ifndef RSD_IPXE_USB_GLUE_H
+#define RSD_IPXE_USB_GLUE_H
 
 #include <stdbool.h>
 #include <stddef.h>

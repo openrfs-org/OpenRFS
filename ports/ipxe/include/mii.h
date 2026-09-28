@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef OPENRFS_IPXE_MII_COMPAT_H
-#define OPENRFS_IPXE_MII_COMPAT_H
+#ifndef RSD_IPXE_MII_COMPAT_H
+#define RSD_IPXE_MII_COMPAT_H
 
 /* IEEE 802.3 MII register addresses and bit positions used by this port.
  * Keep this compatibility header limited to the hardware interface values

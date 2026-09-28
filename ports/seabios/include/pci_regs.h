@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * OpenRFS environment for the vendored SeaBIOS drivers: PCI configuration
+ * RSD environment for the vendored SeaBIOS drivers: PCI configuration
  * space layout, as defined by the PCI Local Bus Specification 3.0 (type 0
  * header, capability list) with the names SeaBIOS's drivers use.
  */
-#ifndef OPENRFS_SEABIOS_PCI_REGS_H
-#define OPENRFS_SEABIOS_PCI_REGS_H
+#ifndef RSD_SEABIOS_PCI_REGS_H
+#define RSD_SEABIOS_PCI_REGS_H
 
 #define PCI_VENDOR_ID           0x00
 #define PCI_DEVICE_ID           0x02

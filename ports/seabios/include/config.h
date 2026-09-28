@@ -1,19 +1,19 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * OpenRFS environment for the vendored SeaBIOS drivers: build configuration.
+ * RSD environment for the vendored SeaBIOS drivers: build configuration.
  *
  * SeaBIOS generates autoconf.h from Kconfig. The values below are the
- * Kconfig defaults for every driver OpenRFS compiles, with two deliberate
- * differences: CONFIG_THREADS is off because OpenRFS runs each driver entry
+ * Kconfig defaults for every driver RSD compiles, with two deliberate
+ * differences: CONFIG_THREADS is off because RSD runs each driver entry
  * to completion on one stack, and CONFIG_QEMU is decided at run time by the
  * same fw_cfg signature SeaBIOS's QEMU build trusts, so the three drivers
  * SeaBIOS only enables on QEMU (lsi-scsi, esp-scsi, mpt-scsi) decline on
  * other machines exactly as a non-QEMU SeaBIOS build would.
  */
-#ifndef OPENRFS_SEABIOS_CONFIG_H
-#define OPENRFS_SEABIOS_CONFIG_H
+#ifndef RSD_SEABIOS_CONFIG_H
+#define RSD_SEABIOS_CONFIG_H
 
-int openrfs_seabios_running_on_qemu(void);
+int rsd_seabios_running_on_qemu(void);
 
 #ifndef CONFIG_DEBUG_LEVEL
 #define CONFIG_DEBUG_LEVEL 1
@@ -22,7 +22,7 @@ int openrfs_seabios_running_on_qemu(void);
 #define CONFIG_DRIVES 1
 #define CONFIG_HARDWARE_IRQ 1
 #define CONFIG_QEMU_HARDWARE 1
-#define CONFIG_QEMU (openrfs_seabios_running_on_qemu())
+#define CONFIG_QEMU (rsd_seabios_running_on_qemu())
 
 #define CONFIG_ATA 1
 #define CONFIG_ATA_DMA 0
@@ -55,7 +55,7 @@ int openrfs_seabios_running_on_qemu(void);
 
 /*
  * hw/tpm_drivers.c's TIS and CRB interfaces. SeaBIOS builds them into its
- * TCG BIOS; OpenRFS compiles only the interface drivers, not tcgbios.c.
+ * TCG BIOS; RSD compiles only the interface drivers, not tcgbios.c.
  */
 #define CONFIG_TCGBIOS 1
 

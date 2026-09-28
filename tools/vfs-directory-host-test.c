@@ -19,8 +19,8 @@ void cpu_interrupt_disable(void) { host_interrupts_enabled = false; }
 void cpu_interrupt_enable(void) { host_interrupts_enabled = true; }
 static unsigned ready;
 static bool proceed;
-static unsigned seen[OPENRFSFS_MAX_LIST_ENTRIES];
-static openrfsfs_directory_handle shared;
+static unsigned seen[RSDFS_MAX_LIST_ENTRIES];
+static rsdfs_directory_handle shared;
 
 static void yield_worker(void)
 {
@@ -31,26 +31,26 @@ static void yield_worker(void)
 #endif
 }
 
-static enum openrfsfs_status directory_stat(enum openrfsfs_volume volume, const char *path,
-    struct openrfsfs_stat *stat)
+static enum rsdfs_status directory_stat(enum rsdfs_volume volume, const char *path,
+    struct rsdfs_stat *stat)
 {
     (void)volume; (void)path;
     assert(host_interrupts_enabled);
-    *stat = (struct openrfsfs_stat){ .object_id = 100U, .directory = true };
-    return OPENRFSFS_STATUS_OK;
+    *stat = (struct rsdfs_stat){ .object_id = 100U, .directory = true };
+    return RSDFS_STATUS_OK;
 }
 
-static enum openrfsfs_status directory_list(enum openrfsfs_volume volume, const char *path,
-    struct openrfsfs_list_entry *entries, size_t capacity, size_t *count)
+static enum rsdfs_status directory_list(enum rsdfs_volume volume, const char *path,
+    struct rsdfs_list_entry *entries, size_t capacity, size_t *count)
 {
     (void)volume; (void)path;
-    assert(host_interrupts_enabled && capacity == OPENRFSFS_MAX_LIST_ENTRIES);
+    assert(host_interrupts_enabled && capacity == RSDFS_MAX_LIST_ENTRIES);
     for (size_t index = 0U; index < capacity; ++index) {
         zero_bytes(&entries[index], sizeof(entries[index]));
         entries[index].size = index;
     }
     *count = capacity;
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
 static void read_shared_directory(void)
@@ -58,12 +58,12 @@ static void read_shared_directory(void)
     __atomic_fetch_add(&ready, 1U, __ATOMIC_RELEASE);
     while (!__atomic_load_n(&proceed, __ATOMIC_ACQUIRE)) yield_worker();
     for (;;) {
-        struct openrfsfs_list_entry entry;
+        struct rsdfs_list_entry entry;
         bool present;
-        assert(openrfsfs_directory_read(shared, &entry, &present) == OPENRFSFS_STATUS_OK);
+        assert(rsdfs_directory_read(shared, &entry, &present) == RSDFS_STATUS_OK);
         assert(host_interrupts_enabled);
         if (!present) break;
-        assert(entry.size < OPENRFSFS_MAX_LIST_ENTRIES);
+        assert(entry.size < RSDFS_MAX_LIST_ENTRIES);
         assert(__atomic_fetch_add(&seen[entry.size], 1U, __ATOMIC_RELAXED) == 0U);
         yield_worker();
     }
@@ -90,15 +90,15 @@ int main(void)
     static const struct vfs_backend_ops backend = {
         .stat_path = directory_stat, .list = directory_list, .case_sensitive = true,
     };
-    mounts[OPENRFSFS_VOLUME_DATA].active = true;
-    mounts[OPENRFSFS_VOLUME_DATA].generation = 17U;
-    mounts[OPENRFSFS_VOLUME_DATA].backend = &backend;
+    mounts[RSDFS_VOLUME_DATA].active = true;
+    mounts[RSDFS_VOLUME_DATA].generation = 17U;
+    mounts[RSDFS_VOLUME_DATA].backend = &backend;
     for (size_t index = 0U; index < VFS_VNODE_BUCKETS; ++index) vnode_buckets[index] = VFS_NO_INDEX;
     for (unsigned round = 0U; round < ROUNDS; ++round) {
         ready = 0U;
         proceed = false;
         zero_bytes(seen, sizeof(seen));
-        assert(openrfsfs_directory_open(OPENRFSFS_VOLUME_DATA, "shared", &shared) == OPENRFSFS_STATUS_OK);
+        assert(rsdfs_directory_open(RSDFS_VOLUME_DATA, "shared", &shared) == RSDFS_STATUS_OK);
 #ifdef _WIN32
         HANDLE workers[WORKERS];
 #else
@@ -122,12 +122,12 @@ int main(void)
             assert(pthread_join(workers[index], NULL) == 0);
 #endif
         }
-        for (size_t index = 0U; index < OPENRFSFS_MAX_LIST_ENTRIES; ++index) assert(seen[index] == 1U);
-        assert(openrfsfs_directory_close(shared) == OPENRFSFS_STATUS_OK);
-        struct openrfsfs_list_entry absent;
+        for (size_t index = 0U; index < RSDFS_MAX_LIST_ENTRIES; ++index) assert(seen[index] == 1U);
+        assert(rsdfs_directory_close(shared) == RSDFS_STATUS_OK);
+        struct rsdfs_list_entry absent;
         bool present = true;
-        assert(openrfsfs_directory_read(shared, &absent, &present) == OPENRFSFS_STATUS_STALE_HANDLE && !present);
-        assert(vnode_resources_released() && mounts[OPENRFSFS_VOLUME_DATA].references == 0U);
+        assert(rsdfs_directory_read(shared, &absent, &present) == RSDFS_STATUS_STALE_HANDLE && !present);
+        assert(vnode_resources_released() && mounts[RSDFS_VOLUME_DATA].references == 0U);
         for (size_t index = 0U; index < VFS_MAX_DIRECTORY_ITERATORS; ++index)
             assert(!directory_claims[index] && !directories[index].active && !directories[index].opening);
     }

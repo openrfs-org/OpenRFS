@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include <assert.h>
 #include <stdio.h>
-#include <openrfs/audio.h>
-#include <openrfs/clock.h>
-#include <openrfs/cpu.h>
-#include <openrfs/dma.h>
-#include <openrfs/interrupt_vector.h>
-#include <openrfs/memory.h>
-#include <openrfs/native_handle.h>
-#include <openrfs/paging.h>
-#include <openrfs/pci_resource.h>
-#include <openrfs/msix.h>
+#include <rsd/audio.h>
+#include <rsd/clock.h>
+#include <rsd/cpu.h>
+#include <rsd/dma.h>
+#include <rsd/interrupt_vector.h>
+#include <rsd/memory.h>
+#include <rsd/native_handle.h>
+#include <rsd/paging.h>
+#include <rsd/pci_resource.h>
+#include <rsd/msix.h>
 
 static enum pci_resource_status host_bus_master_status =
     PCI_RESOURCE_STATUS_INJECTED_FAILURE;
@@ -207,7 +207,7 @@ static enum native_resource_close_result close_audio(
     struct audio_close_state *state;
     bool consumed = false;
 
-    assert(type == OPENRFS_HANDLE_AUDIO_OUTPUT && resource != NULL &&
+    assert(type == RSD_HANDLE_AUDIO_OUTPUT && resource != NULL &&
         context != NULL);
     state = context;
     assert(resource->words[0] == state->token);
@@ -227,8 +227,8 @@ int main(void)
     const struct native_resource resource = {{token, 0U, 0U, 0U}};
     struct audio_close_state state = {generation, token, 0U};
     struct native_handle_table table;
-    openrfs_handle_t first;
-    openrfs_handle_t duplicate;
+    rsd_handle_t first;
+    rsd_handle_t duplicate;
     bool consumed = true;
 
     zero_bytes(&audio_native, sizeof(audio_native));
@@ -240,7 +240,7 @@ int main(void)
     audio_native.controller.bus_master = true;
 
     assert(native_handle_table_initialize(&table, 2U) == NATIVE_HANDLE_OK);
-    assert(native_handle_install(&table, OPENRFS_HANDLE_AUDIO_OUTPUT,
+    assert(native_handle_install(&table, RSD_HANDLE_AUDIO_OUTPUT,
         &resource, &first) == NATIVE_HANDLE_OK);
     assert(native_handle_duplicate(&table, first, &duplicate) == NATIVE_HANDLE_OK);
     assert(native_handle_close(&table, first, close_audio, &state) ==

@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* CPU admission for the OpenRFS-owned native ABI, separate from Linux profiles. */
+/* CPU admission for the RSD-owned native ABI, separate from Linux profiles. */
 
-#include <openrfs/native_syscall.h>
+#include <rsd/native_syscall.h>
 
-#include <openrfs/cpu.h>
-#include <openrfs/native_process.h>
-#include <openrfs/process.h>
+#include <rsd/cpu.h>
+#include <rsd/native_process.h>
+#include <rsd/process.h>
 
 #define CPUID_EXTENDED_ROOT UINT32_C(0x80000000)
 #define CPUID_EXTENDED_FEATURES UINT32_C(0x80000001)

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef OPENRFS_LOCALE_H
-#define OPENRFS_LOCALE_H
+#ifndef RSD_LOCALE_H
+#define RSD_LOCALE_H
 
 #define LC_ALL 0
 #define LC_COLLATE 1

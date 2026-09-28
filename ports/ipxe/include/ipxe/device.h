@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Hardware device description (include/ipxe/device.h). */
-#ifndef OPENRFS_IPXE_DEVICE_H
-#define OPENRFS_IPXE_DEVICE_H
+#ifndef RSD_IPXE_DEVICE_H
+#define RSD_IPXE_DEVICE_H
 
 #include <stddef.h>
 #include <ipxe/list.h>

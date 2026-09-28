@@ -17,7 +17,7 @@ from pathlib import Path
 EXPECTED_SCENARIOS = 115
 EXPECTED_NETWORK_SCENARIOS = 36
 EXPECTED_SWEEPS = 2
-REQUIRED_AUDITS = ("network-http-length", "native-https", "native-openrfs")
+REQUIRED_AUDITS = ("network-http-length", "native-https", "native-rsd")
 TEARDOWN_MARKER = "ST NETWORK resource and teardown census clean\n"
 REQUIRED_LOGS = (
     "toolchain-versions.txt",
@@ -78,7 +78,7 @@ def scenarios() -> list[str]:
 
 
 def expected_teardown_receipts(name: str) -> int:
-    if name == "native-openrfs":
+    if name == "native-rsd":
         return 3
     if name == "network-persistence":
         return 2
@@ -133,7 +133,7 @@ def validate_audit(directory: Path, name: str) -> dict[str, object]:
         fail(f"packet audit has an invalid HTTPS plaintext count: {name}")
     if audit.get("pcap_sha256") != sha256(pcap_path):
         fail(f"packet capture hash mismatch: {name}")
-    if name in ("native-https", "native-openrfs"):
+    if name in ("native-https", "native-rsd"):
         tls = audit.get("tls_summary")
         if not isinstance(tls, dict) or tls.get("errors") != []:
             fail(f"TLS summary is missing or invalid: {name}")
@@ -281,7 +281,7 @@ def assemble(args: argparse.Namespace) -> None:
     })
     required_teardowns = [item for item in results
                           if str(item["scenario"]).startswith("network-") or
-                          item["scenario"] in ("native-https", "native-openrfs")]
+                          item["scenario"] in ("native-https", "native-rsd")]
     write_json(output / "resource-census.json", {
         "required": len(required_teardowns),
         "clean": sum(1 for item in required_teardowns

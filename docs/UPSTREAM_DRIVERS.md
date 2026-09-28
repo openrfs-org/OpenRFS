@@ -6,7 +6,7 @@
 
 This is an opt-in driver layer. The 42-driver count below describes the
 source branch's QEMU model evidence, not 42 drivers available to every
-production consumer. Without `openrfs.drivers=`, none of these drivers bind.
+production consumer. Without `rsd.drivers=`, none of these drivers bind.
 The iPXE NIC registry feeds the normal network stack, and SeaBIOS USB HID
 feeds the normal keyboard and pointer
 queues. The storage, display, PCM, and TPM scenarios exercise the real
@@ -19,11 +19,11 @@ integration before they can be described as production consumer support.
 The bind and removal review remains open: iPXE and SeaBIOS currently share
 one DMA arena across devices in a layer, and failure and teardown paths need
 transactional registry rollback and device quiescence before claims or DMA
-memory are released. Use `openrfs.drivers=auto` only for the documented QEMU
+memory are released. Use `rsd.drivers=auto` only for the documented QEMU
 models while this work is open. The named `ramfb` fw_cfg wait has no timeout.
 No physical hardware has been tested.
 
-OpenRFS runs hardware drivers taken unmodified from three long-lived open
+RSD runs hardware drivers taken unmodified from three long-lived open
 source projects:
 
 - **iPXE**, the network boot firmware: network adapters and its USB stack;
@@ -33,22 +33,22 @@ source projects:
 
 Every vendored file is byte-for-byte upstream, pinned to one commit and
 recorded with its digest (`vendor/<project>/UPSTREAM-COMMIT.txt`,
-`SOURCE-MANIFEST.sha256`, checked by `make driver-provenance`). OpenRFS never
+`SOURCE-MANIFEST.sha256`, checked by `make driver-provenance`). RSD never
 patches them. Each project's drivers compile against compatibility headers
 that recreate the environment they were written for (`ports/<project>/`),
 and a kernel-side host connects that environment to the upstream driver
 framework (`src/kernel/hwdrv.c`): PCI claims, bus mastering limited to a
 per-layer DMA arena below 4 GiB, and the netdev, block, display, PCM and TPM
 registries. How each layer does it, and where it differs from upstream's own
-runtime, is in `vendor/<project>/OPENRFS-PORT.md`.
+runtime, is in `vendor/<project>/RSD-PORT.md`.
 
 ## Selecting drivers
 
-`openrfs.drivers=` on the kernel command line decides what binds:
+`rsd.drivers=` on the kernel command line decides what binds:
 
 - `auto`: every driver whose device PCI enumeration finds, plus the floppy
   controller, which SeaBIOS's driver finds from the CMOS drive types. The
-  exceptions bind only by name: SeaBIOS's NVMe driver (OpenRFS's own NVMe
+  exceptions bind only by name: SeaBIOS's NVMe driver (RSD's own NVMe
   driver owns those controllers), the iPXE USB stack (the SeaBIOS USB drivers
   own the controllers under `auto`, and two stacks must never share one) and
   the VGA drivers (they reprogram the display the console is using);
@@ -71,7 +71,7 @@ All evidence comes from QEMU 8.2.2 (TCG) device models, driven by
 `tools/run_driver_tests.py` (`make qemu-test-drivers`). **No driver here has
 been run on physical hardware by this work.** QEMU models the register
 interfaces of the real parts, and a pass is evidence about those models; it
-is not a hardware qualification. Each scenario boots OpenRFS and requires the
+is not a hardware qualification. Each scenario boots RSD and requires the
 driver to do real work, checked from outside the guest where possible:
 
 | Plan | What a pass requires |
@@ -86,7 +86,7 @@ driver to do real work, checked from outside the guest where possible:
 ## The matrix
 
 "Verified" means every scenario listed passes. Driver names are the ones
-`openrfs.drivers=` takes.
+`rsd.drivers=` takes.
 
 ### Network: iPXE
 
@@ -110,7 +110,7 @@ driver to do real work, checked from outside the guest where possible:
 | 11 | `ipxe-usbhub` | `src/drivers/usb/usbhub.c` | GPL-2.0-or-later OR UBDL | named | `net-usb-ecm-hub` (adapter behind a USB 1.1 hub) | verified |
 | 12 | `cdc-ecm` | `src/drivers/net/ecm.c` | GPL-2.0-or-later OR UBDL | named | the five scenarios above | verified |
 | - | `ipxe-ehci` | `src/drivers/usb/ehci.c` | GPL-2.0-or-later OR UBDL | named | `net-usb-ecm-ehci-companion` | partial: controller start-up, port reset and hand-off to the UHCI companion; QEMU has no high-speed network device, so no traffic crosses the EHCI schedules |
-| - | `rndis` | `src/drivers/net/acm.c`, `src/net/rndis.c` | GPL-2.0-or-later OR UBDL | named | `net-usb-rndis-xhci` | expected failure: QEMU 8.2's usb-net stalls iPXE's RNDIS queries (see `vendor/ipxe/OPENRFS-PORT.md`) |
+| - | `rndis` | `src/drivers/net/acm.c`, `src/net/rndis.c` | GPL-2.0-or-later OR UBDL | named | `net-usb-rndis-xhci` | expected failure: QEMU 8.2's usb-net stalls iPXE's RNDIS queries (see `vendor/ipxe/RSD-PORT.md`) |
 
 ### Storage: SeaBIOS
 
@@ -175,7 +175,7 @@ between the stacks.
 
 ## What was left out, and why
 
-- **GPL-2.0-only code**, which cannot be combined with OpenRFS's
+- **GPL-2.0-only code**, which cannot be combined with RSD's
   GPL-3.0-only licence. That excludes every Linux driver, including the AMD
   and Intel graphics drivers, and iPXE's GPL-2.0-only drivers (for example
   tg3, bnxt, sky2). iPXE's `src/include/mii.h` is also GPL-2.0-only and is
@@ -183,7 +183,7 @@ between the stacks.
   register values used by the selected drivers.
 - **iPXE's virtio-net.** The implementation with years of use depends on
   `virtio-pci.c`, which carries no licence declaration; its relicensed
-  replacement is in no iPXE release yet. OpenRFS has its own virtio-net
+  replacement is in no iPXE release yet. RSD has its own virtio-net
   driver.
 - **Planar VGA modes.** The display registry takes packed and direct-colour
   modes only.

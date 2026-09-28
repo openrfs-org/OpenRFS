@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef OPENRFS_TIME_H
-#define OPENRFS_TIME_H
+#ifndef RSD_TIME_H
+#define RSD_TIME_H
 
 #include <stddef.h>
 #include <stdint.h>

@@ -110,7 +110,7 @@ impl FileBlocks {
         // Like Linux ext4_block_truncate_page(), discard the retained block's
         // tail so a later grow or sparse write cannot expose the removed bytes.
         // A hole or uninitialized extent already reads as zero; do not allocate
-        // it just to shorten the file. OpenRFS stages this image as metadata in
+        // it just to shorten the file. RSD stages this image as metadata in
         // the truncate transaction, making its zeroing atomic with the new size.
         let block_size = ext4.0.superblock.block_size().to_u64();
         let within = new_size % block_size;

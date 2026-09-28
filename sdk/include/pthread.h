@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef OPENRFS_PTHREAD_H
-#define OPENRFS_PTHREAD_H
+#ifndef RSD_PTHREAD_H
+#define RSD_PTHREAD_H
 
 #include <stdint.h>
 
