@@ -3,12 +3,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/acpi.h>
-#include <openrfs/console.h>
-#include <openrfs/cpu.h>
-#include <openrfs/heap.h>
-#include <openrfs/paging.h>
-#include <openrfs/pci.h>
+#include <rsd/acpi.h>
+#include <rsd/console.h>
+#include <rsd/cpu.h>
+#include <rsd/heap.h>
+#include <rsd/paging.h>
+#include <rsd/pci.h>
 
 /*
  * Read-only PCI enumeration through configuration ports and ECAM. Port access
@@ -67,7 +67,7 @@ static uint64_t ecam_access_address(
         (uint64_t)offset;
 
     /*
-     * OpenRFS maps one 2 MiB region of a window firmware may declare far larger,
+     * RSD maps one 2 MiB region of a window firmware may declare far larger,
      * so the mapped size is the bound that matters rather than the declared
      * one. A register past it is refused, not wrapped.
      */
@@ -764,7 +764,7 @@ enum pci_status pci_initialize(const struct acpi_mcfg *mcfg, bool mcfg_present)
     /*
      * The port pair is two registers used as one, so a read that lands between
      * the address write and the data read answers about a different function.
-     * Nothing in OpenRFS reads configuration space from an interrupt handler,
+     * Nothing in RSD reads configuration space from an interrupt handler,
      * and this is the refusal that keeps it that way.
      */
     if (cpu_interrupts_enabled()) {

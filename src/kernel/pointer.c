@@ -3,13 +3,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/cpu.h>
-#include <openrfs/hwdrv.h>
-#include <openrfs/interrupts.h>
-#include <openrfs/ioapic.h>
-#include <openrfs/keyboard.h>
-#include <openrfs/pointer.h>
-#include <openrfs/ui.h>
+#include <rsd/cpu.h>
+#include <rsd/hwdrv.h>
+#include <rsd/interrupts.h>
+#include <rsd/ioapic.h>
+#include <rsd/keyboard.h>
+#include <rsd/pointer.h>
+#include <rsd/ui.h>
 
 #define PS2_DATA_PORT UINT16_C(0x0060)
 #define PS2_COMMAND_PORT UINT16_C(0x0064)

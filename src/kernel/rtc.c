@@ -3,9 +3,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/clock.h>
-#include <openrfs/cpu.h>
-#include <openrfs/rtc.h>
+#include <rsd/clock.h>
+#include <rsd/cpu.h>
+#include <rsd/rtc.h>
 
 #define RTC_ADDRESS_PORT UINT16_C(0x70)
 #define RTC_DATA_PORT UINT16_C(0x71)
