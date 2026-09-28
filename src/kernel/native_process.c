@@ -4118,7 +4118,7 @@ static bool replacement_backup_path(
     char backup[RSDFS_MAX_PATH]
 )
 {
-    static const char backup_name[] = "ORFBK.TMP";
+    static const char backup_name[] = "RSDBK.TMP";
     size_t length = bounded_length((const uint8_t *)destination,
         RSDFS_MAX_PATH);
     size_t slash = SIZE_MAX;
