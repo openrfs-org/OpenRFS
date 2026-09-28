@@ -151,9 +151,12 @@ Saved-seed source coverage still left `package_state_database_dependency`
 unreached. The new canonical two-package dependency seed replays successfully
 against the production parser under ASan/UBSan. In a local nine-seed replay,
 `package_state.c` coverage rose from 711/1180 to 816/1180 regions and from
-320/882 to 382/882 branches, and the dependency accessor executed. That
-local measurement includes the new seed and is not the earlier CI run's
-coverage; the next exact-head CI campaign will verify it independently.
+320/882 to 382/882 branches, and the dependency accessor executed. The
+exact-head fast receipt on `072366db663255fe49b6073023817f93e1535c25`
+independently measured those same saved-seed counts and 25,000 fuzz inputs.
+The manifest now requires the new seed to pass valid-input replay and at least
+800 production regions to remain covered. The earlier `b9a166e` sustained
+receipt retains its own lower coverage and must not be relabeled.
 The separate milestone workflows still contain inherited failures; their
 exact runs and frozen fixture-digest mismatches are triaged in
 `verification/findings/inherited-milestone-ci.md`.
