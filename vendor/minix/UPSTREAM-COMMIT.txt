@@ -11,7 +11,7 @@ deviations from these conditions require written permission from the
 copyright holder in advance") restates that permission beyond the three
 conditions must be sought; it adds no condition on redistribution under
 them. On that reading the files may be combined into, and conveyed as part
-of, a GPL-3.0-only work such as OpenRFS, keeping LICENSE with them.
+of, a GPL-3.0-only work such as RSD, keeping LICENSE with them.
 
 Vendored paths (byte-for-byte upstream; SOURCE-MANIFEST.sha256):
   minix/drivers/audio/es1370/es1370.c, es1370.h   Ensoniq AudioPCI ES1370
@@ -26,7 +26,7 @@ Vendored paths (byte-for-byte upstream; SOURCE-MANIFEST.sha256):
   LICENSE
 
 Deliberately not vendored: libaudiodriver (minix/lib/libaudiodriver), whose
-playback path ports/minix/audio_glue.c reproduces for OpenRFS, and every
+playback path ports/minix/audio_glue.c reproduces for RSD, and every
 MINIX system header; ports/minix/include declares the part of MINIX's
 system library the drivers use. es1370/AC97.h is not included by any
 vendored file and is left out.

@@ -472,7 +472,7 @@ pub(crate) struct BitmapHandle {
 
 impl BitmapHandle {
     /// Materialize the admitted non-flex, non-resize group's lazy bitmap in
-    /// the configured writer. OpenRFS's writer stages this with the allocation.
+    /// the configured writer. RSD's writer stages this with the allocation.
     #[maybe_async::maybe_async]
     pub(crate) async fn initialize(&self, ext4: &Ext4, group: u32) -> Result<(), Ext4Error> {
         let descriptor = ext4.get_block_group_descriptor(group);
@@ -720,7 +720,7 @@ impl BitmapHandle {
             (usize_from_u32(inodes_per_group).checked_add(7).unwrap()) / 8
         } else {
             // Linux ext4_block_bitmap_csum_set() hashes exactly
-            // EXT4_CLUSTERS_PER_GROUP / 8 bytes. OpenRFS rejects bigalloc,
+            // EXT4_CLUSTERS_PER_GROUP / 8 bytes. RSD rejects bigalloc,
             // so one cluster is one block and the remaining bitmap-block
             // padding must not contribute to this checksum.
             usize_from_u32(ext4.0.superblock.blocks_per_group().get()) / 8
