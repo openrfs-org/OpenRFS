@@ -326,10 +326,10 @@ def self_test() -> int:
     assert client.version() == "TLSv1.2"
     parsed = network.dns_question(
         b"\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00"
-        b"\x04repo\x07rsd\x04test\x00\x00\x01\x00\x01"
+        b"\x04repo\x03rsd\x04test\x00\x00\x01\x00\x01"
     )
     assert parsed is not None and parsed[0] == HOSTNAME
-    assert len(BODY) == 34
+    assert len(BODY) == 30
     expected_bytes, expected_sha256 = native_https_body_contract()
     assert expected_bytes == len(BODY)
     assert expected_sha256 == hashlib.sha256(BODY).digest()
