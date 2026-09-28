@@ -1,12 +1,16 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <rsd/fat32_fs.h>
+#include <rsd/heap.h>
+#include <rsd/package_service.h>
 #include <rsd/rsd_desktop.h>
 #include <rsd_desktop/files.h>
 #include <rsd_desktop/menu.h>
+#include <rsd_desktop/packages.h>
 #include <rsd_desktop/shell.h>
 
 static uint32_t pixels[1024U * 768U];
@@ -14,6 +18,63 @@ static bool renamed_readme;
 static bool moved_note;
 static bool removed_readme;
 static bool removed_docs;
+static bool packages_available = true;
+
+enum heap_status heap_allocate(uint64_t size, void **pointer)
+{
+    *pointer = malloc((size_t)size);
+    return *pointer == NULL ? HEAP_STATUS_OUT_OF_MEMORY : HEAP_STATUS_OK;
+}
+
+enum heap_status heap_free(void *pointer)
+{
+    free(pointer);
+    return HEAP_STATUS_OK;
+}
+
+enum package_service_status package_service_snapshot(uint8_t *database,
+    size_t capacity, size_t *output_bytes, struct package_service_report *report)
+{
+    (void)report;
+    *output_bytes = 0U;
+    if (!packages_available || capacity == 0U) {
+        return PACKAGE_SERVICE_STATUS_STATE;
+    }
+    database[0] = 1U;
+    *output_bytes = 1U;
+    return PACKAGE_SERVICE_STATUS_OK;
+}
+
+enum package_state_status package_state_database_parse(const uint8_t *bytes,
+    size_t byte_count, struct package_state_database_view *result)
+{
+    if (byte_count != 1U || bytes[0] != 1U) {
+        return PACKAGE_STATE_STATUS_MAGIC;
+    }
+    *result = (struct package_state_database_view){ .bytes = bytes,
+        .byte_count = byte_count, .package_count = 2U };
+    return PACKAGE_STATE_STATUS_OK;
+}
+
+enum package_state_status package_state_database_package(
+    const struct package_state_database_view *database, uint32_t index,
+    struct package_state_package_view *result)
+{
+    static const uint8_t first[] = "rsd-files";
+    static const uint8_t second[] = "rsd-shell";
+    static const uint8_t version[] = "1.0";
+    const uint8_t *name = index == 0U ? first : second;
+
+    if (database->package_count != 2U || index >= 2U) {
+        return PACKAGE_STATE_STATUS_PACKAGE;
+    }
+    *result = (struct package_state_package_view){
+        .identifier = { name, index == 0U ? sizeof(first) - 1U :
+            sizeof(second) - 1U },
+        .version = { version, sizeof(version) - 1U }
+    };
+    return PACKAGE_STATE_STATUS_OK;
+}
 
 enum rsdfs_status rsdfs_list(enum rsdfs_volume volume, const char *path,
     struct rsdfs_list_entry *entries, size_t capacity, size_t *count)
@@ -104,6 +165,27 @@ int main(void)
             stderr);
         return 1;
     }
+    if (!rsd_packages_live() || rsd_packages_count() != 2U ||
+            !rsd_packages_installed("rsd-files") ||
+            rsd_packages_marked() != 0U || rsd_packages_apply() != 0U) {
+        fputs("RSD Packages did not read installed state\n", stderr);
+        return 1;
+    }
+    rsd_packages_mark(0U, RSD_PACKAGE_REMOVE);
+    if (rsd_packages_marked() != 0U) {
+        fputs("RSD Packages allowed a fake package change\n", stderr);
+        return 1;
+    }
+    packages_available = false;
+    if (rsd_packages_refresh() || rsd_packages_count() != 0U) {
+        fputs("RSD Packages retained stale state after failure\n", stderr);
+        return 1;
+    }
+    packages_available = true;
+    if (!rsd_packages_refresh() || rsd_packages_count() != 2U) {
+        fputs("RSD Packages reload failed\n", stderr);
+        return 1;
+    }
     if (rsd_files_child_count(rsd_files_root()) != 2U ||
             !rsd_files_refresh() ||
             rsd_files_child_count(rsd_files_root()) != 2U ||
@@ -164,6 +246,21 @@ int main(void)
     if (!rsd_desktop_event(&press) || rsd_shell_root_menu_open() ||
             !rsd_desktop_terminal_client(&terminal)) {
         fputs("RSD desktop terminal relaunch failed\n", stderr);
+        return 1;
+    }
+    rsd_packages_reset();
+    for (uint32_t at = 0U; at < 40U; ++at) {
+        if (!rsd_packages_add("package", "1.0", "", true)) {
+            fputs("RSD Packages could not hold installed entries\n", stderr);
+            return 1;
+        }
+    }
+    const struct rsd_window *window = rsd_shell_window(rsd_shell_focused());
+    if (window == NULL || !rsd_packages_turn_page(window, true) ||
+            rsd_packages_first_visible(window) == 0U ||
+            !rsd_packages_turn_page(window, false) ||
+            rsd_packages_first_visible(window) != 0U) {
+        fputs("RSD Packages pagination failed\n", stderr);
         return 1;
     }
     puts("RSD desktop host test passed");

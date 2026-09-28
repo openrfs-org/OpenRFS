@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include <rsd/rsd_desktop.h>
 #include <rsd/fat32_fs.h>
+#include <rsd/heap.h>
+#include <rsd/package_service.h>
 
 #include <rsd_desktop/files.h>
 #include <rsd_desktop/input.h>
@@ -14,6 +16,59 @@
 
 static struct rsd_surface minimal_surface;
 static struct rsdfs_list_entry live_file_entries[RSD_FILES_MAX_CHILDREN];
+
+static void package_text(char *out, size_t capacity,
+    struct package_state_text value)
+{
+    size_t at = 0U;
+
+    while (at < value.length && at + 1U < capacity) {
+        out[at] = (char)value.bytes[at];
+        ++at;
+    }
+    out[at] = '\0';
+}
+
+static bool load_installed_packages(void)
+{
+    uint8_t *bytes = NULL;
+    size_t length = 0U;
+    struct package_service_report report;
+    struct package_state_database_view database;
+    bool loaded = false;
+
+    if (heap_allocate(PACKAGE_SERVICE_MAX_DATABASE_BYTES,
+            (void **)&bytes) != HEAP_STATUS_OK) {
+        return false;
+    }
+    if (package_service_snapshot(bytes, PACKAGE_SERVICE_MAX_DATABASE_BYTES,
+            &length, &report) != PACKAGE_SERVICE_STATUS_OK ||
+            package_state_database_parse(bytes, length, &database) !=
+                PACKAGE_STATE_STATUS_OK ||
+            database.package_count > RSD_PACKAGES_MAX) {
+        goto release;
+    }
+    for (uint32_t at = 0U; at < database.package_count; ++at) {
+        struct package_state_package_view package;
+        char name[RSD_PACKAGES_NAME_BYTES];
+        char version[RSD_PACKAGES_TEXT_BYTES];
+
+        if (package_state_database_package(&database, at, &package) !=
+                PACKAGE_STATE_STATUS_OK) {
+            goto release;
+        }
+        package_text(name, sizeof(name), package.identifier);
+        package_text(version, sizeof(version), package.version);
+        if (!rsd_packages_add(name, version, "", true)) {
+            goto release;
+        }
+    }
+    loaded = true;
+
+release:
+    (void)heap_free(bytes);
+    return loaded;
+}
 
 static bool list_data_folder(const char *path,
     struct rsd_files_source_entry *entries, uint32_t capacity,
@@ -72,6 +127,8 @@ bool rsd_desktop_construct(uint32_t *pixels, uint32_t width, uint32_t height)
     rsd_files_use_live_writes(rename_data_path, remove_data_path);
     (void)rsd_files_open(rsd_files_root());
     rsd_packages_reset();
+    rsd_packages_use_live_source(load_installed_packages);
+    (void)rsd_packages_refresh();
     rsd_settings_reset();
     rsd_taskmgr_reset();
     rsd_terminal_reset();
