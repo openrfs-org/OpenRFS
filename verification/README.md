@@ -144,7 +144,8 @@ The separate milestone workflows still contain inherited failures; their
 exact runs and frozen fixture-digest mismatches are triaged in
 `verification/findings/inherited-milestone-ci.md`.
 
-Gitleaks 8.30.1 gates commits after the PR merge-base and the current tree,
+Gitleaks 8.30.1 gates commits after the PR merge-base, the current tree, and
+all commits reachable from HEAD,
 retaining only redacted finding reports. The exploratory current-tree scan
 reported 16 matches at 12 fingerprints: four committed TLS private-key
 fixtures and generic-key heuristics in TLS code, fixture hash tooling, and
@@ -152,9 +153,14 @@ vendored checksum files. The TLS fixture README explicitly identifies those
 keys as public, offline test material. The current-tree gate allows exactly
 those 12 fingerprints only while all nine reviewed files match exact SHA-256
 digests; changed content or an added finding fails. These exceptions must not
-be interpreted as production credentials. A separate exploratory scan of older
-history timed out after 120 seconds, after 234 commits and 27 candidate
-matches. It is not recorded as a clean full-history scan.
+be interpreted as production credentials. On clean `6b55f3c8119f2155ed6f2ac486cbc00ff6a78205`, a complete
+HEAD-ancestry scan covered 89 commits and returned one redacted TLS code
+heuristic from `17d9775bd64e31882ef0695626baa179b442d055`; its source
+line is byte-identical to the already reviewed current-tree line. The
+extended gate pins that single historic fingerprint and line SHA-256, requires
+a non-shallow checkout, and fails on any other finding. A separate exploratory
+scan across other repository refs timed out after 120 seconds, after 234
+commits and 27 candidate matches; those refs are not claimed clean.
 
 RustSec cargo-audit 0.22.2 scanned all 22 tracked `Cargo.lock` files against
 advisory database commit `e2111519ba6d14a5da59a7b2e5c8083ae8a37c01`
@@ -193,7 +199,7 @@ target flags. Broad findings need separate ownership and precondition review.
 
 Ruff found `NoReturn` missing from the UI font asset generator. Before the fix,
 `typing.get_type_hints(fail)` raised `NameError`; after importing `NoReturn` it
-resolves. `check_python.py` includes that regression and currently scans 99 first-party
+resolves. `check_python.py` includes that regression and currently scans 100 first-party
 Python files with correctness-focused rules. The earlier before/after output
 is retained under `verification/runs/manual-ruff-finding/`.
 
@@ -229,11 +235,11 @@ turn installed but unused tools into green checks.
 | OSV-Scanner | Integrated | 2.6.0 (Apache-2.0), digest-verified Linux binary. The extended gate scans four first-party/fuzz Rust locks and pinned Python requirements; online advisory data remains time-dependent. Vendor development locks and bundled C are outside this gate. |
 | Syft | Integrated | 1.52.0 (Apache-2.0), digest-verified release. The extended gate catalogs a Git archive of exact HEAD; it verifies source identity and active lockfile locations. Bundled C and compiled-image identity remain gaps. |
 | Trivy | Not yet evaluated | Decide whether SBOM cross-check adds independent signal. |
-| Gitleaks | Integrated | 8.30.1 scans new branch commits and the current tree, with exact digest guards on 12 reviewed legacy fingerprints; full history remains a separate triage task. |
+| Gitleaks | Integrated | 8.30.1 scans new branch commits, the current tree, and all HEAD ancestors, with exact guards on 12 current-tree and one historic code heuristic. Unrelated refs remain a triage gap. |
 | ShellCheck | Integrated | 0.9.0, tracked first-party shell scripts and actionlint embedded shell; vendor scripts excluded. |
 | actionlint | Integrated | 1.7.12, every workflow, pinned archive digest in installer. |
 | zizmor | Integrated | 1.30.1 offline workflow audits, pinned archive digest; online audits omitted. |
-| Ruff | Integrated | 0.16.9, all tracked first-party Python files (99 at this head) and a type-hint regression. |
+| Ruff | Integrated | 0.16.9, all tracked first-party Python files (100 at this head) and a type-hint regression. |
 | Bandit | Evaluated but unsuitable as a broad gate | 1.9.4 found 311 candidates in 90 first-party Python files, mostly subprocess-use heuristics. It found no high-severity issue; the only medium/high-confidence match was a fixed release URL in the digest-verifying installer. Targeted Ruff, digest gates, and review give stronger signal here. Local JSON remains under `verification/runs/bandit-baseline.json`. |
 | Semgrep Community | Not yet evaluated | Develop and test a small repo-specific ownership/evidence rule set. |
 | Valgrind | Integrated | 3.22.0 Memcheck and leak check on eight saved package-state seeds in a plain host build; no guest coverage. |
