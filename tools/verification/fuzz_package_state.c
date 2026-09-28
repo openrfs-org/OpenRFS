@@ -60,6 +60,26 @@ static enum package_state_status check_database(
         PACKAGE_STATE_STATUS_OK);
     require(admitted.generation == database.generation &&
         admitted.database_bytes == count);
+    struct package_state_generation complete = { bytes, count, true };
+    struct package_state_generation incomplete = { bytes, count, false };
+    struct package_state_recovery_result recovery = { 0 };
+    require(package_state_recovery_decide(authority, sizeof(authority),
+        NULL, 0U, &complete, NULL, &recovery) == PACKAGE_STATE_STATUS_OK);
+    require(recovery.choice == PACKAGE_STATE_RECOVERY_OLD &&
+        recovery.generation == database.generation &&
+        recovery.database.bytes == bytes);
+    recovery = (struct package_state_recovery_result){ 0 };
+    require(package_state_recovery_decide(authority, sizeof(authority),
+        NULL, 0U, &incomplete, NULL, &recovery) ==
+        PACKAGE_STATE_STATUS_INCOMPLETE);
+    require(recovery.choice == PACKAGE_STATE_RECOVERY_NONE &&
+        recovery.generation == 0U);
+    recovery = (struct package_state_recovery_result){ 0 };
+    require(package_state_recovery_decide(authority, sizeof(authority),
+        NULL, 0U, &complete, &complete, &recovery) ==
+        PACKAGE_STATE_STATUS_MISMATCH);
+    require(recovery.choice == PACKAGE_STATE_RECOVERY_NONE &&
+        recovery.generation == 0U);
     return status;
 }
 

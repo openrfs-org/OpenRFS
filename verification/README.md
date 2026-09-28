@@ -154,9 +154,14 @@ against the production parser under ASan/UBSan. In a local nine-seed replay,
 320/882 to 382/882 branches, and the dependency accessor executed. The
 exact-head fast receipt on `072366db663255fe49b6073023817f93e1535c25`
 independently measured those same saved-seed counts and 25,000 fuzz inputs.
-The manifest now requires the new seed to pass valid-input replay and at least
-800 production regions to remain covered. The earlier `b9a166e` sustained
-receipt retains its own lower coverage and must not be relabeled.
+The manifest requires the new seed to pass valid-input replay. A subsequent
+host-only recovery oracle selects a complete generation, refuses an incomplete
+one, and rejects two identical complete candidates. Its local dirty-tree fast
+run reached `package_state_recovery_decide` nine times and raised saved-seed
+`package_state.c` coverage to 859/1180 regions and 405/882 branches. The
+coverage floor is now 840 regions; exact-head CI must still verify this new
+oracle. The earlier `b9a166e` sustained receipt retains its own lower
+coverage and must not be relabeled.
 The separate milestone workflows still contain inherited failures; their
 exact runs and frozen fixture-digest mismatches are triaged in
 `verification/findings/inherited-milestone-ci.md`.
