@@ -35,7 +35,7 @@ TEST_SCENARIOS := normal breakpoint invalid-opcode page-fault ist pit unexpected
 	native-https native-openrfs account-kdf
 TEST_TARGETS := $(addprefix qemu-test-,$(TEST_SCENARIOS))
 EXPECTED_TEST_SCENARIO_COUNT := 117
-EXPECTED_SHELL_ASSERTION_COUNT := 478
+EXPECTED_SHELL_ASSERTION_COUNT := 482
 
 CC := gcc
 LD := ld
