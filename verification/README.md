@@ -19,6 +19,7 @@ make verify-extended
 make fuzz-smoke
 make fuzz-nightly
 make fuzz-replay TARGET=package-state-parser INPUT=/absolute/input
+make fuzz-replay TARGET=rust-elf64-admission INPUT=/absolute/elf-input
 make verification-report
 python3 tools/verification/run.py run --profile extended --resume verification/runs/<interrupted-run>
 python3 tools/verification/run.py recover-stale --run verification/runs/<orphaned-run>
@@ -53,6 +54,18 @@ transaction target invokes production
 and an independent expected generation/version/file/user-data model.
 Valgrind Memcheck separately replays all eight committed package-state seeds
 against a plain, unsanitized build of the same production C parser.
+The cargo-fuzz 0.13.2 target compiles the allocation-free production
+`src/rust/elf64.rs` parser through an exact source symlink in a temporary Cargo
+project. This keeps the kernel's offline vendored Cargo policy intact while
+pinning the auxiliary fuzz crate's lockfile. Six committed seeds include valid
+proof and multiprocess executables and malformed length, permission, table,
+and code variants. A standalone Rust replay binary uses the same assertion
+oracle. The temporary build is removed after each campaign; the run receipt
+retains tool versions, source and lock hashes, seed hashes, libFuzzer counters,
+and any crash input. Rust AddressSanitizer covers only this host-built parser.
+When cargo-fuzz produces a crash artifact, its still-built binary attempts a
+bounded 90-second minimization before the temporary build is removed; the
+shared standalone oracle then replays the saved input twice for triage.
 
 QEMU receipts require expected exit codes, begin/pass markers, no panic, and
 scenario-specific serial checks. `qemu_matrix.py` preserves each serial log and
@@ -109,6 +122,9 @@ interrupted at the user's request before the ACPI and Multiboot2 campaigns;
 `verification/runs/20260927T151559Z-392-451283/run.json` retains the partial
 results and must not be reported as a passed nightly run. The orphaned receipt
 was recovered as `interrupted` only after WSL had stopped all processes.
+The separate milestone workflows still contain inherited failures; their
+exact runs and frozen fixture-digest mismatches are triaged in
+`verification/findings/inherited-milestone-ci.md`.
 
 Gitleaks 8.30.1 gates commits after the PR merge-base and the current tree,
 retaining only redacted finding reports. The exploratory current-tree scan
@@ -122,10 +138,13 @@ be interpreted as production credentials. A separate exploratory scan of older
 history timed out after 120 seconds, after 234 commits and 27 candidate
 matches. It is not recorded as a clean full-history scan.
 
-RustSec cargo-audit 0.22.2 scanned all 21 tracked `Cargo.lock` files against
+RustSec cargo-audit 0.22.2 scanned all 22 tracked `Cargo.lock` files against
 advisory database commit `e2111519ba6d14a5da59a7b2e5c8083ae8a37c01`
 (last updated 2026-09-25 19:51:57 +02:00). The three first-party lockfiles
 have zero advisories and warnings and now form an extended fail-closed gate.
+The new fuzz-only lock also has zero advisory matches and warnings; its yanked
+status is not checked because its crates are resolved outside the repository's
+offline vendor index. The extended gate records that precise limitation.
 Four vendored crates' upstream development lockfiles carry five vulnerability
 matches: `tracing-subscriber` 0.3.19 (RUSTSEC-2025-0055), `owning_ref` 0.4.1
 (RUSTSEC-2022-0040), `h2` 0.4.15 (RUSTSEC-2026-0258), and `rustls` 0.23.42
@@ -170,14 +189,14 @@ turn installed but unused tools into green checks.
 | LLVM/Clang sanitizers | Integrated | Clang 18.1.3 ASan/UBSan/LSan on three host-built production C parsers. |
 | LLVM libFuzzer | Integrated | Clang 18.1.3, three independent in-process parser targets with replay and corpus coverage. |
 | AFL++ | Not yet evaluated | Consider process isolation for parsers with non-resettable global state; no duplicate label for the current libFuzzer targets. |
-| Rust cargo-fuzz | Evaluated, integration pending | 0.13.2 Linux musl release and nightly 2026-09-20 are available; the allocation-free production ELF64 admission parser is the next target. |
+| Rust cargo-fuzz | Integrated | 0.13.2 and libfuzzer-sys 0.4.13 compile production ELF64 admission source; pinned nightly 2026-09-20 runs in CI. A local stable 1.98.1 build with `RUSTC_BOOTSTRAP=1` passed 5,000 ASan inputs and reached 123 edges/164 features; local nightly installation could not complete on the disk-constrained host. |
 | Hypothesis | Integrated | 6.168.1, bounded package transaction operation sequences against production Python. |
 | QEMU | Integrated | 8.2.2 TCG normal boot and six separate production scenarios. |
 | Clang Static Analyzer | Integrated | 18.1.3, four file gate; broad candidate findings retained for triage. |
 | clang-tidy | Integrated | 18.1.3, targeted correctness checks on the same four production files. |
 | Cppcheck | Integrated | 2.13.0, independent four file warning/performance/portability gate. |
-| Rust Clippy | Integrated | Rust 1.98.1 correctness gate over all four first-party Cargo crates, with an inventory assertion. |
-| RustSec cargo-audit | Integrated | 0.22.2 audits the three active first-party locks in extended CI against one fetched database snapshot; all 21 tracked locks were audited manually and vendored development-graph findings are recorded above. |
+| Rust Clippy | Integrated | Rust 1.98.1 correctness gate over all four production first-party Cargo crates, with an inventory assertion. The auxiliary fuzz crate is compiled and executed by cargo-fuzz but is not separately Clippy-linted. |
+| RustSec cargo-audit | Integrated | 0.22.2 audits three active first-party locks plus the fuzz-only lock in extended CI against one fetched database snapshot; the original 21 tracked locks were audited manually and vendored development-graph findings are recorded above. |
 | cargo-deny | Not yet evaluated | Develop researched policy for vendored Rust dependencies. |
 | OSV-Scanner | Not yet evaluated | Determine attribution for vendored C and Rust components. |
 | Syft | Not yet evaluated | Generate exact-source/build SBOM and identify bundled components. |
@@ -195,7 +214,8 @@ turn installed but unused tools into green checks.
 Pin sources: `tools/verification/install_action_scanners.py` verifies archive
 SHA-256 for actionlint, zizmor, and Gitleaks;
 `tools/verification/install_cargo_audit.py` verifies cargo-audit 0.22.2's
-release archive digest; `tools/verification/requirements.txt` pins
+release archive digest; `tools/verification/install_cargo_fuzz.py` verifies
+cargo-fuzz 0.13.2's release digest; `tools/verification/requirements.txt` pins
 Hypothesis, sortedcontainers, and Ruff; CI pins Rust/Clippy 1.98.1 for the
 extended gate, Ubuntu apt package versions, and GitHub actions by immutable
 commit. The platform's scanner inventory and exact

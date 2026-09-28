@@ -21,7 +21,7 @@ def sha256(path: Path) -> str:
 def signature(stderr: str) -> str:
     lines = stderr.splitlines()
     markers = ("ERROR: AddressSanitizer", "runtime error:", "ERROR: LeakSanitizer",
-               "Assertion", "error:")
+               "Assertion", "panicked at", "ERROR: libFuzzer", "error:")
     interesting = [line.strip() for line in lines if any(marker in line for marker in markers)]
     return re.sub(r"0x[0-9a-fA-F]+", "0xADDR", interesting[0]) if interesting else \
         "nonzero exit without classified diagnostic"
@@ -82,6 +82,16 @@ def collect_finding(target: dict[str, Any], profile: str, jobdir: Path,
                                ROOT, artifacts / "minimize.stdout.log",
                                artifacts / "minimize.stderr.log", 90)
         record["minimization"] = minimization
+        if minimized.is_file() and minimized.stat().st_size <= first.stat().st_size:
+            record["minimized_sha256"] = sha256(minimized)
+            record["minimized_artifact"] = str(minimized.relative_to(ROOT))
+            first = minimized
+            record["status"] = "minimized"
+    elif first and target["engine"].startswith("cargo-fuzz"):
+        minimized = artifacts / "minimized.bin"
+        receipt = artifacts / "minimize.json"
+        if receipt.is_file():
+            record["minimization"] = json.loads(receipt.read_text())
         if minimized.is_file() and minimized.stat().st_size <= first.stat().st_size:
             record["minimized_sha256"] = sha256(minimized)
             record["minimized_artifact"] = str(minimized.relative_to(ROOT))

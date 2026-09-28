@@ -411,10 +411,10 @@ def run_target(target: dict[str, Any], profile: str, run_dir: Path) -> dict[str,
                         target["timeout_seconds"][profile],
                         extra_env={"OPENRFS_FAILURE_DIR": str(jobdir / "artifacts")},
                         file_limit_mb=target["disk_max_mb"],
-                        memory_mb=None if target["engine"].startswith("LLVM libFuzzer")
+                        memory_mb=None if target["engine"].startswith(("LLVM libFuzzer", "cargo-fuzz"))
                         else target["memory_max_mb"])
     steps.append(campaign)
-    if target["engine"].startswith("LLVM libFuzzer"):
+    if target["engine"].startswith(("LLVM libFuzzer", "cargo-fuzz")):
         result["fuzz_metrics"] = collect_fuzz_metrics(campaign, jobdir / "corpus")
     elif target["engine"].startswith("Hypothesis"):
         result["property_metrics"] = collect_property_metrics(campaign,

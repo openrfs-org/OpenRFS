@@ -1,0 +1,21 @@
+[package]
+name = "openrfs-elf64-fuzz"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "=0.4.13"
+
+[[bin]]
+name = "elf64_admission"
+path = "fuzz_targets/elf64_admission.rs"
+test = false
+doc = false
+bench = false

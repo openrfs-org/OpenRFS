@@ -17,6 +17,7 @@ FIRST_PARTY = {
     "src/rust/Cargo.toml",
     "tools/ext4-transaction-tests/Cargo.toml",
 }
+VERIFICATION_CRATES = {"src/rust/fuzz/Cargo.toml"}
 ASSETS = {
     "OPENRFS_LOGO_BLOB": "build/logo.srl",
     "OPENRFS_WALLPAPER_BLOB": "build/wallpaper.spw",
@@ -41,11 +42,15 @@ def main() -> None:
         ["git", "ls-files", "*Cargo.toml"], cwd=ROOT, text=True
     ).splitlines()
     actual = {path for path in tracked if not path.startswith("vendor/")}
-    if actual != FIRST_PARTY:
+    if actual != FIRST_PARTY | VERIFICATION_CRATES:
         raise RuntimeError(
-            f"first-party Cargo inventory changed: missing={sorted(actual - FIRST_PARTY)}, "
-            f"removed={sorted(FIRST_PARTY - actual)}"
+            "Cargo inventory changed: "
+            f"unclassified={sorted(actual - FIRST_PARTY - VERIFICATION_CRATES)}, "
+            f"missing={sorted((FIRST_PARTY | VERIFICATION_CRATES) - actual)}"
         )
+    print("Clippy production crates:", ", ".join(sorted(FIRST_PARTY)), flush=True)
+    print("Fuzz-only crate compiled under cargo-fuzz:",
+          ", ".join(sorted(VERIFICATION_CRATES)), flush=True)
 
     run(["make", *ASSETS.values()])
     env = os.environ.copy()

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit the exact first-party Cargo lockfiles against one RustSec snapshot."""
+"""Audit active and fuzz-only Cargo locks against one RustSec snapshot."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ ACTIVE_LOCKS = (
     "src/rust/Cargo.lock",
     "tools/ext4-transaction-tests/Cargo.lock",
 )
+VERIFICATION_LOCKS = ("src/rust/fuzz/Cargo.lock",)
 
 
 def main() -> int:
@@ -30,9 +31,9 @@ def main() -> int:
     tracked = subprocess.check_output(
         ["git", "ls-files", "*Cargo.lock"], cwd=ROOT, text=True
     ).splitlines()
-    active = tuple(sorted(path for path in tracked if not path.startswith("vendor/")))
-    if active != tuple(sorted(ACTIVE_LOCKS)):
-        raise RuntimeError(f"first-party Cargo lock inventory changed: {active}")
+    first_party = tuple(sorted(path for path in tracked if not path.startswith("vendor/")))
+    if first_party != tuple(sorted(ACTIVE_LOCKS + VERIFICATION_LOCKS)):
+        raise RuntimeError(f"first-party and verification Cargo lock inventory changed: {first_party}")
 
     db = Path(os.environ.get("OPENRFS_ADVISORY_DB",
                              "/var/tmp/openrfs-verification-advisory-db"))
@@ -44,12 +45,17 @@ def main() -> int:
     reports = []
     database = None
     failed = False
-    for index, lock in enumerate(ACTIVE_LOCKS):
+    for index, lock in enumerate(ACTIVE_LOCKS + VERIFICATION_LOCKS):
         name = lock.replace("/", "__")
         report_path = output / f"{name}.json"
         log_path = output / f"{name}.stderr.log"
         command = ["cargo-audit", "audit", "--db", str(db), "--file", lock,
                    "--format", "json", "-D", "warnings"]
+        if lock in VERIFICATION_LOCKS:
+            # This auxiliary fuzz crate resolves from crates.io outside the
+            # repository's offline vendor policy. Its index is not installed
+            # in the exact checkout; RustSec advisories still apply.
+            command.append("--no-yanked")
         if index:
             command.append("--no-fetch")
         print("audit:", lock, flush=True)
@@ -79,6 +85,8 @@ def main() -> int:
             failed = True
         reports.append({
             "lockfile": lock,
+            "kind": "verification" if lock in VERIFICATION_LOCKS else "active",
+            "yanked_check": lock not in VERIFICATION_LOCKS,
             "sha256": hashlib.sha256((ROOT / lock).read_bytes()).hexdigest(),
             "dependency_count": value["lockfile"]["dependency-count"],
             "vulnerabilities": vulnerabilities,
@@ -88,7 +96,7 @@ def main() -> int:
         })
     summary = {"source_commit": source, "tool": version,
                "completed_utc": datetime.now(timezone.utc).isoformat(),
-               "database": database, "active_locks": reports,
+               "database": database, "locks": reports,
                "status": "failed" if failed else "passed"}
     (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     return 1 if failed else 0
