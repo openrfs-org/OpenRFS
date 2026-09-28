@@ -3680,7 +3680,7 @@ verify-extended:
 fuzz-smoke:
 	$(PYTHON) tools/verification/run.py run --profile fast \
 		--target package-state-parser --target acpi-madt-topology \
-		--target multiboot2-admission \
+		--target multiboot2-admission --target rust-elf64-admission \
 		--target package-transaction-sequence
 
 fuzz-nightly:
