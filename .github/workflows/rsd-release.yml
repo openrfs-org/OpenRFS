@@ -1,9 +1,12 @@
 name: RSD release
 
 on:
+    pull_request:
+        paths:
+            - .github/workflows/rsd-release.yml
     push:
         tags:
-            - v2.5.0-beta.2
+            - v2.55
 
 permissions:
     contents: write
@@ -14,7 +17,7 @@ concurrency:
 
 jobs:
     publish:
-        name: build and publish RSD 2.5 beta 2
+        name: build and verify RSD 2.55
         runs-on: ubuntu-24.04
         timeout-minutes: 120
         steps:
@@ -37,34 +40,49 @@ jobs:
                   make verify
                   make iso build/userspace/rsd-desktop-system-fat32.raw \
                       build/userspace/rsd-data-fat32.raw
+                  python3 tools/capture-rsd-proof.py \
+                      --iso build/rsd.iso \
+                      --system build/userspace/rsd-desktop-system-fat32.raw \
+                      --data build/userspace/rsd-data-fat32.raw \
+                      --output build/rsd-captures
+                  python3 tools/compare-rsd-proof-screenshot.py --mode clean \
+                      assets/rsd/proof.png build/rsd-captures/rsd-proof.png
+                  python3 tools/compare-rsd-proof-screenshot.py --mode focus \
+                      assets/rsd/proof-focus.png \
+                      build/rsd-captures/rsd-proof-focus.png
+                  python3 tools/compare-rsd-proof-screenshot.py --mode terminal \
+                      assets/rsd/proof-terminal.png \
+                      build/rsd-captures/rsd-proof-terminal.png
                   mkdir -p release
-                  cp build/rsd.iso release/RSD-v2.5.0-beta.2.iso
-                  cp build/rsd.elf release/rsd-v2.5.0-beta.2.elf
+                  cp build/rsd.iso release/RSD-v2.55.iso
+                  cp build/rsd.elf release/rsd-v2.55.elf
                   cp build/userspace/rsd-desktop-system-fat32.raw \
-                      release/rsd-v2.5.0-beta.2-system-fat32.raw
+                      release/rsd-v2.55-system-fat32.raw
                   cp build/userspace/rsd-data-fat32.raw \
-                      release/rsd-v2.5.0-beta.2-data-fat32.raw
-                  cp assets/rsd/proof.png release/RSD-v2.5.0-beta.2-desktop.png
-                  cp assets/rsd/proof-focus.png \
-                      release/RSD-v2.5.0-beta.2-desktop-focus.png
-                  cp assets/rsd/proof-terminal.png \
-                      release/RSD-v2.5.0-beta.2-terminal.png
+                      release/rsd-v2.55-data-fat32.raw
+                  cp build/rsd-captures/rsd-proof.png \
+                      release/RSD-v2.55-desktop.png
+                  cp build/rsd-captures/rsd-proof-focus.png \
+                      release/RSD-v2.55-desktop-focus.png
+                  cp build/rsd-captures/rsd-proof-terminal.png \
+                      release/RSD-v2.55-terminal.png
                   (cd release && sha256sum * > SHA256SUMS && sha256sum -c SHA256SUMS)
             - name: Publish the tagged release
+              if: github.ref == 'refs/tags/v2.55'
               env:
                   GH_TOKEN: ${{ github.token }}
               run: |
                   set -euo pipefail
                   cat > release-notes.md <<'NOTES'
-                  # RSD 2.5 beta 2
+                  # RSD 2.55
 
                   RSD stands for Root Software Distribution. It is an operating system and kernel designed to be read, modified, and forked into your own distribution.
 
-                  This beta includes the RSD command line, installer configuration interface, and desktop with its applications and icons. The installer currently previews configuration and does not write to disk. RSD remains experimental.
+                  RSD 2.55 includes the native command line and a real framebuffer desktop with its applications and icons. The desktop images attached to this release are captured from QEMU booting this exact source. The installer currently previews configuration and does not write to disk. RSD remains experimental.
 
                   The ISO, kernel ELF, desktop System volume, Data volume, authentic QEMU screenshots, and SHA256 manifest were assembled from this exact tag. The two FAT32 images are required for the desktop boot profile.
                   NOTES
                   printf '\nSource commit: `%s`.\n' "$GITHUB_SHA" >> release-notes.md
                   gh release create "$GITHUB_REF_NAME" release/* \
-                      --verify-tag --prerelease \
-                      --title 'RSD 2.5 beta 2' --notes-file release-notes.md
+                      --verify-tag \
+                      --title 'RSD 2.55' --notes-file release-notes.md

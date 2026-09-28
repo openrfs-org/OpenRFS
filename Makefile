@@ -1253,13 +1253,9 @@ $(FAT32_SYSTEM_IMAGE): $(BUSYBOX_BINARY) $(BUSYBOX_UNAME_BINARY) \
 		--echo $(BUSYBOX_BINARY) --uname $(BUSYBOX_UNAME_BINARY) \
 		--cat $(BUSYBOX_CAT_BINARY)
 
-$(DESKTOP_SYSTEM_IMAGE): $(BUSYBOX_BINARY) $(BUSYBOX_UNAME_BINARY) \
-		$(BUSYBOX_CAT_BINARY) tools/rsd-package.py \
-		tools/fat32_image.py
+$(DESKTOP_SYSTEM_IMAGE): $(FAT32_SYSTEM_IMAGE)
 	mkdir -p $(dir $@)
-	$(PYTHON) tools/rsd-package.py install-system \
-		--echo $(BUSYBOX_BINARY) --uname $(BUSYBOX_UNAME_BINARY) \
-		--cat $(BUSYBOX_CAT_BINARY) --output $@
+	cp $< $@
 
 $(FAT32_DATA_IMAGE): tools/fat32_image.py
 	mkdir -p $(dir $@)

@@ -30,7 +30,7 @@ WELCOME = b"hello from the RSD network\n"
 # the server in those two scenarios, which is the only way to exercise a
 # passive open from outside.
 KNOCK_PORT = 4243
-KNOCK_MAGIC = b"ORF1"
+KNOCK_MAGIC = b"RSD1"
 LISTEN_REQUEST = b"RSD LISTEN\n"
 REFUSAL_NOTICE = b"REFUSED"
 CLIENT_PORT = 50100

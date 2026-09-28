@@ -9561,9 +9561,9 @@ static network_handle network_announce_port(
     network_handle knock;
     uint8_t message[6];
 
-    message[0] = (uint8_t)'O';
-    message[1] = (uint8_t)'R';
-    message[2] = (uint8_t)'F';
+    message[0] = (uint8_t)'R';
+    message[1] = (uint8_t)'S';
+    message[2] = (uint8_t)'D';
     message[3] = (uint8_t)'1';
     message[4] = (uint8_t)(announced >> 8U);
     message[5] = (uint8_t)announced;
@@ -9585,7 +9585,7 @@ static network_handle network_announce_port_mode(
 {
     network_handle knock;
     uint8_t message[7] = {
-        (uint8_t)'O', (uint8_t)'R', (uint8_t)'F', (uint8_t)'1',
+        (uint8_t)'R', (uint8_t)'S', (uint8_t)'D', (uint8_t)'1',
         (uint8_t)(NETWORK_TEST_LISTEN_PORT >> 8U),
         (uint8_t)NETWORK_TEST_LISTEN_PORT, behavior
     };
