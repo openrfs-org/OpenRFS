@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# Pinned iPXE sources compiled into the kernel, and the OpenRFS glue that
+# Pinned iPXE sources compiled into the kernel, and the RSD glue that
 # gives them their runtime. Every vendored path is byte-for-byte upstream;
 # vendor/ipxe/SOURCE-MANIFEST.sha256 records the digests.
 

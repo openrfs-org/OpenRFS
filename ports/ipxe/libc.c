@@ -17,7 +17,7 @@
 #include <ipxe/string.h>
 #include <ipxe/vsprintf.h>
 
-#include <openrfs/ipxe_host.h>
+#include <rsd/ipxe_host.h>
 
 int errno;
 

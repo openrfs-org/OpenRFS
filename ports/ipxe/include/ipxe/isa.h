@@ -3,11 +3,11 @@
  * ISA devices, with the structures of iPXE's include/ipxe/isa.h
  * (GPL-2.0-or-later) that a legacy ISA driver declares through
  * ISA_DRIVER(). iPXE gathers ISA drivers in a linker table and probes every
- * address each one lists; OpenRFS's glue probes the addresses of a driver
+ * address each one lists; RSD's glue probes the addresses of a driver
  * the command line named, one driver at a time.
  */
-#ifndef OPENRFS_IPXE_ISA_H
-#define OPENRFS_IPXE_ISA_H
+#ifndef RSD_IPXE_ISA_H
+#define RSD_IPXE_ISA_H
 
 #include <stdint.h>
 #include <ipxe/device.h>

@@ -5,11 +5,11 @@
  * Register names, the pci_device/pci_driver layout and the helper contracts
  * follow iPXE's include/ipxe/pci.h and drivers/bus/pci.c (GPL-2.0-or-later
  * OR UBDL). Every configuration write, BAR mapping and bus-master request is
- * routed through the OpenRFS driver framework, which owns the claim; a driver
+ * routed through the RSD driver framework, which owns the claim; a driver
  * cannot move a BAR or enable decode the claim did not grant.
  */
-#ifndef OPENRFS_IPXE_PCI_H
-#define OPENRFS_IPXE_PCI_H
+#ifndef RSD_IPXE_PCI_H
+#define RSD_IPXE_PCI_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -138,7 +138,7 @@ struct pci_class_id {
             ((((progif) == PCI_ANY_ID) ? 0x00 : 0xff) << 0), \
     }
 
-struct openrfs_ipxe_pci;
+struct rsd_ipxe_pci;
 
 struct pci_device {
     struct device dev;
@@ -154,8 +154,8 @@ struct pci_device {
     struct pci_driver *driver;
     void *priv;
     struct pci_device_id *id;
-    /* OpenRFS: the framework claim behind this device. */
-    struct openrfs_ipxe_pci *openrfs;
+    /* RSD: the framework claim behind this device. */
+    struct rsd_ipxe_pci *rsd;
 };
 
 struct pci_driver {
@@ -167,7 +167,7 @@ struct pci_driver {
 };
 
 /*
- * iPXE collects drivers through a linker table. OpenRFS names each compiled
+ * iPXE collects drivers through a linker table. RSD names each compiled
  * driver explicitly in ports/ipxe/ipxe_glue.c instead, so the attribute only
  * has to keep the object alive.
  */

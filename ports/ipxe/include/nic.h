@@ -6,8 +6,8 @@
  * them to a net_device. The DRIVER() and ISA_DRIVER() macros produce the
  * same probe/remove wrappers as upstream's for those two buses.
  */
-#ifndef OPENRFS_IPXE_NIC_H
-#define OPENRFS_IPXE_NIC_H
+#ifndef RSD_IPXE_NIC_H
+#define RSD_IPXE_NIC_H
 
 #include <stdint.h>
 #include <string.h>

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * OpenRFS environment for the vendored MINIX 3 audio drivers.
+ * RSD environment for the vendored MINIX 3 audio drivers.
  *
  * In MINIX 3 a driver is a user process, and <minix/drivers.h> gathers the
  * system library it links against. The audio drivers use a small part of
@@ -11,8 +11,8 @@
  * ports/minix/audio_glue.c implements them. The constants below are
  * MINIX's own (<minix/const.h>, <minix/devio.h>).
  */
-#ifndef OPENRFS_MINIX_DRIVERS_H
-#define OPENRFS_MINIX_DRIVERS_H
+#ifndef RSD_MINIX_DRIVERS_H
+#define RSD_MINIX_DRIVERS_H
 
 #include <errno.h>
 #include <stddef.h>

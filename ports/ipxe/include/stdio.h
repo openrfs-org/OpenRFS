@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * Formatted output for iPXE drivers. printf() writes to the OpenRFS serial
+ * Formatted output for iPXE drivers. printf() writes to the RSD serial
  * console; the formatter is ports/ipxe/libc.c's bounded vsnprintf.
  */
-#ifndef OPENRFS_IPXE_STDIO_H
-#define OPENRFS_IPXE_STDIO_H
+#ifndef RSD_IPXE_STDIO_H
+#define RSD_IPXE_STDIO_H
 
 #include <stdarg.h>
 #include <stddef.h>

@@ -4,8 +4,8 @@
  * from the layer's DMA arena, so any buffer a driver hands to its device is
  * already inside memory the device was granted.
  */
-#ifndef OPENRFS_IPXE_STDLIB_H
-#define OPENRFS_IPXE_STDLIB_H
+#ifndef RSD_IPXE_STDLIB_H
+#define RSD_IPXE_STDLIB_H
 
 #include <stddef.h>
 #include <stdint.h>

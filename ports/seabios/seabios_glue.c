@@ -7,7 +7,7 @@
  * memory, timers, diagnostics, the process_op dispatcher from block.c and
  * the boot_add_* registration calls from boot.c. It is compiled in the
  * SeaBIOS environment (ports/seabios/include) and reaches the kernel only
- * through include/openrfs/seabios_host.h.
+ * through include/rsd/seabios_host.h.
  *
  * Each driver is bound the way SeaBIOS's device_hardware_setup binds it:
  * its own *_setup() function runs and walks the PCI device list, and every
@@ -18,7 +18,7 @@
  */
 #include <stdarg.h>
 
-#include <openrfs/seabios_host.h>
+#include <rsd/seabios_host.h>
 
 #include "biosvar.h"
 #include "block.h"
@@ -65,8 +65,8 @@
 
 struct hlist_head PCIDevices;
 int MaxPCIBus;
-struct bios_data_area_s openrfs_seabios_bda;
-struct rmode_IVT openrfs_seabios_ivt;
+struct bios_data_area_s rsd_seabios_bda;
+struct rmode_IVT rsd_seabios_ivt;
 struct floppy_dbt_s diskette_param_table;
 u8 *bounce_buf_fl;
 
@@ -339,7 +339,7 @@ static void glue_puts(const char *text)
         seabios_host_console_write(line);
 }
 
-int openrfs_seabios_vsnprintf(char *buffer, size_t size, const char *fmt,
+int rsd_seabios_vsnprintf(char *buffer, size_t size, const char *fmt,
                               va_list args);
 
 void __dprintf(const char *fmt, ...)
@@ -348,7 +348,7 @@ void __dprintf(const char *fmt, ...)
     va_list args;
 
     va_start(args, fmt);
-    openrfs_seabios_vsnprintf(text, sizeof(text), fmt, args);
+    rsd_seabios_vsnprintf(text, sizeof(text), fmt, args);
     va_end(args);
     glue_puts(text);
 }
@@ -359,7 +359,7 @@ void printf(const char *fmt, ...)
     va_list args;
 
     va_start(args, fmt);
-    openrfs_seabios_vsnprintf(text, sizeof(text), fmt, args);
+    rsd_seabios_vsnprintf(text, sizeof(text), fmt, args);
     va_end(args);
     glue_puts(text);
 }
@@ -370,7 +370,7 @@ int snprintf(char *str, size_t size, const char *fmt, ...)
     int length;
 
     va_start(args, fmt);
-    length = openrfs_seabios_vsnprintf(str, size, fmt, args);
+    length = rsd_seabios_vsnprintf(str, size, fmt, args);
     va_end(args);
     return length;
 }
@@ -385,7 +385,7 @@ char *znprintf(size_t size, const char *fmt, ...)
         return NULL;
     }
     va_start(args, fmt);
-    openrfs_seabios_vsnprintf(str, size, fmt, args);
+    rsd_seabios_vsnprintf(str, size, fmt, args);
     va_end(args);
     return str;
 }
@@ -396,7 +396,7 @@ void panic(const char *fmt, ...)
     va_list args;
 
     va_start(args, fmt);
-    openrfs_seabios_vsnprintf(text, sizeof(text), fmt, args);
+    rsd_seabios_vsnprintf(text, sizeof(text), fmt, args);
     va_end(args);
     seabios_host_panic(text);
 }
@@ -437,7 +437,7 @@ void hexdump(const void *d, int len)
 
 struct zone_s ZoneLow, ZoneHigh, ZoneFSeg, ZoneTmpLow, ZoneTmpHigh;
 
-void *openrfs_seabios_memalign(u32 align, u32 size)
+void *rsd_seabios_memalign(u32 align, u32 size)
 {
     if (align < MALLOC_MIN_ALIGN)
         align = MALLOC_MIN_ALIGN;
@@ -447,7 +447,7 @@ void *openrfs_seabios_memalign(u32 align, u32 size)
 void *_malloc(struct zone_s *zone, u32 size, u32 align)
 {
     (void)zone;
-    return openrfs_seabios_memalign(align, size);
+    return rsd_seabios_memalign(align, size);
 }
 
 void free(void *data)
@@ -652,7 +652,7 @@ static struct glue_pci *glue_find_bdf(u16 bdf);
 
 static int qemu_detected = -1;
 
-int openrfs_seabios_running_on_qemu(void)
+int rsd_seabios_running_on_qemu(void)
 {
     size_t index;
 
@@ -687,7 +687,7 @@ u8 rtc_read(u8 index)
 
 void enable_hwirq(int hwirq, struct segoff_s func)
 {
-    /* OpenRFS owns interrupt routing; the drivers here are polled. */
+    /* RSD owns interrupt routing; the drivers here are polled. */
     (void)hwirq;
     (void)func;
 }

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef OPENRFS_IPXE_LIMITS_H
-#define OPENRFS_IPXE_LIMITS_H
+#ifndef RSD_IPXE_LIMITS_H
+#define RSD_IPXE_LIMITS_H
 
 #define CHAR_BIT 8
 #define SCHAR_MIN (-128)

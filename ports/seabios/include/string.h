@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * OpenRFS environment for the vendored SeaBIOS drivers: string routines,
+ * RSD environment for the vendored SeaBIOS drivers: string routines,
  * with SeaBIOS's names and signatures. The "_fl" (flat pointer) variants are
  * the plain ones in flat mode.
  */
-#ifndef OPENRFS_SEABIOS_STRING_H
-#define OPENRFS_SEABIOS_STRING_H
+#ifndef RSD_SEABIOS_STRING_H
+#define RSD_SEABIOS_STRING_H
 
 #include "types.h"
 

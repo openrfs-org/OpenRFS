@@ -4,8 +4,8 @@
  * error value for diagnostics; drivers only ever return, compare and
  * negate them, so plain positive POSIX numbers preserve every behaviour.
  */
-#ifndef OPENRFS_IPXE_ERRNO_H
-#define OPENRFS_IPXE_ERRNO_H
+#ifndef RSD_IPXE_ERRNO_H
+#define RSD_IPXE_ERRNO_H
 
 #define ENOENT 2
 #define EIO 5

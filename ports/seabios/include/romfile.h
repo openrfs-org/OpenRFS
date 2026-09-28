@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * OpenRFS environment for the vendored SeaBIOS drivers: firmware files.
- * OpenRFS lends the drivers no CBFS or fw_cfg files, so every lookup misses
+ * RSD environment for the vendored SeaBIOS drivers: firmware files.
+ * RSD lends the drivers no CBFS or fw_cfg files, so every lookup misses
  * and every integer takes the caller's default.
  */
-#ifndef OPENRFS_SEABIOS_ROMFILE_H
-#define OPENRFS_SEABIOS_ROMFILE_H
+#ifndef RSD_SEABIOS_ROMFILE_H
+#define RSD_SEABIOS_ROMFILE_H
 
 #include "types.h"
 

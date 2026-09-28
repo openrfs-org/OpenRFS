@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * The iPXE DMA API (include/ipxe/dma.h) over an OpenRFS DMA arena.
+ * The iPXE DMA API (include/ipxe/dma.h) over an RSD DMA arena.
  *
  * A dma_device names the arena its device was granted when bus mastering was
  * enabled. dma_alloc() carves from that arena; dma_map() refuses any buffer
@@ -8,8 +8,8 @@
  * did not hand over. Mappings are identity: the bus address of a buffer is
  * its CPU address.
  */
-#ifndef OPENRFS_IPXE_DMA_H
-#define OPENRFS_IPXE_DMA_H
+#ifndef RSD_IPXE_DMA_H
+#define RSD_IPXE_DMA_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -29,8 +29,8 @@ struct dma_device {
     physaddr_t mask;
     unsigned int mapped;
     unsigned int allocated;
-    /* OpenRFS: the arena this device may address. */
-    struct dma_arena *openrfs_arena;
+    /* RSD: the arena this device may address. */
+    struct dma_arena *rsd_arena;
 };
 
 struct dma_operations {

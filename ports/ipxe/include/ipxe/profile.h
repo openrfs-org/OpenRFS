@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* iPXE's profiler (include/ipxe/profile.h) compiled out, as in its builds. */
-#ifndef OPENRFS_IPXE_PROFILE_H
-#define OPENRFS_IPXE_PROFILE_H
+#ifndef RSD_IPXE_PROFILE_H
+#define RSD_IPXE_PROFILE_H
 
 #include <stdint.h>
 

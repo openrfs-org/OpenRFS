@@ -3,8 +3,8 @@
  * The compiler's freestanding stdint.h plus the legacy integer names iPXE's
  * include/stdint.h provides to its older Etherboot-derived drivers.
  */
-#ifndef OPENRFS_IPXE_STDINT_H
-#define OPENRFS_IPXE_STDINT_H
+#ifndef RSD_IPXE_STDINT_H
+#define RSD_IPXE_STDINT_H
 
 #include_next <stdint.h>
 

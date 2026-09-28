@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* The legacy Etherboot environment (include/etherboot.h). */
-#ifndef OPENRFS_IPXE_ETHERBOOT_H
-#define OPENRFS_IPXE_ETHERBOOT_H
+#ifndef RSD_IPXE_ETHERBOOT_H
+#define RSD_IPXE_ETHERBOOT_H
 
 #include <stddef.h>
 #include <stdint.h>
