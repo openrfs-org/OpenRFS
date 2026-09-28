@@ -7,8 +7,8 @@
  * coverage mask.  See src/kernel/cursor.h for what these are and
  * the two Windows names this does not draw.
  */
-#ifndef OPENRFS_CURSOR_ART_H
-#define OPENRFS_CURSOR_ART_H
+#ifndef RSD_CURSOR_ART_H
+#define RSD_CURSOR_ART_H
 
 #include <stdint.h>
 

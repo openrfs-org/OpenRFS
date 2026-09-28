@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
  * The registry of display adapters driven by upstream drivers. See
- * include/openrfs/display.h.
+ * include/rsd/display.h.
  */
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/display.h>
+#include <rsd/display.h>
 
 struct display_device {
     char name[DISPLAY_NAME_CAPACITY];
