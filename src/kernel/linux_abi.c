@@ -1,22 +1,22 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* One private static BusyBox process and its complete reverse-order teardown. */
 
-#include <openrfs/linux_abi.h>
+#include <rsd/linux_abi.h>
 
-#include <openrfs/console.h>
-#include <openrfs/cpu.h>
-#include <openrfs/dma.h>
-#include <openrfs/filesystem.h>
-#include <openrfs/fat32.h>
-#include <openrfs/interrupt_vector.h>
-#include <openrfs/linux_elf64.h>
-#include <openrfs/linux_syscall.h>
-#include <openrfs/memory.h>
-#include <openrfs/msix.h>
-#include <openrfs/paging.h>
-#include <openrfs/pci_resource.h>
+#include <rsd/console.h>
+#include <rsd/cpu.h>
+#include <rsd/dma.h>
+#include <rsd/filesystem.h>
+#include <rsd/fat32.h>
+#include <rsd/interrupt_vector.h>
+#include <rsd/linux_elf64.h>
+#include <rsd/linux_syscall.h>
+#include <rsd/memory.h>
+#include <rsd/msix.h>
+#include <rsd/paging.h>
+#include <rsd/pci_resource.h>
 
-#define LINUX_ARGUMENT_BYTES 21U
+#define LINUX_ARGUMENT_BYTES 17U
 #define LINUX_INITIAL_STACK_WORDS 10U
 #define LINUX_PAGING_FAILURE_CEILING 64U
 #define LINUX_INITIAL_USER_PAGES \
@@ -214,7 +214,7 @@ static uint64_t next_generation = UINT64_C(1);
 static bool proof_active;
 static const uint8_t linux_argv_zero[] = "busybox";
 static const uint8_t linux_argv_one[] = "echo";
-static const uint8_t linux_argv_two[] = "OPENRFS";
+static const uint8_t linux_argv_two[] = "RSD";
 
 static bool failure_in_range(
     enum linux_failure_point point,
@@ -326,7 +326,7 @@ static void report_control_failure(
     bool observed
 )
 {
-    console_write("OpenRFS: Linux ABI control failure ");
+    console_write("RSD: Linux ABI control failure ");
     console_write(kind);
     console_write(" ordinal ");
     console_write_u64(ordinal);
@@ -740,7 +740,7 @@ static bool initial_stack_installed_valid(uint64_t vector_address)
     const uint8_t expected[LINUX_ARGUMENT_BYTES] = {
         'b', 'u', 's', 'y', 'b', 'o', 'x', 0,
         'e', 'c', 'h', 'o', 0,
-        'O', 'P', 'E', 'N', 'R', 'F', 'S', 0
+        'R', 'S', 'D', 0
     };
 
     if (!stack_read((uint8_t *)(void *)words, vector_address,
@@ -1099,7 +1099,7 @@ bool linux_abi_image_stack_foundation_self_test(size_t *completed_tests)
         return false;
     }
     *completed_tests = 0U;
-    if (openrfs_linux_elf64_self_test() !=
+    if (rsd_linux_elf64_self_test() !=
             LINUX_ELF64_PARSER_ROBUSTNESS_CONTROLS ||
         (PAGING_LINUX_IMAGE_BASE & (PAGING_PAGE_SIZE - 1U)) != 0U ||
         (PAGING_LINUX_STACK_GUARD & (PAGING_PAGE_SIZE - 1U)) != 0U ||
@@ -1112,7 +1112,7 @@ bool linux_abi_image_stack_foundation_self_test(size_t *completed_tests)
                 PAGING_LINUX_ANON_ADDRESS ||
         PAGING_LINUX_ANON_ADDRESS + PAGING_PAGE_SIZE >
             PAGING_LINUX_STACK_GUARD ||
-        LINUX_ARGUMENT_BYTES != 21U || LINUX_INITIAL_STACK_WORDS != 10U ||
+        LINUX_ARGUMENT_BYTES != 17U || LINUX_INITIAL_STACK_WORDS != 10U ||
         !initial_stack_foundation_self_test() ||
         !linux_syscall_enosys_self_test() ||
         !linux_syscall_semantic_self_test() ||
@@ -1283,7 +1283,7 @@ static enum linux_abi_status linux_attempt(
         status = failure_status(failure_point);
         goto cleanup;
     }
-    if (openrfs_linux_elf64_parse(runtime.elf_bytes,
+    if (rsd_linux_elf64_parse(runtime.elf_bytes,
             sizeof(runtime.elf_bytes), &runtime.image) !=
             LINUX_ELF64_STATUS_OK || !validated_placement(&runtime.image)) {
         status = LINUX_ABI_STATUS_ELF;

@@ -3,11 +3,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/cpu.h>
-#include <openrfs/hwdrv.h>
-#include <openrfs/interrupts.h>
-#include <openrfs/ioapic.h>
-#include <openrfs/keyboard.h>
+#include <rsd/cpu.h>
+#include <rsd/hwdrv.h>
+#include <rsd/interrupts.h>
+#include <rsd/ioapic.h>
+#include <rsd/keyboard.h>
 
 /*
  * The PS/2 keyboard.

@@ -3,16 +3,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/apic.h>
-#include <openrfs/console.h>
-#include <openrfs/cpu.h>
-#include <openrfs/interrupts.h>
-#include <openrfs/ioapic.h>
-#include <openrfs/interrupt_vector.h>
-#include <openrfs/native_process.h>
-#include <openrfs/pic.h>
-#include <openrfs/thread.h>
-#include <openrfs/test.h>
+#include <rsd/apic.h>
+#include <rsd/console.h>
+#include <rsd/cpu.h>
+#include <rsd/interrupts.h>
+#include <rsd/ioapic.h>
+#include <rsd/interrupt_vector.h>
+#include <rsd/native_process.h>
+#include <rsd/pic.h>
+#include <rsd/thread.h>
+#include <rsd/test.h>
 
 #define IDT_GATE_PRESENT UINT8_C(0x80)
 #define IDT_GATE_INTERRUPT UINT8_C(0x0E)
@@ -284,7 +284,7 @@ static _Noreturn void fatal_interrupt(struct interrupt_frame *frame)
     }
 
     fatal_depth = 1U;
-    console_write("OpenRFS FATAL INTERRUPT\n");
+    console_write("RSD FATAL INTERRUPT\n");
     console_write("  vector=");
     console_write_u64(frame->vector);
     console_write(" name=");

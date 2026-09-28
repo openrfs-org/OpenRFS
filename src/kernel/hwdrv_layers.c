@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include <stddef.h>
 
-#include <openrfs/hwdrv_layers.h>
+#include <rsd/hwdrv_layers.h>
 
 static const struct hwdrv_layer layers[] = {
     /*

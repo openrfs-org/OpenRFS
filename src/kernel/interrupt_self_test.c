@@ -3,9 +3,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/cpu.h>
-#include <openrfs/interrupts.h>
-#include <openrfs/pic.h>
+#include <rsd/cpu.h>
+#include <rsd/interrupts.h>
+#include <rsd/pic.h>
 
 extern const uint8_t interrupt_breakpoint_after[];
 
