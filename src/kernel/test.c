@@ -4823,7 +4823,7 @@ static void ext4_vfs_indexed_snapshot(rsdfs_directory_handle snapshot)
 {
     uint64_t seen[4] = { 0U };
     static const char prefix[] = "entry-";
-    static const char suffix[] = "-rsd-fixture";
+    static const char suffix[] = "-rsd-core-fixture";
     for (unsigned index = 0U; index < 256U; ++index) {
         struct rsdfs_list_entry entry;
         bool present = false;
@@ -4853,7 +4853,7 @@ static void ext4_vfs_indexed_snapshot(rsdfs_directory_handle snapshot)
 static void ext4_vfs_indexed_semantics(void)
 {
     const enum rsdfs_volume volume = RSDFS_VOLUME_SYSTEM;
-    const char *original = "indexed/entry-0128-rsd-fixture";
+    const char *original = "indexed/entry-0128-rsd-core-fixture";
     const char *moved = "data/user/VFS-INDEX.TMP";
     const char *created = "indexed/VFS-INDEX.NEW";
     const char *renamed = "indexed/VFS-INDEX.FINAL";
