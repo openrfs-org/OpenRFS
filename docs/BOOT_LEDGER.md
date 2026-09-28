@@ -2,7 +2,7 @@
 
 # BT11 Boot Ledger
 
-BT11 is OpenRFS's project-owned boot ledger codename. OpenRFS models startup as a validated dependency graph instead of a call list in
+BT11 is RSD's project-owned boot ledger codename. RSD models startup as a validated dependency graph instead of a call list in
 `kernel_main`. Each descriptor names a stable stage ID, phase, prerequisites,
 provided capabilities, optional policy, irreversible class, and execution
 function.
@@ -42,7 +42,7 @@ Stages fall into six broad phases:
 5. services: timers, PCI, threads, scheduler, DMA, devices, storage, processes,
    and measured Linux profiles;
 6. proofs and presentation: closing checks, the optional networking/entropy
-   availability decision, desktop activation, and the installed OpenRFS
+   availability decision, desktop activation, and the installed RSD
    proof.
 
 Within those phases, declared capabilities—not descriptor insertion order—form
@@ -94,7 +94,7 @@ absence, mutation detection, and the permanent transcript contract. See
 
 ## Operator surface
 
-OpenRFS exposes a read-only summary of installed stages and capabilities.
+RSD exposes a read-only summary of installed stages and capabilities.
 It does not control or replay startup. The serial transcript remains the full
 diagnostic record, while `boot_report.c` formats discovery data without making
 policy decisions.
