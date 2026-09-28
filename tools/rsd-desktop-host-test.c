@@ -1,12 +1,81 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
+#include <rsd/fat32_fs.h>
 #include <rsd/rsd_desktop.h>
+#include <rsd_desktop/files.h>
 #include <rsd_desktop/menu.h>
 #include <rsd_desktop/shell.h>
 
 static uint32_t pixels[1024U * 768U];
+static bool renamed_readme;
+static bool moved_note;
+static bool removed_readme;
+static bool removed_docs;
+
+enum rsdfs_status rsdfs_list(enum rsdfs_volume volume, const char *path,
+    struct rsdfs_list_entry *entries, size_t capacity, size_t *count)
+{
+    if (volume != RSDFS_VOLUME_DATA || entries == NULL || count == NULL) {
+        return RSDFS_STATUS_INVALID_ARGUMENT;
+    }
+    if (strcmp(path, "/") == 0 && capacity >= 2U) {
+        entries[0] = (struct rsdfs_list_entry){ .name = "docs",
+            .directory = true };
+        entries[1] = (struct rsdfs_list_entry){ .name = "readme.txt",
+            .size = 42U };
+        *count = 2U;
+        return RSDFS_STATUS_OK;
+    }
+    if (strcmp(path, "/docs") == 0 && capacity >= 1U) {
+        entries[0] = (struct rsdfs_list_entry){ .name = "notes.txt",
+            .size = 12U };
+        *count = 1U;
+        return RSDFS_STATUS_OK;
+    }
+    return RSDFS_STATUS_NOT_FOUND;
+}
+
+enum rsdfs_status rsdfs_rename(enum rsdfs_volume volume, const char *from,
+    const char *to)
+{
+    if (volume != RSDFS_VOLUME_DATA) {
+        return RSDFS_STATUS_INVALID_ARGUMENT;
+    }
+    if (strcmp(from, "/readme.txt") == 0 &&
+            strcmp(to, "/changed.txt") == 0) {
+        renamed_readme = true;
+        return RSDFS_STATUS_OK;
+    }
+    if (strcmp(from, "/docs/notes.txt") == 0 &&
+            strcmp(to, "/notes.txt") == 0) {
+        moved_note = true;
+        return RSDFS_STATUS_OK;
+    }
+    return RSDFS_STATUS_IO;
+}
+
+enum rsdfs_status rsdfs_unlink(enum rsdfs_volume volume, const char *path)
+{
+    if (volume == RSDFS_VOLUME_DATA && renamed_readme &&
+            strcmp(path, "/changed.txt") == 0) {
+        removed_readme = true;
+        return RSDFS_STATUS_OK;
+    }
+    return RSDFS_STATUS_IO;
+}
+
+enum rsdfs_status rsdfs_rmdir(enum rsdfs_volume volume, const char *path)
+{
+    if (volume == RSDFS_VOLUME_DATA && moved_note &&
+            strcmp(path, "/docs") == 0) {
+        removed_docs = true;
+        return RSDFS_STATUS_OK;
+    }
+    return RSDFS_STATUS_IO;
+}
 
 int main(void)
 {
@@ -33,6 +102,30 @@ int main(void)
             terminal.width != 552U || terminal.height != 308U) {
         fputs("RSD desktop construction or terminal geometry failed\n",
             stderr);
+        return 1;
+    }
+    if (rsd_files_child_count(rsd_files_root()) != 2U ||
+            !rsd_files_refresh() ||
+            rsd_files_child_count(rsd_files_root()) != 2U ||
+            strcmp(rsd_files_node_name(1U), "docs") != 0 ||
+            !rsd_files_open(1U) || rsd_files_child_count(1U) != 1U ||
+            strcmp(rsd_files_node_name(3U), "notes.txt") != 0 ||
+            rsd_files_rename(3U, "denied.txt") ||
+            strcmp(rsd_files_node_name(3U), "notes.txt") != 0 ||
+            !rsd_files_rename(2U, "changed.txt") || !renamed_readme ||
+            !rsd_files_remove(2U) || !removed_readme) {
+        fputs("RSD Files did not use the mounted Data backend\n", stderr);
+        return 1;
+    }
+    rsd_files_select(3U, false);
+    if (!rsd_files_copy_selection(true) ||
+            rsd_files_paste_into(1U) != 0U ||
+            !rsd_files_clipboard_is_cut() ||
+            rsd_files_paste_into(rsd_files_root()) != 1U || !moved_note ||
+            !rsd_files_open(rsd_files_root()) ||
+            !rsd_files_remove(1U) || !removed_docs ||
+            rsd_files_paste_into(rsd_files_root()) != 0U) {
+        fputs("RSD Files did not use the mounted Data backend\n", stderr);
         return 1;
     }
     rsd_desktop_draw();

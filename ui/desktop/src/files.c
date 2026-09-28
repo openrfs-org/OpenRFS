@@ -65,6 +65,13 @@ static struct rsd_files_node nodes[RSD_FILES_MAX_NODES];
 static uint32_t node_count;
 static uint32_t children[RSD_FILES_MAX_NODES][RSD_FILES_MAX_CHILDREN];
 static uint32_t child_counts[RSD_FILES_MAX_NODES];
+static bool loaded[RSD_FILES_MAX_NODES];
+static struct rsd_files_source_entry live_entries[RSD_FILES_MAX_CHILDREN];
+static bool (*live_list)(const char *path,
+    struct rsd_files_source_entry *entries, uint32_t capacity,
+    uint32_t *count);
+static bool (*live_rename)(const char *from, const char *to);
+static bool (*live_remove)(const char *path, bool folder);
 
 static uint32_t here;
 static uint32_t history[16];
@@ -306,7 +313,11 @@ void rsd_files_reset(void)
     node_count = 0U;
     for (at = 0U; at < RSD_FILES_MAX_NODES; ++at) {
         child_counts[at] = 0U;
+        loaded[at] = false;
     }
+    live_list = NULL;
+    live_rename = NULL;
+    live_remove = NULL;
     selected_count = 0U;
     history_depth = 0U;
     copy(nodes[0].name, "/", RSD_FILES_NAME_BYTES);
@@ -320,6 +331,26 @@ void rsd_files_reset(void)
 uint32_t rsd_files_root(void)
 {
     return 0U;
+}
+
+void rsd_files_use_live_source(bool (*list)(const char *path,
+    struct rsd_files_source_entry *entries, uint32_t capacity,
+    uint32_t *count))
+{
+    live_list = list;
+}
+
+void rsd_files_use_live_writes(bool (*rename_path)(const char *from,
+    const char *to), bool (*remove_path)(const char *path, bool folder))
+{
+    live_rename = rename_path;
+    live_remove = remove_path;
+}
+
+bool rsd_files_live_read_only(void)
+{
+    return live_list != NULL &&
+        (live_rename == NULL || live_remove == NULL);
 }
 
 uint32_t rsd_files_add(uint32_t parent, const char *name, bool folder,
@@ -381,9 +412,38 @@ uint32_t rsd_files_folder_bytes(uint32_t folder)
     return total;
 }
 
+static bool path_fits(uint32_t node, uint32_t capacity)
+{
+    uint32_t length = 0U;
+    uint32_t depth = 0U;
+
+    if (node >= node_count || capacity < 2U) {
+        return false;
+    }
+    if (node == 0U) {
+        return true;
+    }
+    while (node != 0U && depth++ < RSD_FILES_MAX_NODES) {
+        uint32_t at = 0U;
+
+        while (nodes[node].name[at] != '\0') {
+            ++at;
+        }
+        if (length + at + 2U > capacity) {
+            return false;
+        }
+        length += at + 1U;
+        node = nodes[node].parent;
+        if (node >= node_count) {
+            return false;
+        }
+    }
+    return node == 0U;
+}
+
 void rsd_files_path(uint32_t node, char *out, uint32_t capacity)
 {
-    uint32_t chain[12];
+    uint32_t chain[RSD_FILES_MAX_NODES];
     uint32_t depth = 0U;
     uint32_t walk = node;
 
@@ -394,7 +454,7 @@ void rsd_files_path(uint32_t node, char *out, uint32_t capacity)
     if (node >= node_count) {
         return;
     }
-    while (walk != 0U && depth < 12U) {
+    while (walk != 0U && depth < RSD_FILES_MAX_NODES) {
         chain[depth++] = walk;
         walk = nodes[walk].parent;
     }
@@ -408,9 +468,104 @@ void rsd_files_path(uint32_t node, char *out, uint32_t capacity)
     }
 }
 
+static bool child_path(uint32_t folder, const char *name, char *out)
+{
+    uint32_t length = 0U;
+    uint32_t at = 0U;
+
+    if (!path_fits(folder, RSD_FILES_PATH_BYTES)) {
+        return false;
+    }
+    rsd_files_path(folder, out, RSD_FILES_PATH_BYTES);
+    while (out[length] != '\0') {
+        ++length;
+    }
+    if (length == 0U) {
+        return false;
+    }
+    if (out[length - 1U] != '/') {
+        if (length + 1U >= RSD_FILES_PATH_BYTES) {
+            return false;
+        }
+        out[length++] = '/';
+    }
+    while (name[at] != '\0') {
+        if (length + 1U >= RSD_FILES_PATH_BYTES) {
+            return false;
+        }
+        out[length++] = name[at++];
+    }
+    out[length] = '\0';
+    return true;
+}
+
+static bool load_live_folder(uint32_t folder)
+{
+    char path[RSD_FILES_PATH_BYTES];
+    uint32_t count = 0U;
+
+    if (live_list == NULL || loaded[folder]) {
+        return true;
+    }
+    if (!path_fits(folder, sizeof(path))) {
+        return false;
+    }
+    rsd_files_path(folder, path, sizeof(path));
+    if (!live_list(path, live_entries, RSD_FILES_MAX_CHILDREN, &count) ||
+            count > RSD_FILES_MAX_CHILDREN ||
+            child_counts[folder] + count > RSD_FILES_MAX_CHILDREN ||
+            node_count + count > RSD_FILES_MAX_NODES) {
+        return false;
+    }
+    for (uint32_t at = 0U; at < count; ++at) {
+        if (!rsd_files_name_free(folder, live_entries[at].name)) {
+            return false;
+        }
+        for (uint32_t prior = 0U; prior < at; ++prior) {
+            if (same(live_entries[at].name, live_entries[prior].name)) {
+                return false;
+            }
+        }
+    }
+    for (uint32_t at = 0U; at < count; ++at) {
+        if (rsd_files_add(folder, live_entries[at].name,
+                live_entries[at].folder, live_entries[at].bytes) >=
+                RSD_FILES_MAX_NODES) {
+            return false;
+        }
+    }
+    loaded[folder] = true;
+    return true;
+}
+
+bool rsd_files_refresh(void)
+{
+    bool (*list)(const char *, struct rsd_files_source_entry *,
+        uint32_t, uint32_t *) = live_list;
+    bool (*rename_path)(const char *, const char *) = live_rename;
+    bool (*remove_path)(const char *, bool) = live_remove;
+    const enum rsd_files_view view = view_mode;
+    const bool hidden = show_hidden;
+    const bool single = single_click;
+
+    if (list == NULL) {
+        return false;
+    }
+    rsd_files_reset();
+    rsd_files_use_live_source(list);
+    rsd_files_use_live_writes(rename_path, remove_path);
+    view_mode = view;
+    show_hidden = hidden;
+    single_click = single;
+    return load_live_folder(rsd_files_root());
+}
+
 bool rsd_files_open(uint32_t folder)
 {
     if (folder >= node_count || !nodes[folder].folder) {
+        return false;
+    }
+    if (!load_live_folder(folder)) {
         return false;
     }
     if (history_depth < 16U) {
@@ -548,7 +703,8 @@ bool rsd_files_copy_selection(bool cut)
 {
     uint32_t at;
 
-    if (selected_count == 0U) {
+    if ((live_list != NULL && (!cut || live_rename == NULL)) ||
+            selected_count == 0U) {
         return false;
     }
     for (at = 0U; at < selected_count; ++at) {
@@ -656,9 +812,11 @@ uint32_t rsd_files_paste_into(uint32_t folder)
 {
     char name[RSD_FILES_NAME_BYTES];
     uint32_t done = 0U;
+    uint32_t remaining = 0U;
     uint32_t at;
 
-    if (clip_count == 0U || folder >= node_count ||
+    if ((live_list != NULL && !clip_cut) || clip_count == 0U ||
+            folder >= node_count ||
             !nodes[folder].folder) {
         return 0U;
     }
@@ -670,14 +828,22 @@ uint32_t rsd_files_paste_into(uint32_t folder)
         }
         /* The same refusals a drag has, for the same reasons. */
         if (node == folder || rsd_files_is_inside(folder, node)) {
+            if (live_list != NULL && clip_cut) {
+                clipboard[remaining++] = node;
+            }
             continue;
         }
         if (clip_cut) {
             if (nodes[node].parent == folder) {
+                if (live_list != NULL) {
+                    clipboard[remaining++] = node;
+                }
                 continue;
             }
             if (rsd_files_move(node, folder)) {
                 ++done;
+            } else if (live_list != NULL) {
+                clipboard[remaining++] = node;
             }
             continue;
         }
@@ -686,7 +852,10 @@ uint32_t rsd_files_paste_into(uint32_t folder)
             ++done;
         }
     }
-    if (clip_cut) {
+    if (clip_cut && live_list != NULL) {
+        clip_count = remaining;
+        clip_cut = remaining != 0U;
+    } else if (clip_cut) {
         /* A cut is SPENT once pasted; a copy is not, so the same thing
          * can be pasted twice. */
         clip_count = 0U;
@@ -709,6 +878,19 @@ bool rsd_files_rename(uint32_t node, const char *name)
     }
     if (!rsd_files_name_free(nodes[node].parent, name)) {
         return false;
+    }
+    if (live_list != NULL) {
+        char from[RSD_FILES_PATH_BYTES];
+        char to[RSD_FILES_PATH_BYTES];
+
+        if (live_rename == NULL || !path_fits(node, sizeof(from)) ||
+                !child_path(nodes[node].parent, name, to)) {
+            return false;
+        }
+        rsd_files_path(node, from, sizeof(from));
+        if (!live_rename(from, to)) {
+            return false;
+        }
     }
     copy(nodes[node].name, name, RSD_FILES_NAME_BYTES);
     return true;
@@ -764,6 +946,17 @@ bool rsd_files_remove(uint32_t node)
     if (parent >= node_count) {
         return false;
     }
+    if (live_list != NULL) {
+        char path[RSD_FILES_PATH_BYTES];
+
+        if (live_remove == NULL || !path_fits(node, sizeof(path))) {
+            return false;
+        }
+        rsd_files_path(node, path, sizeof(path));
+        if (!live_remove(path, nodes[node].folder)) {
+            return false;
+        }
+    }
     detach(parent, node);
     wipe(node);
     selected_count = 0U;
@@ -817,6 +1010,21 @@ bool rsd_files_move(uint32_t node, uint32_t into)
     if (from >= node_count ||
             child_counts[into] >= RSD_FILES_MAX_CHILDREN) {
         return false;
+    }
+    if (live_list != NULL) {
+        char source[RSD_FILES_PATH_BYTES];
+        char target[RSD_FILES_PATH_BYTES];
+
+        if (live_rename == NULL ||
+                !rsd_files_name_free(into, nodes[node].name) ||
+                !path_fits(node, sizeof(source)) ||
+                !child_path(into, nodes[node].name, target)) {
+            return false;
+        }
+        rsd_files_path(node, source, sizeof(source));
+        if (!live_rename(source, target)) {
+            return false;
+        }
     }
     for (at = 0U; at < child_counts[from]; ++at) {
         if (children[from][at] != node) {
@@ -1066,15 +1274,13 @@ static void draw_status(struct rsd_surface *surface,
     rsd_font_draw(surface, strip, strip.x + FILES_PAD,
                     strip.y + 14U, left, RSD_TEXT);
 
-    /*
-     * The right-hand field is what is in this folder, counted - and
-     * just the figure, because the line above says which folder.
-     * pcmanfm puts free space there; there is no filesystem under this
-     * one to ask, and a status bar that makes up a figure is worse than
-     * one that leaves the field out.
-     */
     right[0] = '\0';
-    human(right, rsd_files_folder_bytes(here), sizeof(right));
+    if (live_list != NULL) {
+        append(right, rsd_files_live_read_only() ?
+            "Data: read-only" : "Data: limited editing", sizeof(right));
+    } else {
+        human(right, rsd_files_folder_bytes(here), sizeof(right));
+    }
     width = rsd_font_width(right);
     if (strip.width > width + FILES_PAD) {
         rsd_font_draw(surface, strip,

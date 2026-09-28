@@ -1288,6 +1288,10 @@ static bool shell_context_pick(uint32_t row)
     if (context_node >= RSD_FILES_MAX_NODES) {
         return false;
     }
+    if (rsd_files_live_read_only() && (row == 1U || row == 2U)) {
+        rsd_shell_notify("Files", "Mounted Data is read-only here");
+        return true;
+    }
     switch (row) {
     case 0U:     /* Open */
         return rsd_files_open(context_node);
@@ -1689,6 +1693,12 @@ bool rsd_shell_handle(const struct rsd_event *event)
          */
         if (apps[slot] == RSD_APP_FILES &&
                 (event->modifiers & RSD_MOD_CTRL) != 0U) {
+            if (event->key == 'r') {
+                if (!rsd_files_refresh()) {
+                    rsd_shell_notify("Files", "Data refresh failed");
+                }
+                return true;
+            }
             if (event->key == 'c' || event->key == 'x') {
                 return rsd_files_copy_selection(event->key == 'x');
             }

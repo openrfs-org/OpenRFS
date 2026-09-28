@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include <rsd/rsd_desktop.h>
+#include <rsd/fat32_fs.h>
 
 #include <rsd_desktop/files.h>
 #include <rsd_desktop/input.h>
@@ -12,6 +13,52 @@
 #include <rsd_desktop/window.h>
 
 static struct rsd_surface minimal_surface;
+static struct rsdfs_list_entry live_file_entries[RSD_FILES_MAX_CHILDREN];
+
+static bool list_data_folder(const char *path,
+    struct rsd_files_source_entry *entries, uint32_t capacity,
+    uint32_t *count)
+{
+    size_t found = 0U;
+
+    if (path == NULL || entries == NULL || count == NULL ||
+            capacity > RSD_FILES_MAX_CHILDREN ||
+            rsdfs_list(RSDFS_VOLUME_DATA, path, live_file_entries,
+                capacity, &found) != RSDFS_STATUS_OK || found > capacity) {
+        return false;
+    }
+    for (size_t at = 0U; at < found; ++at) {
+        size_t length = 0U;
+
+        while (length < sizeof(live_file_entries[at].name) &&
+                live_file_entries[at].name[length] != '\0') {
+            ++length;
+        }
+        if (length == 0U || length >= RSD_FILES_NAME_BYTES ||
+                length == sizeof(live_file_entries[at].name)) {
+            return false;
+        }
+        for (size_t index = 0U; index <= length; ++index) {
+            entries[at].name[index] = live_file_entries[at].name[index];
+        }
+        entries[at].folder = live_file_entries[at].directory;
+        entries[at].bytes = live_file_entries[at].size > UINT32_MAX ?
+            UINT32_MAX : (uint32_t)live_file_entries[at].size;
+    }
+    *count = (uint32_t)found;
+    return true;
+}
+
+static bool rename_data_path(const char *from, const char *to)
+{
+    return rsdfs_rename(RSDFS_VOLUME_DATA, from, to) == RSDFS_STATUS_OK;
+}
+
+static bool remove_data_path(const char *path, bool folder)
+{
+    return (folder ? rsdfs_rmdir(RSDFS_VOLUME_DATA, path) :
+        rsdfs_unlink(RSDFS_VOLUME_DATA, path)) == RSDFS_STATUS_OK;
+}
 
 bool rsd_desktop_construct(uint32_t *pixels, uint32_t width, uint32_t height)
 {
@@ -21,6 +68,9 @@ bool rsd_desktop_construct(uint32_t *pixels, uint32_t width, uint32_t height)
     }
     minimal_surface = (struct rsd_surface){ pixels, width, height };
     rsd_files_reset();
+    rsd_files_use_live_source(list_data_folder);
+    rsd_files_use_live_writes(rename_data_path, remove_data_path);
+    (void)rsd_files_open(rsd_files_root());
     rsd_packages_reset();
     rsd_settings_reset();
     rsd_taskmgr_reset();

@@ -29,11 +29,11 @@
  * drawn over a fixed list of names is a picture of a file manager.
  */
 
-#define RSD_FILES_MAX_NODES 64U
-#define RSD_FILES_MAX_CHILDREN 16U
-#define RSD_FILES_NAME_BYTES 32U
-#define RSD_FILES_PATH_BYTES 96U
-#define RSD_FILES_MAX_SELECTED 16U
+#define RSD_FILES_MAX_NODES 256U
+#define RSD_FILES_MAX_CHILDREN 64U
+#define RSD_FILES_NAME_BYTES 256U
+#define RSD_FILES_PATH_BYTES 512U
+#define RSD_FILES_MAX_SELECTED 64U
 
 enum rsd_files_view {
     RSD_FILES_ICONS = 0,
@@ -48,6 +48,22 @@ struct rsd_files_node {
     uint32_t bytes;             /* files only */
     uint32_t parent;            /* index, or RSD_FILES_MAX_NODES for / */
 };
+
+struct rsd_files_source_entry {
+    char name[RSD_FILES_NAME_BYTES];
+    bool folder;
+    uint32_t bytes;
+};
+
+/* The live OS binds its mounted Data volume here. The UI model remains
+ * available without a backend for the standalone desktop preview. */
+void rsd_files_use_live_source(bool (*list)(const char *path,
+    struct rsd_files_source_entry *entries, uint32_t capacity,
+    uint32_t *count));
+void rsd_files_use_live_writes(bool (*rename_path)(const char *from,
+    const char *to), bool (*remove_path)(const char *path, bool folder));
+bool rsd_files_live_read_only(void);
+bool rsd_files_refresh(void);
 
 void rsd_files_reset(void);
 /* Returns the new node's index, or RSD_FILES_MAX_NODES if it would not
