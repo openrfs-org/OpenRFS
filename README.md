@@ -1,6 +1,10 @@
-# RSD
+<p align="center"><img src="ui/assets/logo/rsd-mark.png" alt="RSD mark" width="360"></p>
 
-**Root Software Distribution** is an experimental, freestanding operating system and kernel for x86_64. It boots its own kernel, command line, and optional desktop. Linux does not run underneath it.
+<h1 align="center">RSD</h1>
+
+<p align="center"><strong>Root Software Distribution</strong><br>One operating system and kernel. A foundation for your own distribution.</p>
+
+RSD is an experimental, freestanding operating system and kernel for x86_64. It boots its own kernel, command line, and optional desktop. Linux does not run underneath it.
 
 RSD is built to be understood, modified, and forked. Its kernel, drivers, application interface, package system, installer interface, command line, and desktop live in one source tree so a fork can make a different distribution from the same foundation.
 
