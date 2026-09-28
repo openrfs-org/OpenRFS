@@ -152,7 +152,7 @@ def main():
         content = prefix + bytes(4096 - len(prefix)) + b"X"
         report = verify_files(args.image, args.output, {
             "system/README.TXT": {"bytes": len(content), "sha256": hashlib.sha256(content).hexdigest()},
-            "indexed": {"entries": [f"entry-{index:04d}-rsd-fixture" for index in range(256)]}})
+            "indexed": {"entries": [f"entry-{index:04d}-rsd-core-fixture" for index in range(256)]}})
         print(json.dumps(report, sort_keys=True))
 
 

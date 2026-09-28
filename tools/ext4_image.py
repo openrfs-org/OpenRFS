@@ -497,7 +497,7 @@ def _write_debugfs_script(path: Path, payloads: dict[str, Path]) -> None:
     ]
     # Enough deterministic entries to force e2fsck -D to build an htree.
     for index in range(256):
-        lines.append(f"write {payloads['entry']} /indexed/entry-{index:04d}-rsd-fixture")
+        lines.append(f"write {payloads['entry']} /indexed/entry-{index:04d}-rsd-core-fixture")
     lines.extend(
         [
             f"set_super_value mkfs_time @{FIXED_EPOCH}",

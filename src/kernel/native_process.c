@@ -2999,10 +2999,10 @@ static enum native_process_status load_process(
      * current manifest magic before reading that path so an unrelated 1 KiB
      * file cannot steer the System-volume lookup.
      */
-    if (manifest_bytes[0] != 'O' || manifest_bytes[1] != 'P' ||
-            manifest_bytes[2] != 'E' || manifest_bytes[3] != 'N' ||
-            manifest_bytes[4] != 'R' || manifest_bytes[5] != 'F' ||
-            manifest_bytes[6] != 'S' || manifest_bytes[7] != '1') {
+    if (manifest_bytes[0] != 'R' || manifest_bytes[1] != 'S' ||
+            manifest_bytes[2] != 'D' || manifest_bytes[3] != 'P' ||
+            manifest_bytes[4] != 'K' || manifest_bytes[5] != 'G' ||
+            manifest_bytes[6] != '0' || manifest_bytes[7] != '1') {
         return NATIVE_PROCESS_IMAGE_REFUSED;
     }
     executable_length = bounded_length(manifest_bytes + 112U, 16U);
