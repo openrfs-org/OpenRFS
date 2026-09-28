@@ -32,23 +32,23 @@ static _Noreturn void thread_trampoline(void *argument)
     struct thread_record *record = argument;
 
     while (__atomic_load_n(&record->ready, __ATOMIC_ACQUIRE) == 0U) {
-        const struct openrfs_futex_request wait = {
-            sizeof(wait), OPENRFS_ABI_VERSION,
+        const struct rsd_futex_request wait = {
+            sizeof(wait), RSD_ABI_VERSION,
             (uint64_t)(uintptr_t)&record->ready, 0U, 0U, 0U
         };
-        (void)openrfs_syscall1(OPENRFS_SYS_FUTEX_WAIT,
+        (void)rsd_syscall1(RSD_SYS_FUTEX_WAIT,
             (uint64_t)(uintptr_t)&wait);
     }
     current_thread = record->handle;
     record->result = record->entry(record->argument);
-    (void)openrfs_syscall1(OPENRFS_SYS_THREAD_EXIT, 0U);
+    (void)rsd_syscall1(RSD_SYS_THREAD_EXIT, 0U);
     __builtin_unreachable();
 }
 
 static int prepare_tls(struct thread_record *record)
 {
-    const struct openrfs_startup *startup = openrfs_startup_information();
-    struct openrfs_memory_map_response response;
+    const struct rsd_startup *startup = rsd_startup_information();
+    struct rsd_memory_map_response response;
     uint64_t size;
     uint64_t pointer;
 
@@ -62,9 +62,9 @@ static int prepare_tls(struct thread_record *record)
         return EINVAL;
     }
     size = startup->tls_size + startup->tls_alignment + sizeof(pointer);
-    const long result = openrfs_memory_allocate((size_t)size,
-        OPENRFS_MEMORY_READ | OPENRFS_MEMORY_WRITE |
-            OPENRFS_MEMORY_GUARD_BEFORE | OPENRFS_MEMORY_GUARD_AFTER,
+    const long result = rsd_memory_allocate((size_t)size,
+        RSD_MEMORY_READ | RSD_MEMORY_WRITE |
+            RSD_MEMORY_GUARD_BEFORE | RSD_MEMORY_GUARD_AFTER,
         &response);
     if (result < 0) {
         return (int)-result;
@@ -89,16 +89,16 @@ int pthread_create(
 )
 {
     struct thread_record *record = NULL;
-    struct openrfs_thread_create_request request;
+    struct rsd_thread_create_request request;
     long result;
     int error;
 
     if (thread == NULL || entry == NULL) return EINVAL;
-    openrfs_runtime_lock(&records_lock);
+    rsd_runtime_lock(&records_lock);
     for (size_t index = 0U; index < THREAD_RECORDS; ++index) {
         if (!records[index].active) { record = &records[index]; break; }
     }
-    if (record == NULL) { openrfs_runtime_unlock(&records_lock); return EAGAIN; }
+    if (record == NULL) { rsd_runtime_unlock(&records_lock); return EAGAIN; }
     (void)memset(record, 0, sizeof(*record));
     record->active = 1;
     record->entry = entry;
@@ -106,40 +106,40 @@ int pthread_create(
     error = prepare_tls(record);
     if (error != 0) {
         record->active = 0;
-        openrfs_runtime_unlock(&records_lock);
+        rsd_runtime_unlock(&records_lock);
         return error;
     }
     request.size = sizeof(request);
-    request.version = OPENRFS_ABI_VERSION;
+    request.version = RSD_ABI_VERSION;
     request.entry = (uint64_t)(uintptr_t)thread_trampoline;
     request.argument = (uint64_t)(uintptr_t)record;
     request.tls_base = record->thread_pointer;
     request.stack_bytes = attributes != NULL && attributes->stack_size != 0U ?
         attributes->stack_size : DEFAULT_STACK_BYTES;
     request.flags = 0U;
-    result = openrfs_syscall1(OPENRFS_SYS_THREAD_CREATE,
+    result = rsd_syscall1(RSD_SYS_THREAD_CREATE,
         (uint64_t)(uintptr_t)&request);
     if (result < 0) {
         if (record->tls_address != 0U) {
-            (void)openrfs_memory_release(record->tls_address,
+            (void)rsd_memory_release(record->tls_address,
                 record->tls_length);
         }
         record->active = 0;
-        openrfs_runtime_unlock(&records_lock);
+        rsd_runtime_unlock(&records_lock);
         return (int)-result;
     }
     record->handle = (pthread_t)result;
     __atomic_store_n(&record->ready, 1U, __ATOMIC_RELEASE);
     {
-        const struct openrfs_futex_request wake = {
-            sizeof(wake), OPENRFS_ABI_VERSION,
+        const struct rsd_futex_request wake = {
+            sizeof(wake), RSD_ABI_VERSION,
             (uint64_t)(uintptr_t)&record->ready, 0U, 0U, 1U
         };
-        (void)openrfs_syscall1(OPENRFS_SYS_FUTEX_WAKE,
+        (void)rsd_syscall1(RSD_SYS_FUTEX_WAKE,
             (uint64_t)(uintptr_t)&wake);
     }
     *thread = record->handle;
-    openrfs_runtime_unlock(&records_lock);
+    rsd_runtime_unlock(&records_lock);
     return 0;
 }
 
@@ -148,25 +148,25 @@ int pthread_join(pthread_t thread, void **result)
     struct thread_record *record = NULL;
     long joined;
 
-    openrfs_runtime_lock(&records_lock);
+    rsd_runtime_lock(&records_lock);
     for (size_t index = 0U; index < THREAD_RECORDS; ++index) {
         if (records[index].active && records[index].handle == thread) {
             record = &records[index];
             break;
         }
     }
-    openrfs_runtime_unlock(&records_lock);
+    rsd_runtime_unlock(&records_lock);
     if (record == NULL || thread == current_thread) return EINVAL;
-    joined = openrfs_syscall1(OPENRFS_SYS_THREAD_JOIN, thread);
+    joined = rsd_syscall1(RSD_SYS_THREAD_JOIN, thread);
     if (joined < 0) return (int)-joined;
     if (result != NULL) *result = record->result;
-    (void)openrfs_handle_close(thread);
+    (void)rsd_handle_close(thread);
     if (record->tls_address != 0U) {
-        (void)openrfs_memory_release(record->tls_address, record->tls_length);
+        (void)rsd_memory_release(record->tls_address, record->tls_length);
     }
-    openrfs_runtime_lock(&records_lock);
+    rsd_runtime_lock(&records_lock);
     (void)memset(record, 0, sizeof(*record));
-    openrfs_runtime_unlock(&records_lock);
+    rsd_runtime_unlock(&records_lock);
     return 0;
 }
 
@@ -178,7 +178,7 @@ _Noreturn void pthread_exit(void *result)
             break;
         }
     }
-    (void)openrfs_syscall1(OPENRFS_SYS_THREAD_EXIT, 0U);
+    (void)rsd_syscall1(RSD_SYS_THREAD_EXIT, 0U);
     __builtin_unreachable();
 }
 
@@ -189,7 +189,7 @@ int pthread_mutex_init(pthread_mutex_t *mutex, const void *attributes)
 int pthread_mutex_destroy(pthread_mutex_t *mutex)
 { if (mutex == NULL || mutex->value != 0U) return EBUSY; return 0; }
 int pthread_mutex_lock(pthread_mutex_t *mutex)
-{ if (mutex == NULL) return EINVAL; openrfs_runtime_lock(&mutex->value); return 0; }
+{ if (mutex == NULL) return EINVAL; rsd_runtime_lock(&mutex->value); return 0; }
 int pthread_mutex_trylock(pthread_mutex_t *mutex)
 {
     uint32_t expected = 0U;
@@ -198,7 +198,7 @@ int pthread_mutex_trylock(pthread_mutex_t *mutex)
         __ATOMIC_ACQUIRE, __ATOMIC_RELAXED) ? 0 : EBUSY;
 }
 int pthread_mutex_unlock(pthread_mutex_t *mutex)
-{ if (mutex == NULL || mutex->value == 0U) return EINVAL; openrfs_runtime_unlock(&mutex->value); return 0; }
+{ if (mutex == NULL || mutex->value == 0U) return EINVAL; rsd_runtime_unlock(&mutex->value); return 0; }
 int pthread_once(pthread_once_t *once, void (*function)(void))
 {
     uint32_t expected = 0U;
@@ -207,13 +207,13 @@ int pthread_once(pthread_once_t *once, void (*function)(void))
             __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
         function();
         __atomic_store_n(&once->state, 2U, __ATOMIC_RELEASE);
-        const struct openrfs_futex_request wake = {sizeof(wake), OPENRFS_ABI_VERSION,
+        const struct rsd_futex_request wake = {sizeof(wake), RSD_ABI_VERSION,
             (uint64_t)(uintptr_t)&once->state, 0U, 0U, UINT32_MAX};
-        (void)openrfs_syscall1(OPENRFS_SYS_FUTEX_WAKE, (uint64_t)(uintptr_t)&wake);
+        (void)rsd_syscall1(RSD_SYS_FUTEX_WAKE, (uint64_t)(uintptr_t)&wake);
     } else while (__atomic_load_n(&once->state, __ATOMIC_ACQUIRE) != 2U) {
-        const struct openrfs_futex_request wait = {sizeof(wait), OPENRFS_ABI_VERSION,
+        const struct rsd_futex_request wait = {sizeof(wait), RSD_ABI_VERSION,
             (uint64_t)(uintptr_t)&once->state, 0U, 1U, 0U};
-        (void)openrfs_syscall1(OPENRFS_SYS_FUTEX_WAIT, (uint64_t)(uintptr_t)&wait);
+        (void)rsd_syscall1(RSD_SYS_FUTEX_WAIT, (uint64_t)(uintptr_t)&wait);
     }
     return 0;
 }

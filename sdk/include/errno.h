@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef OPENRFS_ERRNO_H
-#define OPENRFS_ERRNO_H
+#ifndef RSD_ERRNO_H
+#define RSD_ERRNO_H
 
 #if defined(__MINGW32__) || defined(__MINGW64__)
 /* MinGW's stddef.h exports errno as a CRT accessor.  The SDK owns errno as
