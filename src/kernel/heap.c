@@ -3,10 +3,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/cpu.h>
-#include <openrfs/heap.h>
-#include <openrfs/memory.h>
-#include <openrfs/paging.h>
+#include <rsd/cpu.h>
+#include <rsd/heap.h>
+#include <rsd/memory.h>
+#include <rsd/paging.h>
 
 _Static_assert(HEAP_SIZE % PAGING_PAGE_SIZE == 0U,
                "the heap window is not a whole number of pages");

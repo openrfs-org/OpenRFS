@@ -1,15 +1,15 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
  * First-fit sub-allocation over one contiguous DMA allocation. See
- * include/openrfs/dma_arena.h for why upstream drivers need it.
+ * include/rsd/dma_arena.h for why upstream drivers need it.
  */
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/dma.h>
-#include <openrfs/dma_arena.h>
-#include <openrfs/memory.h>
+#include <rsd/dma.h>
+#include <rsd/dma_arena.h>
+#include <rsd/memory.h>
 
 static void zero_bytes(void *pointer, uint64_t length)
 {
@@ -299,11 +299,11 @@ enum dma_arena_status dma_arena_create(
         return DMA_ARENA_STATUS_ALREADY_ACTIVE;
     }
     if (page_count == 0U ||
-        page_count > UINT64_MAX / OPENRFS_PAGE_SIZE) {
+        page_count > UINT64_MAX / RSD_PAGE_SIZE) {
         return DMA_ARENA_STATUS_BAD_SIZE;
     }
     request.page_count = page_count;
-    request.alignment = OPENRFS_PAGE_SIZE;
+    request.alignment = RSD_PAGE_SIZE;
     request.maximum_physical_address = maximum_physical_address;
     if (dma_allocate(&request, &arena->allocation) != DMA_STATUS_OK) {
         return DMA_ARENA_STATUS_DMA_FAILURE;
