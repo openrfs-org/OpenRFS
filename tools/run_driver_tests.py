@@ -69,12 +69,12 @@ def payload(length: int) -> bytes:
 def fixture_unit(unit: int, written: bool = False) -> bytes:
     """One 512-byte unit of the storage fixture (see driver_tests.c)."""
     if written:
-        head = b"ORFSWRT1" + unit.to_bytes(8, "little")
+        head = b"RSDWRT01" + unit.to_bytes(8, "little")
         body = bytes(((unit * 3) + (offset * 5) + 0x11) & 0xFF
                      for offset in range(16, UNIT_BYTES))
         return head + body
     start = (unit + 16) & 0xFF
-    return (b"ORFSBLK1" + unit.to_bytes(8, "little") +
+    return (b"RSDBLK01" + unit.to_bytes(8, "little") +
             _RAMP[start:start + UNIT_BYTES - 16])
 
 
@@ -718,7 +718,7 @@ def run_scenario(name: str, scenario: Scenario, args: argparse.Namespace
     tpm_socket = ""
     if scenario.plan == "tpm":
         # A fresh TPM 2.0 per boot; the socket path must fit in 108 bytes.
-        tpm_dir = Path(tempfile.mkdtemp(prefix="orfs-tpm-"))
+        tpm_dir = Path(tempfile.mkdtemp(prefix="rsd-tpm-"))
         tpm_socket = str(tpm_dir / "ctrl.sock")
         swtpm = subprocess.Popen(
             ["swtpm", "socket", "--tpm2", "--tpmstate",
@@ -739,7 +739,7 @@ def run_scenario(name: str, scenario: Scenario, args: argparse.Namespace
         screen.unlink()
     if scenario.plan == "display":
         options += [f"rsd.drvmode={scenario.mode}"]
-        qmp = Path(tempfile.mkdtemp(prefix="orfs-qmp-")) / "qmp.sock"
+        qmp = Path(tempfile.mkdtemp(prefix="rsd-qmp-")) / "qmp.sock"
         qemu += ["-qmp", f"unix:{qmp},server=on,wait=off"]
         injector = threading.Thread(
             target=capture_screen, args=(log, qmp, scenario, screen, work),
@@ -748,7 +748,7 @@ def run_scenario(name: str, scenario: Scenario, args: argparse.Namespace
         options += [f"rsd.drvkind={scenario.kind}",
                     f"rsd.drvtext={scenario.text}"]
         # A Unix socket path must fit in 108 bytes; the work tree may not.
-        qmp = Path(tempfile.mkdtemp(prefix="orfs-qmp-")) / "qmp.sock"
+        qmp = Path(tempfile.mkdtemp(prefix="rsd-qmp-")) / "qmp.sock"
         qemu += ["-qmp", f"unix:{qmp},server=on,wait=off"]
         injector = threading.Thread(
             target=inject_input, args=(log, qmp, scenario), daemon=True)

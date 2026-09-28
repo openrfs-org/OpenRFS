@@ -33,7 +33,7 @@ named refusals.
 
 ## Legacy package containers and installation
 
-An `.SPK` file contains a 64-byte `ORFSPK01` header, the 1,024-byte manifest,
+An `.SPK` file contains a 64-byte `RSDPKG01` header, the 1,024-byte manifest,
 and the exact static executable. Container version 1 ends there. Version 2
 adds up to 13 deterministic resource records; each has a fixed 32-byte header,
 an 8.3 path, a byte length, zero reserved bytes, and its exact payload. The
@@ -71,7 +71,7 @@ and cross-namespace access.
 
 Version 3 is the signed repository container built by host tooling and admitted
 by the guest package manager. It does not reuse or reinterpret the version 1/2
-header. It uses the same `ORFSPK01` magic,
+header. It uses the same `RSDPKG01` magic,
 a 512-byte header, fixed-size canonical tables, and contiguous file payloads.
 All integer fields are little-endian. Package and file sizes are checked before
 slicing or allocating from their declared values.
@@ -97,7 +97,7 @@ The exact header layout is:
 
 | Offset | Bytes | Field |
 | ---: | ---: | --- |
-| 0 | 8 | `ORFSPK01` magic |
+| 0 | 8 | `RSDPKG01` magic |
 | 8 | 2 | format version |
 | 10 | 2 | header bytes |
 | 12 | 4 | flags |

@@ -108,7 +108,7 @@ def main() -> int:
     first = REPOSITORY.build_repository(repository_spec, private_seed)
     repository_digest = hashlib.sha256(first).hexdigest().upper()
     assert repository_digest == (
-        "45CF504234C8FC523CE252D363126A52F755CA8F774A8CE207AA33ED89CD626A"
+        "BD71A90B9153AF00A313C1C0852ADB3BE7466F44630606F3F1EB235C30B79B92"
     ), repository_digest
     reordered = copy.deepcopy(repository_spec)
     reordered["packages"].reverse()
@@ -218,7 +218,7 @@ def main() -> int:
     assert lock.endswith(b"\n") and b" " not in lock
     lock_digest = hashlib.sha256(lock).hexdigest().upper()
     assert lock_digest == (
-        "BE4C1DF79D26577803CBAC1406DCCB00FF56F3C86E879B7D23CBA381E20981A0"
+        "A4C1E89D7FA57BEBB8897C4B63BA815A0CF9B63313DDAABF78A4F5E69FBDC9F8"
     ), lock_digest
     assert REPOSITORY.resolve_repository(
         report, ["org.rsd.desktop@^3.0.0"], architecture="x86_64",

@@ -859,7 +859,7 @@ enum package_state_status package_state_database_parse(
 )
 {
     static const uint8_t magic[8] = {
-        'O', 'R', 'F', 'S', 'D', 'B', '0', '1'
+        'R', 'S', 'D', 'D', 'B', '0', '0', '1'
     };
     static const uint8_t architecture[16] = {
         'x', '8', '6', '_', '6', '4', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
@@ -1155,7 +1155,7 @@ enum package_state_status package_state_authority_parse(
 )
 {
     static const uint8_t magic[8] = {
-        'O', 'R', 'F', 'S', 'G', 'N', '0', '1'
+        'R', 'S', 'D', 'A', 'U', 'T', '0', '1'
     };
     uint8_t digest[PACKAGE_STATE_SHA256_BYTES];
     enum package_state_status status;
@@ -1202,7 +1202,7 @@ enum package_state_status package_state_journal_parse(
 )
 {
     static const uint8_t magic[8] = {
-        'O', 'R', 'F', 'S', 'T', 'X', '0', '1'
+        'R', 'S', 'D', 'T', 'X', '0', '0', '1'
     };
     static const uint8_t zero_digest[PACKAGE_STATE_SHA256_BYTES] = { 0U };
     struct package_state_sha256_context context;
@@ -1287,7 +1287,7 @@ enum package_state_status package_state_authority_encode(
 )
 {
     static const uint8_t magic[8] = {
-        'O', 'R', 'F', 'S', 'G', 'N', '0', '1'
+        'R', 'S', 'D', 'A', 'U', 'T', '0', '1'
     };
     struct package_state_database_view validated;
     enum package_state_status status;
@@ -1326,7 +1326,7 @@ enum package_state_status package_state_journal_encode(
 )
 {
     static const uint8_t magic[8] = {
-        'O', 'R', 'F', 'S', 'T', 'X', '0', '1'
+        'R', 'S', 'D', 'T', 'X', '0', '0', '1'
     };
     struct package_state_database_view base;
     struct package_state_database_view target;

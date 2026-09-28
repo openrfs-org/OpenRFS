@@ -18,14 +18,14 @@ path. See
 
 ## Repository index version 1
 
-An index starts with the eight-byte `ORFSIX01` magic and a fixed 512-byte header.
+An index starts with the eight-byte `RSDIDX01` magic and a fixed 512-byte header.
 All integers are little-endian. Fixed-width text is printable ASCII or the more
 restrictive package identifier/path/SemVer grammar, NUL-terminated, and followed
 only by zero tail bytes. The whole index is at most 32 MiB.
 
 | Offset | Bytes | Field |
 | ---: | ---: | --- |
-| 0 | 8 | `ORFSIX01` magic |
+| 0 | 8 | `RSDIDX01` magic |
 | 8 | 2 | format version (`1`) |
 | 10 | 2 | header bytes (`512`) |
 | 12 | 4 | flags (`0`) |

@@ -13,7 +13,7 @@ import tempfile
 from typing import Any
 
 
-MAGIC = b"ORFSKY01"
+MAGIC = b"RSDKEY01"
 VERSION = 1
 HEADER_BYTES = 128
 RECORD_BYTES = 96

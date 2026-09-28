@@ -158,7 +158,7 @@ static void database_header(
     uint32_t file_count
 )
 {
-    put_magic(database, "ORFSDB01");
+    put_magic(database, "RSDDB001");
     put_u16(database + 8U, 1U);
     put_u16(database + 10U, PACKAGE_STATE_DATABASE_HEADER_BYTES);
     put_u64(database + 16U, byte_count);
@@ -250,7 +250,7 @@ static void build_authority(
 {
     uint8_t digest[PACKAGE_STATE_SHA256_BYTES];
     clear_bytes(authority, PACKAGE_STATE_AUTHORITY_BYTES);
-    put_magic(authority, "ORFSGN01");
+    put_magic(authority, "RSDAUT01");
     put_u16(authority + 8U, 1U);
     put_u16(authority + 10U, PACKAGE_STATE_AUTHORITY_BYTES);
     put_u64(authority + 16U, get_u64(database + 24U));
@@ -282,7 +282,7 @@ static void build_journal(
 )
 {
     clear_bytes(journal, PACKAGE_STATE_JOURNAL_BYTES);
-    put_magic(journal, "ORFSTX01");
+    put_magic(journal, "RSDTX001");
     put_u16(journal + 8U, 1U);
     put_u16(journal + 10U, PACKAGE_STATE_JOURNAL_BYTES);
     put_u16(journal + 16U, PACKAGE_STATE_OPERATION_INSTALL);

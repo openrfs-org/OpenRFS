@@ -345,7 +345,7 @@ static bool repository_floor_record_parse(
 )
 {
     static const uint8_t magic[8] = {
-        'O', 'R', 'F', 'S', 'R', 'P', '0', '1'
+        'R', 'S', 'D', 'R', 'E', 'P', '0', '1'
     };
     uint8_t digest[PACKAGE_STATE_SHA256_BYTES];
 
@@ -372,7 +372,7 @@ static bool repository_floor_record_encode(
 )
 {
     static const uint8_t magic[8] = {
-        'O', 'R', 'F', 'S', 'R', 'P', '0', '1'
+        'R', 'S', 'D', 'R', 'E', 'P', '0', '1'
     };
 
     if (repository_version == 0U) {

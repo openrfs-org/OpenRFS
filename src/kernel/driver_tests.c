@@ -368,8 +368,8 @@ static bool network_plan(const struct driver_test_options *options,
  */
 static uint8_t fixture_byte(uint64_t unit, uint32_t offset, bool written)
 {
-    static const char original[8] = { 'O', 'R', 'F', 'S', 'B', 'L', 'K', '1' };
-    static const char rewritten[8] = { 'O', 'R', 'F', 'S', 'W', 'R', 'T', '1' };
+    static const char original[8] = { 'R', 'S', 'D', 'B', 'L', 'K', '0', '1' };
+    static const char rewritten[8] = { 'R', 'S', 'D', 'W', 'R', 'T', '0', '1' };
 
     if (offset < 8U) {
         return (uint8_t)(written ? rewritten[offset] : original[offset]);

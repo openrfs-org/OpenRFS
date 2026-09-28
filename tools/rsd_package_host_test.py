@@ -55,7 +55,7 @@ def main() -> int:
     second = PACKAGE.build_package(copy.deepcopy(spec), executable)
     assert first == second
     assert hashlib.sha256(first).hexdigest().upper() == (
-        "0D13AA11A84438637AAE8CE2DA257F11695AE826B7B2A4B6B022C1F656854DE2")
+        "E663261684B46D1CB8DC0FEF8A8BF48469AC48CE43B50E522578E1E60F11D922"), hashlib.sha256(first).hexdigest().upper()
     _, parsed_executable, resources, report = PACKAGE.parse_package(first)
     assert parsed_executable == executable
     assert resources == ()
@@ -88,7 +88,7 @@ def main() -> int:
     resource_package = PACKAGE.build_package(
         resource_spec, executable, (("DATA.TXT", resource),))
     assert hashlib.sha256(resource_package).hexdigest().upper() == (
-        "614392289EE989F086628D37DBDCD535077C76A072FBE3408F522E065AE53EAA")
+        "C231056B71453E1BC2D9C64944F662733EAA69F02D9A640BFC07B7143E56157F"), hashlib.sha256(resource_package).hexdigest().upper()
     _, _, resources, report = PACKAGE.parse_package(resource_package)
     assert resources == (("DATA.TXT", resource),)
     assert report["package_format"] == 2
@@ -103,7 +103,7 @@ def main() -> int:
 
     library = b"\x7fELFauthenticated-dynamic-library"
     catalog = bytearray(2048)
-    catalog[:8] = b"ORFSDY01"
+    catalog[:8] = b"RSDDYN01"
     struct.pack_into("<HHIHH", catalog, 8, 1, 64, 2048, 1, 96)
     catalog[64:74] = b"DYNLIB.SO\0"
     catalog[128:160] = hashlib.sha256(library).digest()

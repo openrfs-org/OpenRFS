@@ -121,7 +121,7 @@ static bool make_table(uint8_t *table, size_t byte_count)
         return false;
     }
     clear_bytes(table, byte_count);
-    copy_bytes(table, (const uint8_t *)"ORFSKY01", 8U);
+    copy_bytes(table, (const uint8_t *)"RSDKEY01", 8U);
     write_u16(table + 8U, 1U);
     write_u16(table + 10U, PACKAGE_TRUST_TABLE_HEADER_BYTES);
     write_u64(table + 16U, byte_count);
