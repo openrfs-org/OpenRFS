@@ -33,7 +33,7 @@ PASSWORD_PROMPT = b"Password: "
 ACCOUNT_CREATED = b"RSD user created. Run 'starty' to enter the desktop."
 DESKTOP_STARTED = b"RSD: authenticated desktop started"
 CAPTURE_USERNAME = "rsd"
-CAPTURE_PASSWORD = "rsdpass"
+CAPTURE_PASSWORD = "rsdpass1"
 RUNTIME_FAILURE = b"runtime disabled"
 
 

@@ -43,7 +43,7 @@ jobs:
                   make verify
                   git diff --check
                   test "$(sha256sum build/userspace/rsd-userland-no-cat-fat16.raw | awk '{print toupper($1)}')" = \
-                      B2AA321D73954E110BA914254E798832684C4F1F7051D63FB4C18AE0CF848E51
+                      D53E4DCF7DAC542FC055693EF5347A60646FC1C9CAA4007A2C707CF035F037D3
             - name: Rebuild and trace both measured profiles twice
               shell: bash
               run: |
@@ -166,7 +166,7 @@ jobs:
                       printf 'FAT: LBA 1-2; root: LBA 3, 128 entries\n'
                       printf 'BUSYBOX: clusters 2-10, 33584 bytes\n'
                       printf 'UNAMEBOX: clusters 11-20, 38368 bytes\n'
-                      printf 'volume SHA-256: B2AA321D73954E110BA914254E798832684C4F1F7051D63FB4C18AE0CF848E51\n'
+                      printf 'volume SHA-256: D53E4DCF7DAC542FC055693EF5347A60646FC1C9CAA4007A2C707CF035F037D3\n'
                   } >"$release/userspace-volume-layout.txt"
                   {
                       printf 'Positive: linux echo and linux uname each completed twice through RSD.\n'

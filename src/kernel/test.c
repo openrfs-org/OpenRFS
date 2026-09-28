@@ -7985,9 +7985,10 @@ _Noreturn void kernel_test_complete_rsd_proof(void)
             ui_layout_validate(&ui->layout) != UI_STATUS_OK) {
         kernel_test_fail("RSD installed desktop state is incomplete");
     }
-    if (rsd_proof_pixel(512U, 250U) == 0U ||
+    /* The new session opens a terminal over the centre of the wallpaper. */
+    if (rsd_proof_pixel(700U, 250U) == 0U ||
             rsd_proof_pixel(512U, 767U) == 0U) {
-        kernel_test_fail("RSD wallpaper or panel is not integrated");
+        kernel_test_fail("RSD wallpaper is not integrated");
     }
 
     rsd_proof_move_pointer(200U, 160U,
