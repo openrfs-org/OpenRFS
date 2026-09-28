@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * The pointer.  See include/openrfs/cursor.h for what this is, what it is
+ * The pointer.  See include/rsd/cursor.h for what this is, what it is
  * not, and the two Windows cursors it does not draw.
  */
 
-#include <openrfs/cursor.h>
+#include <rsd/cursor.h>
 
-#include <openrfs/clock.h>
-#include <openrfs/framebuffer.h>
+#include <rsd/clock.h>
+#include <rsd/framebuffer.h>
 
 #include "cursor_art.h"
 
