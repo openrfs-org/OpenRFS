@@ -3,9 +3,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/cpu.h>
-#include <openrfs/pm_timer.h>
-#include <openrfs/tsc.h>
+#include <rsd/cpu.h>
+#include <rsd/pm_timer.h>
+#include <rsd/tsc.h>
 
 /* Intel SDM volume 3B section 18.17: CPUID.01H:EDX[4] reports a TSC. */
 #define CPUID_FEATURE_LEAF UINT32_C(1)
