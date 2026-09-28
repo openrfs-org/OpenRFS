@@ -82,17 +82,21 @@ def main() -> None:
     journal = TRANSACTION.encode_journal(
         operation="install", base_database=empty, target_database=populated,
         required_space=4096, target_identifier="org.openrfs.verify")
+    transition = (b"\x03" + struct.pack("<HH", len(empty), len(populated)) +
+                  empty + populated + journal)
     seeds = {
         "valid-empty-database": b"\x00" + empty,
         "valid-package-database": b"\x00" + populated,
         "valid-dependency-database": b"\x00" + dependency_graph,
         "valid-authority": b"\x01" + TRANSACTION.encode_authority(empty),
         "valid-journal": b"\x02" + journal,
+        "valid-journal-transition": transition,
         "invalid-truncated": b"\x00ORFSDB01",
         "invalid-magic": b"\x00" + b"X" + empty[1:],
         "invalid-digest": b"\x00" + populated[:104] +
             bytes([populated[104] ^ 1]) + populated[105:],
         "invalid-journal-reserved": b"\x02" + journal[:-1] + b"\x01",
+        "invalid-transition-truncated": transition[:-1],
     }
     for name, contents in seeds.items():
         path = corpus / name

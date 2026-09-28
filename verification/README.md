@@ -158,10 +158,17 @@ The manifest requires the new seed to pass valid-input replay. A subsequent
 host-only recovery oracle selects a complete generation, refuses an incomplete
 one, and rejects two identical complete candidates. Its local dirty-tree fast
 run reached `package_state_recovery_decide` nine times and raised saved-seed
-`package_state.c` coverage to 859/1180 regions and 405/882 branches. The
-coverage floor is now 840 regions; exact-head CI must still verify this new
-oracle. The earlier `b9a166e` sustained receipt retains its own lower
-coverage and must not be relabeled.
+`package_state.c` coverage to 859/1180 regions and 405/882 branches. A
+second independently Python-encoded seed carries a base database, target
+database, and prepared journal. The C encoder must reproduce those journal
+bytes, then recovery must select old or new according to authority and reject
+an incomplete target. Valid and truncated transition seeds passed ASan/UBSan
+replay; the local dirty-tree fast run reached `package_state_journal_encode`
+and raised coverage to 934/1180 regions and 444/882 branches. The coverage
+floor is now 900 regions; exact-head CI must still verify these recovery
+oracles. These in-memory choices do not prove raw-disk power-cut ordering.
+The earlier `b9a166e` sustained receipt retains its own lower coverage and
+must not be relabeled.
 The separate milestone workflows still contain inherited failures; their
 exact runs and frozen fixture-digest mismatches are triaged in
 `verification/findings/inherited-milestone-ci.md`.
