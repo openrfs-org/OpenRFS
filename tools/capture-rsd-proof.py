@@ -24,7 +24,7 @@ import fat32_image
 PROOF_LINE = b"RSD: BT11 Boot Ledger installed proof passed"
 TERMINAL_COMMAND = "echo rsd"
 TERMINAL_RESULT = b"echo rsd\nrsd\nrsd$ "
-GFETCH_RESULT = b"kernel      RSD 2.4.0 / x86_64"
+GFETCH_RESULT = b"kernel      RSD 2.5 / x86_64"
 PROMPT = b"rsd$ "
 NEW_PASSWORD_PROMPT = b"New password (8-64 characters): "
 CONFIRM_PASSWORD_PROMPT = b"Confirm password: "

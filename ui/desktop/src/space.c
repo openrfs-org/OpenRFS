@@ -23,8 +23,8 @@
  * sky costs less than doubling the table.
  *
  * This decoder holds no state. It walks the runs once, in order, and
- * writes through rsd_surface_plot so a surface smaller than the table
- * clips rather than wrapping onto the next row.
+ * writes through rsd_surface_plot. Source pixels are mapped to the current
+ * surface size so the wordmark stays visible on the kernel's 1024x768 mode.
  */
 void rsd_space_draw(struct rsd_surface *surface, struct rsd_rect clip)
 {
@@ -40,7 +40,21 @@ void rsd_space_draw(struct rsd_surface *surface, struct rsd_rect clip)
         uint32_t colour = rsd_wallpaper_ink[rsd_wallpaper_at[run]];
 
         while (left > 0U) {
-            rsd_surface_plot(surface, clip, x, y, colour);
+            uint32_t x0 = (uint32_t)((uint64_t)x * surface->width /
+                RSD_WALLPAPER_WIDTH);
+            uint32_t x1 = (uint32_t)((uint64_t)(x + 1U) * surface->width /
+                RSD_WALLPAPER_WIDTH);
+            uint32_t y0 = (uint32_t)((uint64_t)y * surface->height /
+                RSD_WALLPAPER_HEIGHT);
+            uint32_t y1 = (uint32_t)((uint64_t)(y + 1U) * surface->height /
+                RSD_WALLPAPER_HEIGHT);
+
+            for (uint32_t target_y = y0; target_y < y1; ++target_y) {
+                for (uint32_t target_x = x0; target_x < x1; ++target_x) {
+                    rsd_surface_plot(surface, clip, target_x, target_y,
+                        colour);
+                }
+            }
             --left;
             ++x;
             if (x >= RSD_WALLPAPER_WIDTH) {

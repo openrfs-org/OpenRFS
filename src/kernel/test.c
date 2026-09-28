@@ -60,6 +60,8 @@
 #include <rsd/ui.h>
 #include <rsd/ui_font.h>
 #include <rsd/xhci.h>
+#include <rsd_desktop/menu.h>
+#include <rsd_desktop/shell.h>
 
 #define QEMU_EXIT_PORT UINT16_C(0x00F4)
 #define QEMU_FAILURE_VALUE UINT8_C(0x7F)
@@ -7933,6 +7935,11 @@ _Noreturn void kernel_test_complete_rsd_proof(void)
     const struct ui_state *ui = ui_get_state();
     const struct ui_render_counters initial_renders = ui->renders;
     struct ui_proof proof;
+    struct rsd_rect menu;
+    struct ui_event press = {
+        .type = UI_EVENT_POINTER_BUTTON_PRESS,
+        .button = UI_POINTER_BUTTON_LEFT
+    };
     enum ui_status proof_status;
     struct keyboard_event keyboard = {
         .scancode = 0x01U, .pressed = true, .shift = false,
@@ -8001,32 +8008,29 @@ _Noreturn void kernel_test_complete_rsd_proof(void)
         kernel_test_fail("RSD focused window did not close");
     }
     rsd_proof_process_ui("RSD close redraw failed");
-    keyboard.scancode = 0x0FU;
-    if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("RSD keyboard focus-next failed");
+    if (rsd_shell_window_count() != 0U) {
+        kernel_test_fail("RSD terminal window did not close");
     }
-    rsd_proof_process_ui("RSD focus-next redraw failed");
-    if (ui_get_state()->focus != UI_ELEMENT_DOCK_TERMINAL) {
-        kernel_test_fail("RSD keyboard focus-next chose wrong app");
+    press.point = (struct ui_point){ 400, 300 };
+    if (ui_event_publish(&press) != UI_STATUS_OK) {
+        kernel_test_fail("RSD root menu press was refused");
     }
-    keyboard.shift = true;
-    if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("RSD keyboard focus-previous failed");
+    rsd_proof_process_ui("RSD root menu redraw failed");
+    if (!rsd_shell_root_menu_open() ||
+            !rsd_shell_root_menu_bounds(&menu)) {
+        kernel_test_fail("RSD root menu did not open");
     }
-    rsd_proof_process_ui("RSD focus-previous redraw failed");
-    if (ui_get_state()->focus != UI_ELEMENT_DOCK_FILES) {
-        kernel_test_fail("RSD keyboard focus-previous chose wrong app");
+    press.point = (struct ui_point){ (int32_t)(menu.x + 20U),
+        (int32_t)(menu.y + RSD_MENU_TITLE_HEIGHT + 34U) };
+    if (ui_event_publish(&press) != UI_STATUS_OK) {
+        kernel_test_fail("RSD Files menu press was refused");
     }
-    keyboard.scancode = 0x1CU;
-    keyboard.shift = false;
-    if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("RSD keyboard activation failed");
+    rsd_proof_process_ui("RSD Files redraw failed");
+    if (rsd_shell_window_count() != 1U ||
+            rsd_shell_app_of(rsd_shell_focused()) != RSD_APP_FILES) {
+        kernel_test_fail("RSD Files window did not open from the root menu");
     }
-    rsd_proof_process_ui("RSD application redraw failed");
-    if (ui_get_state()->active_panel != UI_PANEL_FILES) {
-        kernel_test_fail("RSD Files window did not open");
-    }
-    console_serial_write("ST RSD DE keyboard and pointer passed\n");
+    console_serial_write("ST RSD DE keyboard pointer and root menu passed\n");
 
     if (!boot_plan_pointer_absence_self_test()) {
         kernel_test_fail("RSD pointer-absence synthetic plan failed");
