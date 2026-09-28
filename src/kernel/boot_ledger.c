@@ -11,6 +11,7 @@
 #include <rsd/filesystem.h>
 #include <rsd/interrupt_vector.h>
 #include <rsd/linux_abi.h>
+#include <rsd/linux_syscall.h>
 #include <rsd/linux_uname.h>
 #include <rsd/msix.h>
 #include <rsd/nvme.h>
@@ -1672,7 +1673,8 @@ enum boot_ledger_status boot_ledger_verify_installed(
                  linux_receipt->proof_counters[1] != 9U ||
                  proof.file_bytes != LINUX_ABI_IMAGE_BYTES ||
                  proof.program_headers != 5U || proof.load_segments != 4U ||
-                 proof.file_clusters != 9U || proof.stdout_bytes != 8U ||
+                 proof.file_clusters != 9U ||
+                 proof.stdout_bytes != LINUX_SYSCALL_STDOUT_BYTES ||
                  proof.syscall_count != 9U ||
                  proof.distinct_syscalls != 7U || proof.exit_status != 0U ||
                  proof.robustness_tests !=

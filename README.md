@@ -8,6 +8,8 @@ RSD is an experimental, freestanding operating system and kernel for x86_64. It 
 
 RSD is built to be understood, modified, and forked. Its kernel, drivers, application interface, package system, installer interface, command line, and desktop live in one source tree so a fork can make a different distribution from the same foundation.
 
+![RSD desktop running the native terminal](assets/rsd/proof-terminal.png)
+
 > RSD is experimental. The installer interface is a configuration preview: it does not partition, format, or copy files to a disk. Privacy is a design goal, not a certification or a claim of anonymity or production security.
 
 ## The system

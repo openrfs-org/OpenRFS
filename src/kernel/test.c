@@ -46,6 +46,7 @@
 #include <rsd/random.h>
 #include <rsd/keyboard.h>
 #include <rsd/linux_abi.h>
+#include <rsd/linux_syscall.h>
 #include <rsd/linux_cat.h>
 #include <rsd/linux_uname.h>
 #include <rsd/linux_userland.h>
@@ -8348,7 +8349,8 @@ _Noreturn void kernel_test_complete_linux_abi(void)
     if (proof.file_bytes != LINUX_ABI_IMAGE_BYTES ||
         proof.program_headers != 5U ||
         proof.load_segments != 4U || proof.file_clusters != 9U ||
-        proof.stdout_bytes != 8U || proof.syscall_count != 9U ||
+        proof.stdout_bytes != LINUX_SYSCALL_STDOUT_BYTES ||
+        proof.syscall_count != 9U ||
         proof.distinct_syscalls != 7U || proof.exit_status != 0U ||
         proof.robustness_tests != LINUX_ABI_CONTROLLED_ROBUSTNESS_TESTS ||
         !proof.ring_three || !proof.private_address_space ||
@@ -8633,7 +8635,8 @@ _Noreturn void kernel_test_complete_rsd_proof_userland(void)
             echo_before + 2U ||
         linux_userland_completed(LINUX_USERLAND_PROFILE_UNAME) !=
             uname_before + 2U ||
-        echo.file_bytes != LINUX_ABI_IMAGE_BYTES || echo.stdout_bytes != 8U ||
+        echo.file_bytes != LINUX_ABI_IMAGE_BYTES ||
+        echo.stdout_bytes != LINUX_SYSCALL_STDOUT_BYTES ||
         echo.syscall_count != 9U || !echo.ring_three ||
         !echo.private_address_space || !echo.real_syscall_instruction ||
         !echo.stdout_valid || !echo.exit_zero || !echo.teardown_complete ||
@@ -8786,7 +8789,8 @@ _Noreturn void kernel_test_complete_rsd_proof_userland_interactive_absent(
         linux_userland_completed(LINUX_USERLAND_PROFILE_CAT) != cat_before ||
         linux_userland_completed(LINUX_USERLAND_PROFILE_ECHO) !=
             echo_before + 1U ||
-        echo.file_bytes != LINUX_ABI_IMAGE_BYTES || echo.stdout_bytes != 8U ||
+        echo.file_bytes != LINUX_ABI_IMAGE_BYTES ||
+        echo.stdout_bytes != LINUX_SYSCALL_STDOUT_BYTES ||
         !echo.ring_three || !echo.real_syscall_instruction ||
         !echo.stdout_valid || !echo.exit_zero || !echo.teardown_complete ||
         !linux_userland_resources_released() || !cpu_interrupts_enabled()) {
