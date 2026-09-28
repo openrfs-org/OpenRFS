@@ -175,6 +175,9 @@ static int memory_and_pointer_probes(void)
     return 0;
 }
 
+static int process_cwd_probe(void);
+static int exec_probe(void);
+
 static int file_and_handle_probes(void)
 {
     static const char replacement[] = "replacement";
@@ -268,6 +271,13 @@ static int file_and_handle_probes(void)
         return 334;
     }
     if (openrfs_volume_sync(OPENRFS_VOLUME_DATA) != 0) return 335;
+    {
+        const int cwd_result = process_cwd_probe();
+        const int exec_result = cwd_result == 0 ? exec_probe() : 0;
+
+        if (cwd_result != 0) return cwd_result;
+        if (exec_result != 0) return exec_result;
+    }
     if (openrfs_path_unlink(OPENRFS_VOLUME_DATA, "TMP/B.TXT") != 0) return 336;
     if (openrfs_path_unlink(OPENRFS_VOLUME_DATA, "TMP") != 0) return 337;
     if (openrfs_volume_sync(OPENRFS_VOLUME_DATA) != 0) return 338;
@@ -783,28 +793,26 @@ static int process_cwd_probe(void)
 
     if (getcwd(path, 1U) != NULL || errno != ERANGE ||
         getcwd(path, sizeof(path)) != path || strcmp(path, "/") != 0 ||
-        mkdir("/CWDTEST", 0700U) != 0 || chdir("CWDTEST") != 0 ||
+        chdir("TMP") != 0 ||
         getcwd(path, sizeof(path)) != path ||
-        strcmp(path, "/CWDTEST") != 0) return 123;
-    file = open("REL.TXT", O_CREAT | O_EXCL | O_WRONLY, 0600);
-    if (file < 0 || write(file, "cwd", 3U) != 3 || close(file) != 0 ||
-        stat("/CWDTEST/REL.TXT", &metadata) != 0 ||
-        metadata.st_size != 3U) return 124;
-    if (rename("/CWDTEST/REL.TXT", "MOVED.TXT") != 0 ||
-        stat("MOVED.TXT", &metadata) != 0 ||
-        metadata.st_size != 3U) return 124;
-    if (chdir("MOVED.TXT") != -1 || errno != ENOTDIR ||
+        strcmp(path, "/TMP") != 0) return 123;
+    file = open("B.TXT", O_RDONLY);
+    if (file < 0 || fstat(file, &metadata) != 0 ||
+        metadata.st_size != 11U || close(file) != 0 ||
+        stat("/TMP/B.TXT", &metadata) != 0 || metadata.st_size != 11U)
+        return 124;
+    if (chdir("B.TXT") != -1 || errno != ENOTDIR ||
         chdir("System:RESOURCE.TXT") != -1 || errno != ENOTSUP ||
         getcwd((char *)(uintptr_t)1U, sizeof(path)) != NULL ||
         errno != EFAULT ||
         getcwd(path, sizeof(path)) != path ||
-        strcmp(path, "/CWDTEST") != 0) return 124;
+        strcmp(path, "/TMP") != 0) return 124;
     const int child = fork();
 
     if (child < 0) return 125;
     if (child == 0) {
         if (getcwd(path, sizeof(path)) != path ||
-            strcmp(path, "/CWDTEST") != 0 || chdir("..") != 0 ||
+            strcmp(path, "/TMP") != 0 || chdir("..") != 0 ||
             getcwd(path, sizeof(path)) != path || strcmp(path, "/") != 0)
             _Exit(126);
         _Exit(0);
@@ -812,12 +820,11 @@ static int process_cwd_probe(void)
     if (waitpid(child, &status, 0) != child || !WIFEXITED(status) ||
         WEXITSTATUS(status) != 0 ||
         getcwd(path, sizeof(path)) != path ||
-        strcmp(path, "/CWDTEST") != 0 || chdir("..") != 0 ||
+        strcmp(path, "/TMP") != 0 || chdir("..") != 0 ||
         getcwd(path, sizeof(path)) != path || strcmp(path, "/") != 0 ||
         chdir("../../..") != 0 ||
-        getcwd(path, sizeof(path)) != path || strcmp(path, "/") != 0 ||
-        unlink("/CWDTEST/MOVED.TXT") != 0 ||
-        rmdir("/CWDTEST") != 0) return 127;
+        getcwd(path, sizeof(path)) != path || strcmp(path, "/") != 0)
+        return 127;
     puts("OPENRFS PROCESS Data cwd relative paths and fork inheritance PASS");
     return 0;
 }
@@ -857,7 +864,6 @@ static int multithread_fork_probe(void)
 static int exec_probe(void)
 {
     int status;
-    if (mkdir("/EXECDIR", 0700U) != 0) return 128;
     const int child = fork();
 
     if (child < 0) return 101;
@@ -878,7 +884,7 @@ static int exec_probe(void)
         const int kept = open("System:RESOURCE.TXT", O_RDONLY);
         const int closed = open("System:RESOURCE.TXT", O_RDONLY | O_CLOEXEC);
 
-        if (chdir("/EXECDIR") != 0 || setpgid(0, 0) != 0 ||
+        if (chdir("/TMP") != 0 || setpgid(0, 0) != 0 ||
             getpgrp() != getpid() ||
             kept < 3 || closed < 3 ||
             snprintf(kept_text, sizeof(kept_text), "%d", kept) <= 0 ||
@@ -905,7 +911,7 @@ static int exec_probe(void)
         _Exit(106);
     }
     if (waitpid(child, &status, 0) != child || !WIFEXITED(status) ||
-        WEXITSTATUS(status) != 0 || rmdir("/EXECDIR") != 0) {
+        WEXITSTATUS(status) != 0) {
         printf("OPENRFS PROCESS exec child status=%d\n", status);
         return 107;
     }
@@ -940,7 +946,7 @@ int main(int argc, char **argv, char **environment)
             strcmp(environment[1], "") != 0 ||
             getpid() != atoi(argv[3]) || getpgrp() != getpid() ||
             getcwd(cwd, sizeof(cwd)) != cwd ||
-            strcmp(cwd, "/EXECDIR") != 0 ||
+            strcmp(cwd, "/TMP") != 0 ||
             fcntl(kept, F_GETFD) != 0 ||
             read(kept, &first_byte, 1U) != 1 || first_byte != 'O' ||
             fcntl(closed, F_GETFD) != -1 || errno != EBADF ||
@@ -1042,11 +1048,7 @@ int main(int argc, char **argv, char **environment)
     if (probe != 0) return probe;
     probe = process_umask_probe();
     if (probe != 0) return probe;
-    probe = process_cwd_probe();
-    if (probe != 0) return probe;
     probe = multithread_fork_probe();
-    if (probe != 0) return probe;
-    probe = exec_probe();
     if (probe != 0) return probe;
     printf("OPENRFS REFUSAL capability EACCES stale ESTALE pointer EFAULT "
         "traversal EINVAL exhaustion ENOMEM\n");

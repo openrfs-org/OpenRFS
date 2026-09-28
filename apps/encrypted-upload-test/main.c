@@ -34,10 +34,18 @@ static int data_probe(void)
         memcmp(readback, "amber\nblue\n", 11U) != 0 ||
         openrfs_handle_close((openrfs_handle_t)file) != 0)
         return 12;
-    if (openrfs_path_truncate(OPENRFS_VOLUME_DATA, "NCHK.TXT", 5U) != 0 ||
-        openrfs_path_rename(OPENRFS_VOLUME_DATA, "NCHK.TXT",
-            "NREN.TXT") != 0)
+    const long truncated = openrfs_path_truncate(OPENRFS_VOLUME_DATA,
+        "NCHK.TXT", 5U);
+    if (truncated != 0) {
+        printf("OPENRFS NATIVE DATA truncate=%ld\n", truncated);
         return 13;
+    }
+    const long renamed = openrfs_path_rename(OPENRFS_VOLUME_DATA,
+        "NCHK.TXT", "NREN.TXT");
+    if (renamed != 0) {
+        printf("OPENRFS NATIVE DATA rename=%ld\n", renamed);
+        return 13;
+    }
     file = openrfs_file_open(OPENRFS_VOLUME_DATA, "NREN.TXT",
         OPENRFS_OPEN_READ);
     if (file < 0 || openrfs_file_read((openrfs_handle_t)file,
