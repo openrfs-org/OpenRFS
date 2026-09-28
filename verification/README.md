@@ -169,6 +169,16 @@ warnings in total. Those locks describe upstream test/development graphs,
 not the three first-party locked build graphs; the active kernel Cargo graph
 does not contain those four vulnerable package names. The raw per-lock JSON
 reports are retained locally under `verification/runs/cargo-audit-locks/`.
+An exploratory OSV-Scanner 2.6.0 run on signed `8cecd7185a02e033210748d2aadbc214fc9ee6fa`
+queried all 18 vendor development lockfiles: 1,072 package records and 13
+records with advisory matches. Its online database reported additional vendor
+development-graph versions beyond the RustSec advisory snapshot. None of the
+affected exact package/version pairs appears in the four first-party/fuzz
+locks; for example, the active locks contain `event-listener` 5.4.2 and
+`lock_api` 0.4.14, while the reported vendor versions are older. This is a
+dependency-scope distinction, not a claim that vendor test graphs are clean.
+The full local report and source SHA are retained under
+`verification/runs/manual-osv-vendor/`.
 
 An exploratory Clang Static Analyzer pass across `src/kernel/*.c` found
 candidate stack-lifetime and uninitialized-value warnings, and one missing
