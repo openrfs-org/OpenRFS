@@ -21,7 +21,7 @@ static bool backend_entered, release_backend;
 static bool lookup_fails;
 static bool observer_done;
 static unsigned observations;
-static enum openrfsfs_status results[WORKERS];
+static enum rsdfs_status results[WORKERS];
 
 static void yield_worker(void)
 {
@@ -32,70 +32,70 @@ static void yield_worker(void)
 #endif
 }
 
-static enum openrfsfs_status backend_transition(enum openrfsfs_volume volume)
+static enum rsdfs_status backend_transition(enum rsdfs_volume volume)
 {
-    assert(volume == OPENRFSFS_VOLUME_DATA && cpu_interrupts_enabled());
+    assert(volume == RSDFS_VOLUME_DATA && cpu_interrupts_enabled());
     __atomic_fetch_add(&backend_calls, 1U, __ATOMIC_RELAXED);
     const struct vfs_backend_ops *pinned = NULL;
-    assert(mount_pin(volume, &pinned) == OPENRFSFS_STATUS_NOT_MOUNTED && pinned == NULL);
-    assert(openrfsfs_mount(volume) == OPENRFSFS_STATUS_BUSY && openrfsfs_unmount(volume) == OPENRFSFS_STATUS_BUSY);
-    assert(!openrfsfs_resources_released());
+    assert(mount_pin(volume, &pinned) == RSDFS_STATUS_NOT_MOUNTED && pinned == NULL);
+    assert(rsdfs_mount(volume) == RSDFS_STATUS_BUSY && rsdfs_unmount(volume) == RSDFS_STATUS_BUSY);
+    assert(!rsdfs_resources_released());
     __atomic_store_n(&backend_entered, true, __ATOMIC_RELEASE);
     while (!__atomic_load_n(&release_backend, __ATOMIC_ACQUIRE)) yield_worker();
-    return phase % 2U == 0U ? OPENRFSFS_STATUS_IO : OPENRFSFS_STATUS_OK;
+    return phase % 2U == 0U ? RSDFS_STATUS_IO : RSDFS_STATUS_OK;
 }
 
-static struct openrfsfs_drive_info backend_drive(enum openrfsfs_volume volume)
+static struct rsdfs_drive_info backend_drive(enum rsdfs_volume volume)
 {
-    assert(volume == OPENRFSFS_VOLUME_DATA && cpu_interrupts_enabled());
-    (void)openrfsfs_has_atomic_replace(volume);
-    return (struct openrfsfs_drive_info){ .mounted = true };
+    assert(volume == RSDFS_VOLUME_DATA && cpu_interrupts_enabled());
+    (void)rsdfs_has_atomic_replace(volume);
+    return (struct rsdfs_drive_info){ .mounted = true };
 }
 
-static uint64_t backend_completion_count(enum openrfsfs_volume volume)
+static uint64_t backend_completion_count(enum rsdfs_volume volume)
 {
-    assert(volume == OPENRFSFS_VOLUME_DATA && cpu_interrupts_enabled());
-    (void)openrfsfs_has_atomic_replace(volume);
+    assert(volume == RSDFS_VOLUME_DATA && cpu_interrupts_enabled());
+    (void)rsdfs_has_atomic_replace(volume);
     return 77U;
 }
 
-static enum openrfsfs_status backend_replace(enum openrfsfs_volume volume, const char *from, const char *to)
+static enum rsdfs_status backend_replace(enum rsdfs_volume volume, const char *from, const char *to)
 {
     (void)volume; (void)from; (void)to;
     assert(false);
-    return OPENRFSFS_STATUS_ACCESS;
+    return RSDFS_STATUS_ACCESS;
 }
 
 static void observe_mount(void)
 {
     do {
-        assert(openrfsfs_drive(OPENRFSFS_VOLUME_DATA).mounted);
-        assert(openrfsfs_completion_count(OPENRFSFS_VOLUME_DATA) == 77U);
-        (void)openrfsfs_has_atomic_replace(OPENRFSFS_VOLUME_DATA);
-        (void)openrfsfs_resources_released();
+        assert(rsdfs_drive(RSDFS_VOLUME_DATA).mounted);
+        assert(rsdfs_completion_count(RSDFS_VOLUME_DATA) == 77U);
+        (void)rsdfs_has_atomic_replace(RSDFS_VOLUME_DATA);
+        (void)rsdfs_resources_released();
         assert(cpu_interrupts_enabled());
         __atomic_fetch_add(&observations, 1U, __ATOMIC_RELEASE);
     } while (!__atomic_load_n(&observer_done, __ATOMIC_ACQUIRE));
 }
 
-static enum openrfsfs_status backend_sync(enum openrfsfs_volume volume)
+static enum rsdfs_status backend_sync(enum rsdfs_volume volume)
 {
-    assert(cpu_interrupts_enabled() && openrfsfs_unmount(volume) == OPENRFSFS_STATUS_BUSY);
-    return OPENRFSFS_STATUS_IO;
+    assert(cpu_interrupts_enabled() && rsdfs_unmount(volume) == RSDFS_STATUS_BUSY);
+    return RSDFS_STATUS_IO;
 }
 
-static enum openrfsfs_status backend_stat(enum openrfsfs_volume volume, const char *path, struct openrfsfs_stat *stat)
+static enum rsdfs_status backend_stat(enum rsdfs_volume volume, const char *path, struct rsdfs_stat *stat)
 {
     assert(cpu_interrupts_enabled() && text_equal(path, "held"));
-    assert(openrfsfs_unmount(volume) == OPENRFSFS_STATUS_BUSY);
-    if (lookup_fails) return OPENRFSFS_STATUS_IO;
-    *stat = (struct openrfsfs_stat){ .object_id = 500U, .size = 1700U };
-    return OPENRFSFS_STATUS_OK;
+    assert(rsdfs_unmount(volume) == RSDFS_STATUS_BUSY);
+    if (lookup_fails) return RSDFS_STATUS_IO;
+    *stat = (struct rsdfs_stat){ .object_id = 500U, .size = 1700U };
+    return RSDFS_STATUS_OK;
 }
 
 static void exercise_mount(size_t worker)
 {
-    results[worker] = phase < 2U ? openrfsfs_mount(OPENRFSFS_VOLUME_DATA) : openrfsfs_unmount(OPENRFSFS_VOLUME_DATA);
+    results[worker] = phase < 2U ? rsdfs_mount(RSDFS_VOLUME_DATA) : rsdfs_unmount(RSDFS_VOLUME_DATA);
     assert(cpu_interrupts_enabled());
     __atomic_fetch_add(&completed, 1U, __ATOMIC_RELEASE);
 }
@@ -134,7 +134,7 @@ int main(void)
         .mount = backend_transition, .unmount = backend_transition, .drive = backend_drive, .sync = backend_sync,
         .completion_count = backend_completion_count, .rename_replace = backend_replace,
         .stat_path = backend_stat, .validates_mutation_paths = true, .case_sensitive = true };
-    volume_backends[OPENRFSFS_VOLUME_DATA] = &backend;
+    volume_backends[RSDFS_VOLUME_DATA] = &backend;
     for (size_t index = 0U; index < VFS_VNODE_BUCKETS; ++index) vnode_buckets[index] = VFS_NO_INDEX;
     const uint64_t generation_before = next_mount_generation;
     for (phase = 0U; phase < 4U; ++phase) {
@@ -162,7 +162,7 @@ int main(void)
         while (!__atomic_load_n(&backend_entered, __ATOMIC_ACQUIRE) ||
                 __atomic_load_n(&completed, __ATOMIC_ACQUIRE) != WORKERS - 1U) yield_worker();
         assert(__atomic_load_n(&backend_calls, __ATOMIC_RELAXED) == 1U);
-        assert(!openrfsfs_has_atomic_replace(OPENRFSFS_VOLUME_DATA));
+        assert(!rsdfs_has_atomic_replace(RSDFS_VOLUME_DATA));
         while (__atomic_load_n(&observations, __ATOMIC_ACQUIRE) < 100U) yield_worker();
         __atomic_store_n(&release_backend, true, __ATOMIC_RELEASE);
         for (size_t index = 0U; index < WORKERS; ++index) {
@@ -182,46 +182,46 @@ int main(void)
 #endif
         unsigned owned = 0U;
         for (size_t index = 0U; index < WORKERS; ++index) {
-            if (results[index] == OPENRFSFS_STATUS_BUSY) continue;
-            assert(results[index] == (phase % 2U == 0U ? OPENRFSFS_STATUS_IO : OPENRFSFS_STATUS_OK));
+            if (results[index] == RSDFS_STATUS_BUSY) continue;
+            assert(results[index] == (phase % 2U == 0U ? RSDFS_STATUS_IO : RSDFS_STATUS_OK));
             ++owned;
         }
-        assert(owned == 1U && !mounts[OPENRFSFS_VOLUME_DATA].mounting && !mounts[OPENRFSFS_VOLUME_DATA].unmounting);
-        assert(mounts[OPENRFSFS_VOLUME_DATA].active == (phase == 1U || phase == 2U));
-        assert(openrfsfs_has_atomic_replace(OPENRFSFS_VOLUME_DATA) == (phase == 1U || phase == 2U));
+        assert(owned == 1U && !mounts[RSDFS_VOLUME_DATA].mounting && !mounts[RSDFS_VOLUME_DATA].unmounting);
+        assert(mounts[RSDFS_VOLUME_DATA].active == (phase == 1U || phase == 2U));
+        assert(rsdfs_has_atomic_replace(RSDFS_VOLUME_DATA) == (phase == 1U || phase == 2U));
         assert(next_mount_generation == generation_before + (phase == 0U ? 0U : 1U));
         if (phase == 1U || phase == 2U) {
-            assert(mounts[OPENRFSFS_VOLUME_DATA].generation == generation_before);
+            assert(mounts[RSDFS_VOLUME_DATA].generation == generation_before);
             const struct vfs_backend_ops *pinned;
-            assert(mount_pin(OPENRFSFS_VOLUME_DATA, &pinned) == OPENRFSFS_STATUS_OK && pinned == &backend);
-            assert(openrfsfs_unmount(OPENRFSFS_VOLUME_DATA) == OPENRFSFS_STATUS_BUSY);
-            mount_release(OPENRFSFS_VOLUME_DATA);
-            assert(openrfsfs_sync(OPENRFSFS_VOLUME_DATA) == OPENRFSFS_STATUS_IO);
-            assert(mounts[OPENRFSFS_VOLUME_DATA].references == 0U);
-            struct openrfsfs_stat stat;
+            assert(mount_pin(RSDFS_VOLUME_DATA, &pinned) == RSDFS_STATUS_OK && pinned == &backend);
+            assert(rsdfs_unmount(RSDFS_VOLUME_DATA) == RSDFS_STATUS_BUSY);
+            mount_release(RSDFS_VOLUME_DATA);
+            assert(rsdfs_sync(RSDFS_VOLUME_DATA) == RSDFS_STATUS_IO);
+            assert(mounts[RSDFS_VOLUME_DATA].references == 0U);
+            struct rsdfs_stat stat;
             lookup_fails = false;
-            assert(openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "held", &stat) == OPENRFSFS_STATUS_OK);
+            assert(rsdfs_stat_path(RSDFS_VOLUME_DATA, "held", &stat) == RSDFS_STATUS_OK);
             assert(stat.object_id == 500U && stat.size == 1700U);
             lookup_fails = true;
-            assert(openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "held", &stat) == OPENRFSFS_STATUS_IO);
+            assert(rsdfs_stat_path(RSDFS_VOLUME_DATA, "held", &stat) == RSDFS_STATUS_IO);
             assert(stat.object_id == 0U && stat.size == 0U);
-            assert(mounts[OPENRFSFS_VOLUME_DATA].references == 0U && vnode_resources_released());
+            assert(mounts[RSDFS_VOLUME_DATA].references == 0U && vnode_resources_released());
         }
     }
-    assert(openrfsfs_resources_released());
-    const size_t file_slot = openrfs_slot_claim(open_file_claims, VFS_MAX_OPEN_FILES);
-    assert(file_slot < VFS_MAX_OPEN_FILES && !openrfsfs_resources_released());
-    openrfs_slot_release(open_file_claims, file_slot);
-    const size_t directory_slot = openrfs_slot_claim(directory_claims, VFS_MAX_DIRECTORY_ITERATORS);
-    assert(directory_slot < VFS_MAX_DIRECTORY_ITERATORS && !openrfsfs_resources_released());
-    openrfs_slot_release(directory_claims, directory_slot);
+    assert(rsdfs_resources_released());
+    const size_t file_slot = rsd_slot_claim(open_file_claims, VFS_MAX_OPEN_FILES);
+    assert(file_slot < VFS_MAX_OPEN_FILES && !rsdfs_resources_released());
+    rsd_slot_release(open_file_claims, file_slot);
+    const size_t directory_slot = rsd_slot_claim(directory_claims, VFS_MAX_DIRECTORY_ITERATORS);
+    assert(directory_slot < VFS_MAX_DIRECTORY_ITERATORS && !rsdfs_resources_released());
+    rsd_slot_release(directory_claims, directory_slot);
     const size_t reserved = vnode_reserve();
-    assert(reserved < VFS_MAX_VNODES && !openrfsfs_resources_released());
+    assert(reserved < VFS_MAX_VNODES && !rsdfs_resources_released());
     vnode_unreserve(reserved);
-    assert(openrfsfs_resources_released() && cpu_interrupts_enabled());
-    assert(!openrfsfs_drive(OPENRFSFS_VOLUME_COUNT).mounted);
-    assert(openrfsfs_completion_count(OPENRFSFS_VOLUME_COUNT) == 0U);
-    assert(!openrfsfs_has_atomic_replace(OPENRFSFS_VOLUME_COUNT));
+    assert(rsdfs_resources_released() && cpu_interrupts_enabled());
+    assert(!rsdfs_drive(RSDFS_VOLUME_COUNT).mounted);
+    assert(rsdfs_completion_count(RSDFS_VOLUME_COUNT) == 0U);
+    assert(!rsdfs_has_atomic_replace(RSDFS_VOLUME_COUNT));
     puts("VFS concurrent mount/unmount: one owner, rollback, generations, concurrent observers and reentrant callbacks PASS");
     return 0;
 }

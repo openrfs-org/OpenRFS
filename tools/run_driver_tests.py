@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Run the OpenRFS upstream driver suite.
+"""Run the RSD upstream driver suite.
 
 Every scenario boots the kernel once in QEMU with one device profile attached
-and one in-guest plan selected (openrfs.test=drivers openrfs.drvtest=<plan>).
+and one in-guest plan selected (rsd.test=drivers rsd.drvtest=<plan>).
 A scenario passes only when QEMU exits through the debug-exit device with the
 suite's status, the serial log carries "ST PASS drivers" exactly once, no
 failure or panic marker appears, and every marker the scenario requires is
@@ -69,12 +69,12 @@ def payload(length: int) -> bytes:
 def fixture_unit(unit: int, written: bool = False) -> bytes:
     """One 512-byte unit of the storage fixture (see driver_tests.c)."""
     if written:
-        head = b"ORFSWRT1" + unit.to_bytes(8, "little")
+        head = b"RSDWRT01" + unit.to_bytes(8, "little")
         body = bytes(((unit * 3) + (offset * 5) + 0x11) & 0xFF
                      for offset in range(16, UNIT_BYTES))
         return head + body
     start = (unit + 16) & 0xFF
-    return (b"ORFSBLK1" + unit.to_bytes(8, "little") +
+    return (b"RSDBLK01" + unit.to_bytes(8, "little") +
             _RAMP[start:start + UNIT_BYTES - 16])
 
 
@@ -105,7 +105,7 @@ class Scenario:
     block_size: int = 512
     write: bool = False
     drivers_option: str = "auto"
-    # OpenRFS's own NVMe boot proof reads a fixture block from any NVMe
+    # RSD's own NVMe boot proof reads a fixture block from any NVMe
     # namespace it finds (tools/make-nvme-fixture.py); a scenario that
     # attaches NVMe for an upstream driver carries that block as well.
     native_nvme_fixture: bool = False
@@ -197,12 +197,12 @@ def storage_scenario(driver: str, description: str, devices: list[str],
 
 
 def hid_scenario(kind: str, description: str, devices: list[str],
-                 host: str, machine: str = "pc", text: str = "openrfs"
+                 host: str, machine: str = "pc", text: str = "rsd"
                  ) -> Scenario:
     markers = [r"^ST DRV hid ready$", usb_host_marker(host)]
     if kind in ("kbd", "both"):
         markers += [
-            r"^OpenRFS: kbd0 bound by SeaBIOS usb-hid: USB HID boot keyboard$",
+            r"^RSD: kbd0 bound by SeaBIOS usb-hid: USB HID boot keyboard$",
             # Every key pressed and released, all through the USB driver,
             # none through the i8042.
             rf"^ST DRV hid keys {text} usb-bytes [1-9][0-9]* "
@@ -210,7 +210,7 @@ def hid_scenario(kind: str, description: str, devices: list[str],
         ]
     if kind in ("mouse", "both"):
         markers += [
-            r"^OpenRFS: mouse0 bound by SeaBIOS usb-hid: USB HID boot mouse$",
+            r"^RSD: mouse0 bound by SeaBIOS usb-hid: USB HID boot mouse$",
             r"^ST DRV hid pointer dx [1-9][0-9]* dy [1-9][0-9]* "
             r"button-transitions [2-9][0-9]* usb-packets [1-9][0-9]* "
             r"i8042-interrupts 0$",
@@ -227,7 +227,7 @@ def display_scenario(driver: str, description: str, device: str, mode: str,
     """One adapter as the only display, driven into one mode."""
     width, height, _ = (int(value) for value in mode.split("x"))
     markers = [
-        rf"^OpenRFS: display0 bound by SeaBIOS {re.escape(driver)}: ",
+        rf"^RSD: display0 bound by SeaBIOS {re.escape(driver)}: ",
         rf"^ST DRV display refusal {DISPLAY_BOGUS_MODE} "
         r"the adapter has no such mode$",
         rf"^ST DRV display mode {mode} pitch [1-9][0-9]* framebuffer "
@@ -254,7 +254,7 @@ def audio_scenario(driver: str, description: str, devices: list[str],
                    timeout: int = 180) -> Scenario:
     """A sound card whose output QEMU records to a WAV file."""
     markers = [
-        rf"^OpenRFS: pcm0 bound by MINIX {re.escape(driver)}: ",
+        rf"^RSD: pcm0 bound by MINIX {re.escape(driver)}: ",
         r"^ST DRV audio refusal rate 96000 format not supported by the "
         r"driver$",
         r"^ST DRV audio open pcm0 rate 44100 channels 2 bits 16 fragment "
@@ -284,7 +284,7 @@ def tpm_scenario(driver: str, description: str, device: str,
                  machine: str = "pc") -> Scenario:
     """A TPM 2.0 emulated by swtpm behind QEMU's TIS or CRB model."""
     markers = [
-        rf"^OpenRFS: tpm0 bound by SeaBIOS {re.escape(driver)}: TPM 2\.0",
+        rf"^RSD: tpm0 bound by SeaBIOS {re.escape(driver)}: TPM 2\.0",
         rf"^ST DRV tpm device tpm0 {re.escape(driver)} version 2$",
         r"^ST DRV tpm family 2\.0\. manufacturer \S+",
         r"^ST DRV tpm random [0-9a-f]{32} [0-9a-f]{32}$",
@@ -301,7 +301,7 @@ def tpm_scenario(driver: str, description: str, device: str,
 
 
 def usb_host_marker(driver: str) -> str:
-    return (rf"^OpenRFS: usb[0-9]+ bound by SeaBIOS {driver}: "
+    return (rf"^RSD: usb[0-9]+ bound by SeaBIOS {driver}: "
             rf"{driver} USB host controller ")
 
 
@@ -512,7 +512,7 @@ SCENARIOS: dict[str, Scenario] = {
          "-device", "usb-uas,id=uas,bus=usbhc.0", "-drive", DISK,
          "-device", "scsi-hd,bus=uas.0,scsi-id=0,lun=0,drive=drvdisk"],
         extra_markers=(usb_host_marker("ehci"),)),
-    # xHCI mass storage goes through a full-speed hub: OpenRFS's own xHCI
+    # xHCI mass storage goes through a full-speed hub: RSD's own xHCI
     # boot proof reads the first connected device and accepts only USB 2
     # root ports, and QEMU attaches usb-storage to a USB 3 port directly.
     "blk-usb-hub": storage_scenario(
@@ -522,7 +522,7 @@ SCENARIOS: dict[str, Scenario] = {
          "-device", "usb-storage,bus=usbhc.0,port=1.1,drive=drvdisk"],
         extra_markers=(usb_host_marker("xhci"),), timeout=300),
     # The keyboard sits on root port 1 as a USB 2 device: exactly the
-    # fixture OpenRFS's own xHCI boot proof reads before the upstream
+    # fixture RSD's own xHCI boot proof reads before the upstream
     # driver takes the controller.
     "hid-kbd-xhci": hid_scenario(
         "kbd", "USB HID keyboard on an xHCI controller",
@@ -557,10 +557,10 @@ SCENARIOS: dict[str, Scenario] = {
         host="ehci", machine="q35"),
     # The standard VGA and Cirrus builds program an adapter that no option
     # ROM has touched: with romfile= empty the firmware has no VGA BIOS to
-    # run, GRUB sets no mode (so OpenRFS boots on serial alone), and the
+    # run, GRUB sets no mode (so RSD boots on serial alone), and the
     # driver's own setup brings the card up from reset. This is also the
-    # only way to boot OpenRFS on a Cirrus card: its VGA BIOS offers no
-    # 32-bit mode, and OpenRFS refuses any other Multiboot2 framebuffer.
+    # only way to boot RSD on a Cirrus card: its VGA BIOS offers no
+    # 32-bit mode, and RSD refuses any other Multiboot2 framebuffer.
     # With a ROM, the standard VGA would be left in a Bochs VBE mode, which
     # QEMU's VGA core keeps overriding the standard CRTC registers with.
     "display-stdvga": display_scenario(
@@ -616,17 +616,17 @@ SCENARIOS: dict[str, Scenario] = {
     "blk-nvme": storage_scenario(
         "nvme", "NVM Express controller (SeaBIOS driver, selected)",
         ["-drive", DISK,
-         "-device", "nvme,serial=openrfs0,drive=drvdisk,"
+         "-device", "nvme,serial=rsd0,drive=drvdisk,"
                     "logical_block_size=4096,physical_block_size=4096"],
         drivers_option="nvme", block_size=4096, native_nvme_fixture=True,
-        # 12 MiB: OpenRFS's FAT16 proof takes a 16 MiB 4 KiB-block
+        # 12 MiB: RSD's FAT16 proof takes a 16 MiB 4 KiB-block
         # namespace for its own fixture.
         units=24576),
 }
 
 
 class PayloadHandler(http.server.BaseHTTPRequestHandler):
-    # The OpenRFS HTTP client speaks exactly HTTP/1.1.
+    # The RSD HTTP client speaks exactly HTTP/1.1.
     protocol_version = "HTTP/1.1"
     body = b""
 
@@ -659,13 +659,13 @@ def build_iso(kernel: Path, work: Path, command_line: str,
     if root.exists():
         shutil.rmtree(root)
     (root / "boot" / "grub").mkdir(parents=True)
-    shutil.copy2(kernel, root / "boot" / "openrfs.elf")
+    shutil.copy2(kernel, root / "boot" / "rsd.elf")
     (root / "boot" / "grub" / "grub.cfg").write_text(
         "set default=0\nset timeout=0\n\n"
-        'menuentry "OpenRFS driver suite" {\n'
-        f"    multiboot2 /boot/openrfs.elf {command_line}\n"
+        'menuentry "RSD driver suite" {\n'
+        f"    multiboot2 /boot/rsd.elf {command_line}\n"
         "    boot\n}\n")
-    iso = work / "openrfs.iso"
+    iso = work / "rsd.iso"
     subprocess.run([grub_mkrescue, "-o", str(iso), str(root)], check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return iso
@@ -676,9 +676,9 @@ def run_scenario(name: str, scenario: Scenario, args: argparse.Namespace
     work = args.output / name
     work.mkdir(parents=True, exist_ok=True)
     log = work / "serial.log"
-    options = ["openrfs.test=drivers",
-               f"openrfs.drivers={scenario.drivers_option}",
-               f"openrfs.drvtest={scenario.plan}"]
+    options = ["rsd.test=drivers",
+               f"rsd.drivers={scenario.drivers_option}",
+               f"rsd.drvtest={scenario.plan}"]
     server = None
     qemu = [args.qemu, "-machine", f"{scenario.machine},accel={args.accel}",
             "-m", "256M", "-smp", "1", "-display", "none",
@@ -686,11 +686,11 @@ def run_scenario(name: str, scenario: Scenario, args: argparse.Namespace
             "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
             "-no-reboot"]
     if scenario.driver:
-        options.append(f"openrfs.drvdriver={scenario.driver}")
+        options.append(f"rsd.drvdriver={scenario.driver}")
     if scenario.plan == "net":
         server, port = start_server(DEFAULT_PAYLOAD_BYTES)
-        options += [f"openrfs.drvport={port}",
-                    f"openrfs.drvbytes={DEFAULT_PAYLOAD_BYTES}"]
+        options += [f"rsd.drvport={port}",
+                    f"rsd.drvbytes={DEFAULT_PAYLOAD_BYTES}"]
         qemu += ["-nic", "none",
                  "-netdev", "user,id=drvnet,restrict=off",
                  *scenario.nic_bus,
@@ -707,9 +707,9 @@ def run_scenario(name: str, scenario: Scenario, args: argparse.Namespace
             with image.open("r+b") as medium:
                 medium.seek(NATIVE_NVME_FIXTURE_LBA * NATIVE_NVME_BLOCK)
                 medium.write(native_nvme_block())
-        options += [f"openrfs.drvkind={scenario.kind}",
-                    f"openrfs.drvunits={scenario.units}",
-                    f"openrfs.drvwrite={1 if scenario.write else 0}"]
+        options += [f"rsd.drvkind={scenario.kind}",
+                    f"rsd.drvunits={scenario.units}",
+                    f"rsd.drvwrite={1 if scenario.write else 0}"]
     capture = work / "capture.wav"
     if capture.exists():
         capture.unlink()
@@ -718,7 +718,7 @@ def run_scenario(name: str, scenario: Scenario, args: argparse.Namespace
     tpm_socket = ""
     if scenario.plan == "tpm":
         # A fresh TPM 2.0 per boot; the socket path must fit in 108 bytes.
-        tpm_dir = Path(tempfile.mkdtemp(prefix="orfs-tpm-"))
+        tpm_dir = Path(tempfile.mkdtemp(prefix="rsd-tpm-"))
         tpm_socket = str(tpm_dir / "ctrl.sock")
         swtpm = subprocess.Popen(
             ["swtpm", "socket", "--tpm2", "--tpmstate",
@@ -738,17 +738,17 @@ def run_scenario(name: str, scenario: Scenario, args: argparse.Namespace
     if screen.exists():
         screen.unlink()
     if scenario.plan == "display":
-        options += [f"openrfs.drvmode={scenario.mode}"]
-        qmp = Path(tempfile.mkdtemp(prefix="orfs-qmp-")) / "qmp.sock"
+        options += [f"rsd.drvmode={scenario.mode}"]
+        qmp = Path(tempfile.mkdtemp(prefix="rsd-qmp-")) / "qmp.sock"
         qemu += ["-qmp", f"unix:{qmp},server=on,wait=off"]
         injector = threading.Thread(
             target=capture_screen, args=(log, qmp, scenario, screen, work),
             daemon=True)
     if scenario.plan == "hid":
-        options += [f"openrfs.drvkind={scenario.kind}",
-                    f"openrfs.drvtext={scenario.text}"]
+        options += [f"rsd.drvkind={scenario.kind}",
+                    f"rsd.drvtext={scenario.text}"]
         # A Unix socket path must fit in 108 bytes; the work tree may not.
-        qmp = Path(tempfile.mkdtemp(prefix="orfs-qmp-")) / "qmp.sock"
+        qmp = Path(tempfile.mkdtemp(prefix="rsd-qmp-")) / "qmp.sock"
         qemu += ["-qmp", f"unix:{qmp},server=on,wait=off"]
         injector = threading.Thread(
             target=inject_input, args=(log, qmp, scenario), daemon=True)
@@ -792,7 +792,7 @@ def run_scenario(name: str, scenario: Scenario, args: argparse.Namespace
         problems.append("missing ST PASS drivers")
     if any(line.startswith("ST FAIL") for line in lines):
         problems.append("ST FAIL present")
-    if any("OpenRFS PANIC" in line for line in lines):
+    if any("RSD PANIC" in line for line in lines):
         problems.append("kernel panic")
     for marker in scenario.markers:
         pattern = re.compile(marker)

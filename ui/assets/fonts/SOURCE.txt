@@ -1,0 +1,160 @@
+TWO FONTS, FOR TWO SCREENS. The desktop's is an outline face
+rasterised at three sizes; the console's is the VGA character
+ROM. Neither is the other's job, and the console had the
+desktop's for a while - see below.
+
+
+=== THE DESKTOP ===
+
+The text on this desktop is DejaVu: DejaVu Sans for everything the
+shell writes, DejaVu Sans Mono in the terminal.
+
+WHY THOSE TWO. KDE 4's default interface font was "Sans Serif 9", which
+fontconfig resolved to DejaVu Sans on every distribution that shipped
+KDE 4, and 9 points at 96 dpi is a 12-pixel em - which is the middle of
+the three sizes generated here and the one a session comes up in.
+Konsole's default was DejaVu Sans Mono at the same size.
+
+WHAT WAS HERE BEFORE, and why it went. The faces were Misc-Fixed 6x13,
+7x14, 9x18 and 8x16 - X11 bitmap fonts, one bit per pixel. They are the
+right faces for an X session of 1995 and they were the single loudest
+thing on this screen saying 1995: no amount of gradient or rounding gets
+a window to read as 2010 while the words on it are a bitmap face. The
+Misc-Fixed entry that used to be in this file is gone with them; nothing
+in the tree reads those PCF files any more.
+
+NOTHING IS VENDORED. tools/make-font.py reads the TrueType files off the
+build machine and writes the coverage tables into desktop/src/, so what
+this repository carries is the generated header and this file records
+where the outlines came from and on what terms.
+
+    face                 em   source file
+    DejaVu Sans 8        11   /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+    DejaVu Sans 9        12   /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+    DejaVu Sans 10.5     14   /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+    DejaVu Sans Mono 9   12   /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf
+
+    sha256, DejaVuSans.ttf
+        ae7b7855e115a5966d8b1b3f80f254ccc117ec86f9965e202ee2940453837280
+    sha256, DejaVuSansMono.ttf
+        c805f9436dbc268644c1d9584f01a601a653e028e08fd74b9b949f6cf8304d88
+
+    Debian packages: fonts-dejavu-core, fonts-dejavu-mono
+
+Copyright, quoted from /usr/share/doc/fonts-dejavu-core/copyright:
+
+  Upstream-Author: Stepan Roh <src@users.sourceforge.net> (original
+  author), see /usr/share/doc/fonts-dejavu-core/AUTHORS for the full
+  list.
+
+  Copyright (c) 2003 by Bitstream, Inc. All Rights Reserved.
+  Bitstream Vera is a trademark of Bitstream, Inc.
+  DejaVu changes are in public domain.
+
+Terms, quoted in full from the same file:
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of the fonts accompanying this license ("Fonts") and associated
+  documentation files (the "Font Software"), to reproduce and distribute the
+  Font Software, including without limitation the rights to use, copy, merge,
+  publish, distribute, and/or sell copies of the Font Software, and to permit
+  persons to whom the Font Software is furnished to do so, subject to the
+  following conditions:
+
+  The above copyright and trademark notices and this permission notice shall
+  be included in all copies of one or more of the Font Software typefaces.
+
+  The Font Software may be modified, altered, or added to, and in particular
+  the designs of glyphs or characters in the Fonts may be modified and
+  additional glyphs or characters may be added to the Fonts, only if the fonts
+  are renamed to names not containing either the words "Bitstream" or the word
+  "Vera".
+
+  This License becomes null and void to the extent applicable to Fonts or Font
+  Software that has been modified and is distributed under the "Bitstream
+  Vera" names.
+
+  The Font Software may be sold as part of a larger software package but no
+  copy of one or more of the Font Software typefaces may be sold by itself.
+
+  THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+  OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF COPYRIGHT, PATENT,
+  TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL BITSTREAM OR THE GNOME
+  FOUNDATION BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, INCLUDING
+  ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES,
+  WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
+  THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM OTHER DEALINGS IN THE
+  FONT SOFTWARE.
+
+  Except as contained in this notice, the names of Gnome, the Gnome
+  Foundation, and Bitstream Inc., shall not be used in advertising or
+  otherwise to promote the sale, use or other dealings in this Font Software
+  without prior written authorization from the Gnome Foundation or Bitstream
+  Inc., respectively. For further information, contact: fonts at gnome dot
+  org.
+
+NOTE ON THE RENAMING CONDITION. The licence allows the Font Software to
+be modified only if the result is renamed away from "Bitstream" and
+"Vera". Nothing here modifies the fonts: the generated headers are
+rasterisations at fixed sizes, they are named DejaVu after the faces they
+were rasterised from, and no altered font file is distributed.
+
+
+=== THE CONSOLE ===
+
+The console and the installer are drawn in the VGA character ROM at
+8x16 - the glyphs the BIOS puts on the screen before
+any operating system loads, and the ones a BSD console goes on using
+afterwards.
+
+WHAT IT REPLACED, and why. The console font was DejaVu Sans Mono at 15
+pixels, rasterised into a 9x18 cell and thresholded at 110: one bit per
+pixel, no anti-aliasing, because a text console has none. That is a
+reasonable way to get a console font and it produces a bad one. An
+outline face is drawn for a rasteriser that can put grey on the edge of
+a stem; take the grey away and what is left is a stem two pixels wide in
+one letter and one in the next, with crossbars that come and go
+depending on where the curve fell relative to the grid. It read as a
+font that had been damaged, because it had been.
+
+The answer is not a better threshold. It is a font that was DRAWN at one
+bit per pixel for this cell.
+
+    file      assets/fonts/vgarom-8x16.hex
+    from      share/vt/fonts/vgarom-8x16.hex in FreeBSD's src tree,
+              https://cgit.freebsd.org/src/plain/share/vt/fonts/
+    sha256    b4737464514a176b75fca2ae0e2a98312524ca81822459ff1869a0439d73edc2
+    format    GNU Unifont hex - one line per glyph: the code point, a
+              colon, and the rows as hex, most significant bit first
+
+Its own history, from the FreeBSD commit that added it ("Add vgarom font
+source"):
+
+    These are in 'GNU Unifont' format, and are converted from syscons(4)
+    cp437 fonts.
+
+- so it is FreeBSD's syscons CP437 font, which is the IBM VGA BIOS
+character generator, in the format FreeBSD's vt(4) console builds its
+own font files from. INDEX.fonts lists it as "VGAROM, 8x16".
+
+ON TERMS. The file carries no licence header of its own, and there is no
+licence file in that directory; FreeBSD has distributed it as part of
+its base system, whose terms are in the tree's COPYRIGHT. What it is is
+a dump of a hardware character generator - a bitmap table, not a
+typeface design - and it has been redistributed in that form for
+decades. That is what is known; it is recorded here rather than
+paraphrased into a claim. If a clearer footing is ever wanted, the same
+directory carries Terminus (SIL OFL) and Spleen (BSD-2-Clause), both of
+which are cut at one bit per pixel and would drop straight in.
+
+NOTHING IS DRAWN BY THIS PROJECT. The box characters, the shades, the
+block and the arrows are the ROM's own. They used to be computed by
+tools/make-font.py so that frames would tile exactly; CP437's box
+characters tile exactly because tiling is what they were cut for, and
+the tool checks it rather than assuming it.
+
+AND THERE IS NO BOLD. A VGA text console has one character generator;
+what the intensity bit changes is the colour. There were two font
+tables, a plain one and one rasterised from a typeface's bold cut, and
+the second was a thing this hardware could not do.

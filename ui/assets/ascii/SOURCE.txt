@@ -1,0 +1,42 @@
+THE MARK, AS CHARACTERS
+=======================
+
+rsd-mark-45.json
+    NOT this project's own work. It is the output of
+
+      https://coddy.tech/tools/ascii-art-generator
+
+    with assets/logo/rsd-mark.png as input and these settings:
+
+      Mode    Image
+      Style   Shaded
+      Color   on
+      Invert  off
+      Width   45
+
+    Taken 27 September 2026 by console/tools/capture-ascii.py, which
+    drives the page in a browser and reads the block back out of its own
+    <pre class="AsciiArt_asciiBlock">: every character, and the colour
+    the page computed for it.
+
+    10 rows, 45 columns, 36 distinct colours - all of them within a few
+    units of the mark's #7B0100, because the mark is one flat red and
+    what varies is the antialiasing the generator sampled at the edges
+    of the letters.
+
+    Captured rather than reimplemented so it can be redone. Set those
+    five things on that page, drop the PNG in, and the block that comes
+    up is this file.
+
+    sha256 2688b6626f45615096e717b99a47e7ad52d22e411d193ce300fafe9a3747361f
+
+WHAT IT FEEDS. One capture, two headers, so the console and the desktop
+cannot end up drawing different marks:
+
+    desktop/src/rsd_logo.h   desktop/tools/make-logo.py
+    console/src/rsd_mark.h   console/tools/make-mark.py
+
+make-logo.py reduces the 36 colours to the ones that are actually
+distinguishable - see merge() in it - and packs the palette down to the
+entries some cell is drawn in, so the header declares no colour the
+screen never shows. For this mark that comes out at three reds.
