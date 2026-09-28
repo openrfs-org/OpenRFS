@@ -69,20 +69,6 @@ static void zero_bytes(void *pointer, size_t bytes)
     }
 }
 
-static void copy_text(char *out, size_t capacity, const char *text)
-{
-    size_t at = 0U;
-
-    if (capacity == 0U) {
-        return;
-    }
-    while (text != NULL && text[at] != '\0' && at + 1U < capacity) {
-        out[at] = text[at];
-        ++at;
-    }
-    out[at] = '\0';
-}
-
 static bool rect_fits(struct ui_rect rectangle, struct ui_rect outer)
 {
     return rectangle.width != 0U && rectangle.height != 0U &&
@@ -266,138 +252,6 @@ enum ui_status ui_hit_test(const struct ui_layout *layout,
     return UI_STATUS_OK;
 }
 
-static uint32_t populate_files(void)
-{
-    uint32_t home;
-    uint32_t user;
-    uint32_t desktop_folder;
-    uint32_t docs;
-
-    rsd_files_reset();
-    home = rsd_files_add(rsd_files_root(), "home", true, 0U);
-    user = rsd_files_add(home, "user", true, 0U);
-    desktop_folder = rsd_files_add(user, "Desktop", true, 0U);
-    docs = rsd_files_add(user, "Documents", true, 0U);
-    (void)rsd_files_add(user, "Downloads", true, 0U);
-    (void)rsd_files_add(user, "README.txt", false, 1284U);
-    (void)rsd_files_add(docs, "privacy-notes.txt", false, 4096U);
-    (void)rsd_files_add(desktop_folder, "About RSD.txt", false, 1024U);
-    (void)rsd_files_open(user);
-    return desktop_folder;
-}
-
-static void populate_menu(void)
-{
-    rsd_menu_reset();
-    (void)rsd_menu_add("RSD", true, false);
-    (void)rsd_menu_add("System Tools", true, false);
-    (void)rsd_menu_add(NULL, false, true);
-    (void)rsd_menu_add("Run...", false, false);
-}
-
-static void populate_packages(void)
-{
-    rsd_packages_reset();
-    (void)rsd_packages_add("rsd-files", "RSD file manager",
-        "Files", true);
-    (void)rsd_packages_add("rsd-terminal", "RSD terminal",
-        "Terminal", true);
-    (void)rsd_packages_add("rsd-task-manager", "RSD process viewer",
-        "Task Manager", true);
-    (void)rsd_packages_add("rsd-settings", "RSD desktop settings",
-        "Settings", true);
-    (void)rsd_packages_add("rsd-privacy-tools", "Privacy tools bundle",
-        "Privacy Tools", false);
-}
-
-static void populate_settings(void)
-{
-    struct rsd_settings_row row;
-
-    rsd_settings_reset();
-    (void)rsd_settings_add_page("RSD DE");
-    (void)rsd_settings_add_page("Desktop");
-    (void)rsd_settings_add_page("Panel");
-    zero_bytes(&row, sizeof(row));
-    row.kind = RSD_SETTINGS_NOTE;
-    copy_text(row.label, sizeof(row.label), "RSD desktop environment");
-    (void)rsd_settings_add_row(0U, &row);
-    row.kind = RSD_SETTINGS_CHOICE;
-    row.setting = RSD_SET_WIDGET_THEME;
-    copy_text(row.label, sizeof(row.label), "Widget theme");
-    (void)rsd_settings_add_row(0U, &row);
-    zero_bytes(&row, sizeof(row));
-    row.kind = RSD_SETTINGS_SWITCH;
-    row.on = true;
-    row.setting = RSD_SET_DESKTOP_ICONS;
-    copy_text(row.label, sizeof(row.label), "Show desktop icons");
-    (void)rsd_settings_add_row(1U, &row);
-    zero_bytes(&row, sizeof(row));
-    row.kind = RSD_SETTINGS_NOTE;
-    copy_text(row.label, sizeof(row.label), "Minimal bottom panel");
-    (void)rsd_settings_add_row(2U, &row);
-}
-
-static void populate_taskmgr(void)
-{
-    static const char *const names[] = {
-        "rsd-session", "rsd-files", "rsd-terminal", "rsd-network"
-    };
-    struct rsd_taskmgr_row row;
-
-    rsd_taskmgr_reset();
-    for (size_t at = 0U; at < sizeof(names) / sizeof(names[0]); ++at) {
-        zero_bytes(&row, sizeof(row));
-        copy_text(row.command, sizeof(row.command), names[at]);
-        copy_text(row.user, sizeof(row.user), "user");
-        row.cpu_tenths = (uint32_t)(at + 1U) * 7U;
-        row.rss_kib = 1200U + (uint32_t)at * 640U;
-        row.pid = (uint32_t)at + 1U;
-        (void)rsd_taskmgr_add(&row);
-    }
-}
-
-static const char *icon_for_app(enum rsd_shell_app app)
-{
-    switch (app) {
-    case RSD_APP_FILES:
-        return "file-manager";
-    case RSD_APP_TERMINAL:
-        return "terminal";
-    case RSD_APP_TASKMGR:
-    case RSD_APP_SETTINGS:
-        return "gtk-preferences";
-    case RSD_APP_PACKAGES:
-        return "gtk-preferences";
-    default:
-        return "file-manager";
-    }
-}
-
-static void sync_panel_tasks(void)
-{
-    const uint32_t focused = rsd_shell_focused();
-
-    for (uint32_t at = 0U; at < RSD_PANEL_MAX_TASKS; ++at) {
-        (void)rsd_panel_clear_task(at);
-    }
-    for (uint32_t at = 0U; at < RSD_SHELL_MAX_WINDOWS; ++at) {
-        const struct rsd_window *window = rsd_shell_window(at);
-        struct rsd_panel_task task;
-
-        if (window == NULL) {
-            continue;
-        }
-        zero_bytes(&task, sizeof(task));
-        copy_text(task.label, sizeof(task.label), window->title);
-        task.icon = icon_for_app(rsd_shell_app_of(at));
-        task.active = at == focused;
-        task.minimised = window->minimised;
-        task.desktop = window->desktop;
-        (void)rsd_panel_set_task(at, &task);
-    }
-}
-
 static void sync_state(void)
 {
     enum ui_panel_id previous = state.active_panel;
@@ -473,29 +327,9 @@ static void draw_cursor(void)
 
 static enum ui_status render_desktop(void)
 {
-    const struct rsd_rect whole = { 0U, 0U, desktop.width, desktop.height };
-
-    if (minimal_desktop_selected) {
-        minimal_de_draw();
-    } else {
-        if (rsd_wallpaper_decode(0U, desktop.pixels,
-                (size_t)desktop.width * desktop.height, desktop.width,
-                desktop.height, 16U, 8U, 0U) != WALLPAPER_STATUS_OK) {
-            rsd_surface_fill(&desktop, whole, whole, 0x70757AU);
-        }
-        rsd_shell_draw_desktop();
-        rsd_shell_draw();
-        sync_panel_tasks();
-        if (rsd_panel_draw(whole) != RSD_PANEL_STATUS_OK) {
-            return UI_STATUS_SURFACE_FAILURE;
-        }
-    }
+    minimal_de_draw();
     draw_native_windows();
-    if (minimal_desktop_selected) {
-        minimal_de_draw_overlays();
-    } else {
-        rsd_shell_draw_overlays();
-    }
+    minimal_de_draw_overlays();
     draw_cursor();
     for (uint32_t y = 0U; y < desktop.height; ++y) {
         for (uint32_t x = 0U; x < desktop.width; ++x) {
@@ -510,23 +344,11 @@ static enum ui_status render_desktop(void)
         }
     }
     if (state.active_panel == UI_PANEL_TERMINAL) {
-        if (minimal_desktop_selected) {
-            struct ui_rect client;
+        struct ui_rect client;
 
-            if (minimal_de_terminal_client(&client)) {
-                (void)screen_set_viewport((struct surface_rect){ client.x,
-                    client.y, client.width, client.height }, true);
-            }
-        } else {
-            const uint32_t focused = rsd_shell_focused();
-            const struct rsd_window *window = rsd_shell_window(focused);
-
-            if (window != NULL) {
-                const struct rsd_rect client = rsd_window_client(window);
-
-                (void)screen_set_viewport((struct surface_rect){ client.x,
-                    client.y, client.width, client.height }, true);
-            }
+        if (minimal_de_terminal_client(&client)) {
+            (void)screen_set_viewport((struct surface_rect){ client.x,
+                client.y, client.width, client.height }, true);
         }
     } else {
         (void)screen_set_visible(false);
@@ -589,44 +411,17 @@ enum ui_status ui_construct(bool pointer_present)
     }
     desktop = (struct rsd_surface){ desktop_pixels,
         canvas->width, canvas->height };
-    if (minimal_desktop_selected) {
-        if (!minimal_de_construct(desktop_pixels, desktop.width,
-                desktop.height)) {
-            (void)heap_free(desktop_pixels);
-            desktop_pixels = NULL;
-            desktop = (struct rsd_surface){ NULL, 0U, 0U };
-            return UI_STATUS_SURFACE_FAILURE;
-        }
-    } else {
-        if (rsd_panel_attach(&desktop) != RSD_PANEL_STATUS_OK ||
-                rsd_panel_initialize() != RSD_PANEL_STATUS_OK) {
-            (void)heap_free(desktop_pixels);
-            desktop_pixels = NULL;
-            desktop = (struct rsd_surface){ NULL, 0U, 0U };
-            return UI_STATUS_SURFACE_FAILURE;
-        }
-        rsd_shell_reset(&desktop);
-        rsd_shell_set_screen((struct rsd_rect){ 0U, 0U,
-            desktop.width, desktop.height });
-        rsd_shell_set_desktop_folder(populate_files());
-        populate_menu();
-        populate_packages();
-        populate_settings();
-        populate_taskmgr();
-        rsd_terminal_reset();
-        (void)rsd_panel_set_clock("09:41");
-        (void)rsd_panel_set_volume(65U, false);
-        (void)rsd_panel_set_desktop(0U, 2U);
-        (void)rsd_panel_push_cpu(8U);
-        (void)rsd_panel_push_cpu(14U);
-        (void)rsd_panel_push_cpu(9U);
-        (void)rsd_shell_open(RSD_APP_FILES,
-            default_window(RSD_APP_FILES));
+    if (!minimal_de_construct(desktop_pixels, desktop.width,
+            desktop.height)) {
+        (void)heap_free(desktop_pixels);
+        desktop_pixels = NULL;
+        desktop = (struct rsd_surface){ NULL, 0U, 0U };
+        return UI_STATUS_SURFACE_FAILURE;
     }
+    minimal_desktop_selected = true;
     state.initialized = true;
     state.pointer_present = pointer_present;
-    state.focus = minimal_desktop_selected ? UI_ELEMENT_NONE :
-        UI_ELEMENT_DOCK_FILES;
+    state.focus = UI_ELEMENT_NONE;
     state.hover = UI_ELEMENT_NONE;
     state.pressed = UI_ELEMENT_NONE;
     pointer = pointer_get_state();
@@ -1169,10 +964,6 @@ bool ui_self_test(void)
         self_test_failure = "RSD terminal self-test failed";
         return false;
     }
-    if (!rsd_panel_self_test()) {
-        self_test_failure = "RSD panel self-test failed";
-        return false;
-    }
     if (!rsd_shell_self_test()) {
         self_test_failure = "RSD shell self-test failed";
         return false;
@@ -1195,7 +986,7 @@ enum ui_status ui_verify_installed(struct ui_proof *proof)
     if (proof == NULL) {
         return UI_STATUS_NULL_ARGUMENT;
     }
-    if (!state.active || canvas == NULL || !rsd_panel_is_initialized() ||
+    if (!state.active || canvas == NULL ||
             ui_layout_validate(&state.layout) != UI_STATUS_OK ||
             rsd_shell_window_count() == 0U || !ui_font_is_verified()) {
         installed_failure = "RSD installed desktop state is incomplete";
