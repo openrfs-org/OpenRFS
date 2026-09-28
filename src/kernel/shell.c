@@ -2064,6 +2064,10 @@ _Noreturn void shell_run(void)
         authentication_error(account);
     }
     (void)configured;
+    console_write("\n" RSD_BANNER "\n");
+    console_write("Root Software Distribution\n");
+    console_write("Development software. Type help for commands; ");
+    console_write("starty opens the desktop.\n\n");
     console_write(SHELL_PROMPT);
 
     for (;;) {

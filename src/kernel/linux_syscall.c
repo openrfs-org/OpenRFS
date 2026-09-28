@@ -176,7 +176,7 @@ static const uint64_t cat_allowlist[LINUX_CAT_SYSCALL_ALLOWLIST_COUNT] = {
 static const struct linux_utsname_record rsd_uts_record = {
     .sysname = "Linux",
     .nodename = "rsd",
-    .release = "2.4.0-rsd",
+    .release = "2.5.0-rsd",
     .version = "RSD",
     .machine = "x86_64",
     .domainname = "(none)"
@@ -1620,9 +1620,9 @@ bool linux_syscall_uname_semantic_self_test(void)
     struct linux_syscall_frame frame;
 
     if (!uts_field_valid(rsd_uts_record.sysname, "Linux", 5U) ||
-        !uts_field_valid(rsd_uts_record.nodename, "rsd", 7U) ||
-        !uts_field_valid(rsd_uts_record.release, "2.4.0-rsd", 13U) ||
-        !uts_field_valid(rsd_uts_record.version, "RSD", 7U) ||
+        !uts_field_valid(rsd_uts_record.nodename, "rsd", 3U) ||
+        !uts_field_valid(rsd_uts_record.release, "2.5.0-rsd", 9U) ||
+        !uts_field_valid(rsd_uts_record.version, "RSD", 3U) ||
         !uts_field_valid(rsd_uts_record.machine, "x86_64", 6U) ||
         !uts_field_valid(rsd_uts_record.domainname, "(none)", 6U) ||
         sizeof(rsd_uts_record) != 390U ||

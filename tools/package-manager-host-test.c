@@ -456,7 +456,7 @@ static int test_fresh_builder(
             workspace->spec.package_count == 0U);
     }
     CHECK(package_manager_plan_install(repository, &encoded_view,
-        (const uint8_t *)"org.rsd.lib", 15U, policy, trust,
+        (const uint8_t *)"org.rsd.lib", 11U, policy, trust,
         &promotion_plan) == PACKAGE_MANAGER_STATUS_OK &&
         promotion_plan.count == 0U);
     CHECK(package_builder_build(repository, &encoded_view, &promotion_plan,
@@ -473,7 +473,7 @@ static int test_fresh_builder(
     CHECK(promoted != NULL && package_generation_encode(&workspace->spec,
             promoted, encoded_bytes, &promoted_view) == PACKAGE_STATE_STATUS_OK);
     CHECK(package_manager_plan_remove(&promoted_view,
-        (const uint8_t *)"org.rsd.app", 15U, &removal_plan) ==
+        (const uint8_t *)"org.rsd.app", 11U, &removal_plan) ==
             PACKAGE_MANAGER_STATUS_OK && removal_plan.count == 1U &&
         text_is(&removal_plan.items[0].identifier, "org.rsd.app"));
     CHECK(package_builder_build(NULL, &promoted_view, &removal_plan, NULL, 0U,
@@ -570,7 +570,7 @@ static int test_update_builder(
         repository_bytes->bytes, repository_bytes->count, policy, trust,
         &repository) == PACKAGE_MANAGER_STATUS_OK);
     CHECK(package_manager_plan_install(&repository, installed,
-        (const uint8_t *)"org.rsd.app", 15U, policy, trust, &plan) ==
+        (const uint8_t *)"org.rsd.app", 11U, policy, trust, &plan) ==
             PACKAGE_MANAGER_STATUS_OK &&
         plan.operation == PACKAGE_MANAGER_PLAN_UPDATE && plan.count == 2U &&
         text_is(&plan.items[0].identifier, "org.rsd.newlib") &&
@@ -675,7 +675,7 @@ int main(int argc, char **argv)
         search.count == 1U && search.repository_indices[0] ==
             library_entry.repository_index);
     CHECK(package_manager_plan_install(&repository, NULL,
-        (const uint8_t *)"org.rsd.app", 15U, &policy, &trust, &plan) ==
+        (const uint8_t *)"org.rsd.app", 11U, &policy, &trust, &plan) ==
             PACKAGE_MANAGER_STATUS_OK &&
         plan.operation == PACKAGE_MANAGER_PLAN_INSTALL &&
         text_is(&plan.target, "org.rsd.app") &&
@@ -751,10 +751,10 @@ int main(int argc, char **argv)
     CHECK(package_state_database_parse(installed_bytes, INSTALLED_BYTES,
         &installed) == PACKAGE_STATE_STATUS_OK);
     CHECK(package_manager_plan_install(&repository, &installed,
-        (const uint8_t *)"org.rsd.app", 15U, &policy, &trust, &plan) ==
+        (const uint8_t *)"org.rsd.app", 11U, &policy, &trust, &plan) ==
             PACKAGE_MANAGER_STATUS_ALREADY_INSTALLED);
     CHECK(package_manager_plan_remove(&installed,
-        (const uint8_t *)"org.rsd.app", 15U, &plan) ==
+        (const uint8_t *)"org.rsd.app", 11U, &plan) ==
             PACKAGE_MANAGER_STATUS_OK &&
         text_is(&plan.target, "org.rsd.app") && plan.count == 2U &&
         text_is(&plan.root, "org.rsd.app") &&
@@ -762,7 +762,7 @@ int main(int argc, char **argv)
         text_is(&plan.items[1].identifier, "org.rsd.lib"));
     CHECK(test_existing_builder(NULL, &installed, &plan, NULL, NULL, true) == 0);
     CHECK(package_manager_plan_remove(&installed,
-        (const uint8_t *)"org.rsd.lib", 15U, &plan) ==
+        (const uint8_t *)"org.rsd.lib", 11U, &plan) ==
             PACKAGE_MANAGER_STATUS_IN_USE);
     CHECK(package_manager_installed_search(&installed,
         (const uint8_t *)"APP", 3U, &search) == PACKAGE_MANAGER_STATUS_OK &&

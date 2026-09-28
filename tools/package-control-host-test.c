@@ -582,14 +582,14 @@ int main(int argc, char **argv)
     changed_repository_upload = register_upload(&changed_repository);
     CHECK(changed_repository_upload != 0U &&
         package_control_open_install(TEST_OWNER, changed_repository_upload,
-            (const uint8_t *)"org.rsd.app", 15U, &report) ==
+            (const uint8_t *)"org.rsd.app", 11U, &report) ==
                 PACKAGE_CONTROL_STATUS_MANAGER &&
         report.manager_status == PACKAGE_MANAGER_STATUS_DIGEST &&
         package_control_resources_released() && live_allocations == 0U);
 
     upload_observer = probe_controller_reentry;
     CHECK(package_control_open_install(TEST_OWNER, repository_upload,
-        (const uint8_t *)"org.rsd.app", 15U, &report) ==
+        (const uint8_t *)"org.rsd.app", 11U, &report) ==
             PACKAGE_CONTROL_STATUS_OK &&
         report.repository_version == FIXTURE_REPOSITORY_VERSION &&
         report.plan_count == 2U && report.attached_count == 0U);
@@ -598,7 +598,7 @@ int main(int argc, char **argv)
     control = report.token;
     CHECK(control != 0U &&
         package_control_open_install(TEST_OWNER, repository_upload,
-            (const uint8_t *)"org.rsd.app", 15U, &report) ==
+            (const uint8_t *)"org.rsd.app", 11U, &report) ==
                 PACKAGE_CONTROL_STATUS_NO_SLOT &&
         package_control_item(OTHER_OWNER, control, 0U, &item, &report) ==
             PACKAGE_CONTROL_STATUS_STALE && item.identifier_bytes == 0U &&
@@ -629,13 +629,13 @@ int main(int argc, char **argv)
             PACKAGE_CONTROL_STATUS_STALE);
 
     CHECK(package_control_open_install(TEST_OWNER, repository_upload,
-        (const uint8_t *)"org.rsd.app", 15U, &report) ==
+        (const uint8_t *)"org.rsd.app", 11U, &report) ==
             PACKAGE_CONTROL_STATUS_MANAGER &&
         report.manager_status == PACKAGE_MANAGER_STATUS_ALREADY_INSTALLED &&
         package_control_resources_released() && live_allocations == 0U);
 
     CHECK(package_control_open_install(TEST_OWNER, update_repository_upload,
-        (const uint8_t *)"org.rsd.app", 15U, &report) ==
+        (const uint8_t *)"org.rsd.app", 11U, &report) ==
             PACKAGE_CONTROL_STATUS_OK && report.plan_count == 2U &&
         report.generation == 1U && report.repository_version ==
             FIXTURE_UPDATE_REPOSITORY_VERSION);
@@ -662,7 +662,7 @@ int main(int argc, char **argv)
         service_repository_floor == FIXTURE_UPDATE_REPOSITORY_VERSION);
 
     CHECK(package_control_open_install(TEST_OWNER, repository_upload,
-        (const uint8_t *)"org.rsd.app", 15U, &report) ==
+        (const uint8_t *)"org.rsd.app", 11U, &report) ==
             PACKAGE_CONTROL_STATUS_MANAGER &&
         report.manager_status == PACKAGE_MANAGER_STATUS_ROLLBACK &&
         package_control_resources_released() && live_allocations == 0U);
@@ -699,7 +699,7 @@ int main(int argc, char **argv)
     free(update_library.bytes);
     free(changed_repository.bytes);
     CHECK(package_control_open_remove(TEST_OWNER,
-        (const uint8_t *)"org.rsd.app", 15U, &report) ==
+        (const uint8_t *)"org.rsd.app", 11U, &report) ==
             PACKAGE_CONTROL_STATUS_OK && report.plan_count == 2U &&
         report.attached_count == 0U && report.generation == 3U);
     control = report.token;
@@ -714,7 +714,7 @@ int main(int argc, char **argv)
             &installed) == PACKAGE_STATE_STATUS_OK &&
         installed.generation == 4U && installed.package_count == 0U);
     CHECK(package_control_open_remove(TEST_OWNER,
-        (const uint8_t *)"org.rsd.app", 15U, &report) ==
+        (const uint8_t *)"org.rsd.app", 11U, &report) ==
             PACKAGE_CONTROL_STATUS_MANAGER &&
         report.manager_status == PACKAGE_MANAGER_STATUS_NOT_FOUND &&
         package_control_resources_released() && live_allocations == 0U);

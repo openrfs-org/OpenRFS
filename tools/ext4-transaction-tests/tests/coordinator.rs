@@ -4715,7 +4715,7 @@ fn indexed_directory_compaction_preserves_names_links_and_replays_every_boundary
             }
             write_sparse_fixture(&image, &bytes).unwrap();
         }
-        let names: Vec<String> = (0..256).map(|index| format!("indexed/entry-{index:04}-rsd-fixture")).collect();
+        let names: Vec<String> = (0..256).map(|index| format!("indexed/entry-{index:04}-rsd-core-fixture")).collect();
         let record_bytes = (8 + names[0].split('/').next_back().unwrap().len() + 3) & !3;
         let capacity = (4096 - 12) / record_bytes;
         assert!(capacity + 1 < names.len());
