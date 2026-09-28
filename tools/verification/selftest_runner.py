@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 from pathlib import Path
 import sys
@@ -32,10 +33,34 @@ def main() -> int:
                                if "fast" not in target["profiles"] else []):
             assert verification.validate_manifest(verification.load_manifest(),
                                                   check_tools=True, profile="fast") == []
+        recovery_root = owned / "recovery-test"
+        stale = recovery_root / "stale"
+        stale.mkdir(parents=True)
+        (stale / "run.json").write_text(json.dumps({
+            "status": "running", "source": {"commit": "synthetic"},
+            "results": [{"name": "first", "status": "passed"}],
+            "unfinished": ["second"],
+        }))
+        with mock.patch.object(verification, "RUNS", recovery_root):
+            with (recovery_root / ".runner.lock").open("w") as lock:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                try:
+                    verification.recover_stale(stale)
+                except ValueError as error:
+                    assert "still active" in str(error)
+                else:
+                    raise AssertionError("recovery ignored an active runner lock")
+            recovered = verification.recover_stale(stale)
+            assert recovered["status"] == "interrupted"
+            assert recovered["unfinished"] == ["second"]
+            assert recovered["results"] == [{"name": "first", "status": "passed"}]
         (owned / "selftest-result.json").write_text(
             json.dumps({"expected": "failed_finding", "observed": step,
-                        "injection_removed": True}, indent=2, sort_keys=True) + "\n")
-        print("runner rejected injected assertion and ignored simulated extended-only tool gap")
+                        "injection_removed": True,
+                        "stale_run_recovered_as": recovered["status"]},
+                       indent=2, sort_keys=True) + "\n")
+        print("runner rejected injected assertion, preserved tool profiles, "
+              "and recovered a stale run without changing its results")
         return 0
     finally:
         injected.unlink(missing_ok=True)

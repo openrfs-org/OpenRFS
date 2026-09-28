@@ -21,6 +21,7 @@ make fuzz-nightly
 make fuzz-replay TARGET=package-state-parser INPUT=/absolute/input
 make verification-report
 python3 tools/verification/run.py run --profile extended --resume verification/runs/<interrupted-run>
+python3 tools/verification/run.py recover-stale --run verification/runs/<orphaned-run>
 ```
 
 `verify-extended` runs the existing `make verify` recipe unchanged on a clean
@@ -32,6 +33,11 @@ individual processes and output files, kills process groups on timeout or
 interrupt, and leaves `unfinished` target names in the receipt for an exact
 clean-source resume. A fast run may use a dirty development tree, but cannot
 be used as exact-head evidence.
+If an external terminal or host kills the runner before its signal handler can
+write the final receipt, verify that no child process remains and use
+`recover-stale` to classify that unfinished run as interrupted. Recovery holds
+the runner lock and preserves all prior results; it never marks work passed.
+Resume still requires the original clean commit and manifest digest.
 
 The three Clang 18 host fuzzers compile the *production* C translation units.
 Saved valid and invalid seeds run through standalone replay binaries before
@@ -95,18 +101,39 @@ own failing and fixed exact commits and serial digests in
 GitHub's fast and extended jobs also passed on the fixed
 `eafe65bae768b38112cd9a47d827894d7c63c477` head, including the new
 six-scenario guest matrix.
+The fast and extended jobs passed on `29d248fcc34e59669b2c3679c1f4dab06a01a210`
+in workflow run `36328965706`, including the production Multiboot2 target and
+Valgrind replay. A local exact-head nightly run on that commit completed 5,000
+package operation examples and the 600-second package parser campaign. It was
+interrupted at the user's request before the ACPI and Multiboot2 campaigns;
+`verification/runs/20260927T151559Z-392-451283/run.json` retains the partial
+results and must not be reported as a passed nightly run. The orphaned receipt
+was recovered as `interrupted` only after WSL had stopped all processes.
 
-Gitleaks 8.30.1 now gates the commits after the PR merge-base and retains a
-fully redacted finding report. A separate exploratory scan of the repository's
-older history timed out after 120 seconds. It had reached 234 commits and
-reported 27 candidate matches in fixture, tooling, and vendored files. These
-candidates still need triage; the partial run is not
-recorded as a clean full-history scan. The committed gate establishes only
-the new branch commit range.
-A current-tree exploratory scan completed and reported 16 redacted candidate
-matches: four committed TLS private-key fixtures and 12 generic-key heuristics
-in TLS code, fixture hash tooling, and vendored checksum files. These files
-have not been broadly suppressed, and the current-tree scan is not green.
+Gitleaks 8.30.1 gates commits after the PR merge-base and the current tree,
+retaining only redacted finding reports. The exploratory current-tree scan
+reported 16 matches at 12 fingerprints: four committed TLS private-key
+fixtures and generic-key heuristics in TLS code, fixture hash tooling, and
+vendored checksum files. The TLS fixture README explicitly identifies those
+keys as public, offline test material. The current-tree gate allows exactly
+those 12 fingerprints only while all nine reviewed files match exact SHA-256
+digests; changed content or an added finding fails. These exceptions must not
+be interpreted as production credentials. A separate exploratory scan of older
+history timed out after 120 seconds, after 234 commits and 27 candidate
+matches. It is not recorded as a clean full-history scan.
+
+RustSec cargo-audit 0.22.2 scanned all 21 tracked `Cargo.lock` files against
+advisory database commit `e2111519ba6d14a5da59a7b2e5c8083ae8a37c01`
+(last updated 2026-09-25 19:51:57 +02:00). The three first-party lockfiles
+have zero advisories and warnings and now form an extended fail-closed gate.
+Four vendored crates' upstream development lockfiles carry five vulnerability
+matches: `tracing-subscriber` 0.3.19 (RUSTSEC-2025-0055), `owning_ref` 0.4.1
+(RUSTSEC-2022-0040), `h2` 0.4.15 (RUSTSEC-2026-0258), and `rustls` 0.23.42
+and 0.23.43 (RUSTSEC-2026-0285). Other vendored development locks have ten
+warnings in total. Those locks describe upstream test/development graphs,
+not the three first-party locked build graphs; the active kernel Cargo graph
+does not contain those four vulnerable package names. The raw per-lock JSON
+reports are retained locally under `verification/runs/cargo-audit-locks/`.
 
 An exploratory Clang Static Analyzer pass across `src/kernel/*.c` found
 candidate stack-lifetime and uninitialized-value warnings, and one missing
@@ -119,7 +146,7 @@ target flags. Broad findings need separate ownership and precondition review.
 
 Ruff found `NoReturn` missing from the UI font asset generator. Before the fix,
 `typing.get_type_hints(fail)` raised `NameError`; after importing `NoReturn` it
-resolves. `check_python.py` includes that regression and scans 85 first-party
+resolves. `check_python.py` includes that regression and currently scans 93 first-party
 Python files with correctness-focused rules. The earlier before/after output
 is retained under `verification/runs/manual-ruff-finding/`.
 
@@ -143,30 +170,32 @@ turn installed but unused tools into green checks.
 | LLVM/Clang sanitizers | Integrated | Clang 18.1.3 ASan/UBSan/LSan on three host-built production C parsers. |
 | LLVM libFuzzer | Integrated | Clang 18.1.3, three independent in-process parser targets with replay and corpus coverage. |
 | AFL++ | Not yet evaluated | Consider process isolation for parsers with non-resettable global state; no duplicate label for the current libFuzzer targets. |
-| Rust cargo-fuzz | Not yet evaluated | Inspect production ext4/image crate callability and nightly sanitizer compatibility. |
+| Rust cargo-fuzz | Evaluated, integration pending | 0.13.2 Linux musl release and nightly 2026-09-20 are available; the allocation-free production ELF64 admission parser is the next target. |
 | Hypothesis | Integrated | 6.168.1, bounded package transaction operation sequences against production Python. |
 | QEMU | Integrated | 8.2.2 TCG normal boot and six separate production scenarios. |
 | Clang Static Analyzer | Integrated | 18.1.3, four file gate; broad candidate findings retained for triage. |
 | clang-tidy | Integrated | 18.1.3, targeted correctness checks on the same four production files. |
 | Cppcheck | Integrated | 2.13.0, independent four file warning/performance/portability gate. |
 | Rust Clippy | Integrated | Rust 1.98.1 correctness gate over all four first-party Cargo crates, with an inventory assertion. |
-| RustSec cargo-audit | Not yet evaluated | Audit tracked locks with advisory data timestamp and applicability. |
+| RustSec cargo-audit | Integrated | 0.22.2 audits the three active first-party locks in extended CI against one fetched database snapshot; all 21 tracked locks were audited manually and vendored development-graph findings are recorded above. |
 | cargo-deny | Not yet evaluated | Develop researched policy for vendored Rust dependencies. |
 | OSV-Scanner | Not yet evaluated | Determine attribution for vendored C and Rust components. |
 | Syft | Not yet evaluated | Generate exact-source/build SBOM and identify bundled components. |
 | Trivy | Not yet evaluated | Decide whether SBOM cross-check adds independent signal. |
-| Gitleaks | Integrated | 8.30.1 scans new branch commits against the merge-base, fails on findings or incomplete scans, and retains a redacted report. Full history remains a separate triage task. |
+| Gitleaks | Integrated | 8.30.1 scans new branch commits and the current tree, with exact digest guards on 12 reviewed legacy fingerprints; full history remains a separate triage task. |
 | ShellCheck | Integrated | 0.9.0, tracked first-party shell scripts and actionlint embedded shell; vendor scripts excluded. |
 | actionlint | Integrated | 1.7.12, every workflow, pinned archive digest in installer. |
 | zizmor | Integrated | 1.30.1 offline workflow audits, pinned archive digest; online audits omitted. |
 | Ruff | Integrated | 0.16.9, 85 first-party Python files and a type-hint regression. |
-| Bandit | Not yet evaluated | Assess incremental value for scripts handling paths, downloads, and proof artifacts. |
+| Bandit | Evaluated but unsuitable as a broad gate | 1.9.4 found 311 candidates in 90 first-party Python files, mostly subprocess-use heuristics. It found no high-severity issue; the only medium/high-confidence match was a fixed release URL in the digest-verifying installer. Targeted Ruff, digest gates, and review give stronger signal here. Local JSON remains under `verification/runs/bandit-baseline.json`. |
 | Semgrep Community | Not yet evaluated | Develop and test a small repo-specific ownership/evidence rule set. |
 | Valgrind | Integrated | 3.22.0 Memcheck and leak check on eight saved package-state seeds in a plain host build; no guest coverage. |
 | OSS-Fuzz | Not yet evaluated | Requires local target maturity, disclosure process, maintainers, and external enrollment decision. |
 
 Pin sources: `tools/verification/install_action_scanners.py` verifies archive
-SHA-256 for actionlint, zizmor, and Gitleaks; `tools/verification/requirements.txt` pins
+SHA-256 for actionlint, zizmor, and Gitleaks;
+`tools/verification/install_cargo_audit.py` verifies cargo-audit 0.22.2's
+release archive digest; `tools/verification/requirements.txt` pins
 Hypothesis, sortedcontainers, and Ruff; CI pins Rust/Clippy 1.98.1 for the
 extended gate, Ubuntu apt package versions, and GitHub actions by immutable
 commit. The platform's scanner inventory and exact

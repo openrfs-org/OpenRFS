@@ -109,6 +109,8 @@ jobs:
                   rustup default 1.98.1
                   python3 tools/verification/install_action_scanners.py \
                       --output "$RUNNER_TEMP/openrfs-scanners"
+                  python3 tools/verification/install_cargo_audit.py \
+                      --output "$RUNNER_TEMP/openrfs-scanners"
                   echo "$RUNNER_TEMP/openrfs-scanners" >>"$GITHUB_PATH"
                   python3 -m venv "$RUNNER_TEMP/openrfs-verify-venv"
                   "$RUNNER_TEMP/openrfs-verify-venv/bin/python" -m pip install \

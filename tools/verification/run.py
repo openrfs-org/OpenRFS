@@ -532,6 +532,33 @@ def perform(manifest: dict[str, Any], profile: str, selected: list[str],
     return 0 if report["status"] == "passed" else (130 if INTERRUPTED else 1)
 
 
+def recover_stale(run_dir: Path) -> dict[str, Any]:
+    """Classify a runner killed outside its signal handler as interrupted.
+
+    The advisory lock proves that no runner still owns this evidence directory.
+    Operators must also check for an orphaned child before invoking recovery.
+    Existing results and unfinished targets are never converted to passes.
+    """
+    run_dir = run_dir.resolve(strict=True)
+    if run_dir.parent != RUNS.resolve():
+        raise ValueError("recovery directory is not an owned verification run")
+    with (RUNS / ".runner.lock").open("w") as stream:
+        try:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise ValueError("runner is still active; recovery refused") from error
+        report = json.loads((run_dir / "run.json").read_text())
+        if report.get("status") != "running" or not report.get("unfinished"):
+            raise ValueError("only a stale unfinished running receipt can be recovered")
+        report["status"] = "interrupted"
+        report["finished_utc"] = utc()
+        report["recovery_note"] = (
+            "Runner exited without final receipt; operator verified no orphaned child"
+        )
+        atomic_json(run_dir / "run.json", report)
+        return report
+
+
 def replay_one(manifest: dict[str, Any], name: str, input_path: Path) -> int:
     matches = [item for item in manifest["targets"] if item["name"] == name]
     if len(matches) != 1 or matches[0]["replay_command"] is None:
@@ -586,6 +613,8 @@ def main() -> int:
                      required=True)
     run.add_argument("--target", action="append", default=[])
     run.add_argument("--resume", type=Path)
+    recover = sub.add_parser("recover-stale")
+    recover.add_argument("--run", type=Path, required=True)
     replay = sub.add_parser("replay")
     replay.add_argument("--target", required=True)
     replay.add_argument("--input", type=Path, required=True)
@@ -611,6 +640,11 @@ def main() -> int:
         return 0
     if args.action == "run":
         return perform(manifest, args.profile, args.target, args.resume)
+    if args.action == "recover-stale":
+        value = recover_stale(args.run)
+        print(f"recovered interrupted run on {value['source']['commit']}; "
+              f"unfinished: {', '.join(value['unfinished'])}")
+        return 0
     if args.action == "replay":
         return replay_one(manifest, args.target, args.input)
     if args.action == "report":
