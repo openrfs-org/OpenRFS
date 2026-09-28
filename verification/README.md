@@ -75,6 +75,13 @@ JSON, archive/SBOM SHA-256 values, component-type counts, and vendor-location
 count. This is a source-component inventory. It includes vendored upstream
 development lockfiles and workflow dependencies, does not identify a compiled
 image, and cannot independently assign versions to bundled C code.
+OSV-Scanner 2.6.0 independently queries known vulnerabilities for the four
+non-vendor Rust locks and pinned verification Python requirements. It requires
+package records from all five exact tracked files, retains their SHA-256
+values and the complete JSON, and fails on any match or missing scan. Unlike
+the pinned RustSec database receipt, this online OSV lookup has no immutable
+database snapshot; the receipt records its UTC query time. It does not cover
+vendored upstream development locks or built-image packages.
 
 QEMU receipts require expected exit codes, begin/pass markers, no panic, and
 scenario-specific serial checks. `qemu_matrix.py` preserves each serial log and
@@ -174,7 +181,7 @@ target flags. Broad findings need separate ownership and precondition review.
 
 Ruff found `NoReturn` missing from the UI font asset generator. Before the fix,
 `typing.get_type_hints(fail)` raised `NameError`; after importing `NoReturn` it
-resolves. `check_python.py` includes that regression and currently scans 97 first-party
+resolves. `check_python.py` includes that regression and currently scans 99 first-party
 Python files with correctness-focused rules. The earlier before/after output
 is retained under `verification/runs/manual-ruff-finding/`.
 
@@ -207,14 +214,14 @@ turn installed but unused tools into green checks.
 | Rust Clippy | Integrated | Rust 1.98.1 correctness gate over all four production first-party Cargo crates, with an inventory assertion. The auxiliary fuzz crate is compiled and executed by cargo-fuzz but is not separately Clippy-linted. |
 | RustSec cargo-audit | Integrated | 0.22.2 audits three active first-party locks plus the fuzz-only lock in extended CI against one fetched database snapshot; the original 21 tracked locks were audited manually and vendored development-graph findings are recorded above. |
 | cargo-deny | Not yet evaluated | Develop researched policy for vendored Rust dependencies. |
-| OSV-Scanner | Not yet evaluated | Determine attribution for vendored C and Rust components. |
+| OSV-Scanner | Integrated | 2.6.0 (Apache-2.0), digest-verified Linux binary. The extended gate scans four first-party/fuzz Rust locks and pinned Python requirements; online advisory data remains time-dependent. Vendor development locks and bundled C are outside this gate. |
 | Syft | Integrated | 1.52.0 (Apache-2.0), digest-verified release. The extended gate catalogs a Git archive of exact HEAD; it verifies source identity and active lockfile locations. Bundled C and compiled-image identity remain gaps. |
 | Trivy | Not yet evaluated | Decide whether SBOM cross-check adds independent signal. |
 | Gitleaks | Integrated | 8.30.1 scans new branch commits and the current tree, with exact digest guards on 12 reviewed legacy fingerprints; full history remains a separate triage task. |
 | ShellCheck | Integrated | 0.9.0, tracked first-party shell scripts and actionlint embedded shell; vendor scripts excluded. |
 | actionlint | Integrated | 1.7.12, every workflow, pinned archive digest in installer. |
 | zizmor | Integrated | 1.30.1 offline workflow audits, pinned archive digest; online audits omitted. |
-| Ruff | Integrated | 0.16.9, all tracked first-party Python files (97 at this head) and a type-hint regression. |
+| Ruff | Integrated | 0.16.9, all tracked first-party Python files (99 at this head) and a type-hint regression. |
 | Bandit | Evaluated but unsuitable as a broad gate | 1.9.4 found 311 candidates in 90 first-party Python files, mostly subprocess-use heuristics. It found no high-severity issue; the only medium/high-confidence match was a fixed release URL in the digest-verifying installer. Targeted Ruff, digest gates, and review give stronger signal here. Local JSON remains under `verification/runs/bandit-baseline.json`. |
 | Semgrep Community | Not yet evaluated | Develop and test a small repo-specific ownership/evidence rule set. |
 | Valgrind | Integrated | 3.22.0 Memcheck and leak check on eight saved package-state seeds in a plain host build; no guest coverage. |
@@ -225,7 +232,8 @@ SHA-256 for actionlint, zizmor, and Gitleaks;
 `tools/verification/install_cargo_audit.py` verifies cargo-audit 0.22.2's
 release archive digest; `tools/verification/install_cargo_fuzz.py` verifies
 cargo-fuzz 0.13.2's release digest; `tools/verification/install_syft.py`
-verifies Syft 1.52.0's release digest; `tools/verification/requirements.txt` pins
+verifies Syft 1.52.0's release digest; `tools/verification/install_osv_scanner.py`
+verifies OSV-Scanner 2.6.0's release digest; `tools/verification/requirements.txt` pins
 Hypothesis, sortedcontainers, and Ruff; CI pins Rust/Clippy 1.98.1 for the
 extended gate, Ubuntu apt package versions, and GitHub actions by immutable
 commit. The platform's scanner inventory and exact

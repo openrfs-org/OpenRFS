@@ -34,3 +34,15 @@ tag and independently generated fixture before changing an expected digest.
 The filesystem job needs its last serial and power-cut evidence inspected
 before assigning a product root cause. This branch does not alter those
 historical milestone assertions or include the active process/POSIX PR.
+
+Tag comparison on 2026-09-28 narrowed the two digest mismatches. The existing
+`v2.5.0-beta.1` tag resolves to
+`72f88e5c9daf08ac7ff8e37f67e4183a0092f7aa`. Its process and Linux uname
+workflows expect `9BDC1FE3...` and `FC92FE49...`, respectively, matching the
+generator constants above. From that tag to starting main, neither generator
+changed; the two workflow digest lines alone changed in rebrand commit
+`a27b0e158c293cba4c69f7da788c988aba2ee7b9`. This identifies the contract
+drift, but does not establish that reverting those two lines satisfies the
+current release's intended image identity. The process fixture was independently
+rebuilt; the Linux uname image still needs a rebuild using its pinned BusyBox
+input before a release assertion is edited.

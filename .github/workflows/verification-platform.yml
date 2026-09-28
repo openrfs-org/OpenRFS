@@ -121,6 +121,8 @@ jobs:
                       --output "$RUNNER_TEMP/openrfs-scanners"
                   python3 tools/verification/install_syft.py \
                       --output "$RUNNER_TEMP/openrfs-scanners"
+                  python3 tools/verification/install_osv_scanner.py \
+                      --output "$RUNNER_TEMP/openrfs-scanners"
                   echo "$RUNNER_TEMP/openrfs-scanners" >>"$GITHUB_PATH"
                   python3 -m venv "$RUNNER_TEMP/openrfs-verify-venv"
                   "$RUNNER_TEMP/openrfs-verify-venv/bin/python" -m pip install \
