@@ -3,24 +3,25 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/boot_ledger.h>
-#include <openrfs/device_substrate.h>
-#include <openrfs/dma.h>
-#include <openrfs/elf64.h>
-#include <openrfs/framebuffer.h>
-#include <openrfs/filesystem.h>
-#include <openrfs/interrupt_vector.h>
-#include <openrfs/linux_abi.h>
-#include <openrfs/linux_uname.h>
-#include <openrfs/msix.h>
-#include <openrfs/nvme.h>
-#include <openrfs/paging.h>
-#include <openrfs/pci_resource.h>
-#include <openrfs/pointer.h>
-#include <openrfs/process.h>
-#include <openrfs/ui.h>
-#include <openrfs/ui_font.h>
-#include <openrfs/xhci.h>
+#include <rsd/boot_ledger.h>
+#include <rsd/device_substrate.h>
+#include <rsd/dma.h>
+#include <rsd/elf64.h>
+#include <rsd/framebuffer.h>
+#include <rsd/filesystem.h>
+#include <rsd/interrupt_vector.h>
+#include <rsd/linux_abi.h>
+#include <rsd/linux_syscall.h>
+#include <rsd/linux_uname.h>
+#include <rsd/msix.h>
+#include <rsd/nvme.h>
+#include <rsd/paging.h>
+#include <rsd/pci_resource.h>
+#include <rsd/pointer.h>
+#include <rsd/process.h>
+#include <rsd/ui.h>
+#include <rsd/ui_font.h>
+#include <rsd/xhci.h>
 
 #define BOOT_FINGERPRINT_OFFSET UINT64_C(14695981039346656037)
 #define BOOT_FINGERPRINT_PRIME UINT64_C(1099511628211)
@@ -59,13 +60,13 @@ static const char *const stage_names[] = {
     "threading",
     "scheduler",
     "closing boot proofs",
-    "OpenRFS UI font",
+    "RSD UI font",
     "pointer availability decision",
     "pointer availability outcome",
-    "OpenRFS layout",
+    "RSD layout",
     "desktop construction",
     "desktop activation",
-    "OpenRFS installed proof",
+    "RSD installed proof",
     "PCI resource ownership",
     "dynamic interrupt vectors",
     "DMA foundation",
@@ -137,7 +138,7 @@ static const char *const capability_names[] = {
     "UI layout validated",
     "desktop shell available",
     "desktop shell activated",
-    "OpenRFS installed proof complete",
+    "RSD installed proof complete",
     "PCI resource ownership available",
     "dynamic vector foundation available",
     "DMA foundation available",
@@ -1672,7 +1673,8 @@ enum boot_ledger_status boot_ledger_verify_installed(
                  linux_receipt->proof_counters[1] != 9U ||
                  proof.file_bytes != LINUX_ABI_IMAGE_BYTES ||
                  proof.program_headers != 5U || proof.load_segments != 4U ||
-                 proof.file_clusters != 9U || proof.stdout_bytes != 8U ||
+                 proof.file_clusters != 9U ||
+                 proof.stdout_bytes != LINUX_SYSCALL_STDOUT_BYTES ||
                  proof.syscall_count != 9U ||
                  proof.distinct_syscalls != 7U || proof.exit_status != 0U ||
                  proof.robustness_tests !=
@@ -1746,7 +1748,7 @@ enum boot_ledger_status boot_ledger_verify_installed(
     }
 
     if (boot_ledger_has_capability(ledger,
-            BOOT_CAPABILITY_OPENRFS_INSTALLED_PROOF_COMPLETE)) {
+            BOOT_CAPABILITY_RSD_INSTALLED_PROOF_COMPLETE)) {
         const struct boot_stage_receipt *font = boot_ledger_receipt_for(ledger,
             BOOT_STAGE_UI_FONT);
         const struct boot_stage_receipt *pointer_decision =
@@ -1761,7 +1763,7 @@ enum boot_ledger_status boot_ledger_verify_installed(
         const struct boot_stage_receipt *activation =
             boot_ledger_receipt_for(ledger, BOOT_STAGE_DESKTOP_ACTIVATION);
         const struct boot_stage_receipt *proof = boot_ledger_receipt_for(ledger,
-            BOOT_STAGE_OPENRFS_INSTALLED_PROOF);
+            BOOT_STAGE_RSD_INSTALLED_PROOF);
         const struct boot_stage_receipt *wc = boot_ledger_receipt_for(ledger,
             BOOT_STAGE_FRAMEBUFFER_WC);
         const struct boot_stage_receipt *closing =
@@ -1778,8 +1780,8 @@ enum boot_ledger_status boot_ledger_verify_installed(
 
         if (font == NULL || font->result != BOOT_RECEIPT_RAN ||
             font->proof_counter_count != 2U ||
-            font->proof_counters[0] != openrfs_ui_font_size() ||
-            font->proof_counters[1] != openrfs_ui_font_fingerprint() ||
+            font->proof_counters[0] != rsd_ui_font_size() ||
+            font->proof_counters[1] != rsd_ui_font_fingerprint() ||
             !ui_font_is_verified() || metrics.width != 16U ||
             metrics.height != 19U || metrics.ascent != 15U ||
             metrics.descent != 4U || metrics.advance != 15U ||
@@ -1840,7 +1842,7 @@ enum boot_ledger_status boot_ledger_verify_installed(
             closing->sequence >= activation->sequence ||
             activation->sequence >= proof->sequence) {
             set_refusal(ledger, BOOT_LEDGER_STATUS_RECEIPT_MISMATCH,
-                BOOT_STAGE_OPENRFS_INSTALLED_PROOF,
+                BOOT_STAGE_RSD_INSTALLED_PROOF,
                 BOOT_CAPABILITY_DESKTOP_SHELL_ACTIVATED);
             return ledger->status;
         }
@@ -1857,8 +1859,8 @@ enum boot_ledger_status boot_ledger_verify_installed(
     } else if (boot_ledger_has_capability(ledger,
             BOOT_CAPABILITY_DESKTOP_SHELL_ACTIVATED)) {
         set_refusal(ledger, BOOT_LEDGER_STATUS_RECEIPT_MISMATCH,
-            BOOT_STAGE_OPENRFS_INSTALLED_PROOF,
-            BOOT_CAPABILITY_OPENRFS_INSTALLED_PROOF_COMPLETE);
+            BOOT_STAGE_RSD_INSTALLED_PROOF,
+            BOOT_CAPABILITY_RSD_INSTALLED_PROOF_COMPLETE);
         return ledger->status;
     }
 

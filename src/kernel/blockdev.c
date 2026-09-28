@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
  * The registry of block media published by upstream storage drivers. See
- * include/openrfs/blockdev.h.
+ * include/rsd/blockdev.h.
  */
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/blockdev.h>
+#include <rsd/blockdev.h>
 
 struct blockdev_device {
     char name[BLOCKDEV_NAME_CAPACITY];
