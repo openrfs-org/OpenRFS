@@ -1,6 +1,9 @@
 name: RSD release
 
 on:
+    pull_request:
+        paths:
+            - .github/workflows/rsd-release.yml
     push:
         tags:
             - v2.55
@@ -14,7 +17,7 @@ concurrency:
 
 jobs:
     publish:
-        name: build and publish RSD 2.55
+        name: build and verify RSD 2.55
         runs-on: ubuntu-24.04
         timeout-minutes: 120
         steps:
@@ -65,6 +68,7 @@ jobs:
                       release/RSD-v2.55-terminal.png
                   (cd release && sha256sum * > SHA256SUMS && sha256sum -c SHA256SUMS)
             - name: Publish the tagged release
+              if: github.ref == 'refs/tags/v2.55'
               env:
                   GH_TOKEN: ${{ github.token }}
               run: |
