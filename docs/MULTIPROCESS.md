@@ -2,7 +2,11 @@
 
 # Multiple processes
 
-OpenRFS can hold up to four user processes and schedule them cooperatively.
+This document describes the boot-time bounded process proof in
+`src/kernel/multiprocess.c`. Its scheduler holds up to four proof processes and
+schedules them cooperatively. The production native process scheduler has a
+different interface; see [POSIX_COMPAT.md](POSIX_COMPAT.md) for its current
+fork and wait behavior and limits.
 
 ## Process state
 

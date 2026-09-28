@@ -23,12 +23,19 @@ static struct openrfs_startup startup;
 static void (*exit_functions[OPENRFS_ATEXIT_MAX])(void);
 static size_t exit_function_count;
 static volatile uint32_t exit_lock;
+
+void openrfs_runtime_fork_prepare(void)
+{ openrfs_runtime_lock(&exit_lock); }
+void openrfs_runtime_fork_parent(void)
+{ openrfs_runtime_unlock(&exit_lock); }
 #endif
 
 void openrfs_runtime_initialize(int argc, char **argv, char **environment)
 {
     char **cursor = environment;
     const uint64_t *auxiliary;
+    uint64_t descriptor_address = 0U;
+    uint64_t descriptor_count = 0U;
 
     startup.argc = argc;
     startup.argv = argv;
@@ -44,8 +51,21 @@ void openrfs_runtime_initialize(int argc, char **argv, char **environment)
             startup.tls_size = auxiliary[1];
         } else if (auxiliary[0] == OPENRFS_AUX_TLS_ALIGN) {
             startup.tls_alignment = auxiliary[1];
+        } else if (auxiliary[0] == OPENRFS_AUX_EXEC_DESCRIPTORS) {
+            descriptor_address = auxiliary[1];
+        } else if (auxiliary[0] == OPENRFS_AUX_EXEC_DESCRIPTOR_COUNT) {
+            descriptor_count = auxiliary[1];
         }
         auxiliary += 2;
+    }
+    if (descriptor_address != 0U || descriptor_count != 0U) {
+        if (descriptor_address == 0U ||
+                descriptor_count != OPENRFS_EXEC_DESCRIPTOR_COUNT ||
+                openrfs_posix_exec_restore == NULL ||
+                openrfs_posix_exec_restore(
+                    (const struct openrfs_exec_descriptor *)(uintptr_t)
+                        descriptor_address, descriptor_count) != 0)
+            abort();
     }
 }
 
@@ -443,18 +463,25 @@ int openrfs_runtime_path(const char *input, struct openrfs_runtime_path *result)
         errno = EINVAL;
         return -1;
     }
-    result->volume = OPENRFS_VOLUME_DATA;
+    result->volume = OPENRFS_VOLUME_DATA_CWD;
     result->text = input;
     if (strncmp(input, "System:", 7U) == 0) {
         result->volume = OPENRFS_VOLUME_SYSTEM;
         result->text += 7;
     } else if (strncmp(input, "Data:", 5U) == 0) {
+        result->volume = OPENRFS_VOLUME_DATA;
         result->text += 5;
+    } else if (input[0] == '/') {
+        result->volume = OPENRFS_VOLUME_DATA;
     }
     while (*result->text == '/') {
         ++result->text;
     }
     result->length = strlen(result->text);
+    if (result->length == 0U && input[0] != '\0') {
+        result->text = ".";
+        result->length = 1U;
+    }
     if (result->length == 0U || result->length > OPENRFS_PATH_MAX) {
         errno = ENAMETOOLONG;
         return -1;
@@ -511,6 +538,13 @@ _Noreturn void exit(int status)
         exit_functions[--exit_function_count]();
     }
     (void)openrfs_syscall1(OPENRFS_SYS_EXIT, (uint64_t)(int64_t)status);
+    __builtin_unreachable();
+}
+
+_Noreturn void _Exit(int status)
+{
+    (void)openrfs_syscall1(OPENRFS_SYS_PROCESS_EXIT_IMMEDIATE,
+        (uint64_t)(int64_t)status);
     __builtin_unreachable();
 }
 

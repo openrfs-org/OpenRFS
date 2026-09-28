@@ -222,6 +222,7 @@ char *strerror(int error)
     case 0: return "success";
     case EPERM: return "operation not permitted";
     case ENOENT: return "not found";
+    case ESRCH: return "no such process";
     case EIO: return "input/output error";
     case EBADF: return "bad handle";
     case EAGAIN: return "try again";

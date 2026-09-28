@@ -1,10 +1,17 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include <pthread.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
 #include <openrfs/event.h>
 #include <openrfs/runtime.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 static _Thread_local unsigned long tls_value = 17U;
 
@@ -168,6 +175,9 @@ static int memory_and_pointer_probes(void)
     return 0;
 }
 
+static int process_cwd_probe(void);
+static int exec_probe(void);
+
 static int file_and_handle_probes(void)
 {
     static const char replacement[] = "replacement";
@@ -261,6 +271,13 @@ static int file_and_handle_probes(void)
         return 334;
     }
     if (openrfs_volume_sync(OPENRFS_VOLUME_DATA) != 0) return 335;
+    {
+        const int cwd_result = process_cwd_probe();
+        const int exec_result = cwd_result == 0 ? exec_probe() : 0;
+
+        if (cwd_result != 0) return cwd_result;
+        if (exec_result != 0) return exec_result;
+    }
     if (openrfs_path_unlink(OPENRFS_VOLUME_DATA, "TMP/B.TXT") != 0) return 336;
     if (openrfs_path_unlink(OPENRFS_VOLUME_DATA, "TMP") != 0) return 337;
     if (openrfs_volume_sync(OPENRFS_VOLUME_DATA) != 0) return 338;
@@ -296,6 +313,694 @@ static int timer_probe(void)
     return 0;
 }
 
+static int process_probe(void)
+{
+    volatile int private_value = 7;
+    char byte = 0;
+    int status = 0;
+    const int parent_pid = getpid();
+    const int descriptor = open("System:RESOURCE.TXT", O_RDONLY);
+
+    if (parent_pid <= 0 || getppid() != 0 || descriptor < 3) return 41;
+    if (fflush(NULL) != 0) return 42;
+    const int child_pid = fork();
+
+    if (child_pid < 0) return 43;
+    if (child_pid == 0) {
+        private_value = 19;
+        if (getpid() == parent_pid || getppid() != parent_pid ||
+            read(descriptor, &byte, 1U) != 1 || byte != 'O') {
+            _Exit(44);
+        }
+        _Exit(23);
+    }
+    if (child_pid == parent_pid || waitpid(child_pid, &status, 0) != child_pid ||
+        !WIFEXITED(status) || WEXITSTATUS(status) != 23 ||
+        private_value != 7 || read(descriptor, &byte, 1U) != 1 ||
+        byte != 'p' || close(descriptor) != 0 ||
+        waitpid(child_pid, NULL, WNOHANG) != -1 || errno != ECHILD) {
+        return 45;
+    }
+    const int data_descriptor = open("FOUND.TXT", O_RDONLY);
+
+    if (data_descriptor < 3) return 63;
+    const int data_child = fork();
+
+    if (data_child < 0) return 64;
+    if (data_child == 0) {
+        _Exit(read(data_descriptor, &byte, 1U) == 1 && byte == 'n' ? 0 : 65);
+    }
+    if (waitpid(data_child, &status, 0) != data_child ||
+        !WIFEXITED(status) || WEXITSTATUS(status) != 0 ||
+        read(data_descriptor, &byte, 1U) != 1 || byte != 'a' ||
+        close(data_descriptor) != 0) {
+        return 66;
+    }
+    puts("OPENRFS PROCESS fork wait private-memory shared-offset PASS");
+    return 0;
+}
+
+static int descriptor_probe(void)
+{
+    static const char message[] = "native descriptor redirection\n";
+    char received[sizeof(message)] = {0};
+    char tail = 0;
+    int status;
+    const int saved_stdout = dup(STDOUT_FILENO);
+    const int file = open("REDIR.TXT", O_CREAT | O_TRUNC | O_RDWR, 0600);
+
+    if (saved_stdout < 3 || file < 3 ||
+        fcntl(file, F_SETFD, FD_CLOEXEC) != 0 ||
+        fcntl(file, F_GETFD) != FD_CLOEXEC ||
+        dup2(file, STDOUT_FILENO) != STDOUT_FILENO ||
+        fcntl(STDOUT_FILENO, F_GETFD) != 0 ||
+        fputs(message, stdout) == EOF || fflush(stdout) != 0 ||
+        dup2(saved_stdout, STDOUT_FILENO) != STDOUT_FILENO ||
+        close(saved_stdout) != 0 ||
+        lseek(file, 0, SEEK_SET) != 0 ||
+        read(file, received, sizeof(message) - 1U) !=
+            (ssize_t)(sizeof(message) - 1U) ||
+        memcmp(received, message, sizeof(message) - 1U) != 0) {
+        return 58;
+    }
+    const int duplicate = fcntl(file, F_DUPFD_CLOFORK, 3);
+
+    if (duplicate < 3 || fcntl(duplicate, F_GETFD) != FD_CLOFORK) {
+        return 59;
+    }
+    if (fcntl(duplicate, F_SETFL, O_APPEND) != 0 ||
+        fcntl(file, F_GETFL) != (O_RDWR | O_APPEND) ||
+        lseek(file, 0, SEEK_SET) != 0 || write(duplicate, "!", 1U) != 1 ||
+        lseek(file, sizeof(message) - 1U, SEEK_SET) !=
+            (off_t)(sizeof(message) - 1U) ||
+        read(file, &tail, 1U) != 1 || tail != '!' ||
+        fcntl(file, F_SETFL, O_RDWR) != 0 ||
+        fcntl(duplicate, F_GETFL) != O_RDWR) return 83;
+    const int child = fork();
+
+    if (child < 0) return 60;
+    if (child == 0) {
+        if (fcntl(duplicate, F_GETFD) != -1 || errno != EBADF ||
+            fcntl(file, F_GETFD) != FD_CLOEXEC ||
+            fcntl(file, F_SETFL, O_APPEND) != 0) {
+            _Exit(61);
+        }
+        _Exit(0);
+    }
+    if (waitpid(child, &status, 0) != child || !WIFEXITED(status) ||
+        WEXITSTATUS(status) != 0 ||
+        fcntl(file, F_GETFL) != (O_RDWR | O_APPEND) ||
+        close(duplicate) != 0 ||
+        close(file) != 0) {
+        return 62;
+    }
+    puts("OPENRFS DESCRIPTOR dup redirection flags fork inheritance PASS");
+    return 0;
+}
+
+static int pipe_probe(void)
+{
+    static const char full[PIPE_BUF] = {0};
+    int ends[2];
+    int status;
+    char bytes[16] = {0};
+
+    if (signal(SIGPIPE, SIG_IGN) != SIG_DFL ||
+        pipe2(ends, O_NONBLOCK) != 0 ||
+        fcntl(ends[0], F_GETFL) != (O_RDONLY | O_NONBLOCK) ||
+        read(ends[0], bytes, 1U) != -1 || errno != EAGAIN ||
+        write(ends[1], "ab", 2U) != 2 ||
+        read(ends[0], bytes, 2U) != 2 ||
+        bytes[0] != 'a' || bytes[1] != 'b' ||
+        write(ends[1], full, sizeof(full)) != (ssize_t)sizeof(full) ||
+        write(ends[1], "x", 1U) != -1 || errno != EAGAIN ||
+        read(ends[0], bytes, 1U) != 1 ||
+        write(ends[1], "xy", 2U) != -1 || errno != EAGAIN ||
+        lseek(ends[0], 0, SEEK_SET) != -1 || errno != ESPIPE ||
+        close(ends[0]) != 0 ||
+        write(ends[1], "x", 1U) != -1 || errno != EPIPE ||
+        close(ends[1]) != 0 ||
+        signal(SIGPIPE, SIG_DFL) != SIG_IGN) return 67;
+
+    if (pipe2(ends, O_NONBLOCK) != 0) return 78;
+    const int copied_reader = dup(ends[0]);
+
+    if (copied_reader < 0 ||
+        fcntl(copied_reader, F_SETFL, O_RDONLY) != 0 ||
+        fcntl(ends[0], F_GETFL) != O_RDONLY ||
+        fcntl(ends[0], F_SETFL, O_NONBLOCK) != 0 ||
+        fcntl(copied_reader, F_GETFL) != (O_RDONLY | O_NONBLOCK) ||
+        close(copied_reader) != 0) return 79;
+    const int flag_child = fork();
+
+    if (flag_child < 0) return 80;
+    if (flag_child == 0) {
+        if (fcntl(ends[1], F_SETFL, O_WRONLY) != 0) _Exit(81);
+        _Exit(0);
+    }
+    if (waitpid(flag_child, &status, 0) != flag_child ||
+        !WIFEXITED(status) || WEXITSTATUS(status) != 0 ||
+        fcntl(ends[1], F_GETFL) != O_WRONLY ||
+        close(ends[0]) != 0 || close(ends[1]) != 0) return 82;
+
+    if (pipe(ends) != 0) return 68;
+    const int child = fork();
+
+    if (child < 0) return 69;
+    if (child == 0) {
+        if (close(ends[0]) != 0 || write(ends[1], "producer", 8U) != 8 ||
+            close(ends[1]) != 0) _Exit(70);
+        _Exit(0);
+    }
+    if (close(ends[1]) != 0 || read(ends[0], bytes, sizeof(bytes)) != 8 ||
+        memcmp(bytes, "producer", 8U) != 0 ||
+        waitpid(child, &status, 0) != child || !WIFEXITED(status) ||
+        WEXITSTATUS(status) != 0 || read(ends[0], bytes, 1U) != 0 ||
+        close(ends[0]) != 0) return 71;
+
+    if (fflush(stdout) != 0 || pipe(ends) != 0) return 72;
+    const int saved = dup(STDOUT_FILENO);
+
+    if (saved < 0 || dup2(ends[1], STDOUT_FILENO) != STDOUT_FILENO ||
+        write(STDOUT_FILENO, "redirect", 8U) != 8 ||
+        dup2(saved, STDOUT_FILENO) != STDOUT_FILENO ||
+        close(saved) != 0 || close(ends[1]) != 0 ||
+        read(ends[0], bytes, sizeof(bytes)) != 8 ||
+        memcmp(bytes, "redirect", 8U) != 0 ||
+        close(ends[0]) != 0) return 73;
+
+    int acknowledgement[2];
+
+    if (pipe(ends) != 0 || pipe(acknowledgement) != 0 ||
+        write(ends[1], full, sizeof(full) - 1U) !=
+            (ssize_t)(sizeof(full) - 1U)) return 74;
+    const int consumer = fork();
+
+    if (consumer < 0) return 75;
+    if (consumer == 0) {
+        if (close(ends[1]) != 0 || close(acknowledgement[1]) != 0 ||
+            read(ends[0], bytes, 1U) != 1 ||
+            read(acknowledgement[0], bytes, 1U) != 1 ||
+            close(ends[0]) != 0 || close(acknowledgement[0]) != 0) {
+            _Exit(76);
+        }
+        _Exit(0);
+    }
+    if (close(ends[0]) != 0 || close(acknowledgement[0]) != 0 ||
+        write(ends[1], "xy", 2U) != 2 ||
+        write(acknowledgement[1], "a", 1U) != 1 ||
+        close(ends[1]) != 0 || close(acknowledgement[1]) != 0 ||
+        waitpid(consumer, &status, 0) != consumer || !WIFEXITED(status) ||
+        WEXITSTATUS(status) != 0) return 77;
+    if (pipe(ends) != 0 || fdopen(ends[0], "w") != NULL || errno != EBADF)
+        return 110;
+    FILE *reader = fdopen(ends[0], "r");
+    FILE *writer = fdopen(ends[1], "w");
+
+    if (reader == NULL || writer == NULL ||
+        fputs("stdio pipe\n", writer) != 0 || fflush(writer) != 0 ||
+        fgets(bytes, sizeof(bytes), reader) == NULL ||
+        strcmp(bytes, "stdio pipe\n") != 0 ||
+        fseek(reader, 0L, SEEK_SET) != -1 || errno != ESPIPE ||
+        fclose(writer) != 0 || fgetc(reader) != EOF || !feof(reader) ||
+        fclose(reader) != 0 || fcntl(ends[0], F_GETFD) != -1 ||
+        errno != EBADF || fcntl(ends[1], F_GETFD) != -1 ||
+        errno != EBADF) return 111;
+    if (pipe2(ends, O_NONBLOCK) != 0) return 112;
+    reader = fdopen(ends[0], "r");
+    writer = fdopen(ends[1], "w");
+    if (reader == NULL || writer == NULL || fgetc(reader) != EOF ||
+        errno != EAGAIN || !ferror(reader)) return 113;
+    clearerr(reader);
+    if (fputc('x', writer) != 'x' || fflush(writer) != 0 ||
+        fgetc(reader) != 'x' || fclose(writer) != 0 ||
+        fclose(reader) != 0) return 114;
+    puts("OPENRFS PIPE fork blocking EOF EPIPE nonblock redirection fdopen PASS");
+    return 0;
+}
+
+static int pipe_signal_probe(void)
+{
+    int status;
+
+    if (signal(SIGPIPE, SIG_IGN) != SIG_DFL) return 98;
+    const int child = fork();
+
+    if (child < 0) return 99;
+    if (child == 0) {
+        int ends[2];
+
+        if (signal(SIGPIPE, SIG_DFL) != SIG_IGN || pipe(ends) != 0 ||
+            close(ends[0]) != 0) _Exit(100);
+        (void)write(ends[1], "x", 1U);
+        _Exit(101);
+    }
+    if (waitpid(child, &status, 0) != child || !WIFSIGNALED(status) ||
+        WTERMSIG(status) != SIGPIPE ||
+        signal(SIGPIPE, SIG_DFL) != SIG_IGN ||
+        signal(SIGKILL, SIG_IGN) != SIG_ERR || errno != EINVAL ||
+        signal(SIGCHLD, SIG_IGN) != SIG_DFL ||
+        signal(SIGCHLD, SIG_DFL) != SIG_IGN ||
+        signal(SIGINT, SIG_IGN) != SIG_DFL ||
+        kill(getpid(), SIGINT) != 0 ||
+        signal(SIGINT, SIG_DFL) != SIG_IGN) return 102;
+    puts("OPENRFS SIGNAL SIGPIPE default ignore and fork PASS");
+    return 0;
+}
+
+static int process_limits_probe(void)
+{
+    int children[3];
+    int status;
+
+    for (int index = 0; index < 3; ++index) {
+        children[index] = fork();
+        if (children[index] < 0) return 46;
+        if (children[index] == 0) {
+            volatile unsigned long progress = 0U;
+
+            for (unsigned long step = 0U; step < 1000000U; ++step) {
+                progress += step & 1U;
+            }
+            _Exit(progress == 500000U ? 30 + index : 49);
+        }
+    }
+    if (fork() != -1 || errno != EAGAIN) return 47;
+    for (int index = 0; index < 3; ++index) {
+        if (waitpid(children[index], &status, 0) != children[index] ||
+            !WIFEXITED(status) || WEXITSTATUS(status) != 30 + index) {
+            return 48;
+        }
+    }
+    if (wait(NULL) != -1 || errno != ECHILD) return 50;
+    puts("OPENRFS PROCESS slot exhaustion rollback and three children PASS");
+    return 0;
+}
+
+static int process_fault_probe(void)
+{
+    int status;
+    const int child = fork();
+
+    if (child < 0) return 51;
+    if (child == 0) {
+        volatile unsigned char *guard =
+            (volatile unsigned char *)(uintptr_t)UINT64_C(0x0000000600000000);
+        *guard = 1U;
+        _Exit(52);
+    }
+    if (waitpid(child, (int *)(uintptr_t)1U, 0) != -1 || errno != EFAULT ||
+        waitpid(child, &status, 0) != child ||
+        !WIFSIGNALED(status) || WTERMSIG(status) != 11) {
+        return 53;
+    }
+    puts("OPENRFS PROCESS child fault status and wait pointer refusal PASS");
+    return 0;
+}
+
+static int process_signal_probe(void)
+{
+    int status;
+    int ends[2];
+
+    if (kill(getpid(), 0) != 0 ||
+        kill(getpid(), 65) != -1 || errno != EINVAL ||
+        kill(getpid(), SIGCHLD) != -1 || errno != ENOSYS ||
+        kill(-1, SIGTERM) != -1 || errno != ENOSYS ||
+        pipe(ends) != 0) return 84;
+    const int child = fork();
+
+    if (child < 0) return 85;
+    if (child == 0) {
+        char byte;
+
+        (void)close(ends[1]);
+        (void)read(ends[0], &byte, 1U);
+        _Exit(86);
+    }
+    if (close(ends[0]) != 0 || kill(child, 0) != 0 ||
+        kill(child, SIGTERM) != 0 || close(ends[1]) != 0 ||
+        waitpid(child, &status, 0) != child || !WIFSIGNALED(status) ||
+        WTERMSIG(status) != SIGTERM ||
+        kill(child, 0) != -1 || errno != ESRCH) return 87;
+    const int killed = fork();
+
+    if (killed < 0) return 88;
+    if (killed == 0) {
+        (void)kill(getpid(), SIGKILL);
+        _Exit(89);
+    }
+    if (waitpid(killed, &status, 0) != killed ||
+        !WIFSIGNALED(status) || WTERMSIG(status) != SIGKILL) return 90;
+    const int interrupted = fork();
+
+    if (interrupted < 0) return 91;
+    if (interrupted == 0) {
+        (void)raise(SIGINT);
+        _Exit(92);
+    }
+    if (waitpid(interrupted, &status, 0) != interrupted ||
+        !WIFSIGNALED(status) || WTERMSIG(status) != SIGINT) return 93;
+    puts("OPENRFS SIGNAL SIGINT SIGTERM SIGKILL default wait PASS");
+    return 0;
+}
+
+static int process_sigchld_ignore_probe(void)
+{
+    int status;
+
+    if (signal(SIGCHLD, SIG_IGN) != SIG_DFL) return 129;
+    const int ignored = fork();
+
+    if (ignored < 0) return 130;
+    if (ignored == 0) _Exit(42);
+    if (waitpid(ignored, &status, 0) != -1 || errno != ECHILD ||
+        signal(SIGCHLD, SIG_DFL) != SIG_IGN) return 131;
+    const int collected = fork();
+
+    if (collected < 0) return 132;
+    if (collected == 0) _Exit(43);
+    if (waitpid(collected, &status, 0) != collected ||
+        !WIFEXITED(status) || WEXITSTATUS(status) != 43) return 133;
+    puts("OPENRFS SIGNAL ignored SIGCHLD auto reap and wait ECHILD PASS");
+    return 0;
+}
+
+static int process_group_probe(void)
+{
+    int ends[2];
+    int status;
+    int first;
+    int second;
+    int same_group;
+    int reaped_first;
+    int reaped_second;
+
+    if (getpgrp() != getpid() || getpgid(0) != getpid() ||
+        setpgid(0, 0) != -1 || errno != EPERM ||
+        getpgid(-1) != -1 || errno != EINVAL ||
+        pipe(ends) != 0) return 114;
+    same_group = fork();
+    if (same_group < 0) return 115;
+    if (same_group == 0) _Exit(0);
+    if (waitpid(0, &status, 0) != same_group ||
+        !WIFEXITED(status) || WEXITSTATUS(status) != 0) return 115;
+    first = fork();
+    if (first < 0) return 115;
+    if (first == 0) {
+        char byte;
+
+        (void)close(ends[1]);
+        (void)read(ends[0], &byte, 1U);
+        _Exit(116);
+    }
+    second = fork();
+    if (second < 0) return 117;
+    if (second == 0) {
+        char byte;
+
+        (void)close(ends[1]);
+        (void)read(ends[0], &byte, 1U);
+        _Exit(118);
+    }
+    if (close(ends[0]) != 0 ||
+        setpgid(first, second) != -1 || errno != EPERM ||
+        setpgid(first, first) != 0 ||
+        setpgid(second, first) != 0 ||
+        getpgid(first) != first || getpgid(second) != first ||
+        waitpid(0, &status, WNOHANG) != -1 || errno != ECHILD ||
+        kill(-first, 0) != 0 ||
+        kill(-first, SIGTERM) != 0) return 119;
+    if (close(ends[1]) != 0) return 120;
+    reaped_first = waitpid(-first, &status, 0);
+    if ((reaped_first != first && reaped_first != second) ||
+        !WIFSIGNALED(status) || WTERMSIG(status) != SIGTERM) return 121;
+    reaped_second = waitpid(-first, &status, 0);
+    if ((reaped_second != first && reaped_second != second) ||
+        reaped_second == reaped_first || !WIFSIGNALED(status) ||
+        WTERMSIG(status) != SIGTERM ||
+        waitpid(-first, &status, WNOHANG) != -1 || errno != ECHILD ||
+        kill(-first, 0) != -1 || errno != ESRCH) return 122;
+    puts("OPENRFS PROCESS group signal and wait selectors PASS");
+    return 0;
+}
+
+static int process_session_probe(void)
+{
+    int status;
+
+    if (getsid(0) != getpid() || setsid() != -1 || errno != EPERM)
+        return 134;
+    const int child = fork();
+
+    if (child < 0) return 135;
+    if (child == 0) {
+        if (getsid(0) != getppid() || setsid() != getpid() ||
+            getsid(0) != getpid() || getpgrp() != getpid() ||
+            setsid() != -1 || errno != EPERM) _Exit(136);
+        _Exit(0);
+    }
+    if (waitpid(child, &status, 0) != child ||
+        !WIFEXITED(status) || WEXITSTATUS(status) != 0 ||
+        getsid(0) != getpid()) return 137;
+    puts("OPENRFS PROCESS setsid session isolation and wait PASS");
+    return 0;
+}
+
+static int process_umask_probe(void)
+{
+    int status;
+
+    if (umask(0077U) != 0022U) return 94;
+    const int child = fork();
+
+    if (child < 0) return 95;
+    if (child == 0) {
+        _Exit(umask(0027U) == 0077U ? 0 : 96);
+    }
+    if (waitpid(child, &status, 0) != child || !WIFEXITED(status) ||
+        WEXITSTATUS(status) != 0 || umask(0022U) != 0077U) return 97;
+    puts("OPENRFS PROCESS inherited umask PASS");
+    return 0;
+}
+
+static int process_cwd_probe(void)
+{
+    char path[64];
+    struct stat metadata;
+    int status;
+    int file;
+
+    if (getcwd(path, 1U) != NULL || errno != ERANGE ||
+        getcwd(path, sizeof(path)) != path || strcmp(path, "/") != 0 ||
+        chdir("TMP") != 0 ||
+        getcwd(path, sizeof(path)) != path ||
+        strcmp(path, "/TMP") != 0) return 123;
+    file = open("B.TXT", O_RDONLY);
+    if (file < 0 || fstat(file, &metadata) != 0 ||
+        metadata.st_size != 11U || close(file) != 0 ||
+        stat("/TMP/B.TXT", &metadata) != 0 || metadata.st_size != 11U)
+        return 124;
+    if (chdir("B.TXT") != -1 || errno != ENOTDIR ||
+        chdir("System:RESOURCE.TXT") != -1 || errno != ENOTSUP ||
+        getcwd((char *)(uintptr_t)1U, sizeof(path)) != NULL ||
+        errno != EFAULT ||
+        getcwd(path, sizeof(path)) != path ||
+        strcmp(path, "/TMP") != 0) return 124;
+    const int child = fork();
+
+    if (child < 0) return 125;
+    if (child == 0) {
+        if (getcwd(path, sizeof(path)) != path ||
+            strcmp(path, "/TMP") != 0 || chdir("..") != 0 ||
+            getcwd(path, sizeof(path)) != path || strcmp(path, "/") != 0)
+            _Exit(126);
+        _Exit(0);
+    }
+    if (waitpid(child, &status, 0) != child || !WIFEXITED(status) ||
+        WEXITSTATUS(status) != 0 ||
+        getcwd(path, sizeof(path)) != path ||
+        strcmp(path, "/TMP") != 0 || chdir("..") != 0 ||
+        getcwd(path, sizeof(path)) != path || strcmp(path, "/") != 0 ||
+        chdir("../../..") != 0 ||
+        getcwd(path, sizeof(path)) != path || strcmp(path, "/") != 0)
+        return 127;
+    puts("OPENRFS PROCESS Data cwd relative paths and fork inheritance PASS");
+    return 0;
+}
+
+static void *sleeping_thread(void *unused)
+{
+    (void)unused;
+    (void)usleep(100000U);
+    return NULL;
+}
+
+static void *forking_thread(void *unused)
+{
+    pthread_t replacement;
+    int status;
+    int child;
+
+    (void)unused;
+    child = fork();
+    if (child < 0) return (void *)(uintptr_t)1U;
+    if (child == 0) {
+        if (pthread_create(&replacement, NULL, sleeping_thread, NULL) != 0 ||
+            pthread_join(replacement, NULL) != 0) _Exit(135);
+        _Exit(0);
+    }
+    if (waitpid(child, &status, 0) != child)
+        return (void *)(uintptr_t)2U;
+    if (!WIFEXITED(status)) return (void *)(uintptr_t)3U;
+    if (WEXITSTATUS(status) != 0)
+        return (void *)(uintptr_t)WEXITSTATUS(status);
+    (void)usleep(100000U);
+    return NULL;
+}
+
+static int multithread_fork_probe(void)
+{
+    pthread_t worker;
+    void *result;
+    int status;
+
+    if (pthread_create(&worker, NULL, forking_thread, NULL) != 0) return 54;
+    const int child = fork();
+
+    if (child < 0) return 55;
+    if (child == 0) {
+        pthread_t replacement;
+        void *allocation;
+
+        if (openrfs_syscall1(OPENRFS_SYS_THREAD_JOIN, worker) !=
+                -OPENRFS_ESTALE) {
+            _Exit(56);
+        }
+        if (pthread_join(worker, NULL) != EINVAL) _Exit(128);
+        allocation = malloc(32U);
+        if (allocation == NULL) _Exit(129);
+        free(allocation);
+        if (puts("OPENRFS PROCESS child SDK state PASS") == EOF)
+            _Exit(130);
+        if (pthread_create(&replacement, NULL, sleeping_thread, NULL) != 0)
+            _Exit(131);
+        if (pthread_join(replacement, NULL) != 0) _Exit(134);
+        _Exit(0);
+    }
+    if (waitpid(child, &status, 0) != child) return 57;
+    if (!WIFEXITED(status)) return 132;
+    if (WEXITSTATUS(status) != 0) return WEXITSTATUS(status);
+    if (pthread_join(worker, &result) != 0) return 133;
+    if (result != NULL) return (int)(uintptr_t)result;
+    puts("OPENRFS PROCESS fork retains only calling thread PASS");
+    return 0;
+}
+
+static int thread_reuse_probe(void)
+{
+    pthread_t previous = 0U;
+    openrfs_handle_t retained[3];
+
+    for (size_t index = 0U; index < 8U; ++index) {
+        pthread_t worker;
+
+        if (pthread_create(&worker, NULL, sleeping_thread, NULL) != 0)
+            return 138;
+        if (worker == previous || pthread_join(worker, NULL) != 0)
+            return 139;
+        if (openrfs_syscall1(OPENRFS_SYS_THREAD_JOIN, worker) !=
+                -OPENRFS_ESTALE)
+            return 140;
+        previous = worker;
+    }
+    for (size_t index = 0U; index < 3U; ++index) {
+        pthread_t worker;
+        long duplicate;
+
+        if (pthread_create(&worker, NULL, sleeping_thread, NULL) != 0)
+            return 141;
+        duplicate = openrfs_handle_duplicate(worker);
+        if (duplicate < 0 || pthread_join(worker, NULL) != 0)
+            return 142;
+        retained[index] = (openrfs_handle_t)duplicate;
+    }
+    {
+        pthread_t worker;
+
+        if (pthread_create(&worker, NULL, sleeping_thread, NULL) != ENOMEM)
+            return 143;
+        if (openrfs_handle_close(retained[0]) < 0 ||
+            pthread_create(&worker, NULL, sleeping_thread, NULL) != 0 ||
+            pthread_join(worker, NULL) != 0)
+            return 144;
+    }
+    if (openrfs_handle_close(retained[1]) < 0 ||
+        openrfs_handle_close(retained[2]) < 0)
+        return 145;
+    puts("OPENRFS THREAD joined slot and stack reuse PASS");
+    return 0;
+}
+
+static int exec_probe(void)
+{
+    int status;
+    const int child = fork();
+
+    if (child < 0) return 101;
+    if (child == 0) {
+        char kept_text[16];
+        char closed_text[16];
+        char pid_text[16];
+        char *arguments[] = {"exec-child", kept_text, closed_text,
+            pid_text, NULL};
+        char *environment[] = {"OPENRFS_EXEC=validated", "", NULL};
+        char *too_many[OPENRFS_EXEC_VECTOR_MAX + 2U];
+        struct openrfs_exec_request bad_request = {
+            sizeof(bad_request), OPENRFS_ABI_VERSION, 1U,
+            (uint64_t)(uintptr_t)arguments,
+            (uint64_t)(uintptr_t)environment, 0U,
+            OPENRFS_EXEC_DESCRIPTOR_COUNT, 0U
+        };
+        const int kept = open("System:RESOURCE.TXT", O_RDONLY);
+        const int closed = open("System:RESOURCE.TXT", O_RDONLY | O_CLOEXEC);
+
+        if (chdir("/TMP") != 0 || setpgid(0, 0) != 0 ||
+            getpgrp() != getpid() ||
+            kept < 3 || closed < 3 ||
+            snprintf(kept_text, sizeof(kept_text), "%d", kept) <= 0 ||
+            snprintf(closed_text, sizeof(closed_text), "%d", closed) <= 0 ||
+            snprintf(pid_text, sizeof(pid_text), "%d", getpid()) <= 0)
+            _Exit(102);
+        if (execve("MISSING.MAN", arguments, environment) != -1 ||
+            errno != ENOENT || fcntl(kept, F_GETFD) != 0 ||
+            fcntl(closed, F_GETFD) != FD_CLOEXEC)
+            _Exit(103);
+        for (size_t index = 0U; index <= OPENRFS_EXEC_VECTOR_MAX;
+             ++index) too_many[index] = "x";
+        too_many[OPENRFS_EXEC_VECTOR_MAX + 1U] = NULL;
+        if (execve("NATIVET.MAN", too_many, environment) != -1 ||
+            errno != E2BIG || fcntl(kept, F_GETFD) != 0)
+            _Exit(104);
+        if (openrfs_syscall1(OPENRFS_SYS_PROCESS_EXEC,
+                (uint64_t)(uintptr_t)&bad_request) != -OPENRFS_EFAULT ||
+            fcntl(kept, F_GETFD) != 0)
+            _Exit(109);
+        if (execve("NATIVET.MAN", arguments, environment) != -1)
+            _Exit(105);
+        printf("OPENRFS PROCESS exec error=%d\n", errno);
+        _Exit(106);
+    }
+    if (waitpid(child, &status, 0) != child || !WIFEXITED(status) ||
+        WEXITSTATUS(status) != 0) {
+        printf("OPENRFS PROCESS exec child status=%d\n", status);
+        return 107;
+    }
+    puts("OPENRFS PROCESS fork exec same-pid argv env rollback cloexec PASS");
+    puts("OPENRFS PROCESS cwd preserved across exec PASS");
+    return 0;
+}
+
 int main(int argc, char **argv, char **environment)
 {
     static const char expected_resource[] = "OpenRFS immutable resource\n";
@@ -308,6 +1013,28 @@ int main(int argc, char **argv, char **environment)
     char resource[sizeof(expected_resource)];
     long resource_handle;
     int probe;
+
+    if (argc == 4 && argv != NULL && argv[0] != NULL &&
+        strcmp(argv[0], "exec-child") == 0) {
+        char first_byte = 0;
+        char cwd[64];
+        const int kept = atoi(argv[1]);
+        const int closed = atoi(argv[2]);
+
+        if (environment == NULL || environment[0] == NULL ||
+            environment[1] == NULL || environment[2] != NULL ||
+            strcmp(environment[0], "OPENRFS_EXEC=validated") != 0 ||
+            strcmp(environment[1], "") != 0 ||
+            getpid() != atoi(argv[3]) || getpgrp() != getpid() ||
+            getcwd(cwd, sizeof(cwd)) != cwd ||
+            strcmp(cwd, "/TMP") != 0 ||
+            fcntl(kept, F_GETFD) != 0 ||
+            read(kept, &first_byte, 1U) != 1 || first_byte != 'O' ||
+            fcntl(closed, F_GETFD) != -1 || errno != EBADF ||
+            close(kept) != 0) return 108;
+        puts("OPENRFS PROCESS exec replacement image observed PASS");
+        return 0;
+    }
 
     if (openrfs_syscall0(OPENRFS_SYS_ABI_VERSION) != OPENRFS_ABI_VERSION ||
         argc != 3 || argv == NULL || environment == NULL ||
@@ -380,6 +1107,32 @@ int main(int argc, char **argv, char **environment)
         return 40;
     }
     puts("OPENRFS THREAD second-joined");
+    probe = process_probe();
+    if (probe != 0) return probe;
+    probe = descriptor_probe();
+    if (probe != 0) return probe;
+    probe = pipe_probe();
+    if (probe != 0) return probe;
+    probe = pipe_signal_probe();
+    if (probe != 0) return probe;
+    probe = process_limits_probe();
+    if (probe != 0) return probe;
+    probe = process_fault_probe();
+    if (probe != 0) return probe;
+    probe = process_signal_probe();
+    if (probe != 0) return probe;
+    probe = process_sigchld_ignore_probe();
+    if (probe != 0) return probe;
+    probe = process_group_probe();
+    if (probe != 0) return probe;
+    probe = process_session_probe();
+    if (probe != 0) return probe;
+    probe = process_umask_probe();
+    if (probe != 0) return probe;
+    probe = multithread_fork_probe();
+    if (probe != 0) return probe;
+    probe = thread_reuse_probe();
+    if (probe != 0) return probe;
     printf("OPENRFS REFUSAL capability EACCES stale ESTALE pointer EFAULT "
         "traversal EINVAL exhaustion ENOMEM\n");
     printf("OPENRFS FILE create seek truncate rename replace sync unlink PASS\n");

@@ -32,6 +32,7 @@ int stat(const char *path, struct stat *result);
 int lstat(const char *path, struct stat *result);
 int fstat(int number, struct stat *result);
 int mkdir(const char *path, mode_t mode);
+mode_t umask(mode_t mask);
 int chmod(const char *path, mode_t mode);
 int ftruncate(int descriptor, int64_t length);
 #endif

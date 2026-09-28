@@ -1,0 +1,14 @@
+{
+  "name": "Native exec source",
+  "identifier": "EXECAPP",
+  "executable": "EXECMAIN.APP",
+  "abi_version": 1,
+  "resource_directory": "EXECRES",
+  "data_namespace": "EXECAPP",
+  "memory_limit": 33554432,
+  "max_handles": 16,
+  "max_threads": 1,
+  "capabilities": ["console", "system-read"],
+  "arguments": [],
+  "resources": [{"path": "RESOURCE.TXT", "source": "RESOURCE.TXT"}]
+}

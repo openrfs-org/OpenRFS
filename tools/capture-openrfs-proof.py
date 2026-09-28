@@ -258,10 +258,13 @@ def upload_encrypted_data_check(qmp, serial):
     while time.monotonic() < deadline:
         output = serial.read_bytes()[start:]
         if b"openrfs$ " in output:
-            if (b"OPENRFS NATIVE DATA PASS" not in output or
+            if (b"OPENRFS NATIVE DATA INHERITED PASS" not in output or
+                    b"OPENRFS NATIVE DATA PASS" not in output or
                     b"OPENRFS UPLOAD PASS" not in output or
                     b"released=yes" not in output):
                 raise RuntimeError(f"package upload probe failed: {output!r}")
+            if b"OPENRFS NATIVE UMASK file 0600 PASS" not in output:
+                raise RuntimeError(f"umask file mode probe failed: {output!r}")
             return
         time.sleep(0.05)
     raise RuntimeError("package upload probe did not return to the shell")

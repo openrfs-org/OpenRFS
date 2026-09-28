@@ -79,6 +79,23 @@ class Fat32HostTests(unittest.TestCase):
                 ("SAME.TXT", b"one"), ("same.txt", b"two")
             ])
 
+    def test_directory_can_fill_its_chain_without_a_free_entry(self) -> None:
+        geometry = fat32.parse_geometry(self.image)
+        changed = bytearray(self.image)
+        root = geometry.sector_offset(
+            geometry.cluster_sector(geometry.root_cluster)
+        )
+        slots = (geometry.bytes_per_sector * geometry.sectors_per_cluster) // 32
+        for index in range(1, slots):
+            name = f"F{index:07d}".encode("ascii") + b"   "
+            changed[root + index * 32:root + (index + 1) * 32] = (
+                fat32._directory_entry(name, 0x20, 0, 0)
+            )
+        report = fat32.inspect_image(bytes(changed))
+        self.assertEqual(len(report["files"]), slots - 1)
+        self.assertEqual(report["cycles"], 0)
+        self.assertEqual(report["cross_links"], 0)
+
     def test_host_staging_populates_application_namespaces(self) -> None:
         files = [
             ("LUA/SCRIPT.LUA", b"print('OpenRFS')\n"),

@@ -122,6 +122,7 @@ static enum openrfsfs_status map_aead(enum data_aead_status status)
     if (status == DATA_AEAD_OK) return OPENRFSFS_STATUS_OK;
     if (status == DATA_AEAD_NOT_FOUND) return OPENRFSFS_STATUS_NOT_FOUND;
     if (status == DATA_AEAD_RANGE) return OPENRFSFS_STATUS_RANGE;
+    if (status == DATA_AEAD_FULL) return OPENRFSFS_STATUS_FULL;
     if (status == DATA_AEAD_CONFLICT) return OPENRFSFS_STATUS_BUSY;
     if (status == DATA_AEAD_ARGUMENT)
         return OPENRFSFS_STATUS_INVALID_ARGUMENT;

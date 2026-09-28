@@ -34,6 +34,14 @@ static unsigned held_unlink_calls;
 static bool consume_last_vnode;
 static unsigned unmount_calls;
 static unsigned mount_calls;
+static bool data_session_is_active = true;
+static uint64_t data_session_epoch_value;
+
+static bool test_data_session_active(void) { return data_session_is_active; }
+static uint64_t test_data_session_generation(void)
+{
+    return data_session_epoch_value;
+}
 
 static enum openrfsfs_status reentrant_mount(enum openrfsfs_volume volume)
 {
@@ -523,9 +531,37 @@ int main(void)
     assert(open_file_state(opened, &file) == OPENRFSFS_STATUS_OK);
     assert(vnodes[file->vnode_index].stat.object_id == 500U);
     assert(vnodes[old_vnode].stat.object_id == 101U && vnodes[old_vnode].references == 1U);
+    assert(openrfsfs_retain(opened) == OPENRFSFS_STATUS_OK &&
+        file->references == 2U);
+    bool append_status = true;
+    assert(openrfsfs_get_append(opened, &append_status) == OPENRFSFS_STATUS_OK &&
+        !append_status);
+    assert(openrfsfs_set_append(opened, true) == OPENRFSFS_STATUS_OK &&
+        openrfsfs_get_append(opened, &append_status) == OPENRFSFS_STATUS_OK &&
+        append_status);
+    assert(openrfsfs_close(opened) == OPENRFSFS_STATUS_OK &&
+        live_backend_handles == 1U && file->references == 1U);
+    openrfsfs_data_login_lock_enable(test_data_session_active,
+        test_data_session_generation);
+    data_session_is_active = false;
+    ++data_session_epoch_value;
+    assert(openrfsfs_retain(opened) == OPENRFSFS_STATUS_STALE_HANDLE &&
+        file->references == 1U);
+    assert(openrfsfs_get_append(opened, &append_status) ==
+        OPENRFSFS_STATUS_STALE_HANDLE);
+    assert(openrfsfs_set_append(opened, false) ==
+        OPENRFSFS_STATUS_STALE_HANDLE);
+    stale_io_counts(opened);
+    data_session_is_active = true;
+    stale_io_counts(opened);
+    assert(openrfsfs_get_append(opened, &append_status) ==
+        OPENRFSFS_STATUS_STALE_HANDLE);
+    assert(openrfsfs_set_append(opened, false) ==
+        OPENRFSFS_STATUS_STALE_HANDLE);
     closing_frontend = opened;
     assert(openrfsfs_close(opened) == OPENRFSFS_STATUS_OK && live_backend_handles == 0U);
     assert(closing_frontend == 0U);
+    assert(openrfsfs_retain(opened) == OPENRFSFS_STATUS_STALE_HANDLE);
     /* Exhaustion after backend open must release that handle, preserving the
      * already-held old inode and every unrelated vnode reference. */
     size_t retained[VFS_MAX_VNODES - 1U];

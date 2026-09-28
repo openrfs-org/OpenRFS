@@ -14,6 +14,7 @@ void *realloc(void *pointer, size_t size);
 void free(void *pointer);
 _Noreturn void abort(void);
 _Noreturn void exit(int status);
+_Noreturn void _Exit(int status);
 int atexit(void (*function)(void));
 char *getenv(const char *name);
 long strtol(const char *text, char **end, int base);

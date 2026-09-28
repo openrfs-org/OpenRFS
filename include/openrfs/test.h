@@ -122,6 +122,7 @@ enum kernel_test_scenario {
     KERNEL_TEST_NATIVE_DIGEST_REFUSAL,
     KERNEL_TEST_NATIVE_ABI_REFUSAL,
     KERNEL_TEST_NATIVE_RELAUNCH,
+    KERNEL_TEST_NATIVE_EXEC,
     KERNEL_TEST_NATIVE_AUDIO,
     KERNEL_TEST_NATIVE_SDL,
     KERNEL_TEST_NATIVE_DYNAMIC,
@@ -130,7 +131,7 @@ enum kernel_test_scenario {
     KERNEL_TEST_EXT4_RECOVERY,
     KERNEL_TEST_ACCOUNT_KDF,
     /*
-     * The upstream driver suite. It is deliberately outside the 116-scenario
+     * The upstream driver suite. It is deliberately outside the 117-scenario
      * matrix: tools/run_driver_tests.py drives it with its own device
      * profiles, one QEMU boot per openrfs.drvtest= plan.
      */
@@ -205,6 +206,7 @@ _Noreturn void kernel_test_complete_native_rust(void);
 _Noreturn void kernel_test_complete_native_crash(void);
 _Noreturn void kernel_test_complete_native_admission_refusal(void);
 _Noreturn void kernel_test_complete_native_relaunch(void);
+_Noreturn void kernel_test_complete_native_exec(void);
 _Noreturn void kernel_test_complete_native_audio(void);
 _Noreturn void kernel_test_complete_native_sdl(void);
 _Noreturn void kernel_test_complete_native_dynamic(void);

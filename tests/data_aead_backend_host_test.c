@@ -34,6 +34,8 @@ static struct fake_file migration_baseline[FAKE_FILES];
 static struct fake_handle handles[FAKE_HANDLES];
 static size_t write_budget;
 static bool fail_rename_after;
+static bool fail_segment_create_full;
+static bool fail_parent_mkdir_full;
 static uint8_t nonce_seed;
 static unsigned fault_step;
 static unsigned step_count;
@@ -154,6 +156,7 @@ static enum openrfsfs_status fake_mkdir(enum openrfsfs_volume volume,
     const char *path)
 {
     if (volume != OPENRFSFS_VOLUME_DATA) return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    if (fail_parent_mkdir_full) return OPENRFSFS_STATUS_DIRECTORY_FULL;
     if (create_file(path, true) == NULL) return OPENRFSFS_STATUS_EXISTS;
     return cut_after_change() ? OPENRFSFS_STATUS_IO : OPENRFSFS_STATUS_OK;
 }
@@ -163,6 +166,8 @@ static enum openrfsfs_status fake_create(enum openrfsfs_volume volume,
 {
     (void)mode;
     if (volume != OPENRFSFS_VOLUME_DATA) return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    if (fail_segment_create_full && strstr(path, "SEG.DAT") != NULL)
+        return OPENRFSFS_STATUS_DIRECTORY_FULL;
     if (create_file(path, false) == NULL) return OPENRFSFS_STATUS_EXISTS;
     return cut_after_change() ? OPENRFSFS_STATUS_IO : OPENRFSFS_STATUS_OK;
 }
@@ -396,7 +401,7 @@ static int run_case(bool ext4_style)
     if (!check(data_aead_backend_publish_manifest(&backend,
             OPENRFSFS_VOLUME_DATA, key, "DOC/NOTE.TXT", &candidate,
             workspace, sizeof(workspace), &published, &slot) ==
-            DATA_AEAD_IO && no_open_handles(),
+            DATA_AEAD_FULL && no_open_handles(),
             "disk full during temp write refuses")) return 1;
     write_budget = SIZE_MAX;
     if (!check(data_aead_backend_publish_manifest(&backend,
@@ -444,7 +449,7 @@ static int run_case(bool ext4_style)
     write_budget = 100U;
     if (!check(data_aead_backend_migrate_plain(&backend,
             OPENRFSFS_VOLUME_DATA, key, "DOC/LEGACY.TXT", workspace,
-            sizeof(workspace), &loaded) == DATA_AEAD_IO &&
+            sizeof(workspace), &loaded) == DATA_AEAD_FULL &&
             find_file("DOC/LEGACY.TXT") != NULL && no_open_handles(),
             "disk full retains plaintext source")) return 1;
     write_budget = SIZE_MAX;
@@ -1004,7 +1009,7 @@ static int run_rewrite_case(bool ext4_style)
     if (!check(data_aead_backend_rewrite_file(&backend,
             OPENRFSFS_VOLUME_DATA, key, "FIL/REWRITE", 3U, 6U,
             0U, (const uint8_t *)"A", 1U, workspace,
-            sizeof(workspace), &published) == DATA_AEAD_IO &&
+            sizeof(workspace), &published) == DATA_AEAD_FULL &&
             published.generation == 0U && no_open_handles(),
             "full disk refuses rewrite before publication")) return 1;
     write_budget = SIZE_MAX;
@@ -1325,6 +1330,8 @@ static int run_encrypted_vfs_case(bool ext4_style)
     memset(handles, 0, sizeof(handles));
     write_budget = SIZE_MAX;
     fail_rename_after = false;
+    fail_segment_create_full = false;
+    fail_parent_mkdir_full = false;
     nonce_seed = 1U;
     fault_step = 0U;
     step_count = 0U;
@@ -1372,6 +1379,14 @@ static int run_encrypted_vfs_case(bool ext4_style)
             data_encrypted_backend_activate(key) == OPENRFSFS_STATUS_OK,
             "encrypted VFS authenticates namespace key")) return 1;
     openrfsfs_handle first = 0U;
+    fail_parent_mkdir_full = true;
+    if (!check(encrypted->open_options(OPENRFSFS_VOLUME_DATA,
+            "private.txt", OPENRFSFS_ACCESS_READ_WRITE,
+            OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE,
+            0600U, &first, &stat) == OPENRFSFS_STATUS_FULL &&
+            first == 0U,
+            "manifest directory capacity reports full")) return 1;
+    fail_parent_mkdir_full = false;
     if (!check(encrypted->open_options(OPENRFSFS_VOLUME_DATA,
             "private.txt", OPENRFSFS_ACCESS_READ_WRITE,
             OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE,
@@ -1392,6 +1407,30 @@ static int run_encrypted_vfs_case(bool ext4_style)
                 "private.txt", &stat) == OPENRFSFS_STATUS_OK &&
             stat.size == 6U,
             "encrypted VFS reads authenticated plaintext")) return 1;
+    fail_parent_mkdir_full = true;
+    written = 9U;
+    if (!check(encrypted->append(first, (const uint8_t *)"!", 1U,
+            &written) == OPENRFSFS_STATUS_FULL && written == 0U,
+            "directory capacity during shadow preparation reports full"))
+        return 1;
+    fail_parent_mkdir_full = false;
+    fail_segment_create_full = true;
+    written = 9U;
+    if (!check(encrypted->append(first, (const uint8_t *)"!", 1U,
+            &written) == OPENRFSFS_STATUS_FULL && written == 0U,
+            "segment creation capacity reports full")) return 1;
+    fail_segment_create_full = false;
+    write_budget = 0U;
+    written = 9U;
+    if (!check(encrypted->append(first, (const uint8_t *)"!", 1U,
+            &written) == OPENRFSFS_STATUS_FULL && written == 0U,
+            "segment write exhaustion reports full")) return 1;
+    write_budget = SIZE_MAX;
+    if (!check(encrypted->pread(first, readback, 6U, 0U, &got) ==
+            OPENRFSFS_STATUS_OK && got == 6U &&
+            memcmp(readback, "secret", 6U) == 0,
+            "capacity refusal keeps the authenticated session usable"))
+        return 1;
     bool raw_plain = false;
     for (unsigned at = 0U; at < FAKE_FILES; ++at)
         if (files[at].present &&

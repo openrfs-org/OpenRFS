@@ -38,6 +38,10 @@
 #define NATIVE_MAIN_STACK_END \
     (NATIVE_MAIN_STACK_BASE + NATIVE_STACK_PAGES * PAGING_PAGE_SIZE)
 #define NATIVE_COPY_CHUNK 4096U
+#define NATIVE_PIPE_LIMIT 16U
+#define NATIVE_PIPE_CAPACITY 4096U
+#define NATIVE_PIPE_READER UINT64_C(1)
+#define NATIVE_PIPE_WRITER UINT64_C(2)
 #define NATIVE_AUX_NULL UINT64_C(0)
 #define NATIVE_AUX_PAGESZ UINT64_C(6)
 #define NATIVE_AUX_ENTRY UINT64_C(9)
@@ -67,6 +71,10 @@
 
 _Static_assert(OPENRFS_NETWORK_IO_MAX_BYTES <= NATIVE_COPY_CHUNK,
     "native network transfer bound exceeds the syscall copy buffer");
+_Static_assert(NATIVE_PIPE_CAPACITY <= NATIVE_COPY_CHUNK,
+    "native pipe buffer exceeds the syscall copy buffer");
+_Static_assert(PAGING_PAGE_SIZE <= NATIVE_COPY_CHUNK,
+    "native image preparation exceeds the transfer buffer");
 _Static_assert(
     (NATIVE_SHARED_CODE_CACHE_CAPACITY &
         (NATIVE_SHARED_CODE_CACHE_CAPACITY - 1U)) == 0U,
@@ -111,6 +119,8 @@ enum native_thread_state {
     NATIVE_THREAD_JOIN_WAIT,
     NATIVE_THREAD_FUTEX_WAIT,
     NATIVE_THREAD_CONSOLE_WAIT,
+    NATIVE_THREAD_CHILD_WAIT,
+    NATIVE_THREAD_PIPE_WAIT,
     NATIVE_THREAD_HANDLE_WAIT,
     NATIVE_THREAD_AUDIO_DRAIN_WAIT,
     NATIVE_THREAD_EXITED,
@@ -140,6 +150,11 @@ struct native_thread {
     uint64_t console_address;
     uint64_t wait_items_address;
     uint64_t audio_token;
+    uint64_t wait_status_address;
+    openrfs_handle_t pipe_wait_handle;
+    int32_t wait_pid;
+    uint64_t wait_group;
+    uint32_t pipe_wait_length;
     size_t console_length;
     size_t wait_item_count;
     struct openrfs_wait_item wait_items[OPENRFS_WAIT_MAX];
@@ -184,9 +199,13 @@ struct native_process {
     struct native_directory_resource directories[NATIVE_HANDLE_LIMIT];
     struct native_window_state window;
     uint8_t console_input[NATIVE_CONSOLE_INPUT_CAPACITY];
+    char cwd[OPENRFSFS_MAX_PATH];
     uint64_t executable_frames[PAGING_PROCESS_ALIAS_MAX_PAGES];
     uint8_t transfer[NATIVE_COPY_CHUNK];
     uint64_t generation;
+    uint64_t parent_generation;
+    uint64_t session_id;
+    uint64_t process_group;
     size_t page_count;
     size_t executable_count;
     size_t thread_count;
@@ -205,10 +224,27 @@ struct native_process {
     uint64_t dynamic_fini_entry;
     uint32_t context_transition_samples;
     int32_t exit_status;
+    uint32_t ignored_signals;
+    uint16_t file_creation_mask;
+    uint8_t termination_signal;
     bool active;
+    bool zombie;
     bool exiting;
     bool faulted;
     bool dynamic_fini_started;
+    bool has_executed;
+};
+
+struct native_exec_payload {
+    char manifest_path[OPENRFS_EXEC_PATH_MAX + 1U];
+    char strings[OPENRFS_EXEC_STRING_BYTES];
+    uint16_t argument_offsets[OPENRFS_EXEC_VECTOR_MAX];
+    uint16_t environment_offsets[OPENRFS_EXEC_VECTOR_MAX];
+    struct openrfs_exec_descriptor descriptors[
+        OPENRFS_EXEC_DESCRIPTOR_COUNT];
+    size_t string_bytes;
+    size_t argument_count;
+    size_t environment_count;
 };
 
 struct native_dynamic_load {
@@ -240,7 +276,24 @@ struct native_shared_code_page {
     uint8_t state;
 };
 
+struct native_pipe {
+    uint8_t bytes[NATIVE_PIPE_CAPACITY];
+    uint64_t id;
+    size_t head;
+    size_t count;
+    uint16_t readers;
+    uint16_t writers;
+    uint32_t reader_flags;
+    uint32_t writer_flags;
+};
+
 static struct native_process processes[NATIVE_PROCESS_LIMIT];
+static struct native_process exec_staging;
+static struct native_process exec_retired;
+static struct native_exec_payload exec_payload;
+static bool safe_relative_path(const char *path, size_t length);
+static struct native_pipe pipes[NATIVE_PIPE_LIMIT];
+static uint64_t next_pipe_id = UINT64_C(1);
 static struct native_shared_code_page
     shared_code_cache[NATIVE_SHARED_CODE_CACHE_CAPACITY];
 static size_t shared_code_live_pages;
@@ -293,6 +346,75 @@ static void copy_bytes(void *destination, const void *source, size_t length)
     }
 }
 
+static struct native_pipe *pipe_by_id(uint64_t id)
+{
+    if (id == 0U) return NULL;
+    for (size_t index = 0U; index < NATIVE_PIPE_LIMIT; ++index) {
+        if (pipes[index].id == id) return &pipes[index];
+    }
+    return NULL;
+}
+
+static struct native_pipe *pipe_allocate(void)
+{
+    if (next_pipe_id == 0U) return NULL;
+    for (size_t index = 0U; index < NATIVE_PIPE_LIMIT; ++index) {
+        if (pipes[index].id == 0U) {
+            zero_bytes(&pipes[index], sizeof(pipes[index]));
+            pipes[index].id = next_pipe_id++;
+            return &pipes[index];
+        }
+    }
+    return NULL;
+}
+
+static bool pipe_retain(uint64_t id, uint64_t endpoint)
+{
+    struct native_pipe *pipe = pipe_by_id(id);
+    uint16_t *references;
+
+    if (pipe == NULL || (endpoint != NATIVE_PIPE_READER &&
+            endpoint != NATIVE_PIPE_WRITER)) return false;
+    references = endpoint == NATIVE_PIPE_READER ? &pipe->readers :
+        &pipe->writers;
+    if (*references == UINT16_MAX) return false;
+    ++*references;
+    return true;
+}
+
+static bool pipe_release(uint64_t id, uint64_t endpoint)
+{
+    struct native_pipe *pipe = pipe_by_id(id);
+    uint16_t *references;
+
+    if (pipe == NULL || (endpoint != NATIVE_PIPE_READER &&
+            endpoint != NATIVE_PIPE_WRITER)) return false;
+    references = endpoint == NATIVE_PIPE_READER ? &pipe->readers :
+        &pipe->writers;
+    if (*references == 0U) return false;
+    --*references;
+    if (pipe->readers == 0U && pipe->writers == 0U) {
+        zero_bytes(pipe, sizeof(*pipe));
+    }
+    return true;
+}
+
+static bool pipe_transfer_ready(const struct native_pipe *pipe,
+    uint64_t endpoint, size_t length)
+{
+    if (pipe == NULL) return false;
+    if (endpoint == NATIVE_PIPE_READER) {
+        return pipe->count != 0U || pipe->writers == 0U;
+    }
+    if (endpoint == NATIVE_PIPE_WRITER) {
+        const size_t needed = length <= NATIVE_PIPE_CAPACITY ? length : 1U;
+
+        return pipe->readers == 0U ||
+            NATIVE_PIPE_CAPACITY - pipe->count >= needed;
+    }
+    return false;
+}
+
 static bool add_u64(uint64_t left, uint64_t right, uint64_t *result)
 {
     if (result == NULL || left > UINT64_MAX - right) {
@@ -300,6 +422,15 @@ static bool add_u64(uint64_t left, uint64_t right, uint64_t *result)
     }
     *result = left + right;
     return true;
+}
+
+static uint64_t claim_process_id(void)
+{
+    if (next_process_generation == 0U ||
+        next_process_generation > INT32_MAX) {
+        return 0U;
+    }
+    return next_process_generation++;
 }
 
 static void record_context_transition(
@@ -751,6 +882,139 @@ static bool copy_to_user(
     return true;
 }
 
+static int64_t copy_exec_text(struct native_process *process,
+    uint64_t address, char *output, size_t capacity, size_t *length,
+    int64_t too_long)
+{
+    if (address == 0U || output == NULL || length == NULL)
+        return -OPENRFS_EFAULT;
+    for (size_t index = 0U; index < capacity; ++index) {
+        uint64_t at;
+
+        if (!add_u64(address, index, &at) ||
+                !copy_from_user(process, &output[index], at, 1U))
+            return -OPENRFS_EFAULT;
+        if (output[index] == '\0') {
+            *length = index + 1U;
+            return 0;
+        }
+    }
+    return too_long;
+}
+
+static int64_t copy_exec_vector(struct native_process *process,
+    uint64_t address, struct native_exec_payload *payload,
+    uint16_t offsets[OPENRFS_EXEC_VECTOR_MAX], size_t *count)
+{
+    if (address == 0U) {
+        *count = 0U;
+        return 0;
+    }
+    for (size_t index = 0U; index <= OPENRFS_EXEC_VECTOR_MAX; ++index) {
+        uint64_t pointer_address;
+        uint64_t string_address;
+        size_t length = 0U;
+        int64_t result;
+
+        if (!add_u64(address, index * sizeof(uint64_t),
+                &pointer_address) ||
+            !copy_from_user(process, &string_address, pointer_address,
+                sizeof(string_address)))
+            return -OPENRFS_EFAULT;
+        if (string_address == 0U) {
+            *count = index;
+            return 0;
+        }
+        if (index == OPENRFS_EXEC_VECTOR_MAX ||
+                payload->string_bytes == OPENRFS_EXEC_STRING_BYTES)
+            return -OPENRFS_E2BIG;
+        offsets[index] = (uint16_t)payload->string_bytes;
+        result = copy_exec_text(process, string_address,
+            payload->strings + payload->string_bytes,
+            OPENRFS_EXEC_STRING_BYTES - payload->string_bytes,
+            &length, -OPENRFS_E2BIG);
+        if (result != 0) return result;
+        payload->string_bytes += length;
+    }
+    return -OPENRFS_E2BIG;
+}
+
+static int64_t copy_exec_payload(struct native_process *process,
+    uint64_t request_address, struct native_exec_payload *payload)
+{
+    struct openrfs_exec_request request;
+    size_t path_length = 0U;
+    int64_t result;
+
+    if (!copy_from_user(process, &request, request_address,
+            sizeof(request)))
+        return -OPENRFS_EFAULT;
+    if (request.size != sizeof(request) ||
+            request.version != OPENRFS_ABI_VERSION ||
+            request.reserved != 0U ||
+            request.descriptor_count != OPENRFS_EXEC_DESCRIPTOR_COUNT ||
+            request.argv_address == 0U)
+        return -OPENRFS_EINVAL;
+    result = copy_exec_text(process, request.path_address,
+        payload->manifest_path, sizeof(payload->manifest_path),
+        &path_length, -OPENRFS_ENAMETOOLONG);
+    if (result != 0) return result;
+    if (path_length == 1U ||
+            !safe_relative_path(payload->manifest_path,
+                path_length - 1U))
+        return -OPENRFS_EINVAL;
+    result = copy_exec_vector(process, request.argv_address, payload,
+        payload->argument_offsets, &payload->argument_count);
+    if (result != 0) return result;
+    result = copy_exec_vector(process, request.envp_address, payload,
+        payload->environment_offsets, &payload->environment_count);
+    if (result != 0) return result;
+    if (!copy_from_user(process, payload->descriptors,
+            request.descriptors_address, sizeof(payload->descriptors)))
+        return -OPENRFS_EFAULT;
+    for (size_t index = 0U; index < OPENRFS_EXEC_DESCRIPTOR_COUNT;
+         ++index) {
+        const struct openrfs_exec_descriptor *descriptor =
+            &payload->descriptors[index];
+        struct native_resource *resource;
+
+        if (descriptor->active == 0U) {
+            if (!bytes_are_zero(descriptor, sizeof(*descriptor)))
+                return -OPENRFS_EINVAL;
+            continue;
+        }
+        if (descriptor->active != 1U || descriptor->reserved != 0U ||
+                (descriptor->descriptor_flags &
+                    ~(OPENRFS_EXEC_FD_CLOEXEC |
+                        OPENRFS_EXEC_FD_CLOFORK)) != 0U)
+            return -OPENRFS_EINVAL;
+        if (descriptor->kind == OPENRFS_EXEC_DESCRIPTOR_CONSOLE_IN ||
+                descriptor->kind == OPENRFS_EXEC_DESCRIPTOR_CONSOLE_OUT) {
+            if (descriptor->handle != 0U) return -OPENRFS_EINVAL;
+            continue;
+        }
+        if (descriptor->kind != OPENRFS_EXEC_DESCRIPTOR_FILE &&
+                descriptor->kind != OPENRFS_EXEC_DESCRIPTOR_PIPE_READ &&
+                descriptor->kind != OPENRFS_EXEC_DESCRIPTOR_PIPE_WRITE)
+            return -OPENRFS_EINVAL;
+        if (native_handle_resolve(&process->handles, descriptor->handle,
+                OPENRFS_HANDLE_FILE, &resource) != NATIVE_HANDLE_OK)
+            return -OPENRFS_EBADF;
+        if ((descriptor->kind == OPENRFS_EXEC_DESCRIPTOR_FILE &&
+                resource->words[2] != 0U) ||
+            (descriptor->kind == OPENRFS_EXEC_DESCRIPTOR_PIPE_READ &&
+                resource->words[2] != NATIVE_PIPE_READER) ||
+            (descriptor->kind == OPENRFS_EXEC_DESCRIPTOR_PIPE_WRITE &&
+                resource->words[2] != NATIVE_PIPE_WRITER))
+            return -OPENRFS_EBADF;
+        for (size_t prior = 0U; prior < index; ++prior)
+            if (payload->descriptors[prior].active != 0U &&
+                    payload->descriptors[prior].handle == descriptor->handle)
+                return -OPENRFS_EINVAL;
+    }
+    return 0;
+}
+
 static int64_t handle_error(enum native_handle_status status)
 {
     switch (status) {
@@ -1057,6 +1321,10 @@ static enum native_resource_close_result close_resource(
     }
     switch (type) {
     case OPENRFS_HANDLE_FILE: {
+        if (resource->words[2] != 0U) {
+            return pipe_release(resource->words[0], resource->words[2]) ?
+                NATIVE_RESOURCE_CLOSED : NATIVE_RESOURCE_RETAINED;
+        }
         bool consumed = false;
         const enum openrfsfs_status status = openrfsfs_close_report((openrfsfs_handle)resource->words[0], &consumed);
         return status == OPENRFSFS_STATUS_OK ? NATIVE_RESOURCE_CLOSED :
@@ -1183,6 +1451,48 @@ static bool safe_relative_path(const char *path, size_t length)
     return true;
 }
 
+static bool data_path_from_cwd(const char *cwd, const char *input,
+    size_t length, char output[OPENRFSFS_MAX_PATH])
+{
+    size_t used = bounded_length((const uint8_t *)cwd,
+        OPENRFSFS_MAX_PATH);
+    size_t index = 0U;
+
+    if (used >= OPENRFSFS_MAX_PATH || length == 0U) return false;
+    copy_bytes(output, cwd, used);
+    while (index < length) {
+        size_t start;
+        size_t component_length;
+
+        while (index < length && input[index] == '/') ++index;
+        start = index;
+        while (index < length && input[index] != '/') {
+            const uint8_t value = (uint8_t)input[index];
+
+            if (value == 0U || value > UINT8_C(0x7F) ||
+                value == '\\' || value == ':') return false;
+            ++index;
+        }
+        component_length = index - start;
+        if (component_length == 0U ||
+            (component_length == 1U && input[start] == '.')) continue;
+        if (component_length == 2U && input[start] == '.' &&
+            input[start + 1U] == '.') {
+            while (used != 0U && output[used - 1U] != '/') --used;
+            if (used != 0U) --used;
+            continue;
+        }
+        if (used + (used != 0U ? 1U : 0U) + component_length >=
+            OPENRFSFS_MAX_PATH) return false;
+        if (used != 0U) output[used++] = '/';
+        copy_bytes(output + used, input + start, component_length);
+        used += component_length;
+    }
+    if (used == 0U) output[used++] = '.';
+    output[used] = '\0';
+    return safe_relative_path(output, used);
+}
+
 /* ext4 follows symlinks after the lexical namespace prefix is applied.
  * Refuse every existing link component before passing native Data paths to
  * VFS. Native link creation is disabled below until the backend has an atomic
@@ -1252,16 +1562,28 @@ static int64_t path_from_user_checked(
 )
 {
     char relative[OPENRFSFS_MAX_PATH];
+    char normalized[OPENRFSFS_MAX_PATH];
+    const char *resolved = relative;
+    size_t resolved_length;
     size_t namespace_length;
 
     if (process == NULL || path == NULL || output == NULL || volume == NULL ||
         path->reserved != 0U || path->length == 0U ||
         path->length >= sizeof(relative) ||
-        !copy_from_user(process, relative, path->address, path->length) ||
-        !safe_relative_path(relative, path->length)) {
+        !copy_from_user(process, relative, path->address, path->length)) {
         return -OPENRFS_EINVAL;
     }
     relative[path->length] = '\0';
+    resolved_length = path->length;
+    if (path->volume == OPENRFS_VOLUME_DATA_CWD) {
+        if (!data_path_from_cwd(process->cwd, relative, path->length,
+                normalized)) return -OPENRFS_EINVAL;
+        resolved = normalized;
+        resolved_length = bounded_length((const uint8_t *)normalized,
+            sizeof(normalized));
+    } else if (!safe_relative_path(relative, path->length)) {
+        return -OPENRFS_EINVAL;
+    }
     zero_bytes(output, OPENRFSFS_MAX_PATH);
     if (path->volume == OPENRFS_VOLUME_SYSTEM) {
         size_t resource_length;
@@ -1289,7 +1611,8 @@ static int64_t path_from_user_checked(
         *volume = OPENRFSFS_VOLUME_SYSTEM;
         return 0;
     }
-    if (path->volume != OPENRFS_VOLUME_DATA ||
+    if ((path->volume != OPENRFS_VOLUME_DATA &&
+            path->volume != OPENRFS_VOLUME_DATA_CWD) ||
         (process->manifest.capabilities &
             (OPENRFS_CAP_DATA_READ | OPENRFS_CAP_DATA_WRITE)) == 0U) {
         return -OPENRFS_EINVAL;
@@ -1297,16 +1620,16 @@ static int64_t path_from_user_checked(
     namespace_length = bounded_length(process->manifest.data_namespace,
         sizeof(process->manifest.data_namespace));
     if (namespace_length == 0U ||
-        namespace_length + 1U + path->length >= OPENRFSFS_MAX_PATH) {
+        namespace_length + 1U + resolved_length >= OPENRFSFS_MAX_PATH) {
         return -OPENRFS_EINVAL;
     }
     copy_bytes(output, process->manifest.data_namespace, namespace_length);
-    if (path->length == 1U && relative[0] == '.') {
+    if (resolved_length == 1U && resolved[0] == '.') {
         output[namespace_length] = '\0';
     } else {
         output[namespace_length] = '/';
-        copy_bytes(output + namespace_length + 1U, relative,
-            path->length + 1U);
+        copy_bytes(output + namespace_length + 1U, resolved,
+            resolved_length + 1U);
     }
     const enum openrfsfs_status path_status =
         native_data_path_no_symlink(output, allow_final_link);
@@ -1573,9 +1896,18 @@ static bool prepare_image_pages(
             const uint64_t copy_end = page_end < file_virtual_end ?
                 page_end : file_virtual_end;
 
-            if (!allocate_page(process, virtual_address, permissions,
-                    PAGING_PROCESS_MAPPING_NATIVE_IMAGE, &physical_address)) {
+            const bool executable =
+                (permissions & PAGING_EXECUTE) != 0U;
+            uint8_t *destination = process->transfer;
+
+            if (executable) {
+                zero_bytes(destination, PAGING_PAGE_SIZE);
+            } else if (!allocate_page(process, virtual_address, permissions,
+                    PAGING_PROCESS_MAPPING_NATIVE_IMAGE,
+                    &physical_address)) {
                 return false;
+            } else {
+                destination = (uint8_t *)(void *)physical_address;
             }
             if (copy_start < copy_end) {
                 const uint64_t source_offset = segment->file_offset +
@@ -1586,11 +1918,16 @@ static bool prepare_image_pages(
                     count > elf_length - (size_t)source_offset) {
                     return false;
                 }
-                copy_bytes((uint8_t *)(void *)physical_address +
+                copy_bytes(destination +
                         (size_t)(copy_start - virtual_address),
                     elf + source_offset, count);
             }
-            if ((permissions & PAGING_EXECUTE) != 0U) {
+            if (executable) {
+                if (!acquire_shared_code_page(process, virtual_address,
+                        process->manifest.executable_sha256,
+                        virtual_address - process->image.mapping_start,
+                        destination, &physical_address))
+                    return false;
                 if (process->executable_count >=
                         PAGING_PROCESS_ALIAS_MAX_PAGES) {
                     return false;
@@ -2823,6 +3160,98 @@ static bool initialize_stack(
     return true;
 }
 
+static bool initialize_exec_stack(struct native_process *process,
+    struct native_thread *thread, const struct native_exec_payload *payload)
+{
+    uint64_t arguments[OPENRFS_EXEC_VECTOR_MAX];
+    uint64_t environment[OPENRFS_EXEC_VECTOR_MAX];
+    uint64_t vector[96];
+    uint64_t cursor = NATIVE_MAIN_STACK_END;
+    uint64_t descriptors_address;
+    const uint64_t start_entry = thread->context.rip;
+    size_t count = 0U;
+
+    for (size_t index = 0U; index < process->page_count; ++index)
+        if (process->pages[index].kind ==
+                PAGING_PROCESS_MAPPING_NATIVE_STACK)
+            zero_bytes((void *)process->pages[index].physical_address,
+                PAGING_PAGE_SIZE);
+    if (cursor < NATIVE_MAIN_STACK_BASE +
+            sizeof(payload->descriptors)) return false;
+    cursor -= sizeof(payload->descriptors);
+    if (!stack_write(process, cursor, payload->descriptors,
+            sizeof(payload->descriptors))) return false;
+    descriptors_address = cursor;
+    for (size_t reverse = payload->environment_count; reverse > 0U;
+         --reverse) {
+        const size_t index = reverse - 1U;
+        const size_t offset = payload->environment_offsets[index];
+        const size_t length = bounded_length(
+            (const uint8_t *)payload->strings + offset,
+            payload->string_bytes - offset) + 1U;
+
+        if (cursor < NATIVE_MAIN_STACK_BASE + length) return false;
+        cursor -= length;
+        if (!stack_write(process, cursor, payload->strings + offset,
+                length)) return false;
+        environment[index] = cursor;
+    }
+    for (size_t reverse = payload->argument_count; reverse > 0U;
+         --reverse) {
+        const size_t index = reverse - 1U;
+        const size_t offset = payload->argument_offsets[index];
+        const size_t length = bounded_length(
+            (const uint8_t *)payload->strings + offset,
+            payload->string_bytes - offset) + 1U;
+
+        if (cursor < NATIVE_MAIN_STACK_BASE + length) return false;
+        cursor -= length;
+        if (!stack_write(process, cursor, payload->strings + offset,
+                length)) return false;
+        arguments[index] = cursor;
+    }
+    vector[count++] = payload->argument_count;
+    for (size_t index = 0U; index < payload->argument_count; ++index)
+        vector[count++] = arguments[index];
+    vector[count++] = 0U;
+    for (size_t index = 0U; index < payload->environment_count; ++index)
+        vector[count++] = environment[index];
+    vector[count++] = 0U;
+    vector[count++] = NATIVE_AUX_PAGESZ;
+    vector[count++] = PAGING_PAGE_SIZE;
+    vector[count++] = NATIVE_AUX_ENTRY;
+    vector[count++] = process->image.entry;
+    vector[count++] = NATIVE_AUX_OPENRFS_ABI;
+    vector[count++] = OPENRFS_ABI_VERSION;
+    vector[count++] = NATIVE_AUX_TLS_IMAGE;
+    vector[count++] = process->image.tls.virtual_address;
+    vector[count++] = NATIVE_AUX_TLS_SIZE;
+    vector[count++] = process->image.tls.memory_size;
+    vector[count++] = NATIVE_AUX_TLS_ALIGN;
+    vector[count++] = process->image.tls.alignment;
+    vector[count++] = OPENRFS_AUX_EXEC_DESCRIPTORS;
+    vector[count++] = descriptors_address;
+    vector[count++] = OPENRFS_AUX_EXEC_DESCRIPTOR_COUNT;
+    vector[count++] = OPENRFS_EXEC_DESCRIPTOR_COUNT;
+    vector[count++] = NATIVE_AUX_NULL;
+    vector[count++] = 0U;
+    if (count > sizeof(vector) / sizeof(vector[0]) ||
+            cursor < NATIVE_MAIN_STACK_BASE + count * sizeof(uint64_t))
+        return false;
+    cursor = (cursor - count * sizeof(uint64_t)) & ~UINT64_C(0xF);
+    if (!stack_write(process, cursor, vector,
+            count * sizeof(uint64_t))) return false;
+    zero_bytes(&thread->context, sizeof(thread->context));
+    thread->context.rip = start_entry;
+    thread->context.rsp = cursor;
+    thread->context.rflags = NATIVE_RFLAGS;
+    thread->context.rdi = payload->argument_count;
+    thread->context.rsi = cursor + sizeof(uint64_t);
+    thread->context.rdx = cursor +
+        (payload->argument_count + 2U) * sizeof(uint64_t);
+    return true;
+}
+
 static void build_teardown_attempt(
     const struct native_process *process,
     bool blocked,
@@ -2865,7 +3294,8 @@ static bool process_cleanup_with_callback(
     struct native_process *process,
     native_handle_close_fn close_callback,
     void *close_context,
-    struct native_process_teardown_report *output
+    struct native_process_teardown_report *output,
+    bool retire_older_alias
 )
 {
     bool success = true;
@@ -2940,8 +3370,11 @@ static bool process_cleanup_with_callback(
         }
     }
     if (process->aliases.active &&
-        paging_process_alias_set_restore(&process->address_space,
-            &process->aliases) != PAGING_STATUS_OK) {
+        (retire_older_alias ?
+            paging_process_alias_set_restore_any_order(
+                &process->address_space, &process->aliases) :
+            paging_process_alias_set_restore(&process->address_space,
+                &process->aliases)) != PAGING_STATUS_OK) {
         success = false;
     }
     if (process->address_space.state != PAGING_PROCESS_SPACE_INVALID &&
@@ -2968,7 +3401,14 @@ static bool process_cleanup(
 )
 {
     return process_cleanup_with_callback(process, close_resource, process,
-        output);
+        output, false);
+}
+
+static bool process_cleanup_any_order(struct native_process *process,
+    struct native_process_teardown_report *output)
+{
+    return process_cleanup_with_callback(process, close_resource, process,
+        output, true);
 }
 
 struct process_cleanup_test_script {
@@ -3013,7 +3453,7 @@ static bool process_cleanup_retry_self_test(void)
             &(const struct native_resource){{77U, 0U, 0U, 0U}}, &handle) !=
             NATIVE_HANDLE_OK ||
         process_cleanup_with_callback(&process, process_cleanup_test_close,
-            &script, &refusal_report) || !process.active ||
+            &script, &refusal_report, false) || !process.active ||
         process.handles.active_handles != 1U || refusal_report.attempts != 1U ||
         !refusal_report.blocked || refusal_report.retired ||
         refusal_report.handles.attempted_handles != 1U ||
@@ -3041,7 +3481,7 @@ static bool process_cleanup_retry_self_test(void)
     }
     script.result = NATIVE_RESOURCE_CLOSED;
     if (!process_cleanup_with_callback(&process, process_cleanup_test_close,
-            &script, &success_report) || process.active ||
+            &script, &success_report, false) || process.active ||
         process.handles.active_handles != 0U || script.calls != 2U ||
         success_report.attempts != 2U || success_report.blocked ||
         !success_report.retired ||
@@ -3082,7 +3522,7 @@ static bool process_cleanup_retry_self_test(void)
             &(const struct native_resource){{77U, 0U, 0U, 0U}}, &handle) !=
             NATIVE_HANDLE_OK ||
         process_cleanup_with_callback(&process, process_cleanup_test_close,
-            &script, &consumed_report) || process.active ||
+            &script, &consumed_report, false) || process.active ||
         process.handles.active_handles != 0U || script.calls != 1U ||
         consumed_report.attempts != 1U || consumed_report.blocked ||
         !consumed_report.retired ||
@@ -3109,7 +3549,8 @@ static bool process_cleanup_retry_self_test(void)
 static enum native_process_status load_process(
     struct native_process *process,
     const char *manifest_path,
-    enum openrfsfs_volume image_volume
+    enum openrfsfs_volume image_volume,
+    const struct native_manifest *ceiling
 )
 {
     uint8_t manifest_bytes[NATIVE_MANIFEST_BYTES];
@@ -3209,12 +3650,32 @@ static enum native_process_status load_process(
         }
         dynamic = true;
     }
+    if (ceiling != NULL) {
+        if (!bytes_equal(process->manifest.identifier,
+                ceiling->identifier, sizeof(ceiling->identifier)) ||
+            !bytes_equal(process->manifest.data_namespace,
+                ceiling->data_namespace,
+                sizeof(ceiling->data_namespace)) ||
+            !bytes_equal(process->manifest.resource_directory,
+                ceiling->resource_directory,
+                sizeof(ceiling->resource_directory)) ||
+            process->manifest.capabilities != ceiling->capabilities ||
+            process->manifest.max_handles < ceiling->max_handles) {
+            result = NATIVE_PROCESS_IMAGE_REFUSED;
+            goto finish;
+        }
+        if (process->manifest.memory_limit > ceiling->memory_limit)
+            process->manifest.memory_limit = ceiling->memory_limit;
+        if (process->manifest.max_threads > ceiling->max_threads)
+            process->manifest.max_threads = ceiling->max_threads;
+        process->manifest.max_handles = ceiling->max_handles;
+    }
     namespace_length = bounded_length(process->manifest.data_namespace,
         sizeof(process->manifest.data_namespace));
     zero_bytes(data_namespace, sizeof(data_namespace));
     copy_bytes(data_namespace, process->manifest.data_namespace,
         namespace_length);
-    {
+    if (ceiling == NULL) {
         const enum openrfsfs_status mkdir_status = openrfsfs_mkdir(OPENRFSFS_VOLUME_DATA,
             data_namespace);
 
@@ -3321,12 +3782,14 @@ static enum native_process_status native_process_spawn_from_volume(
         return NATIVE_PROCESS_NO_SLOT;
     }
     zero_bytes(process, sizeof(*process));
-    process->generation = next_process_generation++;
-    if (next_process_generation == 0U ||
-        next_process_generation > NETWORK_OWNER_GENERATION_MAX) {
-        next_process_generation = 1U;
+    process->generation = claim_process_id();
+    process->file_creation_mask = 0022U;
+    if (process->generation == 0U) {
+        return NATIVE_PROCESS_NO_SLOT;
     }
-    status = load_process(process, manifest_path, image_volume);
+    process->session_id = process->generation;
+    process->process_group = process->generation;
+    status = load_process(process, manifest_path, image_volume, NULL);
     if (status != NATIVE_PROCESS_OK) {
         if (!process_cleanup(process, NULL)) {
             return NATIVE_PROCESS_TEARDOWN;
@@ -3686,8 +4149,10 @@ static int64_t syscall_file_open(
     if (process->handles.active_handles >= process->handles.limit ||
         process->handles.active_objects >= process->handles.limit) return -OPENRFS_EMFILE;
     cpu_interrupt_enable();
+    const uint16_t requested_mode = (request.flags & OPENRFS_OPEN_MODE_PRESENT) != 0U ?
+        (uint16_t)request.reserved : 0644U;
     status = openrfsfs_open_options(volume, path, access, open_flags,
-        (request.flags & OPENRFS_OPEN_MODE_PRESENT) != 0U ? (uint16_t)request.reserved : 0644U, &file);
+        (uint16_t)(requested_mode & ~process->file_creation_mask), &file);
     if (status == OPENRFSFS_STATUS_OK && (request.flags & OPENRFS_OPEN_APPEND) != 0U) {
         status = openrfsfs_set_append(file, true);
         if (status != OPENRFSFS_STATUS_OK) (void)openrfsfs_close(file);
@@ -3697,7 +4162,6 @@ static int64_t syscall_file_open(
         return filesystem_error(status);
     }
     resource.words[0] = file;
-    resource.words[1] = (request.flags & OPENRFS_OPEN_APPEND) != 0U ? 1U : 0U;
     {
         const enum native_handle_status handle_status = native_handle_install(
             &process->handles, OPENRFS_HANDLE_FILE, &resource, &handle);
@@ -3715,6 +4179,194 @@ static int64_t syscall_file_open(
     return (int64_t)handle;
 }
 
+static int64_t syscall_pipe_create(
+    struct native_process *process, uint64_t output_address, uint64_t flags)
+{
+    struct openrfs_pipe_pair pair = {sizeof(pair), OPENRFS_ABI_VERSION, 0U, 0U};
+    struct native_pipe *pipe;
+    struct native_resource reader = {{0U, 0U, NATIVE_PIPE_READER, 0U}};
+    struct native_resource writer = {{0U, 0U, NATIVE_PIPE_WRITER, 0U}};
+    openrfs_handle_t reader_handle;
+    openrfs_handle_t writer_handle;
+
+    if ((flags & ~((uint64_t)OPENRFS_PIPE_NONBLOCK)) != 0U) {
+        return -OPENRFS_EINVAL;
+    }
+    if (!validate_user_range(process, output_address, sizeof(pair), true)) {
+        return -OPENRFS_EFAULT;
+    }
+    if (process->handles.limit < 2U ||
+        process->handles.active_handles > process->handles.limit - 2U ||
+        process->handles.active_objects > process->handles.limit - 2U) {
+        return -OPENRFS_EMFILE;
+    }
+    pipe = pipe_allocate();
+    if (pipe == NULL) return -OPENRFS_ENFILE;
+    pipe->reader_flags = (uint32_t)flags;
+    pipe->writer_flags = (uint32_t)flags;
+    reader.words[0] = pipe->id;
+    writer.words[0] = pipe->id;
+    if (!pipe_retain(pipe->id, NATIVE_PIPE_READER) ||
+        native_handle_install(&process->handles, OPENRFS_HANDLE_FILE,
+            &reader, &reader_handle) != NATIVE_HANDLE_OK) {
+        zero_bytes(pipe, sizeof(*pipe));
+        return -OPENRFS_EMFILE;
+    }
+    pair.reader = reader_handle;
+    if (!pipe_retain(pipe->id, NATIVE_PIPE_WRITER) ||
+        native_handle_install(&process->handles, OPENRFS_HANDLE_FILE,
+            &writer, &writer_handle) != NATIVE_HANDLE_OK) {
+        if (pipe->writers != 0U) (void)pipe_release(pipe->id,
+            NATIVE_PIPE_WRITER);
+        (void)native_handle_close(&process->handles, pair.reader,
+            close_resource, process);
+        return -OPENRFS_EMFILE;
+    }
+    pair.writer = writer_handle;
+    if (!copy_to_user(process, output_address, &pair, sizeof(pair))) {
+        (void)native_handle_close(&process->handles, pair.writer,
+            close_resource, process);
+        (void)native_handle_close(&process->handles, pair.reader,
+            close_resource, process);
+        return -OPENRFS_EFAULT;
+    }
+    if (process->handles.active_handles > process->peak_handles) {
+        process->peak_handles = process->handles.active_handles;
+    }
+    return 0;
+}
+
+static void terminate_process(struct native_process *process, int32_t status);
+
+static int64_t syscall_pipe_io(
+    struct native_process *process, const struct openrfs_io_request *request,
+    const struct native_resource *resource, bool write)
+{
+    struct native_pipe *pipe = pipe_by_id(resource->words[0]);
+    size_t length = request->length;
+
+    if (pipe == NULL) return -OPENRFS_EBADF;
+    if (request->offset != UINT64_MAX) return -OPENRFS_ESPIPE;
+    if (resource->words[2] != (write ? NATIVE_PIPE_WRITER :
+            NATIVE_PIPE_READER)) return -OPENRFS_EBADF;
+    if (length == 0U) return 0;
+    if (!validate_user_range(process, request->buffer, length, !write)) {
+        return -OPENRFS_EFAULT;
+    }
+    if (write) {
+        if (pipe->readers == 0U) {
+            if ((process->ignored_signals & (UINT32_C(1) << 13U)) == 0U) {
+                process->termination_signal = 13U;
+                terminate_process(process, 141);
+            }
+            return -OPENRFS_EPIPE;
+        }
+        if (length <= NATIVE_PIPE_CAPACITY &&
+            length > NATIVE_PIPE_CAPACITY - pipe->count) {
+            return -OPENRFS_EAGAIN;
+        }
+        if (pipe->count == NATIVE_PIPE_CAPACITY) return -OPENRFS_EAGAIN;
+        if (length > NATIVE_PIPE_CAPACITY - pipe->count) {
+            length = NATIVE_PIPE_CAPACITY - pipe->count;
+        }
+        if (!copy_from_user(process, process->transfer, request->buffer,
+                length)) return -OPENRFS_EFAULT;
+        for (size_t index = 0U; index < length; ++index) {
+            pipe->bytes[(pipe->head + pipe->count + index) %
+                NATIVE_PIPE_CAPACITY] = process->transfer[index];
+        }
+        pipe->count += length;
+    } else {
+        if (pipe->count == 0U) {
+            return pipe->writers == 0U ? 0 : -OPENRFS_EAGAIN;
+        }
+        if (length > pipe->count) length = pipe->count;
+        for (size_t index = 0U; index < length; ++index) {
+            process->transfer[index] = pipe->bytes[(pipe->head + index) %
+                NATIVE_PIPE_CAPACITY];
+        }
+        if (!copy_to_user(process, request->buffer, process->transfer,
+                length)) return -OPENRFS_EFAULT;
+        pipe->head = (pipe->head + length) % NATIVE_PIPE_CAPACITY;
+        pipe->count -= length;
+    }
+    return (int64_t)length;
+}
+
+static int64_t syscall_pipe_wait(struct native_process *process,
+    openrfs_handle_t handle, uint64_t length)
+{
+    struct native_resource *resource;
+    struct native_thread *thread = running_thread(process);
+    const enum native_handle_status status = native_handle_resolve(
+        &process->handles, handle, OPENRFS_HANDLE_FILE, &resource);
+
+    if (status != NATIVE_HANDLE_OK) return handle_error(status);
+    if (resource->words[2] != NATIVE_PIPE_READER &&
+        resource->words[2] != NATIVE_PIPE_WRITER) return -OPENRFS_EBADF;
+    if (length == 0U || length > UINT32_MAX) return -OPENRFS_EINVAL;
+    struct native_pipe *pipe = pipe_by_id(resource->words[0]);
+
+    if (pipe == NULL) return -OPENRFS_EBADF;
+    if (pipe_transfer_ready(pipe, resource->words[2], (size_t)length)) return 0;
+    if ((resource->words[2] == NATIVE_PIPE_READER ? pipe->reader_flags :
+            pipe->writer_flags) & OPENRFS_PIPE_NONBLOCK) return -OPENRFS_EAGAIN;
+    if (thread == NULL) return -OPENRFS_EIO;
+    thread->pipe_wait_handle = handle;
+    thread->pipe_wait_length = (uint32_t)length;
+    thread->state = NATIVE_THREAD_PIPE_WAIT;
+    return 0;
+}
+
+static int64_t syscall_pipe_flags(struct native_process *process,
+    openrfs_handle_t handle, uint64_t flags, bool update)
+{
+    struct native_resource *resource;
+    const enum native_handle_status status = native_handle_resolve(
+        &process->handles, handle, OPENRFS_HANDLE_FILE, &resource);
+
+    if (status != NATIVE_HANDLE_OK) return handle_error(status);
+    if (resource->words[2] != NATIVE_PIPE_READER &&
+        resource->words[2] != NATIVE_PIPE_WRITER) return -OPENRFS_EBADF;
+    if (update && (flags & ~((uint64_t)OPENRFS_PIPE_NONBLOCK)) != 0U) {
+        return -OPENRFS_EINVAL;
+    }
+    struct native_pipe *pipe = pipe_by_id(resource->words[0]);
+
+    if (pipe == NULL) return -OPENRFS_EBADF;
+    uint32_t *status_flags = resource->words[2] == NATIVE_PIPE_READER ?
+        &pipe->reader_flags : &pipe->writer_flags;
+
+    if (update) {
+        *status_flags = (uint32_t)flags;
+        return 0;
+    }
+    return (int64_t)*status_flags;
+}
+
+static int64_t syscall_file_status(struct native_process *process,
+    openrfs_handle_t handle, uint64_t flags, bool update)
+{
+    struct native_resource *resource;
+    bool append = false;
+    const enum native_handle_status handle_status = native_handle_resolve(
+        &process->handles, handle, OPENRFS_HANDLE_FILE, &resource);
+
+    if (handle_status != NATIVE_HANDLE_OK) return handle_error(handle_status);
+    if (resource->words[2] != 0U) return -OPENRFS_EBADF;
+    if (update && (flags & ~((uint64_t)OPENRFS_OPEN_APPEND)) != 0U) {
+        return -OPENRFS_EINVAL;
+    }
+    cpu_interrupt_enable();
+    const enum openrfsfs_status status = update ? openrfsfs_set_append(
+        (openrfsfs_handle)resource->words[0],
+        (flags & OPENRFS_OPEN_APPEND) != 0U) : openrfsfs_get_append(
+        (openrfsfs_handle)resource->words[0], &append);
+    cpu_interrupt_disable();
+    if (status != OPENRFSFS_STATUS_OK) return filesystem_error(status);
+    return update ? 0 : (append ? OPENRFS_OPEN_APPEND : 0);
+}
+
 static int64_t syscall_file_io(
     struct native_process *process,
     uint64_t request_address,
@@ -3724,6 +4376,7 @@ static int64_t syscall_file_io(
     struct openrfs_io_request request;
     struct native_resource *resource;
     size_t completed = 0U;
+    bool append = false;
     enum native_handle_status handle_status;
 
     if (!copy_from_user(process, &request, request_address,
@@ -3739,11 +4392,23 @@ static int64_t syscall_file_io(
     if (handle_status != NATIVE_HANDLE_OK) {
         return handle_error(handle_status);
     }
+    if (resource->words[2] != 0U) {
+        return syscall_pipe_io(process, &request, resource, write);
+    }
     if (request.length == 0U) {
         return 0;
     }
     if (!validate_user_range(process, request.buffer, request.length, !write)) {
         return -OPENRFS_EFAULT;
+    }
+    if (write) {
+        cpu_interrupt_enable();
+        const enum openrfsfs_status append_status = openrfsfs_get_append(
+            (openrfsfs_handle)resource->words[0], &append);
+        cpu_interrupt_disable();
+        if (append_status != OPENRFSFS_STATUS_OK) {
+            return filesystem_error(append_status);
+        }
     }
     if (write && request.offset != UINT64_MAX) {
         uint64_t position;
@@ -3801,7 +4466,7 @@ static int64_t syscall_file_io(
         completed += transferred;
         // Append one copied chunk per syscall. Returning a short write avoids
         // claiming one atomic append across separately leased chunks.
-        if (transferred < chunk || (write && resource->words[1] != 0U)) {
+        if (transferred < chunk || (write && append)) {
             break;
         }
     }
@@ -3832,6 +4497,7 @@ static int64_t syscall_file_seek(
             OPENRFS_HANDLE_FILE, &resource) != NATIVE_HANDLE_OK) {
         return -OPENRFS_EBADF;
     }
+    if (resource->words[2] != 0U) return -OPENRFS_ESPIPE;
     origin = request.origin == OPENRFS_SEEK_START ? OPENRFSFS_SEEK_START :
         (request.origin == OPENRFS_SEEK_CURRENT ? OPENRFSFS_SEEK_CURRENT :
             OPENRFSFS_SEEK_END);
@@ -3910,6 +4576,7 @@ static int64_t syscall_file_metadata(struct native_process *process, openrfs_han
     const enum native_handle_status handle_status = native_handle_resolve(
         &process->handles, handle, OPENRFS_HANDLE_FILE, &resource);
     if (handle_status != NATIVE_HANDLE_OK) return handle_error(handle_status);
+    if (resource->words[2] != 0U) return -OPENRFS_EBADF;
     const openrfsfs_handle file = (openrfsfs_handle)resource->words[0];
     cpu_interrupt_enable();
     const enum openrfsfs_status status = openrfsfs_fstat(file, &stat);
@@ -4092,8 +4759,10 @@ static int64_t syscall_single_path_mutation(
     }
     cpu_interrupt_enable();
     if (number == OPENRFS_SYS_PATH_MKDIR) {
+        const uint16_t requested_mode = value == 0U ? 0755U :
+            (uint16_t)(value & 07777U);
         status = openrfsfs_mkdir_mode(volume, path,
-            value == 0U ? 0755U : (uint16_t)(value & 07777U));
+            (uint16_t)(requested_mode & ~process->file_creation_mask));
     } else if (number == OPENRFS_SYS_PATH_TRUNCATE) {
         status = openrfsfs_truncate(volume, path, value);
     } else if (value == OPENRFS_UNLINK_FILE) {
@@ -4154,6 +4823,7 @@ static int64_t syscall_file_sync(struct native_process *process, openrfs_handle_
     const enum native_handle_status handle_status = native_handle_resolve(
         &process->handles, handle, OPENRFS_HANDLE_FILE, &resource);
     if (handle_status != NATIVE_HANDLE_OK) return handle_error(handle_status);
+    if (resource->words[2] != 0U) return -OPENRFS_EBADF;
     const openrfsfs_handle file = (openrfsfs_handle)resource->words[0];
     cpu_interrupt_enable();
     const enum openrfsfs_status status = openrfsfs_fsync(file);
@@ -4167,6 +4837,7 @@ static int64_t syscall_file_truncate(struct native_process *process, openrfs_han
     enum native_handle_status handle_status = native_handle_resolve(
         &process->handles, handle, OPENRFS_HANDLE_FILE, &resource);
     if (handle_status != NATIVE_HANDLE_OK) return handle_error(handle_status);
+    if (resource->words[2] != 0U) return -OPENRFS_EBADF;
     cpu_interrupt_enable();
     enum openrfsfs_status status = openrfsfs_ftruncate((openrfsfs_handle)resource->words[0], size);
     cpu_interrupt_disable();
@@ -4380,6 +5051,7 @@ static int64_t syscall_file_publication(struct native_process *process,
     const enum native_handle_status handle_status = native_handle_resolve(
         &process->handles, handle, OPENRFS_HANDLE_FILE, &resource);
     if (handle_status != NATIVE_HANDLE_OK) return handle_error(handle_status);
+    if (resource->words[2] != 0U) return -OPENRFS_EBADF;
     // Copy the checked VFS generation before enabling interrupts. The backend
     // checks write access and the source name's inode under the same lease.
     const openrfsfs_handle file = (openrfsfs_handle)resource->words[0];
@@ -4687,7 +5359,35 @@ static int64_t poll_wait_items(
             items[index].interests == 0U) {
             return -OPENRFS_EINVAL;
         }
-        if (type == OPENRFS_HANDLE_FILE || type == OPENRFS_HANDLE_DIRECTORY) {
+        if (type == OPENRFS_HANDLE_FILE && resource->words[2] != 0U) {
+            const struct native_pipe *pipe = pipe_by_id(resource->words[0]);
+
+            if (pipe == NULL) return -OPENRFS_EBADF;
+            if (resource->words[2] == NATIVE_PIPE_READER) {
+                if ((items[index].interests & ~(OPENRFS_WAIT_READABLE |
+                        OPENRFS_WAIT_CLOSED)) != 0U) return -OPENRFS_EINVAL;
+                if (pipe->count != 0U || pipe->writers == 0U) {
+                    items[index].ready |= items[index].interests &
+                        OPENRFS_WAIT_READABLE;
+                }
+                if (pipe->writers == 0U) {
+                    items[index].ready |= items[index].interests &
+                        OPENRFS_WAIT_CLOSED;
+                }
+            } else if (resource->words[2] == NATIVE_PIPE_WRITER) {
+                if ((items[index].interests & ~(OPENRFS_WAIT_WRITABLE |
+                        OPENRFS_WAIT_CLOSED)) != 0U) return -OPENRFS_EINVAL;
+                if (pipe->count < NATIVE_PIPE_CAPACITY || pipe->readers == 0U) {
+                    items[index].ready |= items[index].interests &
+                        OPENRFS_WAIT_WRITABLE;
+                }
+                if (pipe->readers == 0U) {
+                    items[index].ready |= items[index].interests &
+                        OPENRFS_WAIT_CLOSED;
+                }
+            } else return -OPENRFS_EBADF;
+        } else if (type == OPENRFS_HANDLE_FILE ||
+            type == OPENRFS_HANDLE_DIRECTORY) {
             items[index].ready = items[index].interests &
                 (OPENRFS_WAIT_READABLE | OPENRFS_WAIT_WRITABLE);
         } else if (type == OPENRFS_HANDLE_TIMER) {
@@ -6080,6 +6780,56 @@ static bool release_runtime_pages(
     return success;
 }
 
+static bool thread_has_handle(const struct native_process *process,
+    size_t index, uint64_t generation)
+{
+    for (size_t slot = 0U; slot < process->handles.limit; ++slot) {
+        const struct native_handle_object *object =
+            &process->handles.objects[slot];
+
+        if (object->active && object->type == OPENRFS_HANDLE_THREAD &&
+            object->resource.words[0] == index &&
+            object->resource.words[1] == generation)
+            return true;
+    }
+    return false;
+}
+
+static bool thread_has_waiter(const struct native_process *process,
+    uint64_t generation)
+{
+    for (size_t index = 0U; index < process->thread_count; ++index) {
+        const struct native_thread *thread = &process->threads[index];
+
+        if (thread->state == NATIVE_THREAD_JOIN_WAIT &&
+            thread->wait_generation == generation)
+            return true;
+    }
+    return false;
+}
+
+static bool reclaim_exited_threads(struct native_process *process)
+{
+    for (size_t index = 1U; index < process->thread_count; ++index) {
+        struct native_thread *thread = &process->threads[index];
+
+        if ((thread->state != NATIVE_THREAD_EXITED &&
+                thread->state != NATIVE_THREAD_FAULTED) ||
+            thread_has_handle(process, index, thread->generation) ||
+            thread_has_waiter(process, thread->generation))
+            continue;
+        if (thread->stack_end < thread->stack_base ||
+            (thread->stack_end - thread->stack_base) %
+                PAGING_PAGE_SIZE != 0U ||
+            !release_runtime_pages(process, thread->stack_base,
+                (size_t)((thread->stack_end - thread->stack_base) /
+                    PAGING_PAGE_SIZE), PAGING_PROCESS_MAPPING_NATIVE_STACK))
+            return false;
+        zero_bytes(thread, sizeof(*thread));
+    }
+    return true;
+}
+
 static int64_t syscall_thread_create(
     struct native_process *process,
     uint64_t request_address
@@ -6113,19 +6863,46 @@ static int64_t syscall_thread_create(
             !validate_user_range(process, request.tls_base, 1U, false))) {
         return -OPENRFS_EINVAL;
     }
-    if (process->thread_count >= process->manifest.max_threads ||
-        process->thread_count >= NATIVE_THREAD_LIMIT) {
-        return -OPENRFS_ENOMEM;
+    if (!reclaim_exited_threads(process)) {
+        process->faulted = true;
+        terminate_process(process, -OPENRFS_EIO);
+        return -OPENRFS_EIO;
     }
     index = process->thread_count;
+    for (size_t slot = 1U; slot < process->thread_count; ++slot)
+        if (process->threads[slot].state == NATIVE_THREAD_UNUSED) {
+            index = slot;
+            break;
+        }
+    if (index == process->thread_count &&
+        (index >= process->manifest.max_threads ||
+            index >= NATIVE_THREAD_LIMIT))
+        return -OPENRFS_ENOMEM;
     stack_pages = (request.stack_bytes + PAGING_PAGE_SIZE - 1U) /
         PAGING_PAGE_SIZE;
-    guard = PAGING_NATIVE_STACK_BASE +
-        index * (NATIVE_STACK_PAGES + 1U) * PAGING_PAGE_SIZE;
-    stack_base = guard + PAGING_PAGE_SIZE;
-    if (stack_base + stack_pages * PAGING_PAGE_SIZE > PAGING_NATIVE_STACK_END) {
-        return -OPENRFS_ENOMEM;
+    stack_base = 0U;
+    for (size_t slot = 1U; slot < NATIVE_THREAD_LIMIT; ++slot) {
+        bool occupied = false;
+
+        guard = PAGING_NATIVE_STACK_BASE +
+            slot * (NATIVE_STACK_PAGES + 1U) * PAGING_PAGE_SIZE;
+        const uint64_t candidate = guard + PAGING_PAGE_SIZE;
+
+        if (candidate + stack_pages * PAGING_PAGE_SIZE >
+                PAGING_NATIVE_STACK_END) break;
+        for (size_t page = 0U; page < NATIVE_STACK_PAGES; ++page) {
+            if (page_at(process, candidate + page * PAGING_PAGE_SIZE) !=
+                    NULL) {
+                occupied = true;
+                break;
+            }
+        }
+        if (!occupied) {
+            stack_base = candidate;
+            break;
+        }
     }
+    if (stack_base == 0U) return -OPENRFS_ENOMEM;
     for (size_t page = 0U; page < stack_pages; ++page) {
         uintptr_t physical_address;
         const uint64_t address = stack_base + page * PAGING_PAGE_SIZE;
@@ -6199,7 +6976,7 @@ static int64_t syscall_thread_create(
             return error;
         }
     }
-    ++process->thread_count;
+    if (index == process->thread_count) ++process->thread_count;
     if (process->handles.active_handles > process->peak_handles) {
         process->peak_handles = process->handles.active_handles;
     }
@@ -6374,6 +7151,20 @@ static void save_interrupt_context(
 
 static void terminate_process(struct native_process *process, int32_t status)
 {
+    if (!process->exiting) {
+        for (size_t index = 0U; index < NATIVE_PROCESS_LIMIT; ++index) {
+            struct native_process *child = &processes[index];
+
+            if (child->parent_generation != process->generation) {
+                continue;
+            }
+            if (child->zombie) {
+                zero_bytes(child, sizeof(*child));
+            } else {
+                child->parent_generation = 0U;
+            }
+        }
+    }
     process->exit_status = status;
     process->exiting = true;
     for (size_t index = 0U; index < process->thread_count; ++index) {
@@ -6382,6 +7173,225 @@ static void terminate_process(struct native_process *process, int32_t status)
         }
         process->threads[index].exit_status = status;
     }
+}
+
+static struct native_process *process_by_pid(uint64_t pid)
+{
+    for (size_t index = 0U; index < NATIVE_PROCESS_LIMIT; ++index)
+        if (processes[index].generation == pid)
+            return &processes[index];
+    return NULL;
+}
+
+static int64_t syscall_process_group_get(struct native_process *caller,
+    int64_t pid)
+{
+    struct native_process *target;
+
+    if (pid < 0) return -OPENRFS_EINVAL;
+    if (pid > INT32_MAX) return -OPENRFS_ESRCH;
+    target = pid == 0 ? caller : process_by_pid((uint64_t)pid);
+    if (target == NULL) return -OPENRFS_ESRCH;
+    if (target != caller && target->session_id != caller->session_id)
+        return -OPENRFS_EPERM;
+    return (int64_t)target->process_group;
+}
+
+static int64_t syscall_process_group_set(struct native_process *caller,
+    int64_t pid, int64_t pgid)
+{
+    struct native_process *target;
+    uint64_t group;
+    bool existing = false;
+
+    if (pgid < 0 || pgid > INT32_MAX) return -OPENRFS_EINVAL;
+    if (pid < 0 || pid > INT32_MAX) return -OPENRFS_ESRCH;
+    target = pid == 0 ? caller : process_by_pid((uint64_t)pid);
+    if (target == NULL || !target->active || target->exiting ||
+        (target != caller && target->parent_generation != caller->generation))
+        return -OPENRFS_ESRCH;
+    if (target->session_id != caller->session_id ||
+        target->generation == target->session_id)
+        return -OPENRFS_EPERM;
+    if (target != caller && target->has_executed)
+        return -OPENRFS_EACCES;
+    group = pgid == 0 ? target->generation : (uint64_t)pgid;
+    if (group != target->generation) {
+        for (size_t index = 0U; index < NATIVE_PROCESS_LIMIT; ++index) {
+            const struct native_process *member = &processes[index];
+
+            if (member->active && !member->exiting &&
+                member->session_id == caller->session_id &&
+                member->process_group == group) {
+                existing = true;
+                break;
+            }
+        }
+        if (!existing) return -OPENRFS_EPERM;
+    }
+    target->process_group = group;
+    return 0;
+}
+
+static int64_t syscall_process_session_create(struct native_process *process)
+{
+    for (size_t index = 0U; index < NATIVE_PROCESS_LIMIT; ++index) {
+        const struct native_process *member = &processes[index];
+
+        if (member->generation != 0U &&
+            member->process_group == process->generation) return -OPENRFS_EPERM;
+    }
+    process->session_id = process->generation;
+    process->process_group = process->generation;
+    return (int64_t)process->generation;
+}
+
+static int64_t syscall_process_session_get(struct native_process *caller,
+    int64_t pid)
+{
+    struct native_process *target;
+
+    if (pid < 0) return -OPENRFS_EINVAL;
+    if (pid > INT32_MAX) return -OPENRFS_ESRCH;
+    target = pid == 0 ? caller : process_by_pid((uint64_t)pid);
+    if (target == NULL) return -OPENRFS_ESRCH;
+    if (target != caller && target->session_id != caller->session_id)
+        return -OPENRFS_EPERM;
+    return (int64_t)target->session_id;
+}
+
+static void deliver_default_signal(struct native_process *target,
+    int64_t signal_number)
+{
+    if (signal_number != 0 &&
+        (target->ignored_signals & (UINT32_C(1) << signal_number)) == 0U) {
+        target->termination_signal = (uint8_t)signal_number;
+        terminate_process(target, (int32_t)(128 + signal_number));
+    }
+}
+
+static int64_t syscall_process_signal(struct native_process *caller,
+    int64_t pid, int64_t signal_number)
+{
+    uint64_t group;
+    bool found = false;
+
+    if (signal_number < 0 || signal_number > 64) return -OPENRFS_EINVAL;
+    if (pid == -1) return -OPENRFS_ENOSYS;
+    if (pid > INT32_MAX) return -OPENRFS_ESRCH;
+    if (signal_number != 0 && signal_number != 2 &&
+        signal_number != 9 && signal_number != 13 &&
+        signal_number != 15) return -OPENRFS_ENOSYS;
+    if (pid <= 0) {
+        if (pid < -INT32_MAX) return -OPENRFS_ESRCH;
+        group = pid == 0 ? caller->process_group : (uint64_t)-pid;
+        for (size_t index = 0U; index < NATIVE_PROCESS_LIMIT; ++index) {
+            struct native_process *target = &processes[index];
+
+            if (!target->active || target->exiting ||
+                target->session_id != caller->session_id ||
+                target->process_group != group) continue;
+            found = true;
+            deliver_default_signal(target, signal_number);
+        }
+        return found ? 0 : -OPENRFS_ESRCH;
+    }
+    for (size_t index = 0U; index < NATIVE_PROCESS_LIMIT; ++index) {
+        struct native_process *target = &processes[index];
+
+        if (!target->active || target->exiting || target->generation !=
+                (uint64_t)pid) continue;
+        if (target != caller && target->parent_generation != caller->generation) {
+            return -OPENRFS_EPERM;
+        }
+        deliver_default_signal(target, signal_number);
+        return 0;
+    }
+    return -OPENRFS_ESRCH;
+}
+
+static int64_t syscall_process_disposition(struct native_process *process,
+    uint64_t signal_number, uint64_t disposition)
+{
+    if (signal_number == 9U || signal_number == 19U || signal_number == 0U ||
+        signal_number > 64U || disposition > 1U) return -OPENRFS_EINVAL;
+    if (signal_number != 2U && signal_number != 13U &&
+        signal_number != 15U && signal_number != 17U)
+        return -OPENRFS_ENOSYS;
+    const uint32_t bit = UINT32_C(1) << signal_number;
+    const int64_t previous = (process->ignored_signals & bit) != 0U ? 1 : 0;
+
+    if (disposition == 0U) process->ignored_signals &= ~bit;
+    else process->ignored_signals |= bit;
+    return previous;
+}
+
+static int64_t syscall_process_umask(struct native_process *process,
+    uint64_t mask)
+{
+    const uint16_t previous = process->file_creation_mask;
+
+    process->file_creation_mask = (uint16_t)(mask & 0777U);
+    return previous;
+}
+
+static int64_t syscall_process_chdir(struct native_process *process,
+    uint64_t request_address)
+{
+    struct openrfs_path request;
+    struct openrfsfs_stat stat;
+    enum openrfsfs_volume volume;
+    char path[OPENRFSFS_MAX_PATH];
+    size_t namespace_length;
+
+    if (!copy_from_user(process, &request, request_address,
+            sizeof(request))) return -OPENRFS_EFAULT;
+    if (request.volume != OPENRFS_VOLUME_DATA &&
+        request.volume != OPENRFS_VOLUME_DATA_CWD) return -OPENRFS_ENOTSUP;
+    const int64_t path_error = path_from_user(process, &request, path,
+        &volume);
+    if (path_error != 0) return path_error;
+    cpu_interrupt_enable();
+    const enum openrfsfs_status status = openrfsfs_stat_path(volume, path,
+        &stat);
+    cpu_interrupt_disable();
+    if (status != OPENRFSFS_STATUS_OK) return filesystem_error(status);
+    if (!stat.directory) return -OPENRFS_ENOTDIR;
+    namespace_length = bounded_length(process->manifest.data_namespace,
+        sizeof(process->manifest.data_namespace));
+    if (namespace_length == 0U ||
+        bounded_length((const uint8_t *)path, sizeof(path)) <
+            namespace_length) {
+        return -OPENRFS_EIO;
+    }
+    if (path[namespace_length] == '\0') process->cwd[0] = '\0';
+    else {
+        const size_t length = bounded_length((const uint8_t *)path +
+            namespace_length + 1U,
+            sizeof(path) - namespace_length - 1U);
+
+        if (path[namespace_length] != '/' || length >= sizeof(process->cwd))
+            return -OPENRFS_EIO;
+        copy_bytes(process->cwd, path + namespace_length + 1U, length + 1U);
+    }
+    return 0;
+}
+
+static int64_t syscall_process_getcwd(struct native_process *process,
+    uint64_t output_address, uint64_t capacity)
+{
+    char path[OPENRFSFS_MAX_PATH + 1U];
+    const size_t length = bounded_length((const uint8_t *)process->cwd,
+        sizeof(process->cwd));
+
+    if (length >= sizeof(process->cwd)) return -OPENRFS_EIO;
+    if (capacity < length + 2U) return -OPENRFS_ERANGE;
+    if (output_address == 0U) return -OPENRFS_EFAULT;
+    path[0] = '/';
+    copy_bytes(path + 1U, process->cwd, length);
+    path[length + 1U] = '\0';
+    return copy_to_user(process, output_address, path, length + 2U) ?
+        (int64_t)(length + 2U) : -OPENRFS_EFAULT;
 }
 
 static bool begin_dynamic_finalizers(
@@ -6443,6 +7453,344 @@ static int64_t syscall_handle_duplicate(
     return (int64_t)duplicate;
 }
 
+static int64_t fork_file_handles(
+    struct native_process *child,
+    const struct native_process *parent
+)
+{
+    openrfsfs_handle retained[NATIVE_HANDLE_LIMIT];
+    uint64_t retained_pipes[NATIVE_HANDLE_LIMIT];
+    uint64_t retained_endpoints[NATIVE_HANDLE_LIMIT];
+    size_t retained_count = 0U;
+    size_t retained_pipe_count = 0U;
+    int64_t error = 0;
+
+    for (size_t index = 0U; index < parent->handles.limit; ++index) {
+        const struct native_handle_object *object =
+            &parent->handles.objects[index];
+
+        if (!object->active || object->type != OPENRFS_HANDLE_FILE) {
+            continue;
+        }
+        if (object->resource.words[2] != 0U) {
+            if (!pipe_retain(object->resource.words[0],
+                    object->resource.words[2])) {
+                error = -OPENRFS_EMFILE;
+                break;
+            }
+            retained_pipes[retained_pipe_count] = object->resource.words[0];
+            retained_endpoints[retained_pipe_count++] =
+                object->resource.words[2];
+            continue;
+        }
+        const openrfsfs_handle file = (openrfsfs_handle)object->resource.words[0];
+        const enum openrfsfs_status status = openrfsfs_retain(file);
+
+        if (status != OPENRFSFS_STATUS_OK) {
+            error = filesystem_error(status);
+            break;
+        }
+        retained[retained_count++] = file;
+    }
+    if (error != 0) {
+        for (size_t index = retained_count; index > 0U; --index) {
+            (void)openrfsfs_close(retained[index - 1U]);
+        }
+        for (size_t index = retained_pipe_count; index > 0U; --index) {
+            (void)pipe_release(retained_pipes[index - 1U],
+                retained_endpoints[index - 1U]);
+        }
+        return error;
+    }
+    child->handles = parent->handles;
+    for (size_t index = 0U; index < child->handles.limit; ++index) {
+        struct native_handle_slot *slot = &child->handles.slots[index];
+        struct native_handle_object *object = &child->handles.objects[index];
+
+        if (slot->active && slot->type != OPENRFS_HANDLE_FILE) {
+            slot->active = false;
+            slot->type = 0U;
+            slot->object_index = 0U;
+            if (++slot->generation == 0U) {
+                slot->generation = 1U;
+            }
+            --child->handles.active_handles;
+        }
+        if (object->active && object->type != OPENRFS_HANDLE_FILE) {
+            zero_bytes(object, sizeof(*object));
+            --child->handles.active_objects;
+        }
+    }
+    child->peak_handles = child->handles.active_handles;
+    return 0;
+}
+
+static int64_t syscall_process_exec(struct native_process *process,
+    uint64_t request_address)
+{
+    enum native_process_status status;
+    int64_t error;
+
+    if (exec_retired.handles.active_handles != 0U &&
+        !process_cleanup_any_order(&exec_retired, NULL))
+        return -OPENRFS_EBUSY;
+    if (exec_staging.page_count != 0U ||
+        exec_staging.handles.active_handles != 0U) {
+        if (!process_cleanup(&exec_staging, NULL))
+            return -OPENRFS_EBUSY;
+    }
+    if (process->window.allocated)
+        return -OPENRFS_EBUSY;
+    for (size_t index = 0U; index < process->handles.limit; ++index)
+        if (process->handles.objects[index].active &&
+            process->handles.objects[index].type != OPENRFS_HANDLE_FILE)
+            return -OPENRFS_EBUSY;
+    zero_bytes(&exec_payload, sizeof(exec_payload));
+    error = copy_exec_payload(process, request_address, &exec_payload);
+    if (error != 0) return error;
+    zero_bytes(&exec_staging, sizeof(exec_staging));
+    status = load_process(&exec_staging, exec_payload.manifest_path,
+        OPENRFSFS_VOLUME_SYSTEM, &process->manifest);
+    if (status != NATIVE_PROCESS_OK) {
+        error = status == NATIVE_PROCESS_MANIFEST_READ ? -OPENRFS_ENOENT :
+            status == NATIVE_PROCESS_EXECUTABLE_OPEN ? -OPENRFS_ENOENT :
+            status == NATIVE_PROCESS_IMAGE_REFUSED ? -OPENRFS_ENOEXEC :
+            status == NATIVE_PROCESS_MEMORY_LIMIT ||
+                status == NATIVE_PROCESS_FRAME_ALLOCATION ?
+                    -OPENRFS_ENOMEM : -OPENRFS_EIO;
+        goto rollback;
+    }
+    error = fork_file_handles(&exec_staging, process);
+    if (error != 0) goto rollback;
+    for (size_t index = 0U; index < OPENRFS_EXEC_DESCRIPTOR_COUNT;
+         ++index) {
+        struct openrfs_exec_descriptor *descriptor =
+            &exec_payload.descriptors[index];
+
+        if (descriptor->active == 0U ||
+            (descriptor->descriptor_flags & OPENRFS_EXEC_FD_CLOEXEC) == 0U)
+            continue;
+        if (descriptor->kind != OPENRFS_EXEC_DESCRIPTOR_CONSOLE_IN &&
+            descriptor->kind != OPENRFS_EXEC_DESCRIPTOR_CONSOLE_OUT &&
+            native_handle_close(&exec_staging.handles, descriptor->handle,
+                close_resource, &exec_staging) != NATIVE_HANDLE_OK) {
+            error = -OPENRFS_EIO;
+            goto rollback;
+        }
+        zero_bytes(descriptor, sizeof(*descriptor));
+    }
+    if (!initialize_exec_stack(&exec_staging, &exec_staging.threads[0],
+            &exec_payload)) {
+        error = -OPENRFS_E2BIG;
+        goto rollback;
+    }
+    exec_staging.generation = process->generation;
+    exec_staging.parent_generation = process->parent_generation;
+    exec_staging.session_id = process->session_id;
+    exec_staging.process_group = process->process_group;
+    exec_staging.has_executed = true;
+    exec_staging.file_creation_mask = process->file_creation_mask;
+    copy_bytes(exec_staging.cwd, process->cwd, sizeof(process->cwd));
+    exec_staging.ignored_signals = process->ignored_signals;
+    copy_bytes(exec_staging.console_input, process->console_input,
+        sizeof(process->console_input));
+    exec_staging.console_input_head = process->console_input_head;
+    exec_staging.console_input_count = process->console_input_count;
+    exec_retired = *process;
+    *process = exec_staging;
+    zero_bytes(&exec_staging, sizeof(exec_staging));
+    network_process_terminated(NETWORK_OWNER_NATIVE(process->generation));
+    audio_native_process_terminated(process->generation);
+    exec_retired.generation = 0U;
+    if (!process_cleanup_any_order(&exec_retired, NULL))
+        console_write("OpenRFS: exec retired image cleanup deferred\n");
+    return 0;
+
+rollback:
+    if (!process_cleanup(&exec_staging, NULL))
+        return -OPENRFS_EIO;
+    return error;
+}
+
+static int64_t syscall_process_fork(
+    struct native_process *parent,
+    const struct native_thread *caller
+)
+{
+    struct native_process *child = NULL;
+    int64_t error = -OPENRFS_ENOMEM;
+
+    for (size_t index = 0U; index < NATIVE_PROCESS_LIMIT; ++index) {
+        if (!processes[index].active && processes[index].generation == 0U) {
+            child = &processes[index];
+            break;
+        }
+    }
+    if (child == NULL) {
+        return -OPENRFS_EAGAIN;
+    }
+    const uint64_t pid = claim_process_id();
+
+    if (pid == 0U) {
+        return -OPENRFS_EAGAIN;
+    }
+    zero_bytes(child, sizeof(*child));
+    child->generation = pid;
+    child->parent_generation = parent->generation;
+    child->session_id = parent->session_id;
+    child->process_group = parent->process_group;
+    child->manifest = parent->manifest;
+    child->image = parent->image;
+    child->dynamic_fini_entry = parent->dynamic_fini_entry;
+    child->dynamic_fini_started = parent->dynamic_fini_started;
+    child->ignored_signals = parent->ignored_signals;
+    child->file_creation_mask = parent->file_creation_mask;
+    copy_bytes(child->cwd, parent->cwd, sizeof(parent->cwd));
+    for (size_t index = 0U; index < parent->page_count; ++index) {
+        const struct native_page *source = &parent->pages[index];
+        uintptr_t frame;
+
+        if (source->kind == PAGING_PROCESS_MAPPING_NATIVE_STACK &&
+            (source->virtual_address < caller->stack_base ||
+                source->virtual_address >= caller->stack_end))
+            continue;
+        if (source->shared_code) {
+            if (source->shared_code_slot >=
+                    NATIVE_SHARED_CODE_CACHE_CAPACITY)
+                goto failed;
+            const struct native_shared_code_page *entry =
+                &shared_code_cache[source->shared_code_slot];
+
+            if (entry->state != NATIVE_SHARED_CODE_LIVE ||
+                !acquire_shared_code_page(child, source->virtual_address,
+                    entry->digest, entry->page_offset,
+                    (const uint8_t *)(const void *)source->physical_address,
+                    &frame) || frame != source->physical_address)
+                goto failed;
+        } else {
+            if (!allocate_page(child, source->virtual_address,
+                    source->permissions, source->kind, &frame))
+                goto failed;
+            copy_bytes((void *)frame,
+                (const void *)source->physical_address, PAGING_PAGE_SIZE);
+        }
+        if ((source->permissions & PAGING_EXECUTE) != 0U) {
+            if (child->executable_count == PAGING_PROCESS_ALIAS_MAX_PAGES) {
+                goto failed;
+            }
+            child->executable_frames[child->executable_count++] = frame;
+        }
+    }
+    if (!map_prepared_pages(child)) {
+        goto failed;
+    }
+    error = fork_file_handles(child, parent);
+    if (error != 0) {
+        goto failed;
+    }
+    child->thread_count = 1U;
+    child->current_thread = 0U;
+    child->threads[0].context = caller->context;
+    child->threads[0].context.rax = 0U;
+    child->threads[0].fpu = caller->fpu;
+    child->threads[0].fs_base = caller->fs_base;
+    child->threads[0].stack_base = caller->stack_base;
+    child->threads[0].stack_end = caller->stack_end;
+    child->threads[0].generation = next_thread_generation++;
+    if (next_thread_generation == 0U) {
+        next_thread_generation = 1U;
+    }
+    child->threads[0].state = NATIVE_THREAD_RUNNABLE;
+    child->active = true;
+    return (int64_t)pid;
+failed:
+    if (!process_cleanup(child, NULL)) {
+        return -OPENRFS_EIO;
+    }
+    return error;
+}
+
+static int64_t process_wait_child(
+    struct native_process *parent,
+    int32_t requested_pid,
+    uint64_t requested_group,
+    uint64_t status_address,
+    bool nohang,
+    bool *complete
+)
+{
+    bool has_child = false;
+
+    *complete = true;
+    for (size_t index = 0U; index < NATIVE_PROCESS_LIMIT; ++index) {
+        struct native_process *child = &processes[index];
+
+        if (child->generation == 0U ||
+            child->parent_generation != parent->generation ||
+            (requested_pid > 0 && child->generation !=
+                (uint64_t)requested_pid) ||
+            (requested_pid != -1 && requested_pid <= 0 &&
+                child->process_group != requested_group)) {
+            continue;
+        }
+        has_child = true;
+        if (child->zombie) {
+            const int status = child->faulted ? 11 :
+                child->termination_signal != 0U ? child->termination_signal :
+                (int)((uint32_t)child->exit_status & 0xFFU) << 8U;
+            const int64_t pid = (int64_t)child->generation;
+
+            if (status_address != 0U && !copy_to_user(parent,
+                    status_address, &status, sizeof(status))) {
+                return -OPENRFS_EFAULT;
+            }
+            zero_bytes(child, sizeof(*child));
+            return pid;
+        }
+    }
+    if (!has_child) {
+        return -OPENRFS_ECHILD;
+    }
+    if (nohang) {
+        return 0;
+    }
+    *complete = false;
+    return 0;
+}
+
+static int64_t syscall_process_wait(
+    struct native_process *process,
+    struct native_thread *thread,
+    int64_t requested_pid,
+    uint64_t status_address,
+    uint64_t options
+)
+{
+    bool complete;
+    int64_t result;
+    uint64_t requested_group = 0U;
+
+    if (requested_pid < -INT32_MAX || requested_pid > INT32_MAX ||
+        (options & ~UINT64_C(1)) != 0U) {
+        return -OPENRFS_EINVAL;
+    }
+    if (requested_pid == 0) requested_group = process->process_group;
+    else if (requested_pid < -1) requested_group = (uint64_t)-requested_pid;
+    if (status_address != 0U &&
+        !validate_user_range(process, status_address, sizeof(int), true)) {
+        return -OPENRFS_EFAULT;
+    }
+    result = process_wait_child(process, (int32_t)requested_pid,
+        requested_group, status_address, (options & 1U) != 0U, &complete);
+    if (!complete) {
+        thread->wait_pid = (int32_t)requested_pid;
+        thread->wait_group = requested_group;
+        thread->wait_status_address = status_address;
+        thread->state = NATIVE_THREAD_CHILD_WAIT;
+    }
+    return result;
+}
+
 static int64_t dispatch_syscall(
     struct native_process *process,
     struct native_thread *thread,
@@ -6452,6 +7800,48 @@ static int64_t dispatch_syscall(
     switch (frame->rax) {
     case OPENRFS_SYS_ABI_VERSION:
         return OPENRFS_ABI_VERSION;
+    case OPENRFS_SYS_PROCESS_ID:
+        return (int64_t)process->generation;
+    case OPENRFS_SYS_PARENT_ID:
+        return (int64_t)process->parent_generation;
+    case OPENRFS_SYS_PROCESS_FORK:
+        return syscall_process_fork(process, thread);
+    case OPENRFS_SYS_PROCESS_EXEC:
+        return syscall_process_exec(process, frame->rdi);
+    case OPENRFS_SYS_PIPE_CREATE:
+        return syscall_pipe_create(process, frame->rdi, frame->rsi);
+    case OPENRFS_SYS_PIPE_WAIT:
+        return syscall_pipe_wait(process, frame->rdi, frame->rsi);
+    case OPENRFS_SYS_PIPE_GET_FLAGS:
+        return syscall_pipe_flags(process, frame->rdi, 0U, false);
+    case OPENRFS_SYS_PIPE_SET_FLAGS:
+        return syscall_pipe_flags(process, frame->rdi, frame->rsi, true);
+    case OPENRFS_SYS_PROCESS_WAIT:
+        return syscall_process_wait(process, thread, (int64_t)frame->rdi,
+            frame->rsi, frame->rdx);
+    case OPENRFS_SYS_PROCESS_SIGNAL:
+        return syscall_process_signal(process, (int64_t)frame->rdi,
+            (int64_t)frame->rsi);
+    case OPENRFS_SYS_PROCESS_GROUP_GET:
+        return syscall_process_group_get(process, (int64_t)frame->rdi);
+    case OPENRFS_SYS_PROCESS_GROUP_SET:
+        return syscall_process_group_set(process, (int64_t)frame->rdi,
+            (int64_t)frame->rsi);
+    case OPENRFS_SYS_PROCESS_SESSION_CREATE:
+        return syscall_process_session_create(process);
+    case OPENRFS_SYS_PROCESS_SESSION_GET:
+        return syscall_process_session_get(process, (int64_t)frame->rdi);
+    case OPENRFS_SYS_PROCESS_UMASK:
+        return syscall_process_umask(process, frame->rdi);
+    case OPENRFS_SYS_PROCESS_CHDIR:
+        return syscall_process_chdir(process, frame->rdi);
+    case OPENRFS_SYS_PROCESS_GETCWD:
+        return syscall_process_getcwd(process, frame->rdi, frame->rsi);
+    case OPENRFS_SYS_PROCESS_DISPOSITION:
+        return syscall_process_disposition(process, frame->rdi, frame->rsi);
+    case OPENRFS_SYS_PROCESS_EXIT_IMMEDIATE:
+        terminate_process(process, (int32_t)frame->rdi);
+        return 0;
     case OPENRFS_SYS_EXIT:
         if (!begin_dynamic_finalizers(process, thread,
                 (int32_t)frame->rdi)) {
@@ -6519,6 +7909,10 @@ static int64_t dispatch_syscall(
         return syscall_file_publication(process, frame->rdi, frame->rsi, false);
     case OPENRFS_SYS_FILE_UNLINK:
         return syscall_file_publication(process, frame->rdi, frame->rsi, true);
+    case OPENRFS_SYS_FILE_GET_STATUS:
+        return syscall_file_status(process, frame->rdi, 0U, false);
+    case OPENRFS_SYS_FILE_SET_STATUS:
+        return syscall_file_status(process, frame->rdi, frame->rsi, true);
     case OPENRFS_SYS_PATH_SET_TIMES:
         return syscall_set_times(process, frame->rdi);
     case OPENRFS_SYS_PATH_XATTR:
@@ -6673,6 +8067,8 @@ uintptr_t native_process_on_syscall(struct native_syscall_frame *frame)
     record_context_transition(process, without_cycles, fpu_cycles);
     process->last_syscall = (uint32_t)frame->rax;
     result = dispatch_syscall(process, thread, frame);
+    thread = running_thread(process);
+    if (thread == NULL) return 0U;
     thread->context.rax = (uint64_t)result;
     ++process->syscall_count;
     resume_stack = process_user_resume_stack();
@@ -6838,6 +8234,58 @@ static void update_waiting_threads(
                     break;
                 }
             }
+        } else if (thread->state == NATIVE_THREAD_CHILD_WAIT) {
+            bool complete;
+            const int64_t result = process_wait_child(process,
+                thread->wait_pid, thread->wait_group,
+                thread->wait_status_address, false,
+                &complete);
+
+            if (complete) {
+                thread->wait_pid = 0;
+                thread->wait_group = 0U;
+                thread->wait_status_address = 0U;
+                thread->context.rax = (uint64_t)result;
+                thread->state = NATIVE_THREAD_RUNNABLE;
+            }
+        } else if (thread->state == NATIVE_THREAD_PIPE_WAIT) {
+            struct native_resource *resource;
+            const enum native_handle_status status = native_handle_resolve(
+                &process->handles, thread->pipe_wait_handle,
+                OPENRFS_HANDLE_FILE, &resource);
+            int64_t result = 0;
+            bool ready = false;
+
+            if (status != NATIVE_HANDLE_OK) {
+                result = handle_error(status);
+                ready = true;
+            } else if (resource->words[2] != NATIVE_PIPE_READER &&
+                resource->words[2] != NATIVE_PIPE_WRITER) {
+                result = -OPENRFS_EBADF;
+                ready = true;
+            } else {
+                const struct native_pipe *pipe = pipe_by_id(resource->words[0]);
+
+                if (pipe == NULL) {
+                    result = -OPENRFS_EBADF;
+                    ready = true;
+                } else {
+                    ready = pipe_transfer_ready(pipe, resource->words[2],
+                        thread->pipe_wait_length);
+                    if (!ready && ((resource->words[2] == NATIVE_PIPE_READER ?
+                            pipe->reader_flags : pipe->writer_flags) &
+                            OPENRFS_PIPE_NONBLOCK) != 0U) {
+                        result = -OPENRFS_EAGAIN;
+                        ready = true;
+                    }
+                }
+            }
+            if (ready) {
+                thread->pipe_wait_handle = 0U;
+                thread->pipe_wait_length = 0U;
+                thread->context.rax = (uint64_t)result;
+                thread->state = NATIVE_THREAD_RUNNABLE;
+            }
         } else if (thread->state == NATIVE_THREAD_HANDLE_WAIT) {
             int64_t ready = poll_wait_items(process, thread->wait_items,
                 thread->wait_item_count);
@@ -7001,6 +8449,21 @@ static size_t newest_active_process(void)
     return selected;
 }
 
+static size_t newest_exiting_process(void)
+{
+    uint64_t generation = 0U;
+    size_t selected = SIZE_MAX;
+
+    for (size_t index = 0U; index < NATIVE_PROCESS_LIMIT; ++index) {
+        if (processes[index].active && processes[index].exiting &&
+            processes[index].generation > generation) {
+            generation = processes[index].generation;
+            selected = index;
+        }
+    }
+    return selected;
+}
+
 static struct native_process *console_input_target(void)
 {
     struct native_process *selected = NULL;
@@ -7067,6 +8530,8 @@ static bool any_handle_waiter(void)
              thread_index < process->thread_count; ++thread_index) {
             if (process->threads[thread_index].state ==
                     NATIVE_THREAD_HANDLE_WAIT ||
+                process->threads[thread_index].state ==
+                    NATIVE_THREAD_PIPE_WAIT ||
                 process->threads[thread_index].state ==
                     NATIVE_THREAD_AUDIO_DRAIN_WAIT) {
                 return true;
@@ -7178,6 +8643,7 @@ static bool service_native_devices(void)
 enum native_process_status native_process_run(struct native_process_result *result)
 {
     struct native_process_result selected_result;
+    uint64_t root_generation;
     bool have_result = false;
     bool cleanup_ok = true;
     bool cleanup_blocked = false;
@@ -7190,6 +8656,7 @@ enum native_process_status native_process_run(struct native_process_result *resu
     if (scheduler_active || !any_active_process()) {
         return NATIVE_PROCESS_BUSY;
     }
+    root_generation = processes[newest_active_process()].generation;
     cpu_interrupt_disable();
     if (interrupt_process_gate_arm(native_process_on_interrupt, &native_gate,
             &native_gate) != INTERRUPT_STATUS_OK) {
@@ -7300,17 +8767,44 @@ enum native_process_status native_process_run(struct native_process_result *resu
         }
 
         for (;;) {
-            const size_t newest = newest_active_process();
+            const size_t newest = newest_exiting_process();
             struct native_process_result completed;
 
-            if (newest == SIZE_MAX || !processes[newest].exiting) {
+            if (newest == SIZE_MAX) {
                 break;
             }
             capture_result(&processes[newest], &completed);
-            const bool process_retired = process_cleanup(&processes[newest],
+            const uint64_t parent_generation =
+                processes[newest].parent_generation;
+            const uint64_t session_id = processes[newest].session_id;
+            const uint64_t process_group = processes[newest].process_group;
+            const uint8_t termination_signal =
+                processes[newest].termination_signal;
+            const bool keep_zombie = parent_generation != 0U &&
+                parent_generation != completed.generation &&
+                processes[newest].active &&
+                !processes[newest].zombie;
+            const bool process_retired = process_cleanup_any_order(
+                &processes[newest],
                 &completed.teardown_report);
-            if (!have_result || completed.generation >
-                    selected_result.generation) {
+            if (process_retired && keep_zombie) {
+                const struct native_process *parent =
+                    process_by_pid(parent_generation);
+
+                if (parent != NULL && parent->active && !parent->exiting &&
+                    (parent->ignored_signals &
+                        (UINT32_C(1) << 17U)) == 0U) {
+                    processes[newest].generation = completed.generation;
+                    processes[newest].parent_generation = parent_generation;
+                    processes[newest].session_id = session_id;
+                    processes[newest].process_group = process_group;
+                    processes[newest].exit_status = completed.exit_status;
+                    processes[newest].termination_signal = termination_signal;
+                    processes[newest].faulted = completed.faulted;
+                    processes[newest].zombie = true;
+                }
+            }
+            if (completed.generation == root_generation) {
                 selected_result = completed;
                 have_result = true;
             }

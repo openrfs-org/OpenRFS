@@ -18,8 +18,12 @@ extern _Thread_local int errno;
 
 #define EPERM 1
 #define ENOENT 2
+#define ESRCH 3
 #define EIO 5
+#define E2BIG 7
+#define ENOEXEC 8
 #define EBADF 9
+#define ECHILD 10
 #define EAGAIN 11
 #define ENOMEM 12
 #define EACCES 13
@@ -30,6 +34,8 @@ extern _Thread_local int errno;
 #define ENOTDIR 20
 #define EISDIR 21
 #define EINVAL 22
+#define ENFILE 23
+#define ESPIPE 29
 #define ENOSPC 28
 #define EROFS 30
 #define EMFILE 24

@@ -8,6 +8,7 @@
 #include <openrfs/abi/memory.h>
 #include <openrfs/abi/network.h>
 #include <openrfs/abi/package.h>
+#include <openrfs/abi/process.h>
 #include <openrfs/abi/storage.h>
 #include <openrfs/abi/thread.h>
 #include <openrfs/abi/window.h>

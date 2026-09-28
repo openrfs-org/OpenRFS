@@ -27,6 +27,17 @@ static struct thread_record records[THREAD_RECORDS];
 static volatile uint32_t records_lock;
 static _Thread_local pthread_t current_thread;
 
+void openrfs_thread_fork_prepare(void)
+{ openrfs_runtime_lock(&records_lock); }
+void openrfs_thread_fork_parent(void)
+{ openrfs_runtime_unlock(&records_lock); }
+void openrfs_thread_fork_child(void)
+{
+    (void)memset(records, 0, sizeof(records));
+    current_thread = 0U;
+    openrfs_runtime_unlock(&records_lock);
+}
+
 static _Noreturn void thread_trampoline(void *argument)
 {
     struct thread_record *record = argument;

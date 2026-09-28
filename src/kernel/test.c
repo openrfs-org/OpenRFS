@@ -591,6 +591,9 @@ static enum kernel_test_scenario scenario_from_value(
     if (token_equals(value, length, "native-relaunch")) {
         return KERNEL_TEST_NATIVE_RELAUNCH;
     }
+    if (token_equals(value, length, "native-exec")) {
+        return KERNEL_TEST_NATIVE_EXEC;
+    }
     if (token_equals(value, length, "native-audio")) {
         return KERNEL_TEST_NATIVE_AUDIO;
     }
@@ -808,6 +811,7 @@ static uint8_t scenario_exit_value(enum kernel_test_scenario scenario)
     /* 0x7F is the invariant QEMU failure value. */
     case KERNEL_TEST_NATIVE_ABI_REFUSAL: return UINT8_C(0x80);
     case KERNEL_TEST_NATIVE_RELAUNCH: return UINT8_C(0x81);
+    case KERNEL_TEST_NATIVE_EXEC: return UINT8_C(0x89);
     case KERNEL_TEST_NATIVE_AUDIO: return UINT8_C(0x82);
     case KERNEL_TEST_NATIVE_SDL: return UINT8_C(0x83);
     case KERNEL_TEST_NATIVE_DYNAMIC: return UINT8_C(0x84);
@@ -4233,7 +4237,20 @@ static void multiprocess_slots_scenario(void)
             PAGING_STATUS_PROCESS_ALIAS_STATE) {
         kernel_test_fail("an out-of-order alias restore was accepted");
     }
-    for (size_t count = MULTIPROCESS_MAX_PROCESSES; count > 0U; --count) {
+    if (paging_process_image_alias_restore_any_order(&spaces[0],
+            &aliases[0]) != PAGING_STATUS_OK ||
+        paging_process_space_release(&spaces[0]) != PAGING_STATUS_OK) {
+        kernel_test_fail("an older retired image alias refused release");
+    }
+    for (size_t page = PAGING_PROCESS_STACK_PAGES; page > 0U; --page) {
+        if (frame_release(stack_frames[0][page - 1U]) != FRAME_STATUS_OK) {
+            kernel_test_fail("a retired image stack frame refused release");
+        }
+    }
+    if (frame_release(image_frames[0]) != FRAME_STATUS_OK) {
+        kernel_test_fail("a retired image frame refused release");
+    }
+    for (size_t count = MULTIPROCESS_MAX_PROCESSES; count > 1U; --count) {
         const size_t index = count - 1U;
 
         if (paging_process_image_alias_restore(&spaces[index],
@@ -4267,7 +4284,7 @@ static void multiprocess_slots_scenario(void)
     }
     console_write("ST MULTIPROCESS-SLOTS concurrent address spaces ");
     console_write_u64(MULTIPROCESS_MAX_PROCESSES);
-    console_write(" bound enforced alias order enforced teardown clean\n");
+    console_write(" bound enforced alias order enforced retired alias clean teardown clean\n");
 }
 
 static void device_windows_scenario(
@@ -4779,6 +4796,7 @@ void kernel_test_run(
     case KERNEL_TEST_NATIVE_DIGEST_REFUSAL:
     case KERNEL_TEST_NATIVE_ABI_REFUSAL:
     case KERNEL_TEST_NATIVE_RELAUNCH:
+    case KERNEL_TEST_NATIVE_EXEC:
     case KERNEL_TEST_NATIVE_AUDIO:
     case KERNEL_TEST_NATIVE_SDL:
     case KERNEL_TEST_NATIVE_DYNAMIC:
@@ -7016,6 +7034,20 @@ _Noreturn void kernel_test_complete_native(void)
         kernel_test_fail("native Ring 3 file result is wrong");
     }
     console_write("OpenRFS: native general loader, SDK, TLS, threads and FPU passed\n");
+    kernel_test_pass();
+}
+
+_Noreturn void kernel_test_complete_native_exec(void)
+{
+    struct native_process_result result = {0};
+
+    if (active_scenario != KERNEL_TEST_NATIVE_EXEC ||
+        native_process_launch("EXECMAIN.MAN", &result) != NATIVE_PROCESS_OK ||
+        !result.exited || result.faulted || result.exit_status != 0 ||
+        !result.resources_released || result.syscall_count < 8U ||
+        !native_process_resources_released())
+        kernel_test_fail("distinct native exec did not cleanly complete");
+    console_write("OpenRFS: distinct native exec and wait resources clean\n");
     kernel_test_pass();
 }
 
@@ -11643,6 +11675,8 @@ const char *kernel_test_scenario_name(enum kernel_test_scenario scenario)
         return "native-abi-refusal";
     case KERNEL_TEST_NATIVE_RELAUNCH:
         return "native-relaunch";
+    case KERNEL_TEST_NATIVE_EXEC:
+        return "native-exec";
     case KERNEL_TEST_NATIVE_AUDIO:
         return "native-audio";
     case KERNEL_TEST_NATIVE_SDL:

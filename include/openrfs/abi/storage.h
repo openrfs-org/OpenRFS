@@ -6,6 +6,7 @@
 
 #define OPENRFS_PATH_MAX 127U
 #define OPENRFS_DIRECTORY_NAME_MAX 12U
+#define OPENRFS_PIPE_NONBLOCK UINT32_C(1)
 
 /* PATH_MKDIR value 0 keeps legacy mode 0755. This flag admits an explicit
  * low-12-bit mode, including 0000, without changing existing callers. */
@@ -13,7 +14,8 @@
 
 enum openrfs_volume {
     OPENRFS_VOLUME_SYSTEM = 1,
-    OPENRFS_VOLUME_DATA = 2
+    OPENRFS_VOLUME_DATA = 2,
+    OPENRFS_VOLUME_DATA_CWD = 3
 };
 
 /* PATH_UNLINK's second argument. Zero preserves the original remove-any API. */
@@ -156,6 +158,16 @@ struct openrfs_volume_space {
     uint32_t cluster_bytes;
     uint32_t reserved;
 } __attribute__((packed));
+
+struct openrfs_pipe_pair {
+    uint32_t size;
+    uint32_t version;
+    openrfs_handle_t reader;
+    openrfs_handle_t writer;
+} __attribute__((packed));
+
+_Static_assert(sizeof(struct openrfs_pipe_pair) == 24U,
+    "OpenRFS pipe-pair ABI changed");
 
 enum openrfs_xattr_operation {
     OPENRFS_XATTR_GET = 0,

@@ -20,6 +20,11 @@ struct allocation_block {
 static struct allocation_block *blocks;
 static volatile uint32_t allocator_lock;
 
+void openrfs_allocator_fork_prepare(void)
+{ openrfs_runtime_lock(&allocator_lock); }
+void openrfs_allocator_fork_parent(void)
+{ openrfs_runtime_unlock(&allocator_lock); }
+
 static size_t align_size(size_t value)
 {
     return (value + 15U) & ~(size_t)15U;

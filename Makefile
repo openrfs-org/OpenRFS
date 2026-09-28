@@ -30,12 +30,12 @@ TEST_SCENARIOS := normal breakpoint invalid-opcode page-fault ist pit unexpected
 	network-tcp-listen network-tcp-refused network-native \
 	multiprocess multiprocess-slots driver-matrix driver-matrix-builtin audio \
 	nvidia nvidia-builtin native native-lua native-sqlite \
-	native-rust native-crash native-elf-refusal native-digest-refusal \
+	native-rust native-crash native-exec native-elf-refusal native-digest-refusal \
 	native-abi-refusal native-relaunch native-audio native-sdl native-dynamic \
 	native-https native-openrfs account-kdf
 TEST_TARGETS := $(addprefix qemu-test-,$(TEST_SCENARIOS))
-EXPECTED_TEST_SCENARIO_COUNT := 116
-EXPECTED_SHELL_ASSERTION_COUNT := 460
+EXPECTED_TEST_SCENARIO_COUNT := 117
+EXPECTED_SHELL_ASSERTION_COUNT := 482
 
 CC := gcc
 LD := ld
@@ -277,6 +277,12 @@ NATIVE_TEST_APP := $(NATIVE_APP_DIR)/NATIVET.APP
 NATIVE_TEST_PACKAGE := $(NATIVE_APP_DIR)/NATIVET.SPK
 NATIVE_SYSTEM_IMAGE := $(NATIVE_APP_DIR)/system.raw
 NATIVE_DATA_IMAGE := $(NATIVE_APP_DIR)/data.raw
+NATIVE_EXEC_DIR := $(BUILD_DIR)/native-exec
+NATIVE_EXEC_MAIN := $(NATIVE_EXEC_DIR)/EXECMAIN.APP
+NATIVE_EXEC_ALT := $(NATIVE_EXEC_DIR)/EXECALT.APP
+NATIVE_EXEC_MAIN_PACKAGE := $(NATIVE_EXEC_DIR)/EXECMAIN.SPK
+NATIVE_EXEC_ALT_PACKAGE := $(NATIVE_EXEC_DIR)/EXECALT.SPK
+NATIVE_EXEC_SYSTEM_IMAGE := $(NATIVE_EXEC_DIR)/system.raw
 ENCRYPTED_UPLOAD_APP := $(NATIVE_APP_DIR)/ENCUPL.APP
 ENCRYPTED_UPLOAD_PACKAGE := $(NATIVE_APP_DIR)/ENCUPL.SPK
 ENCRYPTED_SYSTEM_IMAGE := $(NATIVE_APP_DIR)/encrypted-system.raw
@@ -519,7 +525,7 @@ DEPENDENCIES := $(C_OBJECTS:.o=.d) $(MONOCYPHER_OBJECTS:.o=.d) \
 # They never create a file of their own name, so they rerun regardless.
 .PHONY: all installer-port-test audio-wav-tests capture-boot-video capture-openrfs capture-openrfs-proof capture-networking clean contract-counts contract-scenarios dynamic-elf-tests ext4-images ext4-tests ext4-fsync-test ext4-sparse-truncate-test fat32-images force-package-trust hooks https-tests account-host-test account-kdf-host-test account-v2-host-test account-delete-qemu-test account-delete-refusal-qemu-test account-migration-refusal-qemu-test account-migration-xattr-refusal-qemu-test encrypted-data-qemu-test encrypted-data-native-qemu-test encrypted-data-tamper-qemu-test encrypted-data-powercut-qemu-test encrypted-data-diskfull-qemu-test random-host-test entropy-qemu-test boot-artifact-signature-test \
 	iso kernel lint native-apps native-audio-proof native-dynamic-proof native-https-proof native-openrfs-proof native-sdl-proof sdl-preference-tests port-tests qemu-port-tests reproducible-sdk run \
-	package-control-tests package-fetch-tests package-manager-tests package-repository-tests package-service-tests package-state-tests package-transaction-tests package-trust-asset-tests package-trust-tests package-upload-tests qemu-test-ext4-powercuts screenshot-proof sdk sdk-once smoke tls-tests toolchain verify wall-clock-tests zlib-tests
+	package-control-tests package-fetch-tests package-manager-tests package-repository-tests package-service-tests package-state-tests package-transaction-tests package-trust-asset-tests package-trust-tests package-upload-tests process-host-test qemu-test-ext4-powercuts screenshot-proof sdk sdk-once smoke tls-tests toolchain verify wall-clock-tests zlib-tests
 
 all: kernel
 
@@ -668,6 +674,41 @@ $(NATIVE_TEST_PACKAGE): $(NATIVE_TEST_APP) apps/native-test/manifest.json \
 		apps/native-test/RESOURCE.TXT
 	$(PYTHON) tools/openrfs-package.py build \
 		--spec apps/native-test/manifest.json --executable $< --output $@
+
+$(NATIVE_EXEC_DIR):
+	mkdir -p $@
+
+$(NATIVE_EXEC_DIR)/main.o: apps/native-exec/main.c \
+		$(SDK_BUILD_DIR)/.installed | $(NATIVE_EXEC_DIR)
+	$(SDK_CC) $(SDK_CFLAGS) -c $< -o $@
+
+$(NATIVE_EXEC_DIR)/alt.o: apps/native-exec/alt.c \
+		$(SDK_BUILD_DIR)/.installed | $(NATIVE_EXEC_DIR)
+	$(SDK_CC) $(SDK_CFLAGS) -c $< -o $@
+
+$(NATIVE_EXEC_MAIN): $(NATIVE_EXEC_DIR)/main.o $(SDK_BUILD_DIR)/.installed
+	$(SDK_LD) $(SDK_LDFLAGS) -Map=$(NATIVE_EXEC_DIR)/EXECMAIN.map \
+		-o $@ $(SDK_CRT) $(NATIVE_EXEC_DIR)/main.o $(SDK_LIB)
+
+$(NATIVE_EXEC_ALT): $(NATIVE_EXEC_DIR)/alt.o $(SDK_BUILD_DIR)/.installed
+	$(SDK_LD) $(SDK_LDFLAGS) -Map=$(NATIVE_EXEC_DIR)/EXECALT.map \
+		-o $@ $(SDK_CRT) $(NATIVE_EXEC_DIR)/alt.o $(SDK_LIB)
+
+$(NATIVE_EXEC_MAIN_PACKAGE): $(NATIVE_EXEC_MAIN) \
+		apps/native-exec/main.json apps/native-exec/RESOURCE.TXT
+	$(PYTHON) tools/openrfs-package.py build \
+		--spec apps/native-exec/main.json --executable $< --output $@
+
+$(NATIVE_EXEC_ALT_PACKAGE): $(NATIVE_EXEC_ALT) \
+		apps/native-exec/alt.json apps/native-exec/RESOURCE.TXT
+	$(PYTHON) tools/openrfs-package.py build \
+		--spec apps/native-exec/alt.json --executable $< --output $@
+
+$(NATIVE_EXEC_SYSTEM_IMAGE): $(NATIVE_EXEC_MAIN_PACKAGE) \
+		$(NATIVE_EXEC_ALT_PACKAGE) tools/make-native-exec-fixture.py \
+		tools/fat32_image.py
+	$(PYTHON) tools/make-native-exec-fixture.py \
+		$(NATIVE_EXEC_MAIN_PACKAGE) $(NATIVE_EXEC_ALT_PACKAGE) $@
 
 $(NATIVE_APP_DIR)/encrypted-upload-test.o: apps/encrypted-upload-test/main.c \
 		$(SDK_BUILD_DIR)/.installed | $(NATIVE_APP_DIR)
@@ -1446,6 +1487,16 @@ $(BUILD_DIR)/vfs-mutation-host-test: tools/vfs-mutation-host-test.c \
 		-Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -Iinclude \
 		tools/vfs-mutation-host-test.c -Wl,--gc-sections -o $@
 
+$(BUILD_DIR)/native-process-host-test: tools/native-process-host-test.c \
+		src/kernel/native_process.c include/openrfs/native_process.h
+	mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
+		-Wall -Wextra -Werror -Wpedantic -Wshadow -Iinclude \
+		tools/native-process-host-test.c -Wl,--gc-sections -o $@
+
+process-host-test: $(BUILD_DIR)/native-process-host-test
+	$(BUILD_DIR)/native-process-host-test
+
 $(BUILD_DIR)/vfs-vnode-host-test: tools/vfs-vnode-host-test.c src/kernel/vfs.c \
 		include/openrfs/vfs_backend.h include/openrfs/fat32_fs.h include/openrfs/slot_claim.h include/openrfs/cpu.h
 	mkdir -p $(dir $@)
@@ -2074,6 +2125,7 @@ boot-artifact-signature-test:
 	$(PYTHON) tools/test_boot_artifact_signature.py
 
 verify: toolchain lint installer-port-test minimal-de-host-test \
+		process-host-test \
 		random-host-test account-host-test account-kdf-host-test account-v2-host-test \
 		data-aead-host-test data-aead-rewrite-host-test data-aead-slots-host-test \
 		data-aead-manifest-host-test data-aead-backend-host-test \
@@ -3431,6 +3483,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 		native-digest-refusal) expected=253 ;; \
 		native-abi-refusal) expected=1 ;; \
 		native-relaunch) expected=3 ;; \
+		native-exec) expected=19 ;; \
 		native-audio) expected=5 ;; \
 		native-sdl) expected=7 ;; \
 		native-dynamic) expected=9 ;; \
@@ -3488,6 +3541,10 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 				$(MAKE) '$(NATIVE_SYSTEM_IMAGE)' '$(NATIVE_DATA_IMAGE)' || exit 1; \
 				cp '$(NATIVE_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
 				hardware='-boot order=d -blockdev driver=file,filename=$(NATIVE_SYSTEM_IMAGE),node-name=native-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=native-system-file,node-name=native-system-raw,read-only=on -device nvme,serial=openrfs-system-fat32,drive=native-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=native-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=native-data-file,node-name=native-data-raw,read-only=off -device nvme,serial=openrfs-data-fat32,drive=native-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
+			native-exec) \
+				$(MAKE) '$(NATIVE_EXEC_SYSTEM_IMAGE)' '$(NATIVE_DATA_IMAGE)' || exit 1; \
+				cp '$(NATIVE_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
+				hardware='-boot order=d -blockdev driver=file,filename=$(NATIVE_EXEC_SYSTEM_IMAGE),node-name=exec-system-file,read-only=on,auto-read-only=off -blockdev driver=raw,file=exec-system-file,node-name=exec-system-raw,read-only=on -device nvme,serial=openrfs-system-fat32,drive=exec-system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1 -blockdev driver=file,filename=$(TEST_BUILD_DIR)/$*/data.raw,node-name=exec-data-file,read-only=off,auto-read-only=off -blockdev driver=raw,file=exec-data-file,node-name=exec-data-raw,read-only=off -device nvme,serial=openrfs-data-fat32,drive=exec-data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1' ;; \
 			native-lua) \
 				$(MAKE) '$(LUA_SYSTEM_IMAGE)' '$(LUA_DATA_IMAGE)' || exit 1; \
 				cp '$(LUA_DATA_IMAGE)' '$(TEST_BUILD_DIR)/$*/data.raw' || exit 1; \
@@ -3963,11 +4020,35 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 			grep -Fq '  page-fault bits: P=0 W=1 U=0 RSVD=0 I=0' "$$log" || \
 				diagnostics_ok=false ;; \
 		native) \
+			grep -Fxq 'OPENRFS PROCESS fork wait private-memory shared-offset PASS' "$$log" && \
+			grep -Fxq 'OPENRFS DESCRIPTOR dup redirection flags fork inheritance PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PIPE fork blocking EOF EPIPE nonblock redirection fdopen PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PROCESS slot exhaustion rollback and three children PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PROCESS child fault status and wait pointer refusal PASS' "$$log" && \
+			grep -Fxq 'OPENRFS SIGNAL SIGINT SIGTERM SIGKILL default wait PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PROCESS group signal and wait selectors PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PROCESS setsid session isolation and wait PASS' "$$log" && \
+			grep -Fxq 'OPENRFS SIGNAL ignored SIGCHLD auto reap and wait ECHILD PASS' "$$log" && \
+			grep -Fxq 'OPENRFS SIGNAL SIGPIPE default ignore and fork PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PROCESS inherited umask PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PROCESS Data cwd relative paths and fork inheritance PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PROCESS cwd preserved across exec PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PROCESS fork retains only calling thread PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PROCESS exec replacement image observed PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PROCESS fork exec same-pid argv env rollback cloexec PASS' "$$log" && \
 			grep -Eq '^OPENRFS PERF syscall iterations=1024 total_ns=[1-9][0-9]* average_ns=[1-9][0-9]*$$' "$$log" && \
 			grep -Eq '^OPENRFS PERF file sequential_bytes=65536 write_ns=[1-9][0-9]* read_ns=[1-9][0-9]*$$' "$$log" && \
 			grep -Eq '^OPENRFS PERF context-switch transitions=[1-9][0-9]* without_fpu_cycles=[1-9][0-9]* with_fpu_cycles=[1-9][0-9]*$$' "$$log" && \
 			grep -Eq '^OPENRFS NATIVE PASS argc=[1-9][0-9]* app=NATIVET.APP$$' "$$log" && \
 			grep -Fxq 'OpenRFS: native general loader, SDK, TLS, threads and FPU passed' "$$log" || \
+				diagnostics_ok=false ;; \
+		native-exec) \
+			grep -Fxq 'OPENRFS PROCESS distinct replacement image observed PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PROCESS distinct signed image exec and wait PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PROCESS execv execl inherited environment PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PROCESS exec pipeline consumer observed PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PROCESS fork exec pipeline and wait PASS' "$$log" && \
+			grep -Fxq 'OpenRFS: distinct native exec and wait resources clean' "$$log" || \
 				diagnostics_ok=false ;; \
 		native-lua) \
 			grep -Eq '^OPENRFS PERF lua startup_ns=[1-9][0-9]*$$' "$$log" && \
