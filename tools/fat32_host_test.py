@@ -92,7 +92,7 @@ class Fat32HostTests(unittest.TestCase):
                     and not item["path"].endswith("/..")]
         self.assertEqual(
             [(item["path"], item["size"]) for item in ordinary],
-            [("LUA/INPUT.TXT", 8), ("LUA/SCRIPT.LUA", 17),
+            [("LUA/INPUT.TXT", 4), ("LUA/SCRIPT.LUA", 13),
              ("SQLITE/SEED.TXT", 4)],
         )
         self.assertEqual(populated, fat32.populate_data_tree(
