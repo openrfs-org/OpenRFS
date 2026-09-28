@@ -735,6 +735,28 @@ static int process_group_probe(void)
     return 0;
 }
 
+static int process_session_probe(void)
+{
+    int status;
+
+    if (getsid(0) != getpid() || setsid() != -1 || errno != EPERM)
+        return 134;
+    const int child = fork();
+
+    if (child < 0) return 135;
+    if (child == 0) {
+        if (getsid(0) != getppid() || setsid() != getpid() ||
+            getsid(0) != getpid() || getpgrp() != getpid() ||
+            setsid() != -1 || errno != EPERM) _Exit(136);
+        _Exit(0);
+    }
+    if (waitpid(child, &status, 0) != child ||
+        !WIFEXITED(status) || WEXITSTATUS(status) != 0 ||
+        getsid(0) != getpid()) return 137;
+    puts("OPENRFS PROCESS setsid session isolation and wait PASS");
+    return 0;
+}
+
 static int process_umask_probe(void)
 {
     int status;
@@ -1015,6 +1037,8 @@ int main(int argc, char **argv, char **environment)
     probe = process_sigchld_ignore_probe();
     if (probe != 0) return probe;
     probe = process_group_probe();
+    if (probe != 0) return probe;
+    probe = process_session_probe();
     if (probe != 0) return probe;
     probe = process_umask_probe();
     if (probe != 0) return probe;

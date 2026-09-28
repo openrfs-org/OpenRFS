@@ -589,6 +589,16 @@ int setpgid(int pid, int pgid)
     return openrfs_result(openrfs_syscall2(OPENRFS_SYS_PROCESS_GROUP_SET,
         (uint64_t)(int64_t)pid, (uint64_t)(int64_t)pgid));
 }
+int setsid(void)
+{
+    return openrfs_result(openrfs_syscall0(
+        OPENRFS_SYS_PROCESS_SESSION_CREATE));
+}
+int getsid(int pid)
+{
+    return openrfs_result(openrfs_syscall1(OPENRFS_SYS_PROCESS_SESSION_GET,
+        (uint64_t)(int64_t)pid));
+}
 int fork(void)
 {
     openrfs_runtime_lock(&descriptor_lock);

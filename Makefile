@@ -4027,6 +4027,7 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/openrfs.iso
 			grep -Fxq 'OPENRFS PROCESS child fault status and wait pointer refusal PASS' "$$log" && \
 			grep -Fxq 'OPENRFS SIGNAL SIGINT SIGTERM SIGKILL default wait PASS' "$$log" && \
 			grep -Fxq 'OPENRFS PROCESS group signal and wait selectors PASS' "$$log" && \
+			grep -Fxq 'OPENRFS PROCESS setsid session isolation and wait PASS' "$$log" && \
 			grep -Fxq 'OPENRFS SIGNAL ignored SIGCHLD auto reap and wait ECHILD PASS' "$$log" && \
 			grep -Fxq 'OPENRFS SIGNAL SIGPIPE default ignore and fork PASS' "$$log" && \
 			grep -Fxq 'OPENRFS PROCESS inherited umask PASS' "$$log" && \

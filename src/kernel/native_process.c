@@ -7156,6 +7156,33 @@ static int64_t syscall_process_group_set(struct native_process *caller,
     return 0;
 }
 
+static int64_t syscall_process_session_create(struct native_process *process)
+{
+    for (size_t index = 0U; index < NATIVE_PROCESS_LIMIT; ++index) {
+        const struct native_process *member = &processes[index];
+
+        if (member->generation != 0U &&
+            member->process_group == process->generation) return -OPENRFS_EPERM;
+    }
+    process->session_id = process->generation;
+    process->process_group = process->generation;
+    return (int64_t)process->generation;
+}
+
+static int64_t syscall_process_session_get(struct native_process *caller,
+    int64_t pid)
+{
+    struct native_process *target;
+
+    if (pid < 0) return -OPENRFS_EINVAL;
+    if (pid > INT32_MAX) return -OPENRFS_ESRCH;
+    target = pid == 0 ? caller : process_by_pid((uint64_t)pid);
+    if (target == NULL) return -OPENRFS_ESRCH;
+    if (target != caller && target->session_id != caller->session_id)
+        return -OPENRFS_EPERM;
+    return (int64_t)target->session_id;
+}
+
 static void deliver_default_signal(struct native_process *target,
     int64_t signal_number)
 {
@@ -7719,6 +7746,10 @@ static int64_t dispatch_syscall(
     case OPENRFS_SYS_PROCESS_GROUP_SET:
         return syscall_process_group_set(process, (int64_t)frame->rdi,
             (int64_t)frame->rsi);
+    case OPENRFS_SYS_PROCESS_SESSION_CREATE:
+        return syscall_process_session_create(process);
+    case OPENRFS_SYS_PROCESS_SESSION_GET:
+        return syscall_process_session_get(process, (int64_t)frame->rdi);
     case OPENRFS_SYS_PROCESS_UMASK:
         return syscall_process_umask(process, frame->rdi);
     case OPENRFS_SYS_PROCESS_CHDIR:

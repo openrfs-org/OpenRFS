@@ -53,6 +53,20 @@ int main(void)
     processes[0].active = true;
     processes[0].session_id = 1U;
     processes[0].process_group = 1U;
+    assert(syscall_process_session_get(&processes[0], 0) == 1);
+    assert(syscall_process_session_create(&processes[0]) == -OPENRFS_EPERM);
+    processes[3].generation = 8U;
+    processes[3].parent_generation = 1U;
+    processes[3].active = true;
+    processes[3].session_id = 1U;
+    processes[3].process_group = 1U;
+    assert(syscall_process_session_create(&processes[3]) == 8);
+    assert(processes[3].session_id == 8U &&
+        processes[3].process_group == 8U);
+    assert(syscall_process_session_get(&processes[3], 0) == 8);
+    assert(syscall_process_session_get(&processes[0], 8) ==
+        -OPENRFS_EPERM);
+    zero_bytes(&processes[3], sizeof(processes[3]));
     processes[0].file_creation_mask = 0022U;
     assert(syscall_process_umask(&processes[0], 0077U) == 0022U);
     assert(processes[0].file_creation_mask == 0077U);
