@@ -1,4 +1,6 @@
 /build
+/ui/console/build/
+/ui/desktop/build/
 /apps/native-rust/target/
 __pycache__/
 *.pyc
