@@ -98,7 +98,7 @@ jobs:
                           build/userspace/rsd-userland-no-cat-fat16.raw \
                       --interaction uname \
                       --output build/release-captures
-                  file build/release-captures/rsd-rsd-proof-terminal.png \
+                  file build/release-captures/rsd-proof-terminal.png \
                       | grep -Fq 'PNG image data, 1024 x 768'
                   python3 tools/capture-boot-video.py \
                       --iso build/rsd.iso \
@@ -106,10 +106,10 @@ jobs:
                           build/userspace/rsd-userland-no-cat-fat16.raw \
                       --ffmpeg ffmpeg \
                       --interaction uname \
-                      --output build/rsd-rsd-proof-boot-20s.mp4
+                      --output build/rsd-proof-boot-20s.mp4
                   ffprobe -v error -show_entries format=duration \
                       -of default=noprint_wrappers=1:nokey=1 \
-                      build/rsd-rsd-proof-boot-20s.mp4 \
+                      build/rsd-proof-boot-20s.mp4 \
                       | grep -Eq '^20(\.0+)?$'
             - name: Assemble v1.0.0 release evidence
               if: github.ref == 'refs/tags/v1.0.0'
@@ -156,9 +156,9 @@ jobs:
                   cp build/tests/rsd-proof-userland-absent/serial.log \
                       "$release/missing-volume-serial-transcript.log"
                   cp build/all-qemu-scenarios.txt "$release/"
-                  cp build/release-captures/rsd-rsd-proof-terminal.png \
+                  cp build/release-captures/rsd-proof-terminal.png \
                       "$release/rsd-proof-linux-uname.png"
-                  cp build/rsd-rsd-proof-boot-20s.mp4 \
+                  cp build/rsd-proof-boot-20s.mp4 \
                       "$release/rsd-proof-boot-20s.mp4"
                   {
                       printf 'RSD v1.0.0 bounded RSD userspace volume\n'

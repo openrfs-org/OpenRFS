@@ -177,7 +177,7 @@ jobs:
                       --userspace build/userspace/rsd-userland-fat16.raw \
                       --interaction cat \
                       --output build/release-captures
-                  file build/release-captures/rsd-rsd-proof-terminal.png \
+                  file build/release-captures/rsd-proof-terminal.png \
                       | grep -Fq 'PNG image data, 1024 x 768'
                   grep -Fq \
                       'RW USERLAND launch completed successfully cat ordinal 1' \
@@ -186,10 +186,10 @@ jobs:
                       --iso build/rsd.iso \
                       --userspace build/userspace/rsd-userland-fat16.raw \
                       --ffmpeg ffmpeg --interaction cat \
-                      --output build/rsd-rsd-proof-cat-boot-20s.mp4
+                      --output build/rsd-proof-cat-boot-20s.mp4
                   ffprobe -v error -show_entries format=duration \
                       -of default=noprint_wrappers=1:nokey=1 \
-                      build/rsd-rsd-proof-cat-boot-20s.mp4 \
+                      build/rsd-proof-cat-boot-20s.mp4 \
                       | grep -Eq '^20(\.0+)?$'
             - name: Assemble v1.1.0 release evidence
               if: github.ref == 'refs/tags/v1.1.0'
@@ -251,11 +251,11 @@ jobs:
                       build/tests/rsd-proof-userland-interactive/serial.log \
                       >"$release/foreground-lifecycle-trace.log"
                   cp build/all-qemu-scenarios.txt "$release/"
-                  cp build/release-captures/rsd-rsd-proof-terminal.png \
+                  cp build/release-captures/rsd-proof-terminal.png \
                       "$release/rsd-proof-linux-cat.png"
                   cp build/release-captures/capture-serial.log \
                       "$release/interactive-media-serial.log"
-                  cp build/rsd-rsd-proof-cat-boot-20s.mp4 \
+                  cp build/rsd-proof-cat-boot-20s.mp4 \
                       "$release/rsd-proof-linux-cat-boot-20s.mp4"
                   {
                       printf 'RSD v1.1.0 bounded RSD userspace volume\n'
