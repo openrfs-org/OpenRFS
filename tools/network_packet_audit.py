@@ -279,7 +279,7 @@ def audit(path: Path, https: bool = False) -> dict[str, object]:
         elif protocol in (6, 17):
             malformed += 1
     plaintext_markers = (b"GET ", b"HEAD ", b"POST ", b"HTTP/",
-                         b"hello from the OpenRFS HTTPS peer")
+                         b"hello from the RSD HTTPS peer")
     counts["https_plaintext"] = sum(
         int(marker in stream["data"])
         for stream in tls_streams

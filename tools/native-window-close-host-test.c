@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include <assert.h>
 #include <stdio.h>
-#include <openrfs/cpu.h>
-#include <openrfs/native_handle.h>
-#include <openrfs/native_process.h>
-#include <openrfs/ui.h>
+#include <rsd/cpu.h>
+#include <rsd/native_handle.h>
+#include <rsd/native_process.h>
+#include <rsd/ui.h>
 
 static bool host_interrupts_enabled = true;
 static bool host_window_open = true;
@@ -51,9 +51,9 @@ enum package_control_status package_control_close(uint64_t owner,
 enum audio_native_status audio_native_close_report(uint64_t owner,
     uint64_t token, bool *consumed)
 { (void)owner; (void)token; (void)consumed; assert(false); return 0; }
-enum openrfsfs_status openrfsfs_close_report(openrfsfs_handle handle, bool *consumed)
+enum rsdfs_status rsdfs_close_report(rsdfs_handle handle, bool *consumed)
 { (void)handle; (void)consumed; assert(false); return 0; }
-enum openrfsfs_status openrfsfs_directory_close_report(openrfsfs_directory_handle handle,
+enum rsdfs_status rsdfs_directory_close_report(rsdfs_directory_handle handle,
     bool *consumed)
 { (void)handle; (void)consumed; assert(false); return 0; }
 enum heap_status heap_free(void *pointer)
@@ -72,8 +72,8 @@ enum frame_status frame_release(uintptr_t address)
 static enum native_resource_close_result close_window(uint8_t type,
     const struct native_resource *resource, void *context)
 {
-    assert(type == OPENRFS_HANDLE_WINDOW);
-    return close_resource(OPENRFS_HANDLE_WINDOW, resource, context);
+    assert(type == RSD_HANDLE_WINDOW);
+    return close_resource(RSD_HANDLE_WINDOW, resource, context);
 }
 
 int main(void)
@@ -82,8 +82,8 @@ int main(void)
     const struct native_resource resource = {{3U, generation, 0U, 0U}};
     struct native_process process;
     struct native_handle_table table;
-    openrfs_handle_t first;
-    openrfs_handle_t duplicate;
+    rsd_handle_t first;
+    rsd_handle_t duplicate;
 
     zero_bytes(&process, sizeof(process));
     process.generation = generation;
@@ -94,7 +94,7 @@ int main(void)
     process.window.event_object_open = true;
 
     assert(native_handle_table_initialize(&table, 2U) == NATIVE_HANDLE_OK);
-    assert(native_handle_install(&table, OPENRFS_HANDLE_WINDOW, &resource,
+    assert(native_handle_install(&table, RSD_HANDLE_WINDOW, &resource,
         &first) == NATIVE_HANDLE_OK);
     assert(native_handle_duplicate(&table, first, &duplicate) == NATIVE_HANDLE_OK);
     assert(native_handle_close(&table, first, close_window, &process) ==

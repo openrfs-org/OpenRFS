@@ -5,10 +5,10 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <openrfs/fat32_fs.h>
-#include <openrfs/native_handle.h>
-#include <openrfs/package_state.h>
-#include <openrfs/package_upload.h>
+#include <rsd/fat32_fs.h>
+#include <rsd/native_handle.h>
+#include <rsd/package_state.h>
+#include <rsd/package_upload.h>
 
 #define MOCK_FILE_BYTES (256U * 1024U)
 #define NO_WRITE_FAILURE SIZE_MAX
@@ -39,9 +39,9 @@ static uint32_t truncate_count;
 static uint32_t create_count;
 static uint32_t prepared_open_count;
 
-bool openrfsfs_has_atomic_replace(enum openrfsfs_volume volume)
+bool rsdfs_has_atomic_replace(enum rsdfs_volume volume)
 {
-    return volume == OPENRFSFS_VOLUME_DATA && inode_bound_cleanup;
+    return volume == RSDFS_VOLUME_DATA && inode_bound_cleanup;
 }
 
 static struct mock_file *named_file(int index)
@@ -72,149 +72,149 @@ static int path_index(const char *path)
     return path[at] - '0';
 }
 
-enum openrfsfs_status openrfsfs_mkdir(enum openrfsfs_volume volume, const char *path)
+enum rsdfs_status rsdfs_mkdir(enum rsdfs_volume volume, const char *path)
 {
-    if (volume != OPENRFSFS_VOLUME_DATA || path == NULL) {
-        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    if (volume != RSDFS_VOLUME_DATA || path == NULL) {
+        return RSDFS_STATUS_INVALID_ARGUMENT;
     }
     if (path[0] != 'p' || path[1] != 'k' || path[2] != 'g') {
-        return OPENRFSFS_STATUS_PATH;
+        return RSDFS_STATUS_PATH;
     }
     if (directory_present) {
-        return OPENRFSFS_STATUS_EXISTS;
+        return RSDFS_STATUS_EXISTS;
     }
     directory_present = true;
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_unlink(enum openrfsfs_volume volume, const char *path)
+enum rsdfs_status rsdfs_unlink(enum rsdfs_volume volume, const char *path)
 {
     int index = path_index(path);
 
-    if (volume != OPENRFSFS_VOLUME_DATA || index < 0) {
-        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    if (volume != RSDFS_VOLUME_DATA || index < 0) {
+        return RSDFS_STATUS_INVALID_ARGUMENT;
     }
     struct mock_file *file = named_file(index);
     if (!file->present) {
-        return OPENRFSFS_STATUS_NOT_FOUND;
+        return RSDFS_STATUS_NOT_FOUND;
     }
     if (fail_next_unlink) {
         fail_next_unlink = false;
-        return OPENRFSFS_STATUS_IO;
+        return RSDFS_STATUS_IO;
     }
     if (file->open) {
-        return OPENRFSFS_STATUS_BUSY;
+        return RSDFS_STATUS_BUSY;
     }
     file->present = false;
     file->size = 0U;
     file->offset = 0U;
     ++unlink_count;
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_stat_path(enum openrfsfs_volume volume,
-    const char *path, struct openrfsfs_stat *stat)
+enum rsdfs_status rsdfs_stat_path(enum rsdfs_volume volume,
+    const char *path, struct rsdfs_stat *stat)
 {
     int index = path_index(path);
 
-    if (volume != OPENRFSFS_VOLUME_DATA || index < 0 || stat == NULL) {
-        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    if (volume != RSDFS_VOLUME_DATA || index < 0 || stat == NULL) {
+        return RSDFS_STATUS_INVALID_ARGUMENT;
     }
     struct mock_file *file = named_file(index);
     if (!file->present) {
-        return OPENRFSFS_STATUS_NOT_FOUND;
+        return RSDFS_STATUS_NOT_FOUND;
     }
-    *stat = (struct openrfsfs_stat){
+    *stat = (struct rsdfs_stat){
         .size = file->size,
         .directory = false
     };
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_truncate(enum openrfsfs_volume volume,
+enum rsdfs_status rsdfs_truncate(enum rsdfs_volume volume,
     const char *path, uint64_t size)
 {
     int index = path_index(path);
 
-    if (volume != OPENRFSFS_VOLUME_DATA || index < 0 ||
+    if (volume != RSDFS_VOLUME_DATA || index < 0 ||
             size > MOCK_FILE_BYTES) {
-        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+        return RSDFS_STATUS_INVALID_ARGUMENT;
     }
     struct mock_file *file = named_file(index);
     if (!file->present) {
-        return OPENRFSFS_STATUS_NOT_FOUND;
+        return RSDFS_STATUS_NOT_FOUND;
     }
     if (file->open) {
-        return OPENRFSFS_STATUS_BUSY;
+        return RSDFS_STATUS_BUSY;
     }
     file->size = (size_t)size;
     if (file->offset > file->size) {
         file->offset = file->size;
     }
     ++truncate_count;
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_unlink_held_file(openrfsfs_handle handle, const char *path)
+enum rsdfs_status rsdfs_unlink_held_file(rsdfs_handle handle, const char *path)
 {
     const int index = path_index(path);
     if (handle == 0U || handle > PACKAGE_UPLOAD_SLOT_LIMIT ||
-        !files[handle - 1U].open) return OPENRFSFS_STATUS_STALE_HANDLE;
-    if (index < 0) return OPENRFSFS_STATUS_PATH;
-    if (named_file(index) != &files[handle - 1U]) return OPENRFSFS_STATUS_STALE_HANDLE;
-    if (!files[index].present) return OPENRFSFS_STATUS_NOT_FOUND;
+        !files[handle - 1U].open) return RSDFS_STATUS_STALE_HANDLE;
+    if (index < 0) return RSDFS_STATUS_PATH;
+    if (named_file(index) != &files[handle - 1U]) return RSDFS_STATUS_STALE_HANDLE;
+    if (!files[index].present) return RSDFS_STATUS_NOT_FOUND;
     if (fail_next_unlink) {
         fail_next_unlink = false;
-        return OPENRFSFS_STATUS_IO;
+        return RSDFS_STATUS_IO;
     }
     files[index].present = false;
     ++unlink_count;
     if (lose_unlink_receipt) {
         lose_unlink_receipt = false;
-        return OPENRFSFS_STATUS_IO;
+        return RSDFS_STATUS_IO;
     }
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_sync(enum openrfsfs_volume volume)
+enum rsdfs_status rsdfs_sync(enum rsdfs_volume volume)
 {
-    if (volume != OPENRFSFS_VOLUME_DATA) {
-        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    if (volume != RSDFS_VOLUME_DATA) {
+        return RSDFS_STATUS_INVALID_ARGUMENT;
     }
     ++sync_count;
     if (fail_next_sync) {
         fail_next_sync = false;
-        return OPENRFSFS_STATUS_IO;
+        return RSDFS_STATUS_IO;
     }
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_create(enum openrfsfs_volume volume, const char *path)
+enum rsdfs_status rsdfs_create(enum rsdfs_volume volume, const char *path)
 {
     int index = path_index(path);
 
     ++create_count;
-    if (volume != OPENRFSFS_VOLUME_DATA || index < 0 || !directory_present) {
-        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    if (volume != RSDFS_VOLUME_DATA || index < 0 || !directory_present) {
+        return RSDFS_STATUS_INVALID_ARGUMENT;
     }
     if (files[index].present) {
-        return OPENRFSFS_STATUS_EXISTS;
+        return RSDFS_STATUS_EXISTS;
     }
     files[index] = (struct mock_file){0};
     files[index].present = true;
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_open_options(enum openrfsfs_volume volume,
-    const char *path, enum openrfsfs_access access, uint8_t flags, uint16_t mode,
-    openrfsfs_handle *handle)
+enum rsdfs_status rsdfs_open_options(enum rsdfs_volume volume,
+    const char *path, enum rsdfs_access access, uint8_t flags, uint16_t mode,
+    rsdfs_handle *handle)
 {
     int index = path_index(path);
 
-    if (volume != OPENRFSFS_VOLUME_DATA || index < 0 || handle == NULL ||
-        !directory_present || access != OPENRFSFS_ACCESS_READ_WRITE || mode != 0600U ||
-        flags != (OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE)) {
-        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    if (volume != RSDFS_VOLUME_DATA || index < 0 || handle == NULL ||
+        !directory_present || access != RSDFS_ACCESS_READ_WRITE || mode != 0600U ||
+        flags != (RSDFS_OPEN_CREATE | RSDFS_OPEN_EXCLUSIVE)) {
+        return RSDFS_STATUS_INVALID_ARGUMENT;
     }
     ++prepared_open_count;
     *handle = 0U;
@@ -225,59 +225,59 @@ enum openrfsfs_status openrfsfs_open_options(enum openrfsfs_volume volume,
             files[index] = (struct mock_file){.present = true, .size = 1U};
             files[index].bytes[0] = 'R';
         }
-        return OPENRFSFS_STATUS_IO;
+        return RSDFS_STATUS_IO;
     }
     if (files[index].present) {
-        return OPENRFSFS_STATUS_EXISTS;
+        return RSDFS_STATUS_EXISTS;
     }
     files[index] = (struct mock_file){.present = true, .open = true};
-    *handle = (openrfsfs_handle)(index + 1);
-    return OPENRFSFS_STATUS_OK;
+    *handle = (rsdfs_handle)(index + 1);
+    return RSDFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_open(
-    enum openrfsfs_volume volume,
+enum rsdfs_status rsdfs_open(
+    enum rsdfs_volume volume,
     const char *path,
-    enum openrfsfs_access access,
-    openrfsfs_handle *handle
+    enum rsdfs_access access,
+    rsdfs_handle *handle
 )
 {
     int index = path_index(path);
 
-    if (volume != OPENRFSFS_VOLUME_DATA || index < 0 || handle == NULL ||
-        (access != OPENRFSFS_ACCESS_READ && access != OPENRFSFS_ACCESS_WRITE)) {
-        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    if (volume != RSDFS_VOLUME_DATA || index < 0 || handle == NULL ||
+        (access != RSDFS_ACCESS_READ && access != RSDFS_ACCESS_WRITE)) {
+        return RSDFS_STATUS_INVALID_ARGUMENT;
     }
     *handle = 0U;
     if (fail_next_open) {
         fail_next_open = false;
-        return OPENRFSFS_STATUS_IO;
+        return RSDFS_STATUS_IO;
     }
     if (!files[index].present) {
-        return OPENRFSFS_STATUS_NOT_FOUND;
+        return RSDFS_STATUS_NOT_FOUND;
     }
     if (files[index].open) {
-        return OPENRFSFS_STATUS_BUSY;
+        return RSDFS_STATUS_BUSY;
     }
     files[index].open = true;
-    files[index].offset = access == OPENRFSFS_ACCESS_WRITE ? files[index].size : 0U;
-    *handle = (openrfsfs_handle)(index + 1);
-    return OPENRFSFS_STATUS_OK;
+    files[index].offset = access == RSDFS_ACCESS_WRITE ? files[index].size : 0U;
+    *handle = (rsdfs_handle)(index + 1);
+    return RSDFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_close_report(openrfsfs_handle handle, bool *consumed)
+enum rsdfs_status rsdfs_close_report(rsdfs_handle handle, bool *consumed)
 {
     if (consumed == NULL) {
-        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+        return RSDFS_STATUS_INVALID_ARGUMENT;
     }
     *consumed = false;
     if (handle == 0U || handle > PACKAGE_UPLOAD_SLOT_LIMIT ||
         !files[handle - 1U].open) {
-        return OPENRFSFS_STATUS_STALE_HANDLE;
+        return RSDFS_STATUS_STALE_HANDLE;
     }
     if (refuse_next_close) {
         refuse_next_close = false;
-        return OPENRFSFS_STATUS_BUSY;
+        return RSDFS_STATUS_BUSY;
     }
     files[handle - 1U].open = false;
     if (!files[handle - 1U].present) {
@@ -285,25 +285,25 @@ enum openrfsfs_status openrfsfs_close_report(openrfsfs_handle handle, bool *cons
         files[handle - 1U].offset = 0U;
     }
     *consumed = true;
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_close(openrfsfs_handle handle)
+enum rsdfs_status rsdfs_close(rsdfs_handle handle)
 {
     bool consumed;
 
-    return openrfsfs_close_report(handle, &consumed);
+    return rsdfs_close_report(handle, &consumed);
 }
 
-enum openrfsfs_status openrfsfs_fsync(openrfsfs_handle handle)
+enum rsdfs_status rsdfs_fsync(rsdfs_handle handle)
 {
     if (handle == 0U || handle > PACKAGE_UPLOAD_SLOT_LIMIT ||
-        !files[handle - 1U].open) return OPENRFSFS_STATUS_STALE_HANDLE;
-    return openrfsfs_sync(OPENRFSFS_VOLUME_DATA);
+        !files[handle - 1U].open) return RSDFS_STATUS_STALE_HANDLE;
+    return rsdfs_sync(RSDFS_VOLUME_DATA);
 }
 
-enum openrfsfs_status openrfsfs_write(
-    openrfsfs_handle handle,
+enum rsdfs_status rsdfs_write(
+    rsdfs_handle handle,
     const uint8_t *source,
     size_t source_bytes,
     size_t *written_bytes
@@ -315,20 +315,20 @@ enum openrfsfs_status openrfsfs_write(
     if (written_bytes == NULL || handle == 0U ||
         handle > PACKAGE_UPLOAD_SLOT_LIMIT || !files[handle - 1U].open ||
         (source == NULL && source_bytes != 0U)) {
-        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+        return RSDFS_STATUS_INVALID_ARGUMENT;
     }
     struct mock_file *file = &files[handle - 1U];
     size_t allowed = source_bytes;
 
     *written_bytes = 0U;
     if (file->offset >= write_failure_at) {
-        return OPENRFSFS_STATUS_IO;
+        return RSDFS_STATUS_IO;
     }
     if (allowed > write_failure_at - file->offset) {
         allowed = write_failure_at - file->offset;
     }
     if (allowed > MOCK_FILE_BYTES - file->offset) {
-        return OPENRFSFS_STATUS_FULL;
+        return RSDFS_STATUS_FULL;
     }
     for (size_t index = 0U; index < allowed; ++index) {
         file->bytes[file->offset + index] = source[index];
@@ -338,11 +338,11 @@ enum openrfsfs_status openrfsfs_write(
         file->size = file->offset;
     }
     *written_bytes = allowed;
-    return allowed == source_bytes ? OPENRFSFS_STATUS_OK : OPENRFSFS_STATUS_IO;
+    return allowed == source_bytes ? RSDFS_STATUS_OK : RSDFS_STATUS_IO;
 }
 
-enum openrfsfs_status openrfsfs_pread(
-    openrfsfs_handle handle,
+enum rsdfs_status rsdfs_pread(
+    rsdfs_handle handle,
     uint8_t *destination,
     size_t capacity,
     uint64_t offset,
@@ -352,7 +352,7 @@ enum openrfsfs_status openrfsfs_pread(
     if (read_bytes == NULL || handle == 0U ||
         handle > PACKAGE_UPLOAD_SLOT_LIMIT || !files[handle - 1U].open ||
         (destination == NULL && capacity != 0U)) {
-        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+        return RSDFS_STATUS_INVALID_ARGUMENT;
     }
     struct mock_file *file = &files[handle - 1U];
     size_t available = offset < file->size ? file->size - (size_t)offset : 0U;
@@ -364,7 +364,7 @@ enum openrfsfs_status openrfsfs_pread(
         destination[index] = file->bytes[(size_t)offset + index];
     }
     *read_bytes = capacity;
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
 static int initialize_test(void)
@@ -584,7 +584,7 @@ static enum native_resource_close_result close_upload_resource(
     struct package_upload_report report;
     enum package_upload_status status;
 
-    CHECK(type == OPENRFS_HANDLE_PACKAGE_UPLOAD && resource != NULL &&
+    CHECK(type == RSD_HANDLE_PACKAGE_UPLOAD && resource != NULL &&
         context == NULL, NATIVE_RESOURCE_RETAINED);
     status = package_upload_close(95U,
         (package_upload_token)resource->words[0], &report);
@@ -597,13 +597,13 @@ static int native_upload_close_refusal_test(void)
     struct package_upload_report report;
     struct native_handle_table table;
     struct native_resource resource = {{0U, 0U, 0U, 0U}};
-    openrfs_handle_t first;
-    openrfs_handle_t duplicate;
+    rsd_handle_t first;
+    rsd_handle_t duplicate;
 
     CHECK(package_upload_open(95U, &report) == PACKAGE_UPLOAD_STATUS_OK, 110);
     resource.words[0] = report.token;
     CHECK(native_handle_table_initialize(&table, 2U) == NATIVE_HANDLE_OK, 111);
-    CHECK(native_handle_install(&table, OPENRFS_HANDLE_PACKAGE_UPLOAD,
+    CHECK(native_handle_install(&table, RSD_HANDLE_PACKAGE_UPLOAD,
         &resource, &first) == NATIVE_HANDLE_OK, 112);
     CHECK(native_handle_duplicate(&table, first, &duplicate) ==
         NATIVE_HANDLE_OK, 113);
@@ -631,13 +631,13 @@ static int refused_open_preserves_namespace_test(void)
     fail_next_open = true;
     replace_on_refused_open = true;
     CHECK(package_upload_open(90U, &report) == PACKAGE_UPLOAD_STATUS_FILESYSTEM &&
-        report.filesystem_status == OPENRFSFS_STATUS_IO && report.token == 0U &&
+        report.filesystem_status == RSDFS_STATUS_IO && report.token == 0U &&
         package_upload_resources_released(), 70);
     CHECK(files[0].present && !files[0].open && files[0].size == 1U &&
         files[0].bytes[0] == 'R' && unlink_count == previous_unlinks &&
         sync_count == previous_syncs, 71);
     CHECK(package_upload_open(90U, &report) == PACKAGE_UPLOAD_STATUS_FILESYSTEM &&
-        report.filesystem_status == OPENRFSFS_STATUS_EXISTS && report.token == 0U &&
+        report.filesystem_status == RSDFS_STATUS_EXISTS && report.token == 0U &&
         package_upload_resources_released(), 72);
     CHECK(files[0].present && !files[0].open && files[0].size == 1U &&
         files[0].bytes[0] == 'R' && unlink_count == previous_unlinks &&

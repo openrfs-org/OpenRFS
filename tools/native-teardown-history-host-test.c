@@ -3,21 +3,21 @@
 #include <assert.h>
 #include <stdio.h>
 
-#include <openrfs/native_handle.h>
-#include <openrfs/native_process.h>
+#include <rsd/native_handle.h>
+#include <rsd/native_process.h>
 
 static const uint8_t all_types[] = {
-    OPENRFS_HANDLE_FILE,
-    OPENRFS_HANDLE_DIRECTORY,
-    OPENRFS_HANDLE_WINDOW,
-    OPENRFS_HANDLE_EVENT_QUEUE,
-    OPENRFS_HANDLE_STREAM,
-    OPENRFS_HANDLE_DATAGRAM,
-    OPENRFS_HANDLE_TIMER,
-    OPENRFS_HANDLE_THREAD,
-    OPENRFS_HANDLE_AUDIO_OUTPUT,
-    OPENRFS_HANDLE_PACKAGE_UPLOAD,
-    OPENRFS_HANDLE_PACKAGE_CONTROL
+    RSD_HANDLE_FILE,
+    RSD_HANDLE_DIRECTORY,
+    RSD_HANDLE_WINDOW,
+    RSD_HANDLE_EVENT_QUEUE,
+    RSD_HANDLE_STREAM,
+    RSD_HANDLE_DATAGRAM,
+    RSD_HANDLE_TIMER,
+    RSD_HANDLE_THREAD,
+    RSD_HANDLE_AUDIO_OUTPUT,
+    RSD_HANDLE_PACKAGE_UPLOAD,
+    RSD_HANDLE_PACKAGE_CONTROL
 };
 
 struct close_script {
@@ -43,8 +43,8 @@ static void script_initialize(
 {
     assert(script != NULL);
     clear_bytes(script, sizeof(*script));
-    for (size_t type = OPENRFS_HANDLE_FILE;
-         type <= OPENRFS_HANDLE_PACKAGE_CONTROL; ++type) {
+    for (size_t type = RSD_HANDLE_FILE;
+         type <= RSD_HANDLE_PACKAGE_CONTROL; ++type) {
         script->results[type] = result;
     }
 }
@@ -58,8 +58,8 @@ static enum native_resource_close_result scripted_close(
     struct close_script *script = context;
 
     assert(script != NULL && resource != NULL);
-    assert(type >= OPENRFS_HANDLE_FILE &&
-        type <= OPENRFS_HANDLE_PACKAGE_CONTROL);
+    assert(type >= RSD_HANDLE_FILE &&
+        type <= RSD_HANDLE_PACKAGE_CONTROL);
     ++script->calls[type];
     if (script->order_count < NATIVE_HANDLE_LIMIT) {
         script->order[script->order_count++] = type;
@@ -71,7 +71,7 @@ static void install_resource(
     struct native_handle_table *table,
     uint8_t type,
     uint64_t marker,
-    openrfs_handle_t *handle
+    rsd_handle_t *handle
 )
 {
     const struct native_resource resource = {{
@@ -170,12 +170,12 @@ static void report_argument_and_reset_test(void)
 
     clear_bytes(&report, sizeof(report));
     report.attempted_handles = 19U;
-    report.types[OPENRFS_HANDLE_FILE].retired_handles = 3U;
+    report.types[RSD_HANDLE_FILE].retired_handles = 3U;
     assert(native_handle_close_all_diagnostics(NULL, scripted_close, NULL,
         &report) == NATIVE_HANDLE_NULL_ARGUMENT);
     assert(report.status == NATIVE_HANDLE_NULL_ARGUMENT &&
         report.invalid_arguments == 1U && report.attempted_handles == 0U);
-    assert_summary_zero(&report.types[OPENRFS_HANDLE_FILE]);
+    assert_summary_zero(&report.types[RSD_HANDLE_FILE]);
     assert(native_handle_close_all_diagnostics(&table, scripted_close, NULL,
         &report) == NATIVE_HANDLE_BAD_LIMIT);
     assert(report.status == NATIVE_HANDLE_BAD_LIMIT &&
@@ -186,7 +186,7 @@ static void report_argument_and_reset_test(void)
 
     clear_bytes(&report, sizeof(report));
     report.attempted_handles = 4U;
-    report.types[OPENRFS_HANDLE_TIMER].callback_attempts = 7U;
+    report.types[RSD_HANDLE_TIMER].callback_attempts = 7U;
     native_handle_close_report_reset(&report);
     assert_report_counters_zero(&report);
     native_handle_close_report_reset(NULL);
@@ -199,13 +199,13 @@ static void all_resource_classes_exact_test(void)
     struct native_handle_table table;
     struct native_handle_close_report report;
     struct close_script script;
-    openrfs_handle_t handles[sizeof(all_types) / sizeof(all_types[0])];
+    rsd_handle_t handles[sizeof(all_types) / sizeof(all_types[0])];
 
     script_initialize(&script, NATIVE_RESOURCE_CLOSED);
-    script.results[OPENRFS_HANDLE_DIRECTORY] =
+    script.results[RSD_HANDLE_DIRECTORY] =
         NATIVE_RESOURCE_CLOSED_WITH_ERROR;
-    script.results[OPENRFS_HANDLE_WINDOW] = NATIVE_RESOURCE_RETAINED;
-    script.results[OPENRFS_HANDLE_PACKAGE_UPLOAD] =
+    script.results[RSD_HANDLE_WINDOW] = NATIVE_RESOURCE_RETAINED;
+    script.results[RSD_HANDLE_PACKAGE_UPLOAD] =
         NATIVE_RESOURCE_CLOSED_WITH_ERROR;
     assert(native_handle_table_initialize(&table, 12U) == NATIVE_HANDLE_OK);
     for (size_t index = 0U; index < sizeof(all_types) / sizeof(all_types[0]);
@@ -226,27 +226,27 @@ static void all_resource_classes_exact_test(void)
         const uint8_t type = all_types[index];
 
         assert_type_summary(&report, type, 1U, 1U,
-            type == OPENRFS_HANDLE_DIRECTORY ||
-                type == OPENRFS_HANDLE_PACKAGE_UPLOAD ? 0U :
-                type == OPENRFS_HANDLE_WINDOW ? 0U : 1U,
-            type == OPENRFS_HANDLE_DIRECTORY ||
-                type == OPENRFS_HANDLE_PACKAGE_UPLOAD ? 1U : 0U,
-            type == OPENRFS_HANDLE_WINDOW ? 1U : 0U,
+            type == RSD_HANDLE_DIRECTORY ||
+                type == RSD_HANDLE_PACKAGE_UPLOAD ? 0U :
+                type == RSD_HANDLE_WINDOW ? 0U : 1U,
+            type == RSD_HANDLE_DIRECTORY ||
+                type == RSD_HANDLE_PACKAGE_UPLOAD ? 1U : 0U,
+            type == RSD_HANDLE_WINDOW ? 1U : 0U,
             0U, 0U, 0U,
-            type == OPENRFS_HANDLE_WINDOW ? 0U : 1U);
+            type == RSD_HANDLE_WINDOW ? 0U : 1U);
         assert(script.calls[type] == 1U);
     }
-    assert(report.types[OPENRFS_HANDLE_WINDOW].retained_resources == 1U &&
-        report.types[OPENRFS_HANDLE_WINDOW].retired_handles == 0U);
-    assert(report.types[OPENRFS_HANDLE_FILE].attempted_handles == 1U);
-    script.results[OPENRFS_HANDLE_WINDOW] = NATIVE_RESOURCE_CLOSED;
+    assert(report.types[RSD_HANDLE_WINDOW].retained_resources == 1U &&
+        report.types[RSD_HANDLE_WINDOW].retired_handles == 0U);
+    assert(report.types[RSD_HANDLE_FILE].attempted_handles == 1U);
+    script.results[RSD_HANDLE_WINDOW] = NATIVE_RESOURCE_CLOSED;
     assert(native_handle_close_all_diagnostics(&table, scripted_close, &script,
         &report) == NATIVE_HANDLE_OK);
     assert(report.active_handles_before == 1U &&
         report.active_handles_after == 0U && report.progress &&
-        report.types[OPENRFS_HANDLE_WINDOW].closed_resources == 1U &&
-        report.types[OPENRFS_HANDLE_WINDOW].retired_handles == 1U &&
-        script.calls[OPENRFS_HANDLE_WINDOW] == 2U);
+        report.types[RSD_HANDLE_WINDOW].closed_resources == 1U &&
+        report.types[RSD_HANDLE_WINDOW].retired_handles == 1U &&
+        script.calls[RSD_HANDLE_WINDOW] == 2U);
 }
 
 static void duplicate_accounting_test(void)
@@ -254,13 +254,13 @@ static void duplicate_accounting_test(void)
     struct native_handle_table table;
     struct native_handle_close_report report;
     struct close_script script;
-    openrfs_handle_t first;
-    openrfs_handle_t second;
-    openrfs_handle_t third;
+    rsd_handle_t first;
+    rsd_handle_t second;
+    rsd_handle_t third;
 
     script_initialize(&script, NATIVE_RESOURCE_RETAINED);
     assert(native_handle_table_initialize(&table, 3U) == NATIVE_HANDLE_OK);
-    install_resource(&table, OPENRFS_HANDLE_FILE, UINT64_C(31), &first);
+    install_resource(&table, RSD_HANDLE_FILE, UINT64_C(31), &first);
     assert(native_handle_duplicate(&table, first, &second) == NATIVE_HANDLE_OK);
     assert(native_handle_duplicate(&table, first, &third) == NATIVE_HANDLE_OK);
     assert(native_handle_close_all_diagnostics(&table, scripted_close, &script,
@@ -270,24 +270,24 @@ static void duplicate_accounting_test(void)
         report.retained_resources == 1U && report.retired_handles == 2U &&
         report.progress && report.retryable &&
         report.active_handles_after == 1U);
-    assert_type_summary(&report, OPENRFS_HANDLE_FILE, 3U, 1U, 0U, 0U, 1U,
+    assert_type_summary(&report, RSD_HANDLE_FILE, 3U, 1U, 0U, 0U, 1U,
         2U, 0U, 0U, 2U);
-    assert(script.calls[OPENRFS_HANDLE_FILE] == 1U);
+    assert(script.calls[RSD_HANDLE_FILE] == 1U);
     assert(native_handle_close_all_diagnostics(&table, scripted_close, &script,
         &report) == NATIVE_HANDLE_CLOSE_FAILED);
     assert(report.attempted_handles == 1U && report.callback_attempts == 1U &&
         report.duplicate_references == 0U && report.retained_resources == 1U &&
         !report.progress && report.retryable &&
         report.active_handles_after == 1U);
-    assert_type_summary(&report, OPENRFS_HANDLE_FILE, 1U, 1U, 0U, 0U, 1U,
+    assert_type_summary(&report, RSD_HANDLE_FILE, 1U, 1U, 0U, 0U, 1U,
         0U, 0U, 0U, 0U);
-    script.results[OPENRFS_HANDLE_FILE] = NATIVE_RESOURCE_CLOSED;
+    script.results[RSD_HANDLE_FILE] = NATIVE_RESOURCE_CLOSED;
     assert(native_handle_close_all_diagnostics(&table, scripted_close, &script,
         &report) == NATIVE_HANDLE_OK);
     assert(report.progress && !report.retryable &&
-        report.types[OPENRFS_HANDLE_FILE].closed_resources == 1U &&
-        report.types[OPENRFS_HANDLE_FILE].retired_handles == 1U &&
-        script.calls[OPENRFS_HANDLE_FILE] == 3U);
+        report.types[RSD_HANDLE_FILE].closed_resources == 1U &&
+        report.types[RSD_HANDLE_FILE].retired_handles == 1U &&
+        script.calls[RSD_HANDLE_FILE] == 3U);
 }
 
 static void single_close_accounting_test(void)
@@ -295,43 +295,43 @@ static void single_close_accounting_test(void)
     struct native_handle_table table;
     struct native_handle_close_report report;
     struct close_script script;
-    openrfs_handle_t first;
-    openrfs_handle_t duplicate;
+    rsd_handle_t first;
+    rsd_handle_t duplicate;
     struct native_resource *resolved;
 
     script_initialize(&script, NATIVE_RESOURCE_CLOSED_WITH_ERROR);
     assert(native_handle_table_initialize(&table, 2U) == NATIVE_HANDLE_OK);
-    install_resource(&table, OPENRFS_HANDLE_FILE, UINT64_C(41), &first);
+    install_resource(&table, RSD_HANDLE_FILE, UINT64_C(41), &first);
     assert(native_handle_duplicate(&table, first, &duplicate) ==
         NATIVE_HANDLE_OK);
     assert(native_handle_close_with_report(&table, first, scripted_close,
         &script, &report) == NATIVE_HANDLE_OK);
     assert(report.callback_attempts == 0U && report.duplicate_references == 1U &&
         report.retired_handles == 1U && report.progress &&
-        report.types[OPENRFS_HANDLE_FILE].callback_attempts == 0U &&
-        report.types[OPENRFS_HANDLE_FILE].duplicate_references == 1U &&
-        report.types[OPENRFS_HANDLE_FILE].retired_handles == 1U &&
-        script.calls[OPENRFS_HANDLE_FILE] == 0U);
+        report.types[RSD_HANDLE_FILE].callback_attempts == 0U &&
+        report.types[RSD_HANDLE_FILE].duplicate_references == 1U &&
+        report.types[RSD_HANDLE_FILE].retired_handles == 1U &&
+        script.calls[RSD_HANDLE_FILE] == 0U);
     assert(native_handle_close_with_report(&table, duplicate, scripted_close,
         &script, &report) == NATIVE_HANDLE_CLOSE_FAILED);
     assert(report.callback_attempts == 1U &&
         report.consumed_error_resources == 1U && report.retired_handles == 1U &&
-        report.types[OPENRFS_HANDLE_FILE].consumed_error_resources == 1U &&
-        report.types[OPENRFS_HANDLE_FILE].retired_handles == 1U &&
-        !report.retryable && script.calls[OPENRFS_HANDLE_FILE] == 1U);
+        report.types[RSD_HANDLE_FILE].consumed_error_resources == 1U &&
+        report.types[RSD_HANDLE_FILE].retired_handles == 1U &&
+        !report.retryable && script.calls[RSD_HANDLE_FILE] == 1U);
     assert(native_handle_close_with_report(&table, duplicate, scripted_close,
         &script, &report) == NATIVE_HANDLE_STALE);
     assert(report.stale_entries == 1U &&
-        report.types[OPENRFS_HANDLE_FILE].stale_entries == 1U &&
-        report.types[OPENRFS_HANDLE_FILE].attempted_handles == 1U &&
-        script.calls[OPENRFS_HANDLE_FILE] == 1U);
-    assert(native_handle_resolve(&table, duplicate, OPENRFS_HANDLE_FILE,
+        report.types[RSD_HANDLE_FILE].stale_entries == 1U &&
+        report.types[RSD_HANDLE_FILE].attempted_handles == 1U &&
+        script.calls[RSD_HANDLE_FILE] == 1U);
+    assert(native_handle_resolve(&table, duplicate, RSD_HANDLE_FILE,
         &resolved) == NATIVE_HANDLE_STALE);
-    assert(native_handle_close_with_report(&table, OPENRFS_HANDLE_INVALID,
+    assert(native_handle_close_with_report(&table, RSD_HANDLE_INVALID,
         scripted_close, &script, &report) == NATIVE_HANDLE_STALE);
     assert(report.invalid_entries == 1U && report.attempted_handles == 1U &&
         report.callback_attempts == 0U);
-    assert_summary_zero(&report.types[OPENRFS_HANDLE_FILE]);
+    assert_summary_zero(&report.types[RSD_HANDLE_FILE]);
 }
 
 static void single_close_all_type_outcomes_test(void)
@@ -339,7 +339,7 @@ static void single_close_all_type_outcomes_test(void)
     struct native_handle_table table;
     struct native_handle_close_report report;
     struct close_script script;
-    openrfs_handle_t handle;
+    rsd_handle_t handle;
 
     for (size_t index = 0U; index < sizeof(all_types) / sizeof(all_types[0]);
          ++index) {
@@ -401,15 +401,15 @@ static void malformed_entry_accounting_test(void)
     table.active_handles = 4U;
     table.slots[0].active = true;
     table.slots[0].generation = 1U;
-    table.slots[0].type = OPENRFS_HANDLE_FILE;
+    table.slots[0].type = RSD_HANDLE_FILE;
     table.slots[0].object_index = 4U;
     table.slots[1].active = true;
     table.slots[1].generation = 1U;
-    table.slots[1].type = OPENRFS_HANDLE_DIRECTORY;
+    table.slots[1].type = RSD_HANDLE_DIRECTORY;
     table.slots[1].object_index = 0U;
     table.slots[2].active = true;
     table.slots[2].generation = 0U;
-    table.slots[2].type = OPENRFS_HANDLE_WINDOW;
+    table.slots[2].type = RSD_HANDLE_WINDOW;
     table.slots[2].object_index = 0U;
     table.slots[3].active = true;
     table.slots[3].generation = 0U;
@@ -421,14 +421,14 @@ static void malformed_entry_accounting_test(void)
         report.stale_entries == 1U && report.invalid_entries == 3U &&
         report.active_handles_after == 4U && !report.retryable &&
         !report.progress);
-    assert_type_summary(&report, OPENRFS_HANDLE_FILE, 1U, 0U, 0U, 0U, 0U,
+    assert_type_summary(&report, RSD_HANDLE_FILE, 1U, 0U, 0U, 0U, 0U,
         0U, 0U, 1U, 0U);
-    assert_type_summary(&report, OPENRFS_HANDLE_DIRECTORY, 1U, 0U, 0U, 0U,
+    assert_type_summary(&report, RSD_HANDLE_DIRECTORY, 1U, 0U, 0U, 0U,
         0U, 0U, 1U, 0U, 0U);
-    assert_type_summary(&report, OPENRFS_HANDLE_WINDOW, 1U, 0U, 0U, 0U, 0U,
+    assert_type_summary(&report, RSD_HANDLE_WINDOW, 1U, 0U, 0U, 0U, 0U,
         0U, 0U, 1U, 0U);
-    for (size_t type = OPENRFS_HANDLE_EVENT_QUEUE;
-         type <= OPENRFS_HANDLE_PACKAGE_CONTROL; ++type) {
+    for (size_t type = RSD_HANDLE_EVENT_QUEUE;
+         type <= RSD_HANDLE_PACKAGE_CONTROL; ++type) {
         assert_summary_zero(&report.types[type]);
     }
     assert(native_handle_close_all(&table, scripted_close, &script) ==
@@ -440,7 +440,7 @@ static void invalid_table_and_unknown_type_test(void)
 {
     struct native_handle_close_report report;
     struct native_handle_table table = {0};
-    openrfs_handle_t unknown = (UINT64_C(1) << 32) |
+    rsd_handle_t unknown = (UINT64_C(1) << 32) |
         ((uint64_t)UINT8_C(0xFE) << 16) | UINT64_C(1);
 
     clear_bytes(&report, sizeof(report));
@@ -462,13 +462,13 @@ static void bounded_report_type_test(void)
     static struct native_handle_table table;
     struct native_handle_close_report report;
     struct close_script script;
-    openrfs_handle_t handle;
+    rsd_handle_t handle;
 
     script_initialize(&script, NATIVE_RESOURCE_CLOSED);
     assert(native_handle_table_initialize(&table, NATIVE_HANDLE_LIMIT) ==
         NATIVE_HANDLE_OK);
     for (size_t index = 0U; index < NATIVE_HANDLE_LIMIT; ++index) {
-        install_resource(&table, OPENRFS_HANDLE_TIMER,
+        install_resource(&table, RSD_HANDLE_TIMER,
             UINT64_C(0x8000) + index, &handle);
     }
     assert(native_handle_close_all_diagnostics(&table, scripted_close, &script,
@@ -479,10 +479,10 @@ static void bounded_report_type_test(void)
         report.retired_handles == NATIVE_HANDLE_LIMIT &&
         report.omitted_entries == NATIVE_HANDLE_LIMIT -
             NATIVE_HANDLE_CLOSE_REPORT_CAPACITY && report.truncated);
-    assert_type_summary(&report, OPENRFS_HANDLE_TIMER, NATIVE_HANDLE_LIMIT,
+    assert_type_summary(&report, RSD_HANDLE_TIMER, NATIVE_HANDLE_LIMIT,
         NATIVE_HANDLE_LIMIT, NATIVE_HANDLE_LIMIT, 0U, 0U, 0U, 0U, 0U,
         NATIVE_HANDLE_LIMIT);
-    assert(script.calls[OPENRFS_HANDLE_TIMER] == NATIVE_HANDLE_LIMIT);
+    assert(script.calls[RSD_HANDLE_TIMER] == NATIVE_HANDLE_LIMIT);
     native_handle_close_report_reset(&report);
     assert_report_counters_zero(&report);
     assert(native_handle_close_all_diagnostics(&table, scripted_close, &script,
@@ -774,22 +774,22 @@ static void history_preserves_report_census_test(void)
     struct native_process_teardown_history history;
     struct native_process_teardown_attempt output[2];
     struct close_script script;
-    openrfs_handle_t file;
-    openrfs_handle_t duplicate;
-    openrfs_handle_t directory;
-    openrfs_handle_t window;
+    rsd_handle_t file;
+    rsd_handle_t duplicate;
+    rsd_handle_t directory;
+    rsd_handle_t window;
 
     script_initialize(&script, NATIVE_RESOURCE_CLOSED);
-    script.results[OPENRFS_HANDLE_DIRECTORY] =
+    script.results[RSD_HANDLE_DIRECTORY] =
         NATIVE_RESOURCE_CLOSED_WITH_ERROR;
-    script.results[OPENRFS_HANDLE_WINDOW] = NATIVE_RESOURCE_RETAINED;
+    script.results[RSD_HANDLE_WINDOW] = NATIVE_RESOURCE_RETAINED;
     assert(native_handle_table_initialize(&table, 4U) == NATIVE_HANDLE_OK);
-    install_resource(&table, OPENRFS_HANDLE_FILE, UINT64_C(0x6100), &file);
+    install_resource(&table, RSD_HANDLE_FILE, UINT64_C(0x6100), &file);
     assert(native_handle_duplicate(&table, file, &duplicate) ==
         NATIVE_HANDLE_OK);
-    install_resource(&table, OPENRFS_HANDLE_DIRECTORY, UINT64_C(0x6200),
+    install_resource(&table, RSD_HANDLE_DIRECTORY, UINT64_C(0x6200),
         &directory);
-    install_resource(&table, OPENRFS_HANDLE_WINDOW, UINT64_C(0x6300), &window);
+    install_resource(&table, RSD_HANDLE_WINDOW, UINT64_C(0x6300), &window);
     native_process_teardown_history_reset(&history);
     assert(native_handle_close_all_diagnostics(&table, scripted_close, &script,
         &report) == NATIVE_HANDLE_CLOSE_FAILED);
@@ -834,7 +834,7 @@ static void history_preserves_report_census_test(void)
             output[0].types[type].retired_handles ==
                 report.types[type].retired_handles);
     }
-    script.results[OPENRFS_HANDLE_WINDOW] = NATIVE_RESOURCE_CLOSED;
+    script.results[RSD_HANDLE_WINDOW] = NATIVE_RESOURCE_CLOSED;
     assert(native_handle_close_all_diagnostics(&table, scripted_close, &script,
         &report) == NATIVE_HANDLE_OK);
     append_report_attempt(&history, &report, 42U);
@@ -843,12 +843,12 @@ static void history_preserves_report_census_test(void)
         output[1].active_handles_before == 1U &&
         output[1].active_handles_after == 0U && output[1].retired &&
         !output[1].blocked && !output[1].retryable && !output[1].close_failed &&
-        output[1].types[OPENRFS_HANDLE_WINDOW].closed_resources == 1U &&
-        output[1].types[OPENRFS_HANDLE_WINDOW].retired_handles == 1U);
+        output[1].types[RSD_HANDLE_WINDOW].closed_resources == 1U &&
+        output[1].types[RSD_HANDLE_WINDOW].retired_handles == 1U);
     assert(table.active_handles == 0U && table.active_objects == 0U &&
-        script.calls[OPENRFS_HANDLE_FILE] == 1U &&
-        script.calls[OPENRFS_HANDLE_DIRECTORY] == 1U &&
-        script.calls[OPENRFS_HANDLE_WINDOW] == 2U);
+        script.calls[RSD_HANDLE_FILE] == 1U &&
+        script.calls[RSD_HANDLE_DIRECTORY] == 1U &&
+        script.calls[RSD_HANDLE_WINDOW] == 2U);
 }
 
 static void empty_table_history_attempt_test(void)
@@ -933,16 +933,16 @@ static void process_boundary_blocked_retry_retired_test(void)
     struct native_process_teardown_history history;
     struct native_process_teardown_attempt output[3];
     struct close_script script;
-    openrfs_handle_t file;
-    openrfs_handle_t duplicate;
-    openrfs_handle_t window;
+    rsd_handle_t file;
+    rsd_handle_t duplicate;
+    rsd_handle_t window;
 
     script_initialize(&script, NATIVE_RESOURCE_RETAINED);
     assert(native_handle_table_initialize(&table, 3U) == NATIVE_HANDLE_OK);
-    install_resource(&table, OPENRFS_HANDLE_FILE, UINT64_C(0xA1), &file);
+    install_resource(&table, RSD_HANDLE_FILE, UINT64_C(0xA1), &file);
     assert(native_handle_duplicate(&table, file, &duplicate) ==
         NATIVE_HANDLE_OK);
-    install_resource(&table, OPENRFS_HANDLE_WINDOW, UINT64_C(0xA2), &window);
+    install_resource(&table, RSD_HANDLE_WINDOW, UINT64_C(0xA2), &window);
     native_process_teardown_history_reset(&history);
     assert(native_handle_close_all_diagnostics(&table, scripted_close, &script,
         &report) == NATIVE_HANDLE_CLOSE_FAILED);
@@ -951,8 +951,8 @@ static void process_boundary_blocked_retry_retired_test(void)
         report.active_handles_after == 2U && report.active_objects_before == 2U &&
         report.active_objects_after == 2U && report.progress && report.retryable &&
         report.duplicate_references == 1U && report.callback_attempts == 2U &&
-        report.retired_handles == 1U && script.calls[OPENRFS_HANDLE_FILE] == 1U &&
-        script.calls[OPENRFS_HANDLE_WINDOW] == 1U);
+        report.retired_handles == 1U && script.calls[RSD_HANDLE_FILE] == 1U &&
+        script.calls[RSD_HANDLE_WINDOW] == 1U);
     assert(history.entries[0].blocked && !history.entries[0].retired &&
         history.entries[0].made_progress && history.entries[0].retryable &&
         history.entries[0].close_failed &&
@@ -964,24 +964,24 @@ static void process_boundary_blocked_retry_retired_test(void)
     append_report_attempt(&history, &report, 2U);
     assert(report.active_handles_before == 2U && report.active_handles_after == 2U &&
         !report.progress && report.retryable && report.duplicate_references == 0U &&
-        report.callback_attempts == 2U && script.calls[OPENRFS_HANDLE_FILE] == 2U &&
-        script.calls[OPENRFS_HANDLE_WINDOW] == 2U);
+        report.callback_attempts == 2U && script.calls[RSD_HANDLE_FILE] == 2U &&
+        script.calls[RSD_HANDLE_WINDOW] == 2U);
     assert(history.entries[1].blocked && !history.entries[1].retired &&
         !history.entries[1].made_progress && history.entries[1].retryable &&
         history.entries[1].close_failed &&
         history.entries[1].active_handles_before == 2U &&
         history.entries[1].active_handles_after == 2U);
 
-    script.results[OPENRFS_HANDLE_FILE] = NATIVE_RESOURCE_CLOSED;
-    script.results[OPENRFS_HANDLE_WINDOW] = NATIVE_RESOURCE_CLOSED;
+    script.results[RSD_HANDLE_FILE] = NATIVE_RESOURCE_CLOSED;
+    script.results[RSD_HANDLE_WINDOW] = NATIVE_RESOURCE_CLOSED;
     assert(native_handle_close_all_diagnostics(&table, scripted_close, &script,
         &report) == NATIVE_HANDLE_OK);
     append_report_attempt(&history, &report, 3U);
     assert(report.active_handles_before == 2U && report.active_handles_after == 0U &&
         report.closed_resources == 2U && report.retired_handles == 2U &&
         report.progress && !report.retryable &&
-        script.calls[OPENRFS_HANDLE_FILE] == 3U &&
-        script.calls[OPENRFS_HANDLE_WINDOW] == 3U);
+        script.calls[RSD_HANDLE_FILE] == 3U &&
+        script.calls[RSD_HANDLE_WINDOW] == 3U);
     assert(history.entries[2].retired && !history.entries[2].blocked &&
         history.entries[2].made_progress && !history.entries[2].retryable &&
         !history.entries[2].close_failed &&
@@ -990,13 +990,13 @@ static void process_boundary_blocked_retry_retired_test(void)
     assert(native_process_teardown_history_copy(&history, output, 3U) == 3U);
     assert(output[0].attempt_number == 1U && output[1].attempt_number == 2U &&
         output[2].attempt_number == 3U);
-    assert(output[0].types[OPENRFS_HANDLE_FILE].duplicate_references == 1U &&
-        output[0].types[OPENRFS_HANDLE_FILE].retired_handles == 1U &&
-        output[0].types[OPENRFS_HANDLE_WINDOW].retained_resources == 1U &&
-        output[2].types[OPENRFS_HANDLE_FILE].closed_resources == 1U &&
-        output[2].types[OPENRFS_HANDLE_WINDOW].closed_resources == 1U);
+    assert(output[0].types[RSD_HANDLE_FILE].duplicate_references == 1U &&
+        output[0].types[RSD_HANDLE_FILE].retired_handles == 1U &&
+        output[0].types[RSD_HANDLE_WINDOW].retained_resources == 1U &&
+        output[2].types[RSD_HANDLE_FILE].closed_resources == 1U &&
+        output[2].types[RSD_HANDLE_WINDOW].closed_resources == 1U);
     assert(table.active_handles == 0U && table.active_objects == 0U);
-    assert(file != duplicate && window != OPENRFS_HANDLE_INVALID);
+    assert(file != duplicate && window != RSD_HANDLE_INVALID);
 }
 
 static void consumed_error_process_attempt_test(void)
@@ -1006,11 +1006,11 @@ static void consumed_error_process_attempt_test(void)
     struct native_process_teardown_history history;
     struct native_process_teardown_attempt output;
     struct close_script script;
-    openrfs_handle_t handle;
+    rsd_handle_t handle;
 
     script_initialize(&script, NATIVE_RESOURCE_CLOSED_WITH_ERROR);
     assert(native_handle_table_initialize(&table, 1U) == NATIVE_HANDLE_OK);
-    install_resource(&table, OPENRFS_HANDLE_TIMER, UINT64_C(0xB1), &handle);
+    install_resource(&table, RSD_HANDLE_TIMER, UINT64_C(0xB1), &handle);
     native_process_teardown_history_reset(&history);
     assert(native_handle_close_all_diagnostics(&table, scripted_close, &script,
         &report) == NATIVE_HANDLE_CLOSE_FAILED);
@@ -1018,7 +1018,7 @@ static void consumed_error_process_attempt_test(void)
     assert(report.status == NATIVE_HANDLE_CLOSE_FAILED &&
         report.consumed_error_resources == 1U && report.retired_handles == 1U &&
         report.active_handles_after == 0U && !report.retryable &&
-        report.progress && script.calls[OPENRFS_HANDLE_TIMER] == 1U);
+        report.progress && script.calls[RSD_HANDLE_TIMER] == 1U);
     assert(history.entries[0].consumed_error_resources == 1U &&
         history.entries[0].retired_handles == 1U &&
         history.entries[0].active_handles_after == 0U &&
@@ -1027,13 +1027,13 @@ static void consumed_error_process_attempt_test(void)
         history.entries[0].retired);
     assert(native_handle_close_all_diagnostics(&table, scripted_close, &script,
         &report) == NATIVE_HANDLE_OK);
-    assert(script.calls[OPENRFS_HANDLE_TIMER] == 1U &&
+    assert(script.calls[RSD_HANDLE_TIMER] == 1U &&
         report.attempted_handles == 0U && report.callback_attempts == 0U);
     assert(native_process_teardown_history_copy(&history, &output, 1U) == 1U);
-    assert(output.types[OPENRFS_HANDLE_TIMER].consumed_error_resources == 1U &&
-        output.types[OPENRFS_HANDLE_TIMER].retired_handles == 1U);
+    assert(output.types[RSD_HANDLE_TIMER].consumed_error_resources == 1U &&
+        output.types[RSD_HANDLE_TIMER].retired_handles == 1U);
     assert(table.active_handles == 0U && table.active_objects == 0U &&
-        handle != OPENRFS_HANDLE_INVALID);
+        handle != RSD_HANDLE_INVALID);
 }
 
 static void process_result_compatibility_test(void)
