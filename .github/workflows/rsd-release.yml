@@ -44,6 +44,11 @@ jobs:
                       release/rsd-v2.5.0-beta.2-system-fat32.raw
                   cp build/userspace/rsd-data-fat32.raw \
                       release/rsd-v2.5.0-beta.2-data-fat32.raw
+                  cp assets/rsd/proof.png release/RSD-v2.5.0-beta.2-desktop.png
+                  cp assets/rsd/proof-focus.png \
+                      release/RSD-v2.5.0-beta.2-desktop-focus.png
+                  cp assets/rsd/proof-terminal.png \
+                      release/RSD-v2.5.0-beta.2-terminal.png
                   (cd release && sha256sum * > SHA256SUMS && sha256sum -c SHA256SUMS)
             - name: Publish the tagged release
               env:
@@ -57,7 +62,7 @@ jobs:
 
                   This beta includes the RSD command line, installer configuration interface, and desktop with its applications and icons. The installer currently previews configuration and does not write to disk. RSD remains experimental.
 
-                  The ISO, kernel ELF, desktop System volume, Data volume, and SHA256 manifest were built from this exact tag. The two FAT32 images are required for the desktop boot profile.
+                  The ISO, kernel ELF, desktop System volume, Data volume, authentic QEMU screenshots, and SHA256 manifest were assembled from this exact tag. The two FAT32 images are required for the desktop boot profile.
                   NOTES
                   printf '\nSource commit: `%s`.\n' "$GITHUB_SHA" >> release-notes.md
                   gh release create "$GITHUB_REF_NAME" release/* \
