@@ -7338,7 +7338,7 @@ _Noreturn void kernel_test_complete_native_audio(void)
 
 _Noreturn void kernel_test_complete_native_sdl(void)
 {
-    static const char state_path[] = "SDLPROOF/SDL/DCDB3FF2/STATE.BIN";
+    static const char state_path[] = "SDLPROOF/SDL/17D75792/STATE.BIN";
     struct native_process_result first = { 0 };
     struct native_process_result second = { 0 };
     struct rsdfs_stat state;
@@ -7511,7 +7511,7 @@ _Noreturn void kernel_test_complete_native_rsd(void)
     static const char repaired_manifest[] =
         "pkgstate/gen/00000000/00000003/root/bin/CHESS.MAN";
     static const char state_path[] =
-        "SDLCHESS/SDL/DF4F1BB4/STATE.TXT";
+        "SDLCHESS/SDL/A2921914/STATE.TXT";
     static uint8_t database[4096U];
     struct native_process_result proof = { 0 };
     struct package_service_report service;

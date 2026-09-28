@@ -122,7 +122,7 @@ def build_image(echo: bytes, uname: bytes, cat: bytes | None) -> bytes:
         verify_elf(cat, "cat")
     image = bytearray(IMAGE_BYTES)
     image[0:3] = b"\xEB\x3C\x90"
-    image[3:11] = b"RSD "
+    image[3:11] = b"RSD     "
     put_u16(image, 11, BLOCK_BYTES)
     image[13] = 1
     put_u16(image, 14, RESERVED_SECTORS)
@@ -136,7 +136,7 @@ def build_image(echo: bytes, uname: bytes, cat: bytes | None) -> bytes:
     image[36] = 0x80
     image[38] = 0x29
     put_u32(image, 39, 0x1000_0000)
-    image[43:54] = b"RSDUSER"
+    image[43:54] = b"RSDUSER    "
     image[54:62] = b"FAT16   "
     image[510:512] = b"\x55\xAA"
 

@@ -602,7 +602,7 @@ mod tests {
     fn boot() -> [u8; 512] {
         let mut bytes = [0_u8; 512];
         bytes[0..3].copy_from_slice(b"\xeb\x58\x90");
-        bytes[3..11].copy_from_slice(b"RSD ");
+        bytes[3..11].copy_from_slice(b"RSD     ");
         put16(&mut bytes, 11, 512);
         bytes[13] = 1;
         put16(&mut bytes, 14, 32);
@@ -613,7 +613,7 @@ mod tests {
         put16(&mut bytes, 48, 1);
         put16(&mut bytes, 50, 6);
         put32(&mut bytes, 67, 0x2000_0002);
-        bytes[71..82].copy_from_slice(b"RSDDATA");
+        bytes[71..82].copy_from_slice(b"RSDDATA    ");
         bytes[510..512].copy_from_slice(b"\x55\xaa");
         bytes
     }

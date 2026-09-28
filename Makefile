@@ -1857,13 +1857,13 @@ endif
 	@test '$(LOGO_MAX_DIMENSION)' -eq 280
 	$(PYTHON) tools/make-fat16-fixture.py $(FILESYSTEM_FIXTURE)
 	@test "$$(sha256sum $(FILESYSTEM_FIXTURE) | awk '{ print toupper($$1) }')" = \
-		'34A217787FD60E7C528DEF6E2B4F280A5011465A736730A50FE8FA85845D86A5'
+		'73E31C6FC6A8E33E49CB6662641DEB81EF739512C634AF95154C00BAB9408C0A'
 	$(PYTHON) tools/make-elf64-fixture.py $(PROCESS_ELF)
 	@test "$$(sha256sum $(PROCESS_ELF) | awk '{ print toupper($$1) }')" = \
 		'C923A94F08DF64523D3DB701E4F9FC5FF5B51DFC21447E1DC57586D40D42B8A9'
 	$(PYTHON) tools/make-process-fixture.py $(PROCESS_FIXTURE)
 	@test "$$(sha256sum $(PROCESS_FIXTURE) | awk '{ print toupper($$1) }')" = \
-		'9BDC1FE33DF03F28CA07605F85A28D8C7CDFF240C9304F39007E7D7C1B979ED3'
+		'6FC8F96E7AA4E604DFB81A52069B833BAEB891817519E714FA6D544C4EB072BF'
 	$(RUSTC) --edition 2024 --test -D warnings src/rust/fat16.rs \
 		-o $(RUST_FAT16_TEST)
 	$(RUST_FAT16_TEST)
@@ -1923,7 +1923,7 @@ endif
 	@test "$$(sha256sum $(FAT32_SYSTEM_IMAGE) | awk '{ print toupper($$1) }')" = \
 		'CD116CB5755270BF1E6F20FBAA6F1505BACF184C6A8B19F15EA54B6DC16CE310'
 	@test "$$(sha256sum $(FAT32_DATA_IMAGE) | awk '{ print toupper($$1) }')" = \
-		'87017AF6336746D314B36C57DC9B30B751B9EF017C2FA607E71279F7E38F6DC4'
+		'79490F6DFB22CDECBB4CBD7A3D7282EADE3C4A77AB9DD3851FC7F93D385CA2B6'
 	@test "$$(sha256sum $(FAT32_FULL_IMAGE) | awk '{ print toupper($$1) }')" = \
 		'657B57CC3072853A52EE3A7A54639E49DE3E4FAFAB2E4E2A436D3A46D00CF6DB'
 	@test "$$(sha256sum $(FAT32_CORRUPT_IMAGE) | awk '{ print toupper($$1) }')" = \
@@ -3578,9 +3578,9 @@ qemu-test-%: $(TEST_BUILD_DIR)/%/rsd.iso
 		native-sdl) \
 			test -s '$(TEST_BUILD_DIR)/$*/sdl.png' && \
 			test -s '$(TEST_BUILD_DIR)/$*/sdl.mp4' && \
-			grep -Fxq 'RSD SDL READY run=1 video=rsd audio=rsd pref=Data:SDL/DCDB3FF2/' "$$log" && \
+			grep -Fxq 'RSD SDL READY run=1 video=rsd audio=rsd pref=Data:SDL/17D75792/' "$$log" && \
 			grep -Fxq 'RSD SDL PASS run=1 present=partial input=key-pointer audio=non-silent persistent=yes' "$$log" && \
-			grep -Fxq 'RSD SDL READY run=2 video=rsd audio=rsd pref=Data:SDL/DCDB3FF2/' "$$log" && \
+			grep -Fxq 'RSD SDL READY run=2 video=rsd audio=rsd pref=Data:SDL/17D75792/' "$$log" && \
 			grep -Fxq 'RSD SDL PASS run=2 present=partial input=prior-run audio=non-silent persistent=yes' "$$log" && \
 			grep -Fxq 'RSD: SDL 2 window, input, partial damage, PCM and persistence passed' "$$log" || diagnostics_ok=false; \
 			if test "$$audio_capture" = true; then \

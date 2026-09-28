@@ -26,7 +26,7 @@ FIRST_DATA_SECTOR = 4
 FILE_CLUSTER = 2
 MEDIA = 0xF8
 SHORT_NAME = b"RSD     BIN"
-IMAGE_SHA256 = "9BDC1FE33DF03F28CA07605F85A28D8C7CDFF240C9304F39007E7D7C1B979ED3"
+IMAGE_SHA256 = "6FC8F96E7AA4E604DFB81A52069B833BAEB891817519E714FA6D544C4EB072BF"
 
 
 def put_u16(image: bytearray, offset: int, value: int) -> None:
@@ -41,7 +41,7 @@ def build_image() -> bytes:
     """Construct the v0.6.0 geometry with the independently built ELF body."""
     image = bytearray(IMAGE_BYTES)
     image[0:3] = b"\xEB\x3C\x90"
-    image[3:11] = b"RSD "
+    image[3:11] = b"RSD     "
     put_u16(image, 11, BLOCK_BYTES)
     image[13] = 1
     put_u16(image, 14, RESERVED_SECTORS)
@@ -55,7 +55,7 @@ def build_image() -> bytes:
     image[36] = 0x80
     image[38] = 0x29
     put_u32(image, 39, 0x0600_0001)
-    image[43:54] = b"RSD    "
+    image[43:54] = b"RSD        "
     image[54:62] = b"FAT16   "
     image[510:512] = b"\x55\xAA"
 

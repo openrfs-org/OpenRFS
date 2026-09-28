@@ -923,7 +923,7 @@ fn put_u32(block: &mut [u8], offset: usize, value: u32) {
 fn make_bpb(block: &mut [u8; BLOCK_BYTES]) {
     block.fill(0);
     block[0..3].copy_from_slice(&[0xEB, 0x3C, 0x90]);
-    block[3..11].copy_from_slice(b"RSD ");
+    block[3..11].copy_from_slice(b"RSD     ");
     put_u16(block, BPB_BYTES_PER_SECTOR, BLOCK_BYTES as u16);
     block[BPB_SECTORS_PER_CLUSTER] = 1;
     put_u16(block, BPB_RESERVED_SECTORS, 1);
