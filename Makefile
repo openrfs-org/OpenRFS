@@ -2339,7 +2339,7 @@ endif
 		test "$$(grep -ERh '\blinux_cat_abi_launch[[:space:]]*[(]' \
 		src/kernel --include='*.c' --exclude=linux_cat.c | wc -l)" -eq 1 || \
 		{ echo 'measured launch entry escaped its userspace owner'; exit 1; }
-	@! grep -Eq 'console_(write|putc)[[:space:]]*\([[:space:]]*"(RSD|Linux)' \
+	@! grep -Eq 'console_(write|putc)[[:space:]]*\([[:space:]]*"(Linux|BusyBox)' \
 		src/kernel/shell.c || \
 		{ echo 'RSD shell contains prerecorded userspace output'; exit 1; }
 	@if grep -ERn '\bfilesystem_private_read_(open|close)[[:space:]]*[(]' \
