@@ -71,12 +71,21 @@ def main() -> None:
     populated = TRANSACTION.encode_database(
         generation=2, architecture="x86_64", abi=1,
         packages=[package("org.openrfs.verify", b"verified payload")])
+    app = package("org.openrfs.verify.app", b"app payload")
+    library = package("org.openrfs.verify.library", b"library payload")
+    app["dependencies"] = [{"identifier": "org.openrfs.verify.library",
+                            "constraint": "*", "provider": "org.openrfs.verify.library"}]
+    library["explicit"] = False
+    library["files"][0]["path"] = "lib/verify-library"
+    dependency_graph = TRANSACTION.encode_database(
+        generation=3, architecture="x86_64", abi=1, packages=[app, library])
     journal = TRANSACTION.encode_journal(
         operation="install", base_database=empty, target_database=populated,
         required_space=4096, target_identifier="org.openrfs.verify")
     seeds = {
         "valid-empty-database": b"\x00" + empty,
         "valid-package-database": b"\x00" + populated,
+        "valid-dependency-database": b"\x00" + dependency_graph,
         "valid-authority": b"\x01" + TRANSACTION.encode_authority(empty),
         "valid-journal": b"\x02" + journal,
         "invalid-truncated": b"\x00ORFSDB01",

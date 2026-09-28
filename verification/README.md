@@ -140,6 +140,20 @@ interrupted at the user's request before the ACPI and Multiboot2 campaigns;
 `verification/runs/20260927T151559Z-392-451283/run.json` retains the partial
 results and must not be reported as a passed nightly run. The orphaned receipt
 was recovered as `interrupted` only after WSL had stopped all processes.
+The clean GitHub sustained run on `b9a166ef8acc968996e41305c458b661fa1ea95c`
+passed all five targets in [workflow run 36399892935](https://github.com/openrfs-org/RSD/actions/runs/36399892935).
+Its uploaded `run.json` (SHA-256
+`979f29e9483ee6e25198d60d70723dc0ee4981ed22eb3155aa9a276a5c703d87`)
+records 5,000 package transaction examples and 181,763,455 package parser,
+16,428,916 ACPI, 6,771,102 Multiboot2, and 155,687,882 Rust ELF fuzz
+executions. The four parser campaigns each finished without a crash artifact.
+Saved-seed source coverage still left `package_state_database_dependency`
+unreached. The new canonical two-package dependency seed replays successfully
+against the production parser under ASan/UBSan. In a local nine-seed replay,
+`package_state.c` coverage rose from 711/1180 to 816/1180 regions and from
+320/882 to 382/882 branches, and the dependency accessor executed. That
+local measurement includes the new seed and is not the earlier CI run's
+coverage; the next exact-head CI campaign will verify it independently.
 The separate milestone workflows still contain inherited failures; their
 exact runs and frozen fixture-digest mismatches are triaged in
 `verification/findings/inherited-milestone-ci.md`.
