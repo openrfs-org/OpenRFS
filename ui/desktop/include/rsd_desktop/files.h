@@ -62,6 +62,8 @@ void rsd_files_use_live_source(bool (*list)(const char *path,
     uint32_t *count));
 void rsd_files_use_live_writes(bool (*rename_path)(const char *from,
     const char *to), bool (*remove_path)(const char *path, bool folder));
+void rsd_files_use_live_copy(bool (*copy_path)(const char *from,
+    const char *to, bool folder));
 bool rsd_files_live_read_only(void);
 bool rsd_files_refresh(void);
 

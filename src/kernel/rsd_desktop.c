@@ -115,6 +115,210 @@ static bool remove_data_path(const char *path, bool folder)
         rsdfs_unlink(RSDFS_VOLUME_DATA, path)) == RSDFS_STATUS_OK;
 }
 
+static bool data_child_path(const char *parent, const char *name,
+    char out[RSDFS_MAX_PATH])
+{
+    size_t at = 0U;
+    size_t next = 0U;
+
+    if (name[0] == '.' && (name[1] == '\0' ||
+            (name[1] == '.' && name[2] == '\0'))) {
+        return false;
+    }
+    while (parent[at] != '\0' && at + 1U < RSDFS_MAX_PATH) {
+        out[at] = parent[at];
+        ++at;
+    }
+    if (parent[at] != '\0' || at == 0U) {
+        return false;
+    }
+    if (out[at - 1U] != '/') {
+        if (at + 1U >= RSDFS_MAX_PATH) {
+            return false;
+        }
+        out[at++] = '/';
+    }
+    while (name[next] != '\0' && at + 1U < RSDFS_MAX_PATH) {
+        if (name[next] == '/' || name[next] == '\\') {
+            return false;
+        }
+        out[at++] = name[next++];
+    }
+    if (name[next] != '\0' || next == 0U) {
+        return false;
+    }
+    out[at] = '\0';
+    return true;
+}
+
+static bool remove_data_tree(const char *path, uint32_t depth)
+{
+    struct rsdfs_stat stat;
+
+    if (depth > RSDFS_MAX_DEPTH ||
+            rsdfs_lstat_path(RSDFS_VOLUME_DATA, path, &stat) !=
+                RSDFS_STATUS_OK) {
+        return false;
+    }
+    if (!stat.directory) {
+        return rsdfs_unlink(RSDFS_VOLUME_DATA, path) == RSDFS_STATUS_OK;
+    }
+    rsdfs_directory_handle directory;
+    if (rsdfs_directory_open(RSDFS_VOLUME_DATA, path, &directory) !=
+            RSDFS_STATUS_OK) {
+        return false;
+    }
+    bool good = true;
+    for (;;) {
+        struct rsdfs_list_entry entry;
+        bool present = false;
+
+        if (rsdfs_directory_read(directory, &entry, &present) !=
+                RSDFS_STATUS_OK) {
+            good = false;
+            break;
+        }
+        if (!present) {
+            break;
+        }
+        char child[RSDFS_MAX_PATH];
+        if (!data_child_path(path, entry.name, child) ||
+                !remove_data_tree(child, depth + 1U)) {
+            good = false;
+            break;
+        }
+    }
+    if (rsdfs_directory_close(directory) != RSDFS_STATUS_OK) {
+        good = false;
+    }
+    return good && rsdfs_rmdir(RSDFS_VOLUME_DATA, path) == RSDFS_STATUS_OK;
+}
+
+static bool copy_data_tree(const char *from, const char *to, uint32_t depth)
+{
+    struct rsdfs_stat stat;
+
+    if (depth > RSDFS_MAX_DEPTH ||
+            rsdfs_lstat_path(RSDFS_VOLUME_DATA, from, &stat) !=
+                RSDFS_STATUS_OK) {
+        return false;
+    }
+    if (stat.directory) {
+        rsdfs_directory_handle directory;
+        bool good = true;
+
+        if (rsdfs_mkdir_mode(RSDFS_VOLUME_DATA, to,
+                (uint16_t)(stat.mode & UINT16_C(0777))) != RSDFS_STATUS_OK) {
+            return false;
+        }
+        if (rsdfs_directory_open(RSDFS_VOLUME_DATA, from, &directory) !=
+                RSDFS_STATUS_OK) {
+            good = false;
+        } else {
+            for (;;) {
+                struct rsdfs_list_entry entry;
+                bool present = false;
+                char source[RSDFS_MAX_PATH];
+                char destination[RSDFS_MAX_PATH];
+
+                if (rsdfs_directory_read(directory, &entry, &present) !=
+                        RSDFS_STATUS_OK) {
+                    good = false;
+                    break;
+                }
+                if (!present) {
+                    break;
+                }
+                if (!data_child_path(from, entry.name, source) ||
+                        !data_child_path(to, entry.name, destination) ||
+                        !copy_data_tree(source, destination, depth + 1U)) {
+                    good = false;
+                    break;
+                }
+            }
+            if (rsdfs_directory_close(directory) != RSDFS_STATUS_OK) {
+                good = false;
+            }
+        }
+        if (!good) {
+            (void)remove_data_tree(to, depth);
+        }
+        return good;
+    }
+
+    rsdfs_handle input;
+    rsdfs_handle output;
+    if (rsdfs_open(RSDFS_VOLUME_DATA, from, RSDFS_ACCESS_READ, &input) !=
+            RSDFS_STATUS_OK) {
+        return false;
+    }
+    if (rsdfs_open_options(RSDFS_VOLUME_DATA, to, RSDFS_ACCESS_WRITE,
+            RSDFS_OPEN_CREATE | RSDFS_OPEN_EXCLUSIVE,
+            (uint16_t)(stat.mode & UINT16_C(0777)), &output) !=
+            RSDFS_STATUS_OK) {
+        (void)rsdfs_close(input);
+        return false;
+    }
+    bool good = true;
+    for (;;) {
+        uint8_t buffer[4096U];
+        size_t read_bytes = 0U;
+        size_t written = 0U;
+
+        if (rsdfs_read(input, buffer, sizeof(buffer), &read_bytes) !=
+                RSDFS_STATUS_OK) {
+            good = false;
+            break;
+        }
+        if (read_bytes == 0U) {
+            break;
+        }
+        while (written < read_bytes) {
+            size_t piece = 0U;
+
+            if (rsdfs_write(output, buffer + written,
+                    read_bytes - written, &piece) != RSDFS_STATUS_OK ||
+                    piece == 0U) {
+                good = false;
+                break;
+            }
+            written += piece;
+        }
+        if (!good) {
+            break;
+        }
+    }
+    if (good && rsdfs_fsync(output) != RSDFS_STATUS_OK) {
+        good = false;
+    }
+    if (rsdfs_close(output) != RSDFS_STATUS_OK) {
+        good = false;
+    }
+    if (rsdfs_close(input) != RSDFS_STATUS_OK) {
+        good = false;
+    }
+    if (!good) {
+        (void)rsdfs_unlink(RSDFS_VOLUME_DATA, to);
+    }
+    return good;
+}
+
+static bool copy_data_path(const char *from, const char *to, bool folder)
+{
+    struct rsdfs_stat stat;
+
+    if (rsdfs_lstat_path(RSDFS_VOLUME_DATA, from, &stat) !=
+            RSDFS_STATUS_OK || stat.directory != folder ||
+            !copy_data_tree(from, to, 0U)) {
+        return false;
+    }
+    if (rsdfs_sync(RSDFS_VOLUME_DATA) != RSDFS_STATUS_OK) {
+        (void)remove_data_tree(to, 0U);
+        return false;
+    }
+    return true;
+}
+
 bool rsd_desktop_construct(uint32_t *pixels, uint32_t width, uint32_t height)
 {
     if (pixels == NULL || width < 800U || height < 600U ||
@@ -125,6 +329,7 @@ bool rsd_desktop_construct(uint32_t *pixels, uint32_t width, uint32_t height)
     rsd_files_reset();
     rsd_files_use_live_source(list_data_folder);
     rsd_files_use_live_writes(rename_data_path, remove_data_path);
+    rsd_files_use_live_copy(copy_data_path);
     (void)rsd_files_open(rsd_files_root());
     rsd_packages_reset();
     rsd_packages_use_live_source(load_installed_packages);

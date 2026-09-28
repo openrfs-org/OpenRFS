@@ -19,6 +19,169 @@ static bool moved_note;
 static bool removed_readme;
 static bool removed_docs;
 static bool packages_available = true;
+static bool copied_note;
+static bool copied_folder;
+static bool copying_folder_file;
+static size_t copied_bytes;
+static size_t note_read_offset;
+static bool directory_entry_read;
+static bool reject_copy_write;
+static bool cleaned_failed_copy;
+static const uint8_t note_bytes[] = "hello notes\n";
+
+enum rsdfs_status rsdfs_lstat_path(enum rsdfs_volume volume,
+    const char *path, struct rsdfs_stat *stat)
+{
+    if (volume != RSDFS_VOLUME_DATA) {
+        return RSDFS_STATUS_NOT_FOUND;
+    }
+    if (strcmp(path, "/docs") == 0) {
+        *stat = (struct rsdfs_stat){ .directory = true,
+            .mode = UINT16_C(0755) };
+        return RSDFS_STATUS_OK;
+    }
+    if (strcmp(path, "/notes.txt") != 0 &&
+            strcmp(path, "/docs/notes.txt") != 0) {
+        return RSDFS_STATUS_NOT_FOUND;
+    }
+    *stat = (struct rsdfs_stat){ .size = sizeof(note_bytes) - 1U,
+        .mode = UINT16_C(0644) };
+    return RSDFS_STATUS_OK;
+}
+
+enum rsdfs_status rsdfs_open(enum rsdfs_volume volume, const char *path,
+    enum rsdfs_access access, rsdfs_handle *handle)
+{
+    if (volume != RSDFS_VOLUME_DATA ||
+            (strcmp(path, "/notes.txt") != 0 &&
+                strcmp(path, "/docs/notes.txt") != 0) ||
+            access != RSDFS_ACCESS_READ) {
+        return RSDFS_STATUS_NOT_FOUND;
+    }
+    note_read_offset = 0U;
+    *handle = UINT64_C(1);
+    return RSDFS_STATUS_OK;
+}
+
+enum rsdfs_status rsdfs_open_options(enum rsdfs_volume volume,
+    const char *path, enum rsdfs_access access, uint8_t flags,
+    uint16_t mode, rsdfs_handle *handle)
+{
+    if (volume != RSDFS_VOLUME_DATA ||
+            (strcmp(path, "/notes (copy).txt") != 0 &&
+                strcmp(path, "/docs (copy)/notes.txt") != 0) ||
+            access != RSDFS_ACCESS_WRITE ||
+            flags != (RSDFS_OPEN_CREATE | RSDFS_OPEN_EXCLUSIVE) ||
+            mode != UINT16_C(0644)) {
+        return RSDFS_STATUS_INVALID_ARGUMENT;
+    }
+    copied_bytes = 0U;
+    copying_folder_file =
+        strcmp(path, "/docs (copy)/notes.txt") == 0;
+    *handle = UINT64_C(2);
+    return RSDFS_STATUS_OK;
+}
+
+enum rsdfs_status rsdfs_read(rsdfs_handle handle, uint8_t *destination,
+    size_t capacity, size_t *read_bytes)
+{
+    size_t available = sizeof(note_bytes) - 1U - note_read_offset;
+    size_t count = capacity < available ? capacity : available;
+
+    if (handle != UINT64_C(1)) {
+        return RSDFS_STATUS_STALE_HANDLE;
+    }
+    memcpy(destination, note_bytes + note_read_offset, count);
+    note_read_offset += count;
+    *read_bytes = count;
+    return RSDFS_STATUS_OK;
+}
+
+enum rsdfs_status rsdfs_write(rsdfs_handle handle, const uint8_t *source,
+    size_t source_bytes, size_t *written_bytes)
+{
+    size_t piece = source_bytes > 4U ? 4U : source_bytes;
+
+    if (reject_copy_write && copied_bytes >= 4U) {
+        return RSDFS_STATUS_IO;
+    }
+    if (handle != UINT64_C(2) ||
+            copied_bytes + piece > sizeof(note_bytes) - 1U ||
+            memcmp(source, note_bytes + copied_bytes, piece) != 0) {
+        return RSDFS_STATUS_IO;
+    }
+    copied_bytes += piece;
+    *written_bytes = piece;
+    return RSDFS_STATUS_OK;
+}
+
+enum rsdfs_status rsdfs_fsync(rsdfs_handle handle)
+{
+    return handle == UINT64_C(2) &&
+        copied_bytes == sizeof(note_bytes) - 1U ?
+        RSDFS_STATUS_OK : RSDFS_STATUS_IO;
+}
+
+enum rsdfs_status rsdfs_close(rsdfs_handle handle)
+{
+    return handle == UINT64_C(1) || handle == UINT64_C(2) ?
+        RSDFS_STATUS_OK : RSDFS_STATUS_STALE_HANDLE;
+}
+
+enum rsdfs_status rsdfs_sync(enum rsdfs_volume volume)
+{
+    if (volume != RSDFS_VOLUME_DATA ||
+            copied_bytes != sizeof(note_bytes) - 1U) {
+        return RSDFS_STATUS_IO;
+    }
+    if (copying_folder_file) {
+        copied_folder = true;
+    } else {
+        copied_note = true;
+    }
+    return RSDFS_STATUS_OK;
+}
+
+enum rsdfs_status rsdfs_directory_open(enum rsdfs_volume volume,
+    const char *path, rsdfs_directory_handle *handle)
+{
+    if (volume != RSDFS_VOLUME_DATA || strcmp(path, "/docs") != 0) {
+        return RSDFS_STATUS_NOT_DIRECTORY;
+    }
+    directory_entry_read = false;
+    *handle = UINT64_C(3);
+    return RSDFS_STATUS_OK;
+}
+
+enum rsdfs_status rsdfs_directory_read(rsdfs_directory_handle handle,
+    struct rsdfs_list_entry *entry, bool *present)
+{
+    if (handle != UINT64_C(3)) {
+        return RSDFS_STATUS_STALE_HANDLE;
+    }
+    *present = !directory_entry_read;
+    if (*present) {
+        *entry = (struct rsdfs_list_entry){ .name = "notes.txt",
+            .size = sizeof(note_bytes) - 1U };
+        directory_entry_read = true;
+    }
+    return RSDFS_STATUS_OK;
+}
+
+enum rsdfs_status rsdfs_directory_close(rsdfs_directory_handle handle)
+{
+    return handle == UINT64_C(3) ? RSDFS_STATUS_OK :
+        RSDFS_STATUS_STALE_HANDLE;
+}
+
+enum rsdfs_status rsdfs_mkdir_mode(enum rsdfs_volume volume,
+    const char *path, uint16_t mode)
+{
+    return volume == RSDFS_VOLUME_DATA &&
+        strcmp(path, "/docs (copy)") == 0 &&
+        mode == UINT16_C(0755) ? RSDFS_STATUS_OK :
+        RSDFS_STATUS_NOT_DIRECTORY;
+}
 
 enum heap_status heap_allocate(uint64_t size, void **pointer)
 {
@@ -120,6 +283,11 @@ enum rsdfs_status rsdfs_rename(enum rsdfs_volume volume, const char *from,
 
 enum rsdfs_status rsdfs_unlink(enum rsdfs_volume volume, const char *path)
 {
+    if (volume == RSDFS_VOLUME_DATA &&
+            strcmp(path, "/notes (copy).txt") == 0) {
+        cleaned_failed_copy = true;
+        return RSDFS_STATUS_OK;
+    }
     if (volume == RSDFS_VOLUME_DATA && renamed_readme &&
             strcmp(path, "/changed.txt") == 0) {
         removed_readme = true;
@@ -199,6 +367,14 @@ int main(void)
         fputs("RSD Files did not use the mounted Data backend\n", stderr);
         return 1;
     }
+    rsd_files_select(1U, false);
+    if (!rsd_files_copy_selection(false) ||
+            rsd_files_paste_into(rsd_files_root()) != 1U ||
+            !copied_folder ||
+            strcmp(rsd_files_node_name(4U), "docs (copy)") != 0) {
+        fputs("RSD Files did not recursively copy a Data folder\n", stderr);
+        return 1;
+    }
     rsd_files_select(3U, false);
     if (!rsd_files_copy_selection(true) ||
             rsd_files_paste_into(1U) != 0U ||
@@ -208,6 +384,23 @@ int main(void)
             !rsd_files_remove(1U) || !removed_docs ||
             rsd_files_paste_into(rsd_files_root()) != 0U) {
         fputs("RSD Files did not use the mounted Data backend\n", stderr);
+        return 1;
+    }
+    rsd_files_select(3U, false);
+    reject_copy_write = true;
+    if (!rsd_files_copy_selection(false) ||
+            rsd_files_paste_into(rsd_files_root()) != 0U ||
+            !cleaned_failed_copy ||
+            rsd_files_child_count(rsd_files_root()) != 2U) {
+        fputs("RSD Files retained a failed Data copy\n", stderr);
+        return 1;
+    }
+    reject_copy_write = false;
+    if (!rsd_files_clipboard_has() ||
+            rsd_files_paste_into(rsd_files_root()) != 1U ||
+            !copied_note || copied_bytes != sizeof(note_bytes) - 1U ||
+            strcmp(rsd_files_node_name(5U), "notes (copy).txt") != 0) {
+        fputs("RSD Files did not copy file bytes through Data\n", stderr);
         return 1;
     }
     rsd_desktop_draw();

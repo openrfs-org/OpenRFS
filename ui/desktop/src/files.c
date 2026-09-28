@@ -72,6 +72,7 @@ static bool (*live_list)(const char *path,
     uint32_t *count);
 static bool (*live_rename)(const char *from, const char *to);
 static bool (*live_remove)(const char *path, bool folder);
+static bool (*live_copy)(const char *from, const char *to, bool folder);
 
 static uint32_t here;
 static uint32_t history[16];
@@ -318,6 +319,7 @@ void rsd_files_reset(void)
     live_list = NULL;
     live_rename = NULL;
     live_remove = NULL;
+    live_copy = NULL;
     selected_count = 0U;
     history_depth = 0U;
     copy(nodes[0].name, "/", RSD_FILES_NAME_BYTES);
@@ -345,6 +347,12 @@ void rsd_files_use_live_writes(bool (*rename_path)(const char *from,
 {
     live_rename = rename_path;
     live_remove = remove_path;
+}
+
+void rsd_files_use_live_copy(bool (*copy_path)(const char *from,
+    const char *to, bool folder))
+{
+    live_copy = copy_path;
 }
 
 bool rsd_files_live_read_only(void)
@@ -544,6 +552,7 @@ bool rsd_files_refresh(void)
         uint32_t, uint32_t *) = live_list;
     bool (*rename_path)(const char *, const char *) = live_rename;
     bool (*remove_path)(const char *, bool) = live_remove;
+    bool (*copy_path)(const char *, const char *, bool) = live_copy;
     const enum rsd_files_view view = view_mode;
     const bool hidden = show_hidden;
     const bool single = single_click;
@@ -554,6 +563,7 @@ bool rsd_files_refresh(void)
     rsd_files_reset();
     rsd_files_use_live_source(list);
     rsd_files_use_live_writes(rename_path, remove_path);
+    rsd_files_use_live_copy(copy_path);
     view_mode = view;
     show_hidden = hidden;
     single_click = single;
@@ -703,7 +713,8 @@ bool rsd_files_copy_selection(bool cut)
 {
     uint32_t at;
 
-    if ((live_list != NULL && (!cut || live_rename == NULL)) ||
+    if ((live_list != NULL &&
+            (cut ? live_rename == NULL : live_copy == NULL)) ||
             selected_count == 0U) {
         return false;
     }
@@ -815,7 +826,7 @@ uint32_t rsd_files_paste_into(uint32_t folder)
     uint32_t remaining = 0U;
     uint32_t at;
 
-    if ((live_list != NULL && !clip_cut) || clip_count == 0U ||
+    if (clip_count == 0U ||
             folder >= node_count ||
             !nodes[folder].folder) {
         return 0U;
@@ -848,7 +859,30 @@ uint32_t rsd_files_paste_into(uint32_t folder)
             continue;
         }
         unique_name(folder, nodes[node].name, name);
-        if (clone_into(node, folder, name) < RSD_FILES_MAX_NODES) {
+        if (!rsd_files_name_free(folder, name)) {
+            continue;
+        }
+        if (live_list != NULL) {
+            char from[RSD_FILES_PATH_BYTES];
+            char to[RSD_FILES_PATH_BYTES];
+
+            if (live_copy == NULL ||
+                    node_count >= RSD_FILES_MAX_NODES ||
+                    child_counts[folder] >= RSD_FILES_MAX_CHILDREN ||
+                    !path_fits(node, sizeof(from)) ||
+                    !child_path(folder, name, to)) {
+                continue;
+            }
+            rsd_files_path(node, from, sizeof(from));
+            if (!live_copy(from, to, nodes[node].folder)) {
+                continue;
+            }
+            if (rsd_files_add(folder, name, nodes[node].folder,
+                    nodes[node].bytes) < RSD_FILES_MAX_NODES) {
+                ++done;
+            }
+        } else if (clone_into(node, folder, name) <
+                RSD_FILES_MAX_NODES) {
             ++done;
         }
     }
