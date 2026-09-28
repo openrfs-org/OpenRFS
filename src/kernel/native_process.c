@@ -6780,6 +6780,56 @@ static bool release_runtime_pages(
     return success;
 }
 
+static bool thread_has_handle(const struct native_process *process,
+    size_t index, uint64_t generation)
+{
+    for (size_t slot = 0U; slot < process->handles.limit; ++slot) {
+        const struct native_handle_object *object =
+            &process->handles.objects[slot];
+
+        if (object->active && object->type == OPENRFS_HANDLE_THREAD &&
+            object->resource.words[0] == index &&
+            object->resource.words[1] == generation)
+            return true;
+    }
+    return false;
+}
+
+static bool thread_has_waiter(const struct native_process *process,
+    uint64_t generation)
+{
+    for (size_t index = 0U; index < process->thread_count; ++index) {
+        const struct native_thread *thread = &process->threads[index];
+
+        if (thread->state == NATIVE_THREAD_JOIN_WAIT &&
+            thread->wait_generation == generation)
+            return true;
+    }
+    return false;
+}
+
+static bool reclaim_exited_threads(struct native_process *process)
+{
+    for (size_t index = 1U; index < process->thread_count; ++index) {
+        struct native_thread *thread = &process->threads[index];
+
+        if ((thread->state != NATIVE_THREAD_EXITED &&
+                thread->state != NATIVE_THREAD_FAULTED) ||
+            thread_has_handle(process, index, thread->generation) ||
+            thread_has_waiter(process, thread->generation))
+            continue;
+        if (thread->stack_end < thread->stack_base ||
+            (thread->stack_end - thread->stack_base) %
+                PAGING_PAGE_SIZE != 0U ||
+            !release_runtime_pages(process, thread->stack_base,
+                (size_t)((thread->stack_end - thread->stack_base) /
+                    PAGING_PAGE_SIZE), PAGING_PROCESS_MAPPING_NATIVE_STACK))
+            return false;
+        zero_bytes(thread, sizeof(*thread));
+    }
+    return true;
+}
+
 static int64_t syscall_thread_create(
     struct native_process *process,
     uint64_t request_address
@@ -6813,11 +6863,21 @@ static int64_t syscall_thread_create(
             !validate_user_range(process, request.tls_base, 1U, false))) {
         return -OPENRFS_EINVAL;
     }
-    if (process->thread_count >= process->manifest.max_threads ||
-        process->thread_count >= NATIVE_THREAD_LIMIT) {
-        return -OPENRFS_ENOMEM;
+    if (!reclaim_exited_threads(process)) {
+        process->faulted = true;
+        terminate_process(process, -OPENRFS_EIO);
+        return -OPENRFS_EIO;
     }
     index = process->thread_count;
+    for (size_t slot = 1U; slot < process->thread_count; ++slot)
+        if (process->threads[slot].state == NATIVE_THREAD_UNUSED) {
+            index = slot;
+            break;
+        }
+    if (index == process->thread_count &&
+        (index >= process->manifest.max_threads ||
+            index >= NATIVE_THREAD_LIMIT))
+        return -OPENRFS_ENOMEM;
     stack_pages = (request.stack_bytes + PAGING_PAGE_SIZE - 1U) /
         PAGING_PAGE_SIZE;
     stack_base = 0U;
@@ -6916,7 +6976,7 @@ static int64_t syscall_thread_create(
             return error;
         }
     }
-    ++process->thread_count;
+    if (index == process->thread_count) ++process->thread_count;
     if (process->handles.active_handles > process->peak_handles) {
         process->peak_handles = process->handles.active_handles;
     }

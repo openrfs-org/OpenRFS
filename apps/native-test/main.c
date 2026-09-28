@@ -897,6 +897,51 @@ static int multithread_fork_probe(void)
     return 0;
 }
 
+static int thread_reuse_probe(void)
+{
+    pthread_t previous = 0U;
+    openrfs_handle_t retained[3];
+
+    for (size_t index = 0U; index < 8U; ++index) {
+        pthread_t worker;
+
+        if (pthread_create(&worker, NULL, sleeping_thread, NULL) != 0)
+            return 138;
+        if (worker == previous || pthread_join(worker, NULL) != 0)
+            return 139;
+        if (openrfs_syscall1(OPENRFS_SYS_THREAD_JOIN, worker) !=
+                -OPENRFS_ESTALE)
+            return 140;
+        previous = worker;
+    }
+    for (size_t index = 0U; index < 3U; ++index) {
+        pthread_t worker;
+        long duplicate;
+
+        if (pthread_create(&worker, NULL, sleeping_thread, NULL) != 0)
+            return 141;
+        duplicate = openrfs_handle_duplicate(worker);
+        if (duplicate < 0 || pthread_join(worker, NULL) != 0)
+            return 142;
+        retained[index] = (openrfs_handle_t)duplicate;
+    }
+    {
+        pthread_t worker;
+
+        if (pthread_create(&worker, NULL, sleeping_thread, NULL) != ENOMEM)
+            return 143;
+        if (openrfs_handle_close(retained[0]) < 0 ||
+            pthread_create(&worker, NULL, sleeping_thread, NULL) != 0 ||
+            pthread_join(worker, NULL) != 0)
+            return 144;
+    }
+    if (openrfs_handle_close(retained[1]) < 0 ||
+        openrfs_handle_close(retained[2]) < 0)
+        return 145;
+    puts("OPENRFS THREAD joined slot and stack reuse PASS");
+    return 0;
+}
+
 static int exec_probe(void)
 {
     int status;
@@ -1085,6 +1130,8 @@ int main(int argc, char **argv, char **environment)
     probe = process_umask_probe();
     if (probe != 0) return probe;
     probe = multithread_fork_probe();
+    if (probe != 0) return probe;
+    probe = thread_reuse_probe();
     if (probe != 0) return probe;
     printf("OPENRFS REFUSAL capability EACCES stale ESTALE pointer EFAULT "
         "traversal EINVAL exhaustion ENOMEM\n");
