@@ -2,8 +2,8 @@
 
 # TLS client boundary
 
-OpenRFS's first transport-TLS profile uses the pinned BearSSL 0.6 archive in the
-SDK. `openrfs/tls.h` is a native userspace client API; it uses only public OpenRFS
+RSD's first transport-TLS profile uses the pinned BearSSL 0.6 archive in the
+SDK. `rsd/tls.h` is a native userspace client API; it uses only public RSD
 DNS, stream, entropy, realtime, monotonic-deadline, and handle services.
 
 The profile is bounded:
@@ -34,20 +34,20 @@ labels; IP literals, Unicode/IDNA input, trailing dots, empty labels, and
 underscores are refused. TLS 1.0, 1.1, 1.3, CBC suites, anonymous suites,
 client certificates, and plaintext fallback are unsupported.
 
-`openrfs_tls_client_open()` refuses an empty or malformed trust store. It passes
+`rsd_tls_client_open()` refuses an empty or malformed trust store. It passes
 the same nonempty hostname to DNS, SNI, and BearSSL's minimal X.509 validator,
 so a valid chain for another host is not accepted. It reads the kernel's
 validated realtime seconds and converts them to BearSSL's proleptic-Gregorian
 day count for certificate validity. Monotonic time remains the only deadline
 source. Thirty-two bytes from `RANDOM_STRONG` seed each independent client
-engine. That call bypasses OpenRFS's non-cryptographic generator, samples
+engine. That call bypasses RSD's non-cryptographic generator, samples
 RDSEED/RDRAND directly with a continuous repetition check, and fails closed
 when the hardware source is absent or stops producing fresh words. Host random
 and clock adapters are disabled at compile time.
 
 Every failure after stream creation shuts down and closes the stream and wipes
 the client and anchor allocations through non-elidable volatile stores.
-`openrfs_tls_client_close()` attempts authenticated
+`rsd_tls_client_close()` attempts authenticated
 `close_notify`, then tears down the transport even when the peer omits its
 reply. BearSSL and native transport error values remain separately queryable
 while the client is alive.
@@ -57,15 +57,15 @@ while the client is alive.
 The API accepts BearSSL's public `br_x509_trust_anchor` records as immutable
 input. Before entropy, DNS, or stream work, it validates every record and makes
 a bounded private snapshot of the anchor records, DNs, and key bytes. The
-caller may therefore release its input after `openrfs_tls_client_open()`
+caller may therefore release its input after `rsd_tls_client_open()`
 returns. Proof packages embed a fixed test anchor audited against the
 deterministic offline CA; a future system trust-store service must still make
 an explicit publisher/policy decision before constructing these records.
 
-`openrfs_tls_client_open_diagnostic()` preserves the BearSSL and OpenRFS
+`rsd_tls_client_open_diagnostic()` preserves the BearSSL and RSD
 transport refusal values even though a failed open returns no client object.
-`openrfs_tls_client_cancel()` atomically publishes cancellation and routes it to
-the underlying OpenRFS stream handle. The POSIX host adapter proves that a
+`rsd_tls_client_cancel()` atomically publishes cancellation and routes it to
+the underlying RSD stream handle. The POSIX host adapter proves that a
 second host thread can interrupt a blocking TLS operation. In the native guest,
 network syscalls are synchronous and do not schedule a sibling native thread
 inside the call, so native cancellation becomes observable between syscalls or
