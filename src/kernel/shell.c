@@ -51,6 +51,7 @@
 
 #define SHELL_PROMPT "rsd$ "
 #define SHELL_NETWORK_OWNER UINT64_C(1)
+#define SHELL_HISTORY_LIMIT 16U
 
 /* What splits a command from its arguments. Nothing exotic; space and tab. */
 static bool is_separator(char character)
@@ -60,6 +61,10 @@ static bool is_separator(char character)
 
 static struct shell_state state;
 static char line[SHELL_LINE_LIMIT + 1U];
+static char history[SHELL_HISTORY_LIMIT][SHELL_LINE_LIMIT + 1U];
+static char history_saved[SHELL_LINE_LIMIT + 1U];
+static size_t history_count;
+static size_t history_at;
 static bool linux_prompt_evidence_pending;
 static bool ui_keyboard_operational;
 static bool ui_keyboard_decided;
@@ -84,6 +89,110 @@ struct authentication_state {
 
 static struct authentication_state authentication;
 static void write_prompt_restored(void);
+
+static void shell_copy_line(char *destination, const char *source)
+{
+    size_t index = 0U;
+
+    while (index < SHELL_LINE_LIMIT && source[index] != '\0') {
+        destination[index] = source[index];
+        ++index;
+    }
+    destination[index] = '\0';
+}
+
+static bool shell_same_line(const char *left, const char *right)
+{
+    size_t index = 0U;
+
+    while (left[index] != '\0' && right[index] != '\0') {
+        if (left[index] != right[index]) {
+            return false;
+        }
+        ++index;
+    }
+    return left[index] == right[index];
+}
+
+static void shell_history_remember(const char *command)
+{
+    if (command[0] == '\0') {
+        history_at = history_count;
+        return;
+    }
+    if (history_count != 0U &&
+            shell_same_line(history[history_count - 1U], command)) {
+        history_at = history_count;
+        return;
+    }
+    if (history_count == SHELL_HISTORY_LIMIT) {
+        for (size_t index = 1U; index < history_count; ++index) {
+            shell_copy_line(history[index - 1U], history[index]);
+        }
+        --history_count;
+    }
+    shell_copy_line(history[history_count], command);
+    ++history_count;
+    history_at = history_count;
+}
+
+static bool shell_history_select(bool previous)
+{
+    const char *replacement;
+
+    if (previous) {
+        if (history_at == 0U) {
+            return false;
+        }
+        if (history_at == history_count) {
+            shell_copy_line(history_saved, line);
+        }
+        --history_at;
+        replacement = history[history_at];
+    } else {
+        if (history_at >= history_count) {
+            return false;
+        }
+        ++history_at;
+        replacement = history_at == history_count ? history_saved :
+            history[history_at];
+    }
+
+    shell_copy_line(line, replacement);
+    state.length = 0U;
+    while (line[state.length] != '\0') {
+        ++state.length;
+    }
+    return true;
+}
+
+static void shell_history_recall(bool previous)
+{
+    const size_t previous_length = state.length;
+
+    if (!shell_history_select(previous)) {
+        return;
+    }
+
+    if (!screen_is_active() ||
+            screen_get_state().column < previous_length) {
+        console_putc('\n');
+        console_write(SHELL_PROMPT);
+        console_write(line);
+        return;
+    }
+
+    for (size_t index = 0U; index < previous_length; ++index) {
+        console_putc('\b');
+    }
+    for (size_t index = 0U; index < previous_length; ++index) {
+        console_putc(' ');
+    }
+    for (size_t index = 0U; index < previous_length; ++index) {
+        console_putc('\b');
+    }
+    console_write(line);
+}
 
 struct foreground_input_state {
     uint8_t line[LINUX_CAT_INPUT_LINE_BYTES + 1U];
@@ -197,6 +306,7 @@ static void print_size(uint64_t bytes)
 static void command_help(void)
 {
     console_write("  help      this list\n");
+    console_write("  history   the last lines you typed\n");
     console_write("  install   open the installer configuration preview\n");
     console_write("  useradd NAME  create the first local user\n");
     console_write("  starty    authenticate and start the RSD desktop\n");
@@ -245,6 +355,17 @@ static void command_echo(const char *arguments)
 {
     console_write(arguments);
     console_putc('\n');
+}
+
+static void command_history(void)
+{
+    for (size_t index = 0U; index < history_count; ++index) {
+        console_write(index < 9U ? "   " : "  ");
+        console_write_u64(index + 1U);
+        console_write("  ");
+        console_write(history[index]);
+        console_putc('\n');
+    }
 }
 
 static void command_linux(const char *arguments)
@@ -1729,6 +1850,8 @@ enum shell_status shell_execute(const char *text)
         }
     } else if (matches(text, "gfetch") || matches(text, "fetch")) {
         command_gfetch();
+    } else if (matches(text, "history")) {
+        command_history();
     } else if (matches(text, "uptime")) {
         command_uptime();
     } else if (matches(text, "mem")) {
@@ -1913,8 +2036,10 @@ enum shell_status shell_feed(char character)
     if (character == '\n' || character == '\r') {
         console_putc('\n');
         line[state.length] = '\0';
+        shell_history_remember(line);
         state.length = 0U;
         status = shell_execute(line);
+        line[0] = '\0';
         if (linux_userland_foreground_waiting() ||
                 authentication.prompt != AUTHENTICATION_NONE ||
                 installer_ui_is_active()) {
@@ -1930,6 +2055,7 @@ enum shell_status shell_feed(char character)
         }
 
         state.length -= 1U;
+        line[state.length] = '\0';
 
         /*
          * Erasing is three characters: step back, write a space over what was
@@ -1958,6 +2084,7 @@ enum shell_status shell_feed(char character)
 
     line[state.length] = character;
     state.length += 1U;
+    line[state.length] = '\0';
     console_putc(character);
     return SHELL_STATUS_OK;
 }
@@ -1967,6 +2094,9 @@ enum shell_status shell_initialize(void)
     state.active = true;
     state.length = 0U;
     line[0] = '\0';
+    history_count = 0U;
+    history_at = 0U;
+    history_saved[0] = '\0';
     authentication_reset();
     filesystem_cwd[0] = '.';
     filesystem_cwd[1] = '\0';
@@ -2015,6 +2145,19 @@ void shell_process_keyboard_events(void)
                 (event.scancode == 0x3EU && event.alt))) {
             if (ui_handle_keyboard(&event) != UI_STATUS_OK) {
                 ui_keyboard_operational = false;
+            }
+            continue;
+        }
+        if (authentication.prompt == AUTHENTICATION_NONE &&
+                (!ui_keyboard_operational ||
+                ui_get_state()->active_panel == UI_PANEL_TERMINAL) &&
+                (event.scancode == 0x48U || event.scancode == 0x50U ||
+                 (event.control && (event.scancode == 0x19U ||
+                                    event.scancode == 0x31U)))) {
+            shell_history_recall(event.scancode == 0x48U ||
+                event.scancode == 0x19U);
+            if (ui_keyboard_operational) {
+                ui_request_redraw();
             }
             continue;
         }
@@ -2222,6 +2365,33 @@ static bool argument_splitting_is_right(void)
     return true;
 }
 
+static bool history_is_right(void)
+{
+    bool valid;
+
+    shell_history_remember("echo first");
+    shell_history_remember("echo first");
+    shell_history_remember("echo second");
+    shell_copy_line(line, "draft");
+    state.length = 5U;
+    valid = history_count == 2U && shell_history_select(true) &&
+        shell_same_line(line, "echo second") &&
+        shell_history_select(true) &&
+        shell_same_line(line, "echo first") &&
+        !shell_history_select(true) &&
+        shell_history_select(false) &&
+        shell_same_line(line, "echo second") &&
+        shell_history_select(false) &&
+        shell_same_line(line, "draft") &&
+        !shell_history_select(false);
+    history_count = 0U;
+    history_at = 0U;
+    history_saved[0] = '\0';
+    state.length = 0U;
+    line[0] = '\0';
+    return valid;
+}
+
 static bool line_editing_is_right(void)
 {
     const struct shell_state before = shell_get_state();
@@ -2399,7 +2569,8 @@ bool shell_self_test(void)
         return false;
     }
 
-    if (!line_editing_is_right() || !dispatch_is_right()) {
+    if (!history_is_right() || !line_editing_is_right() ||
+            !dispatch_is_right()) {
         return false;
     }
 
