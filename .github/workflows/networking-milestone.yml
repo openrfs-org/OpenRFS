@@ -47,7 +47,7 @@ jobs:
                   base_tree=$(git rev-parse "$base^{tree}")
                   source_tree=$(git rev-parse 'HEAD^{tree}')
                   merge_tree=$(git merge-tree --write-tree "$base" "$head")
-                  artifact="OpenRFS-networking-milestone-$head"
+                  artifact="RSD-networking-milestone-$head"
                   {
                       printf 'EVIDENCE_HEAD=%s\n' "$head"
                       printf 'EVIDENCE_BASE=%s\n' "$base"
@@ -75,7 +75,7 @@ jobs:
               shell: bash
               run: |
                   set -euo pipefail
-                  log_dir="$RUNNER_TEMP/openrfs-network-logs"
+                  log_dir="$RUNNER_TEMP/rsd-network-logs"
                   mkdir -p "$log_dir"
                   {
                       gcc --version | head -1
@@ -98,7 +98,7 @@ jobs:
               shell: bash
               run: |
                   set -euo pipefail
-                  log_dir="$RUNNER_TEMP/openrfs-network-logs"
+                  log_dir="$RUNNER_TEMP/rsd-network-logs"
                   python3 -m py_compile \
                       tools/network_fixture.py \
                       tools/network_packet_audit.py \
@@ -115,7 +115,7 @@ jobs:
               shell: bash
               run: |
                   set -euo pipefail
-                  log_dir="$RUNNER_TEMP/openrfs-network-logs"
+                  log_dir="$RUNNER_TEMP/rsd-network-logs"
                   read -r expected_scenarios expected_assertions < <(
                       make --no-print-directory -s contract-counts
                   )
@@ -142,8 +142,8 @@ jobs:
               shell: bash
               run: |
                   set -euo pipefail
-                  sweep_root="$RUNNER_TEMP/openrfs-network-sweeps"
-                  log_dir="$RUNNER_TEMP/openrfs-network-logs"
+                  sweep_root="$RUNNER_TEMP/rsd-network-sweeps"
+                  log_dir="$RUNNER_TEMP/rsd-network-logs"
                   mapfile -t scenarios < <(
                       make --no-print-directory -s contract-scenarios \
                           | grep '^network-'
@@ -171,7 +171,7 @@ jobs:
               shell: bash
               run: |
                   set -euo pipefail
-                  log_dir="$RUNNER_TEMP/openrfs-network-logs"
+                  log_dir="$RUNNER_TEMP/rsd-network-logs"
                   loop_after="$log_dir/loop-devices-after.txt"
                   losetup --list --noheadings --output NAME,BACK-FILE \
                       | sort >"$loop_after"
@@ -186,7 +186,7 @@ jobs:
               shell: bash
               run: |
                   set -euo pipefail
-                  release="evidence/OpenRFS-networking-milestone"
+                  release="evidence/RSD-networking-milestone"
                   python3 tools/network_evidence.py assemble \
                       --head "$EVIDENCE_HEAD" \
                       --base "$EVIDENCE_BASE" \
@@ -194,8 +194,8 @@ jobs:
                       --source-tree "$EVIDENCE_SOURCE_TREE" \
                       --merge-tree "$EVIDENCE_MERGE_TREE" \
                       --input build/tests \
-                      --sweeps "$RUNNER_TEMP/openrfs-network-sweeps" \
-                      --logs "$RUNNER_TEMP/openrfs-network-logs" \
+                      --sweeps "$RUNNER_TEMP/rsd-network-sweeps" \
+                      --logs "$RUNNER_TEMP/rsd-network-logs" \
                       --output "$release" \
                       --not-before "$EVIDENCE_NOT_BEFORE"
                   python3 tools/network_evidence.py inspect \
@@ -205,7 +205,7 @@ jobs:
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: ${{ env.EVIDENCE_ARTIFACT }}
-                  path: evidence/OpenRFS-networking-milestone
+                  path: evidence/RSD-networking-milestone
                   if-no-files-found: error
                   retention-days: 90
 

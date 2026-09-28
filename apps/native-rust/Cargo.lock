@@ -3,12 +3,12 @@
 version = 4
 
 [[package]]
-name = "openrfs"
+name = "rsd"
 version = "0.1.0"
 
 [[package]]
-name = "openrfs-native-rust-proof"
+name = "rsd-native-rust-proof"
 version = "0.1.0"
 dependencies = [
- "openrfs",
+ "rsd",
 ]

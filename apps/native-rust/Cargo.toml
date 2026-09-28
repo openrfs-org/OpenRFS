@@ -1,11 +1,11 @@
 [package]
-name = "openrfs-native-rust-proof"
+name = "rsd-native-rust-proof"
 version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-only"
 
 [dependencies]
-openrfs = { path = "../../rust/openrfs" }
+rsd = { path = "../../rust/rsd" }
 
 [profile.release]
 codegen-units = 1
