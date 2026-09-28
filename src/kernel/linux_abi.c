@@ -16,7 +16,7 @@
 #include <rsd/paging.h>
 #include <rsd/pci_resource.h>
 
-#define LINUX_ARGUMENT_BYTES 21U
+#define LINUX_ARGUMENT_BYTES 17U
 #define LINUX_INITIAL_STACK_WORDS 10U
 #define LINUX_PAGING_FAILURE_CEILING 64U
 #define LINUX_INITIAL_USER_PAGES \
@@ -740,7 +740,7 @@ static bool initial_stack_installed_valid(uint64_t vector_address)
     const uint8_t expected[LINUX_ARGUMENT_BYTES] = {
         'b', 'u', 's', 'y', 'b', 'o', 'x', 0,
         'e', 'c', 'h', 'o', 0,
-        'O', 'P', 'E', 'N', 'R', 'F', 'S', 0
+        'R', 'S', 'D', 0
     };
 
     if (!stack_read((uint8_t *)(void *)words, vector_address,
@@ -1112,7 +1112,7 @@ bool linux_abi_image_stack_foundation_self_test(size_t *completed_tests)
                 PAGING_LINUX_ANON_ADDRESS ||
         PAGING_LINUX_ANON_ADDRESS + PAGING_PAGE_SIZE >
             PAGING_LINUX_STACK_GUARD ||
-        LINUX_ARGUMENT_BYTES != 21U || LINUX_INITIAL_STACK_WORDS != 10U ||
+        LINUX_ARGUMENT_BYTES != 17U || LINUX_INITIAL_STACK_WORDS != 10U ||
         !initial_stack_foundation_self_test() ||
         !linux_syscall_enosys_self_test() ||
         !linux_syscall_semantic_self_test() ||

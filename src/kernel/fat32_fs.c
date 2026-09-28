@@ -1226,9 +1226,9 @@ static enum rsdfs_status validate_volume_identity(
 )
 {
     static const uint8_t system_label[11] =
-        {'O', 'P', 'E', 'N', 'R', 'F', 'S', 'S', 'Y', 'S', ' '};
+        {'R', 'S', 'D', 'S', 'Y', 'S', ' ', ' ', ' ', ' ', ' '};
     static const uint8_t data_label[11] =
-        {'O', 'P', 'E', 'N', 'R', 'F', 'S', 'D', 'A', 'T', 'A'};
+        {'R', 'S', 'D', 'D', 'A', 'T', 'A', ' ', ' ', ' ', ' '};
     const uint8_t *label = volume == RSDFS_VOLUME_SYSTEM ?
         system_label : data_label;
     uint32_t identifier = volume == RSDFS_VOLUME_SYSTEM ?

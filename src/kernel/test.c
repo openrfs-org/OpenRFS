@@ -8209,7 +8209,7 @@ _Noreturn void kernel_test_complete_nvme(void)
 _Noreturn void kernel_test_complete_filesystem(void)
 {
     static const uint8_t expected_name[FAT16_CANONICAL_NAME_BYTES] =
-        {'O', 'P', 'E', 'N', 'R', 'F', 'S', ' ', 'B', 'I', 'N'};
+        {'R', 'S', 'D', ' ', ' ', ' ', ' ', ' ', 'B', 'I', 'N'};
     const struct boot_ledger *ledger = boot_ledger_installed();
     const struct boot_stage_receipt *foundation;
     const struct boot_stage_receipt *receipt;

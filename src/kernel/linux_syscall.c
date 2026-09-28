@@ -150,7 +150,7 @@ static const uint64_t expected_calls[LINUX_SYSCALL_EXPECTED_CALLS] = {
 };
 
 static const uint8_t expected_stdout[LINUX_SYSCALL_STDOUT_BYTES] = {
-    'O', 'P', 'E', 'N', 'R', 'F', 'S', '\n'
+    'R', 'S', 'D', '\n'
 };
 
 static const uint64_t uname_allowlist[LINUX_UNAME_SYSCALL_ALLOWLIST_COUNT] = {

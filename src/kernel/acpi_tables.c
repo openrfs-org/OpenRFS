@@ -186,8 +186,8 @@ static const char fadt_signature[4] = {'F', 'A', 'C', 'P'};
 /* PCI Firmware Specification 3.3 section 4.1.2 signs this table MCFG. */
 static const char mcfg_signature[4] = {'M', 'C', 'F', 'G'};
 static const char test_signature[4] = {'T', 'E', 'S', 'T'};
-static const char test_oem_id[6] = {'O', 'P', 'E', 'N', 'R', 'F'};
-static const char test_oem_table_id[8] = {'O', 'P', 'E', 'N', 'R', 'F', 'S', ' '};
+static const char test_oem_id[6] = {'R', 'S', 'D', ' ', ' ', ' '};
+static const char test_oem_table_id[8] = {'R', 'S', 'D', ' ', ' ', ' ', ' ', ' '};
 
 static void madt_reset(struct acpi_madt *madt)
 {
@@ -1017,7 +1017,7 @@ static struct acpi_root test_root(
     struct acpi_root root = {
         .kind = kind,
         .revision = 2U,
-        .oem_id = {'O', 'P', 'E', 'N', 'R', 'F', '\0'},
+        .oem_id = {'R', 'S', 'D', ' ', ' ', ' ', '\0'},
         .physical_address = kind == ACPI_ROOT_XSDT
             ? (uint64_t)(uintptr_t)(const void *)&fixture->xsdt
             : (uint64_t)(uintptr_t)(const void *)&fixture->rsdt

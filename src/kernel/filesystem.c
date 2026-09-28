@@ -141,7 +141,7 @@ enum fat16_test_offset {
 };
 
 static const uint8_t fat16_test_name[FAT16_CANONICAL_NAME_BYTES] = {
-    'O', 'P', 'E', 'N', 'R', 'F', 'S', ' ', 'B', 'I', 'N'
+    'R', 'S', 'D', ' ', ' ', ' ', ' ', ' ', 'B', 'I', 'N'
 };
 
 static const uint8_t fat16_test_sha256[FAT16_SHA256_BYTES] = {
@@ -175,13 +175,13 @@ static void fat16_test_make_bpb(uint8_t *block)
     block[0] = UINT8_C(0xEB);
     block[1] = UINT8_C(0x3C);
     block[2] = UINT8_C(0x90);
-    block[3] = 'O';
-    block[4] = 'P';
-    block[5] = 'E';
-    block[6] = 'N';
-    block[7] = 'R';
-    block[8] = 'F';
-    block[9] = 'S';
+    block[3] = 'R';
+    block[4] = 'S';
+    block[5] = 'D';
+    block[6] = ' ';
+    block[7] = ' ';
+    block[8] = ' ';
+    block[9] = ' ';
     block[10] = ' ';
     fat16_test_put_u16(block, FAT16_TEST_BPS, FAT16_BLOCK_BYTES);
     block[FAT16_TEST_SPC] = 1U;
@@ -979,7 +979,7 @@ enum filesystem_status filesystem_file_prove(
 )
 {
     static const uint8_t canonical_name[FAT16_CANONICAL_NAME_BYTES] =
-        {'O', 'P', 'E', 'N', 'R', 'F', 'S', ' ', 'B', 'I', 'N'};
+        {'R', 'S', 'D', ' ', ' ', ' ', ' ', ' ', 'B', 'I', 'N'};
     struct nvme_filesystem_read_session session = {0};
     struct filesystem_validated_volume volume = {0};
     struct filesystem_cpu_file_content content = {0};
@@ -1199,7 +1199,7 @@ enum filesystem_status filesystem_private_read_open(
 )
 {
     static const uint8_t canonical_name[FAT16_CANONICAL_NAME_BYTES] =
-        {'O', 'P', 'E', 'N', 'R', 'F', 'S', ' ', 'B', 'I', 'N'};
+        {'R', 'S', 'D', ' ', ' ', ' ', ' ', ' ', 'B', 'I', 'N'};
     struct fat16_geometry geometry;
     struct fat16_root_query query;
     struct fat16_root_entry entry;

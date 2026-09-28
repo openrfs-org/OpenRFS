@@ -33,7 +33,7 @@ _Static_assert(offsetof(struct acpi_rsdp, length) == ACPI_RSDP_V1_SIZE,
                "ACPI 1.0 RSDP prefix changed");
 
 static const char rsdp_signature[8] = {'R', 'S', 'D', ' ', 'P', 'T', 'R', ' '};
-static const char test_oem_id[6] = {'O', 'P', 'E', 'N', 'R', 'F'};
+static const char test_oem_id[6] = {'R', 'S', 'D', ' ', ' ', ' '};
 
 static void root_reset(struct acpi_root *root)
 {
