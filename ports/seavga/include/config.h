@@ -1,17 +1,17 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * OpenRFS environment for the vendored SeaBIOS VGA drivers: configuration.
+ * RSD environment for the vendored SeaBIOS VGA drivers: configuration.
  *
  * SeaBIOS builds one VGA BIOS per card type, choosing the driver with
  * Kconfig (VGA_STANDARD_VGA, VGA_CIRRUS, VGA_ATI, VGA_BOCHS, DISPLAY_BOCHS,
- * VGA_RAMFB), and vgahw.h dispatches on those constants. OpenRFS does the
+ * VGA_RAMFB), and vgahw.h dispatches on those constants. RSD does the
  * same: the VGA sources are compiled once per card type, selected by one
  * SEAVGA_VARIANT_* definition, and each build is linked into its own object
  * whose symbols are local. Everything else comes from the storage layer's
  * configuration.
  */
-#ifndef OPENRFS_SEAVGA_CONFIG_H
-#define OPENRFS_SEAVGA_CONFIG_H
+#ifndef RSD_SEAVGA_CONFIG_H
+#define RSD_SEAVGA_CONFIG_H
 
 #include_next "config.h"
 

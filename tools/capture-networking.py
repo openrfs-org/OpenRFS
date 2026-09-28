@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Capture an authentic OpenRFS networking session and its packet evidence."""
+"""Capture an authentic RSD networking session and its packet evidence."""
 
 from __future__ import annotations
 
@@ -19,12 +19,12 @@ import fat32_image
 
 
 def load_capture_support():
-    path = Path(__file__).with_name("capture-openrfs-proof.py")
+    path = Path(__file__).with_name("capture-rsd-proof.py")
     specification = importlib.util.spec_from_file_location(
-        "openrfs_capture_support", path
+        "rsd_capture_support", path
     )
     if specification is None or specification.loader is None:
-        raise RuntimeError("OpenRFS capture support is unavailable")
+        raise RuntimeError("RSD capture support is unavailable")
     module = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(module)
     return module
@@ -132,11 +132,11 @@ def storage_arguments(system: Path, data: Path) -> list[str]:
         "-blockdev",
         f"driver=file,filename={system.resolve()},node-name=system-file,read-only=on,auto-read-only=off",
         "-blockdev", "driver=raw,file=system-file,node-name=system-raw,read-only=on",
-        "-device", "nvme,serial=openrfs-system-fat32,drive=system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1",
+        "-device", "nvme,serial=rsd-system-fat32,drive=system-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1",
         "-blockdev",
         f"driver=file,filename={data.resolve()},node-name=data-file,read-only=off,auto-read-only=off",
         "-blockdev", "driver=raw,file=data-file,node-name=data-raw,read-only=off",
-        "-device", "nvme,serial=openrfs-data-fat32,drive=data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1",
+        "-device", "nvme,serial=rsd-data-fat32,drive=data-raw,logical_block_size=512,physical_block_size=512,max_ioqpairs=1,msix_qsize=1",
     ]
 
 
@@ -151,12 +151,12 @@ def boot_arguments(args: argparse.Namespace, work: Path) -> list[str]:
     root = work / "efi"
     variables = work / "efi-vars.fd"
     shutil.copytree(args.efi_root, root)
-    shutil.copyfile(args.kernel, root / "boot" / "openrfs.elf")
+    shutil.copyfile(args.kernel, root / "boot" / "rsd.elf")
     configuration = (
         "set default=0\n"
         "set timeout=0\n\n"
-        'menuentry "OpenRFS" {\n'
-        "    multiboot2 /boot/openrfs.elf\n"
+        'menuentry "RSD" {\n'
+        "    multiboot2 /boot/rsd.elf\n"
         "    boot\n"
         "}\n"
     )
@@ -204,14 +204,14 @@ def main() -> int:
     support = load_capture_support()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    data = output / "openrfs-network-data.raw"
-    serial = output / "openrfs-networking-serial.log"
-    capture = output / "openrfs-networking.pcap"
-    audit = output / "openrfs-network-packet-audit.json"
-    fixture_log = output / "openrfs-network-fixture.log"
-    screenshot = output / "OpenRFS-networking.png"
-    video = output / "OpenRFS-networking-22s.mp4"
-    report_path = output / "openrfs-network-fat32-report.json"
+    data = output / "rsd-network-data.raw"
+    serial = output / "rsd-networking-serial.log"
+    capture = output / "rsd-networking.pcap"
+    audit = output / "rsd-network-packet-audit.json"
+    fixture_log = output / "rsd-network-fixture.log"
+    screenshot = output / "RSD-networking.png"
+    video = output / "RSD-networking-22s.mp4"
+    report_path = output / "rsd-network-fat32-report.json"
     ready = output / ".fixture-ready"
     for path in (serial, capture, audit, fixture_log, screenshot, video,
                  report_path, ready):
@@ -220,7 +220,7 @@ def main() -> int:
 
     peer_port, guest_port = free_udp_ports()
     qmp_port = support.free_port()
-    boot_work = tempfile.TemporaryDirectory(prefix="openrfs-network-boot-")
+    boot_work = tempfile.TemporaryDirectory(prefix="rsd-network-boot-")
     boot = boot_arguments(args, Path(boot_work.name))
     fixture_stream = fixture_log.open("wb")
     fixture = subprocess.Popen([
@@ -240,11 +240,11 @@ def main() -> int:
             *(["-icount", args.icount] if args.icount else []),
             *storage_arguments(args.system, data),
             "-netdev",
-            "dgram,id=openrfsnet,local.type=inet,local.host=127.0.0.1,"
+            "dgram,id=rsdnet,local.type=inet,local.host=127.0.0.1,"
             f"local.port={guest_port},remote.type=inet,remote.host=127.0.0.1,"
             f"remote.port={peer_port}",
             "-device",
-            "virtio-net-pci,id=virtio-net0,netdev=openrfsnet,"
+            "virtio-net-pci,id=virtio-net0,netdev=rsdnet,"
             "mac=52:54:00:12:34:56,disable-legacy=on,mrg_rxbuf=off",
             "-qmp", f"tcp:127.0.0.1:{qmp_port},server=on,wait=off",
             "-serial", f"file:{serial}", "-no-reboot",
@@ -260,7 +260,7 @@ def main() -> int:
         events: set[str] = set()
         frames: list[Path] = []
         capture_times: list[float] = []
-        with tempfile.TemporaryDirectory(prefix="openrfs-network-capture-") as raw:
+        with tempfile.TemporaryDirectory(prefix="rsd-network-capture-") as raw:
             work = Path(raw)
             started = time.monotonic()
             next_capture = started
@@ -277,12 +277,12 @@ def main() -> int:
                     send_command(support, qmp, "ping 10.0.2.2 1")
                     events.add("ping")
                 elif elapsed >= 9.50 and "resolve" not in events:
-                    send_command(support, qmp, "resolve openrfs.test")
+                    send_command(support, qmp, "resolve rsd.test")
                     events.add("resolve")
                 elif elapsed >= 12.50 and "http" not in events:
                     send_command(
                         support, qmp,
-                        "http http://openrfs.test/welcome.txt NETCAP.TXT",
+                        "http http://rsd.test/welcome.txt NETCAP.TXT",
                     )
                     events.add("http")
                 elif elapsed >= 17.50 and "netstat" not in events:
@@ -322,12 +322,12 @@ def main() -> int:
             # minimal desktop opens a real shell terminal by default.
             support.start_authenticated_desktop(qmp, serial)
             time.sleep(0.35)
-            support.capture(qmp, output, "OpenRFS-networking-terminal-open")
+            support.capture(qmp, output, "RSD-networking-terminal-open")
             support.send_text(qmp, "gfetch")
             support.press(qmp, "ret", 0.30)
             support.wait_serial_after(serial, support.DESKTOP_STARTED,
-                                      b"kernel      OpenRFS 2.4.0 / x86_64")
-            support.capture(qmp, output, "OpenRFS-networking")
+                                      b"kernel      RSD 2.4.0 / x86_64")
+            support.capture(qmp, output, "RSD-networking")
             encode(args.ffmpeg, frames, capture_times, args.fps,
                    args.seconds, video)
     finally:

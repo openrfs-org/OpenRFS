@@ -29,7 +29,7 @@ def run(args):
     if before["needs_recovery"]:
         raise RuntimeError("geometry control requires a clean Linux fixture")
     original_digest = ext4_kernel_read.digest(fixture)
-    readme = b"OpenRFS deterministic ext4 fixture\n"
+    readme = b"RSD deterministic ext4 fixture\n"
     reports = []
     for logical_bytes in (512, 4096):
         target = output / str(logical_bytes)

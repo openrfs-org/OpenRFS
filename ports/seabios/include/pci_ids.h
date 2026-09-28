@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * OpenRFS environment for the vendored SeaBIOS drivers: the PCI class codes
+ * RSD environment for the vendored SeaBIOS drivers: the PCI class codes
  * (PCI Code and ID Assignment Specification) and the vendor and device
  * identifiers the vendored drivers match, with SeaBIOS's names.
  */
-#ifndef OPENRFS_SEABIOS_PCI_IDS_H
-#define OPENRFS_SEABIOS_PCI_IDS_H
+#ifndef RSD_SEABIOS_PCI_IDS_H
+#define RSD_SEABIOS_PCI_IDS_H
 
 #define PCI_CLASS_STORAGE_SCSI          0x0100
 #define PCI_CLASS_STORAGE_IDE           0x0101

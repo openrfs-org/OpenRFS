@@ -1,4 +1,4 @@
-/build/
+/build
 /apps/native-rust/target/
 __pycache__/
 *.pyc

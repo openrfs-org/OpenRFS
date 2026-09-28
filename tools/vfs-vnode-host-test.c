@@ -32,8 +32,8 @@ static void yield_worker(void)
 
 static void exercise_vnodes(size_t worker)
 {
-    struct openrfsfs_stat metadata = { .object_id = 500U };
-    assert(vnode_retain(OPENRFSFS_VOLUME_DATA, "shared", &metadata, &initial_slots[worker]) == OPENRFSFS_STATUS_OK);
+    struct rsdfs_stat metadata = { .object_id = 500U };
+    assert(vnode_retain(RSDFS_VOLUME_DATA, "shared", &metadata, &initial_slots[worker]) == RSDFS_STATUS_OK);
     const uint64_t held_generation = vnode_snapshot(initial_slots[worker]).generation;
     __atomic_fetch_add(&ready, 1U, __ATOMIC_RELEASE);
     while (!__atomic_load_n(&proceed, __ATOMIC_ACQUIRE)) yield_worker();
@@ -46,7 +46,7 @@ static void exercise_vnodes(size_t worker)
         metadata.mtime_seconds = (int64_t)metadata.size;
         metadata.uid = (uint32_t)metadata.size;
         size_t slot;
-        assert(vnode_retain(OPENRFSFS_VOLUME_DATA, "shared-or-unique", &metadata, &slot) == OPENRFSFS_STATUS_OK);
+        assert(vnode_retain(RSDFS_VOLUME_DATA, "shared-or-unique", &metadata, &slot) == RSDFS_STATUS_OK);
         assert(host_interrupts_enabled == interrupts);
         yield_worker();
         struct vfs_vnode_state snapshot = vnode_snapshot(slot);
@@ -56,9 +56,9 @@ static void exercise_vnodes(size_t worker)
         if (round % 31U == 0U) {
             const size_t reserved = vnode_reserve();
             assert(reserved < VFS_MAX_VNODES && reserved != slot);
-            struct openrfsfs_stat created = { .object_id = 100000U + worker };
+            struct rsdfs_stat created = { .object_id = 100000U + worker };
             size_t extra;
-            assert(vnode_retain_reserved(OPENRFSFS_VOLUME_DATA, "reserved", &created, &extra, reserved) == OPENRFSFS_STATUS_OK);
+            assert(vnode_retain_reserved(RSDFS_VOLUME_DATA, "reserved", &created, &extra, reserved) == RSDFS_STATUS_OK);
             vnode_unreserve(reserved);
             assert(host_interrupts_enabled == interrupts);
             vnode_release(extra, vnode_snapshot(extra).generation);
@@ -84,8 +84,8 @@ static void *worker_main(void *argument)
 
 int main(void)
 {
-    mounts[OPENRFSFS_VOLUME_DATA].active = true;
-    mounts[OPENRFSFS_VOLUME_DATA].generation = 17U;
+    mounts[RSDFS_VOLUME_DATA].active = true;
+    mounts[RSDFS_VOLUME_DATA].generation = 17U;
     for (size_t index = 0U; index < VFS_VNODE_BUCKETS; ++index) vnode_buckets[index] = VFS_NO_INDEX;
 #ifdef _WIN32
     HANDLE workers[WORKERS];
@@ -103,7 +103,7 @@ int main(void)
     while (__atomic_load_n(&ready, __ATOMIC_ACQUIRE) != WORKERS) yield_worker();
     for (size_t index = 0U; index < WORKERS; ++index) assert(initial_slots[index] == initial_slots[0]);
     assert(vnode_snapshot(initial_slots[0]).references == WORKERS);
-    assert(__atomic_load_n(&mounts[OPENRFSFS_VOLUME_DATA].references, __ATOMIC_ACQUIRE) == 1U);
+    assert(__atomic_load_n(&mounts[RSDFS_VOLUME_DATA].references, __ATOMIC_ACQUIRE) == 1U);
     __atomic_store_n(&proceed, true, __ATOMIC_RELEASE);
     for (size_t index = 0U; index < WORKERS; ++index) {
 #ifdef _WIN32
@@ -113,25 +113,25 @@ int main(void)
         assert(pthread_join(workers[index], NULL) == 0);
 #endif
     }
-    assert(vnode_resources_released() && mounts[OPENRFSFS_VOLUME_DATA].references == 0U);
+    assert(vnode_resources_released() && mounts[RSDFS_VOLUME_DATA].references == 0U);
     for (size_t index = 0U; index < VFS_VNODE_BUCKETS; ++index) assert(vnode_buckets[index] == VFS_NO_INDEX);
-    struct openrfsfs_stat metadata = { .object_id = 500U };
+    struct rsdfs_stat metadata = { .object_id = 500U };
     size_t slot;
-    assert(vnode_retain(OPENRFSFS_VOLUME_DATA, "overflow", &metadata, &slot) == OPENRFSFS_STATUS_OK);
+    assert(vnode_retain(RSDFS_VOLUME_DATA, "overflow", &metadata, &slot) == RSDFS_STATUS_OK);
     const uint64_t old_generation = vnode_snapshot(slot).generation;
     vnodes[slot].references = SIZE_MAX;
     size_t refused = VFS_NO_INDEX;
-    assert(vnode_retain(OPENRFSFS_VOLUME_DATA, "overflow", &metadata, &refused) == OPENRFSFS_STATUS_BUSY && refused == VFS_NO_INDEX);
+    assert(vnode_retain(RSDFS_VOLUME_DATA, "overflow", &metadata, &refused) == RSDFS_STATUS_BUSY && refused == VFS_NO_INDEX);
     vnodes[slot].references = 1U;
     vnode_release(slot, old_generation);
-    assert(vnode_retain(OPENRFSFS_VOLUME_DATA, "reused", &metadata, &slot) == OPENRFSFS_STATUS_OK);
+    assert(vnode_retain(RSDFS_VOLUME_DATA, "reused", &metadata, &slot) == RSDFS_STATUS_OK);
     vnode_release(slot, old_generation);
     assert(vnode_snapshot(slot).references == 1U);
     vnode_release(slot, vnode_snapshot(slot).generation);
-    mounts[OPENRFSFS_VOLUME_DATA].references = SIZE_MAX;
-    assert(vnode_retain(OPENRFSFS_VOLUME_DATA, "mount-full", &metadata, &slot) == OPENRFSFS_STATUS_NO_HANDLES);
-    assert(!mount_retain(OPENRFSFS_VOLUME_DATA));
-    mounts[OPENRFSFS_VOLUME_DATA].references = 0U;
+    mounts[RSDFS_VOLUME_DATA].references = SIZE_MAX;
+    assert(vnode_retain(RSDFS_VOLUME_DATA, "mount-full", &metadata, &slot) == RSDFS_STATUS_NO_HANDLES);
+    assert(!mount_retain(RSDFS_VOLUME_DATA));
+    mounts[RSDFS_VOLUME_DATA].references = 0U;
     assert(vnode_resources_released() && host_interrupts_enabled);
     puts("VFS concurrent vnode deduplication, coherent snapshots, reservations, reference overflow and retirement PASS");
     return 0;

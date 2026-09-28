@@ -51,13 +51,13 @@ void memcpy_fl(void *d_fl, const void *s_fl, size_t len)
     memcpy(d_fl, s_fl, len);
 }
 
-#ifndef OPENRFS_SEABIOS_FAR_SEGMENTS
+#ifndef RSD_SEABIOS_FAR_SEGMENTS
 /* The storage layer: every segment it passes is zero (flat). */
 void memcpy_far(u16 d_seg, void *d_far, u16 s_seg, const void *s_far,
                 size_t len)
 {
-    memcpy((u8 *)d_far + ((openrfs_seabios_uintptr)d_seg << 4),
-           (const u8 *)s_far + ((openrfs_seabios_uintptr)s_seg << 4), len);
+    memcpy((u8 *)d_far + ((rsd_seabios_uintptr)d_seg << 4),
+           (const u8 *)s_far + ((rsd_seabios_uintptr)s_seg << 4), len);
 }
 #endif
 
@@ -210,10 +210,10 @@ static void put_number(struct out *out, u64 value, unsigned int base,
         put(out, text[--count]);
 }
 
-int openrfs_seabios_vsnprintf(char *buffer, size_t size, const char *fmt,
+int rsd_seabios_vsnprintf(char *buffer, size_t size, const char *fmt,
                               va_list args);
 
-int openrfs_seabios_vsnprintf(char *buffer, size_t size, const char *fmt,
+int rsd_seabios_vsnprintf(char *buffer, size_t size, const char *fmt,
                               va_list args)
 {
     struct out out = { buffer, size, 0 };
@@ -283,7 +283,7 @@ int openrfs_seabios_vsnprintf(char *buffer, size_t size, const char *fmt,
             }
             put(&out, '0');
             put(&out, 'x');
-            put_number(&out, (openrfs_seabios_uintptr)va_arg(args, void *),
+            put_number(&out, (rsd_seabios_uintptr)va_arg(args, void *),
                        16, 0, width, pad, 0);
             break;
         case 's': {

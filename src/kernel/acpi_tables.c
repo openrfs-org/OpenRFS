@@ -3,10 +3,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/acpi.h>
-#include <openrfs/acpi_util.h>
+#include <rsd/acpi.h>
+#include <rsd/acpi_util.h>
 
-/* OpenRFS early-boot policy bounds firmware-controlled work. */
+/* RSD early-boot policy bounds firmware-controlled work. */
 #define ACPI_MAX_ROOT_ENTRIES 256U
 
 /*
@@ -21,7 +21,7 @@
 
 /*
  * ACPI 1.0 ends the table at 116 bytes, immediately past FLAGS. Every field
- * OpenRFS requires is inside that span, so a table of exactly that size is still
+ * RSD requires is inside that span, so a table of exactly that size is still
  * usable; the extended timer address is read only when the table's own declared
  * length reaches the end of the structure, because the bytes past a short
  * table's length belong to something else.
@@ -113,7 +113,7 @@ struct acpi_test_fadt {
 } __attribute__((packed));
 
 /*
- * Two allocation structures, which is one more than any machine OpenRFS is
+ * Two allocation structures, which is one more than any machine RSD is
  * tested on declares. The second exists so the overlap rejection has something
  * to reject against.
  */
@@ -360,7 +360,7 @@ static enum acpi_status validate_referenced_table(
 
 /*
  * Walk the root table once and return the single entry carrying a signature.
- * Every table OpenRFS reads comes through here, so a referenced table is bounds
+ * Every table RSD reads comes through here, so a referenced table is bounds
  * checked and its checksum verified before any reader sees it, and a firmware
  * that declares the same table twice is refused rather than resolved by
  * position. The caller names the two refusals so each table reports its own.
@@ -753,7 +753,7 @@ static enum acpi_status decode_ecam_allocations(
 /*
  * Discover the memory-mapped configuration window firmware advertises.
  *
- * This is the first optional table OpenRFS reads. A machine with no PCI Express
+ * This is the first optional table RSD reads. A machine with no PCI Express
  * host bridge publishes no MCFG, and that is a fact about the machine rather
  * than a fault: ACPI_STATUS_MISSING_MCFG is returned and the caller decides
  * whether it can proceed without one. Everything else here is refused for the
@@ -1534,7 +1534,7 @@ bool acpi_tables_self_test(void)
     prepare_test_fixture(&fixture);
     root = test_root(&fixture, ACPI_ROOT_XSDT);
     root.physical_address =
-        OPENRFS_EARLY_PHYSICAL_LIMIT - ACPI_SDT_HEADER_SIZE + 1U;
+        RSD_EARLY_PHYSICAL_LIMIT - ACPI_SDT_HEADER_SIZE + 1U;
 
     if (acpi_madt_discover(&root, &madt) !=
         ACPI_STATUS_ROOT_OUTSIDE_EARLY_MAP) {
@@ -1587,7 +1587,7 @@ bool acpi_tables_self_test(void)
     prepare_test_fixture(&fixture);
     root = test_root(&fixture, ACPI_ROOT_XSDT);
     fixture.xsdt.entries[0] =
-        OPENRFS_EARLY_PHYSICAL_LIMIT - ACPI_SDT_HEADER_SIZE + 1U;
+        RSD_EARLY_PHYSICAL_LIMIT - ACPI_SDT_HEADER_SIZE + 1U;
     set_checksum(&fixture.xsdt, sizeof(fixture.xsdt));
 
     if (acpi_madt_discover(&root, &madt) !=

@@ -3,63 +3,63 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/acpi.h>
-#include <openrfs/acpi_util.h>
-#include <openrfs/abi/base.h>
-#include <openrfs/apic.h>
-#include <openrfs/apic_timer.h>
-#include <openrfs/boot_ledger.h>
-#include <openrfs/boot_plan.h>
-#include <openrfs/clock.h>
-#include <openrfs/console.h>
-#include <openrfs/cpu.h>
-#include <openrfs/device_substrate.h>
-#include <openrfs/dma.h>
-#include <openrfs/ext4_fs.h>
-#include <openrfs/framebuffer.h>
-#include <openrfs/filesystem.h>
-#include <openrfs/fat32_fs.h>
-#include <openrfs/font.h>
-#include <openrfs/heap.h>
-#include <openrfs/interrupts.h>
-#include <openrfs/ioapic.h>
-#include <openrfs/memory.h>
-#include <openrfs/msix.h>
-#include <openrfs/network.h>
-#include <openrfs/native_process.h>
-#include <openrfs/network_syscall.h>
-#include <openrfs/audio.h>
-#include <openrfs/nvidia.h>
-#include <openrfs/driver.h>
-#include <openrfs/driver_tests.h>
-#include <openrfs/multiprocess.h>
-#include <openrfs/nvme.h>
-#include <openrfs/paging.h>
-#include <openrfs/package_service.h>
-#include <openrfs/package_state.h>
-#include <openrfs/pci.h>
-#include <openrfs/pci_resource.h>
-#include <openrfs/pic.h>
-#include <openrfs/pit.h>
-#include <openrfs/pointer.h>
-#include <openrfs/process.h>
-#include <openrfs/random.h>
-#include <openrfs/keyboard.h>
-#include <openrfs/linux_abi.h>
-#include <openrfs/linux_cat.h>
-#include <openrfs/linux_uname.h>
-#include <openrfs/linux_userland.h>
-#include <openrfs/screen.h>
-#include <openrfs/shell.h>
-#include <openrfs/pm_timer.h>
-#include <openrfs/surface.h>
-#include <openrfs/test.h>
-#include <openrfs/thread.h>
-#include <openrfs/timer.h>
-#include <openrfs/tsc.h>
-#include <openrfs/ui.h>
-#include <openrfs/ui_font.h>
-#include <openrfs/xhci.h>
+#include <rsd/acpi.h>
+#include <rsd/acpi_util.h>
+#include <rsd/abi/base.h>
+#include <rsd/apic.h>
+#include <rsd/apic_timer.h>
+#include <rsd/boot_ledger.h>
+#include <rsd/boot_plan.h>
+#include <rsd/clock.h>
+#include <rsd/console.h>
+#include <rsd/cpu.h>
+#include <rsd/device_substrate.h>
+#include <rsd/dma.h>
+#include <rsd/ext4_fs.h>
+#include <rsd/framebuffer.h>
+#include <rsd/filesystem.h>
+#include <rsd/fat32_fs.h>
+#include <rsd/font.h>
+#include <rsd/heap.h>
+#include <rsd/interrupts.h>
+#include <rsd/ioapic.h>
+#include <rsd/memory.h>
+#include <rsd/msix.h>
+#include <rsd/network.h>
+#include <rsd/native_process.h>
+#include <rsd/network_syscall.h>
+#include <rsd/audio.h>
+#include <rsd/nvidia.h>
+#include <rsd/driver.h>
+#include <rsd/driver_tests.h>
+#include <rsd/multiprocess.h>
+#include <rsd/nvme.h>
+#include <rsd/paging.h>
+#include <rsd/package_service.h>
+#include <rsd/package_state.h>
+#include <rsd/pci.h>
+#include <rsd/pci_resource.h>
+#include <rsd/pic.h>
+#include <rsd/pit.h>
+#include <rsd/pointer.h>
+#include <rsd/process.h>
+#include <rsd/random.h>
+#include <rsd/keyboard.h>
+#include <rsd/linux_abi.h>
+#include <rsd/linux_cat.h>
+#include <rsd/linux_uname.h>
+#include <rsd/linux_userland.h>
+#include <rsd/screen.h>
+#include <rsd/shell.h>
+#include <rsd/pm_timer.h>
+#include <rsd/surface.h>
+#include <rsd/test.h>
+#include <rsd/thread.h>
+#include <rsd/timer.h>
+#include <rsd/tsc.h>
+#include <rsd/ui.h>
+#include <rsd/ui_font.h>
+#include <rsd/xhci.h>
 
 #define QEMU_EXIT_PORT UINT16_C(0x00F4)
 #define QEMU_FAILURE_VALUE UINT8_C(0x7F)
@@ -101,7 +101,7 @@
 
 _Static_assert(
     PAGING_TEST_HUGE_ADDRESS % PAGING_HUGE_PAGE_SIZE == 0U &&
-        PAGING_TEST_HUGE_ADDRESS < OPENRFS_EARLY_PHYSICAL_LIMIT,
+        PAGING_TEST_HUGE_ADDRESS < RSD_EARLY_PHYSICAL_LIMIT,
     "the paging huge-leaf probe must stay aligned inside the identity map"
 );
 
@@ -337,8 +337,8 @@ static enum kernel_test_scenario scenario_from_value(
         return KERNEL_TEST_BOOT_LEDGER;
     }
 
-    if (token_equals(value, length, "openrfs-proof")) {
-        return KERNEL_TEST_OPENRFS_PROOF;
+    if (token_equals(value, length, "rsd-proof")) {
+        return KERNEL_TEST_RSD_PROOF;
     }
 
     if (token_equals(value, length, "device-substrate")) {
@@ -369,21 +369,21 @@ static enum kernel_test_scenario scenario_from_value(
         return KERNEL_TEST_LINUX_ABI_UNAME;
     }
 
-    if (token_equals(value, length, "openrfs-proof-userland")) {
-        return KERNEL_TEST_OPENRFS_PROOF_USERLAND;
+    if (token_equals(value, length, "rsd-proof-userland")) {
+        return KERNEL_TEST_RSD_PROOF_USERLAND;
     }
 
-    if (token_equals(value, length, "openrfs-proof-userland-absent")) {
-        return KERNEL_TEST_OPENRFS_PROOF_USERLAND_ABSENT;
+    if (token_equals(value, length, "rsd-proof-userland-absent")) {
+        return KERNEL_TEST_RSD_PROOF_USERLAND_ABSENT;
     }
 
-    if (token_equals(value, length, "openrfs-proof-userland-interactive")) {
-        return KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE;
+    if (token_equals(value, length, "rsd-proof-userland-interactive")) {
+        return KERNEL_TEST_RSD_PROOF_USERLAND_INTERACTIVE;
     }
 
     if (token_equals(
-            value, length, "openrfs-proof-userland-interactive-absent")) {
-        return KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE_ABSENT;
+            value, length, "rsd-proof-userland-interactive-absent")) {
+        return KERNEL_TEST_RSD_PROOF_USERLAND_INTERACTIVE_ABSENT;
     }
 
     if (token_equals(value, length, "fat32-system")) {
@@ -599,8 +599,8 @@ static enum kernel_test_scenario scenario_from_value(
     if (token_equals(value, length, "native-https")) {
         return KERNEL_TEST_NATIVE_HTTPS;
     }
-    if (token_equals(value, length, "native-openrfs")) {
-        return KERNEL_TEST_NATIVE_OPENRFS;
+    if (token_equals(value, length, "native-rsd")) {
+        return KERNEL_TEST_NATIVE_RSD;
     }
     if (token_equals(value, length, "ext4-admission-refusal")) {
         ext4_admission_refusal_test = true;
@@ -694,7 +694,7 @@ static uint8_t scenario_exit_value(enum kernel_test_scenario scenario)
         return UINT8_C(0x2D);
     case KERNEL_TEST_BOOT_LEDGER:
         return UINT8_C(0x2E);
-    case KERNEL_TEST_OPENRFS_PROOF:
+    case KERNEL_TEST_RSD_PROOF:
         return UINT8_C(0x2F);
     case KERNEL_TEST_DEVICE_SUBSTRATE:
         return UINT8_C(0x30);
@@ -710,13 +710,13 @@ static uint8_t scenario_exit_value(enum kernel_test_scenario scenario)
         return UINT8_C(0x36);
     case KERNEL_TEST_LINUX_ABI_UNAME:
         return UINT8_C(0x37);
-    case KERNEL_TEST_OPENRFS_PROOF_USERLAND:
+    case KERNEL_TEST_RSD_PROOF_USERLAND:
         return UINT8_C(0x38);
-    case KERNEL_TEST_OPENRFS_PROOF_USERLAND_ABSENT:
+    case KERNEL_TEST_RSD_PROOF_USERLAND_ABSENT:
         return UINT8_C(0x39);
-    case KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE:
+    case KERNEL_TEST_RSD_PROOF_USERLAND_INTERACTIVE:
         return UINT8_C(0x3A);
-    case KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE_ABSENT:
+    case KERNEL_TEST_RSD_PROOF_USERLAND_INTERACTIVE_ABSENT:
         return UINT8_C(0x3B);
     case KERNEL_TEST_FAT32_SYSTEM:
         return UINT8_C(0x3C);
@@ -806,7 +806,7 @@ static uint8_t scenario_exit_value(enum kernel_test_scenario scenario)
     case KERNEL_TEST_NATIVE_DYNAMIC: return UINT8_C(0x84);
     case KERNEL_TEST_NATIVE_HTTPS: return UINT8_C(0x85);
     case KERNEL_TEST_EXT4_RECOVERY: return UINT8_C(0x86);
-    case KERNEL_TEST_NATIVE_OPENRFS: return UINT8_C(0x87);
+    case KERNEL_TEST_NATIVE_RSD: return UINT8_C(0x87);
     case KERNEL_TEST_DRIVERS: return UINT8_C(0x88);
     default:
         return QEMU_FAILURE_VALUE;
@@ -995,7 +995,7 @@ enum kernel_test_scenario kernel_test_select(
     const struct boot_information *context
 )
 {
-    static const char prefix[] = "openrfs.test=";
+    static const char prefix[] = "rsd.test=";
     enum kernel_test_scenario selected = KERNEL_TEST_NONE;
     size_t offset = 0;
 
@@ -1244,7 +1244,7 @@ static void ioapic_level_scenario(void)
 
     /*
      * Read the entry off the hardware. An entry programmed edge triggered while
-     * OpenRFS's records called it level triggered would deliver every interrupt
+     * RSD's records called it level triggered would deliver every interrupt
      * below and latch nothing, so this is the check that catches it.
      */
     if (ioapic_read_redirection(pit_active_vector(), &entry) !=
@@ -2129,7 +2129,7 @@ static volatile uint8_t paging_scratch;
  * recorded in a table.
  *
  * `make verify` has always refused an RWX load segment, and until this
- * increment that assertion was the only thing standing behind OpenRFS's W^X
+ * increment that assertion was the only thing standing behind RSD's W^X
  * claim - and it inspects the ELF file, not the machine the kernel runs on.
  * Everything below the rejections is the part a file check can never do: a
  * fresh frame is mapped writable, written, narrowed to read-only, and written
@@ -2194,23 +2194,23 @@ static void paging_scenario(const struct paging_device_windows *device_windows)
     }
 
     /* Every refusal, through the public interface, against the live tables. */
-    if (paging_map(PAGING_PROBE_ADDRESS + 1U, 0U, OPENRFS_PAGE_SIZE,
+    if (paging_map(PAGING_PROBE_ADDRESS + 1U, 0U, RSD_PAGE_SIZE,
             PAGING_WRITE) != PAGING_STATUS_UNALIGNED_ADDRESS ||
         paging_map(PAGING_PROBE_ADDRESS, 0U, 0U, PAGING_WRITE) !=
             PAGING_STATUS_ZERO_LENGTH ||
-        paging_map(UINT64_C(0x0000800000000000), 0U, OPENRFS_PAGE_SIZE,
+        paging_map(UINT64_C(0x0000800000000000), 0U, RSD_PAGE_SIZE,
             PAGING_WRITE) != PAGING_STATUS_NONCANONICAL_ADDRESS ||
-        paging_map(PAGING_PROBE_ADDRESS, 0U, OPENRFS_PAGE_SIZE,
+        paging_map(PAGING_PROBE_ADDRESS, 0U, RSD_PAGE_SIZE,
             PAGING_WRITE | PAGING_EXECUTE) !=
             PAGING_STATUS_WRITABLE_AND_EXECUTABLE) {
         kernel_test_fail("a malformed mapping request was accepted");
     }
 
-    if (paging_map(text & ~(OPENRFS_PAGE_SIZE - 1U), 0U, OPENRFS_PAGE_SIZE,
+    if (paging_map(text & ~(RSD_PAGE_SIZE - 1U), 0U, RSD_PAGE_SIZE,
             PAGING_WRITE) != PAGING_STATUS_ALREADY_MAPPED ||
-        paging_unmap(PAGING_PROBE_ADDRESS, OPENRFS_PAGE_SIZE) !=
+        paging_unmap(PAGING_PROBE_ADDRESS, RSD_PAGE_SIZE) !=
             PAGING_STATUS_NOT_MAPPED ||
-        paging_protect(PAGING_PROBE_ADDRESS, OPENRFS_PAGE_SIZE, PAGING_READ) !=
+        paging_protect(PAGING_PROBE_ADDRESS, RSD_PAGE_SIZE, PAGING_READ) !=
             PAGING_STATUS_NOT_MAPPED) {
         kernel_test_fail("an impossible mapping change was accepted");
     }
@@ -2220,9 +2220,9 @@ static void paging_scenario(const struct paging_device_windows *device_windows)
      * so a 4 KiB change inside one is refused rather than silently applied to
      * the whole 2 MiB.
      */
-    if (paging_protect(PAGING_TEST_HUGE_ADDRESS, OPENRFS_PAGE_SIZE,
+    if (paging_protect(PAGING_TEST_HUGE_ADDRESS, RSD_PAGE_SIZE,
             PAGING_READ) != PAGING_STATUS_HUGE_PAGE_PRESENT ||
-        paging_unmap(PAGING_TEST_HUGE_ADDRESS, OPENRFS_PAGE_SIZE) !=
+        paging_unmap(PAGING_TEST_HUGE_ADDRESS, RSD_PAGE_SIZE) !=
             PAGING_STATUS_HUGE_PAGE_PRESENT) {
         kernel_test_fail("a 2 MiB mapping accepted a 4 KiB change");
     }
@@ -2236,9 +2236,9 @@ static void paging_scenario(const struct paging_device_windows *device_windows)
         kernel_test_fail("no frame was available for the probe page");
     }
 
-    if (paging_map(PAGING_PROBE_ADDRESS, frame, OPENRFS_PAGE_SIZE,
+    if (paging_map(PAGING_PROBE_ADDRESS, frame, RSD_PAGE_SIZE,
             PAGING_WRITE) != PAGING_STATUS_OK ||
-        paging_map(PAGING_PROBE_ADDRESS, frame, OPENRFS_PAGE_SIZE,
+        paging_map(PAGING_PROBE_ADDRESS, frame, RSD_PAGE_SIZE,
             PAGING_WRITE) != PAGING_STATUS_ALREADY_MAPPED) {
         kernel_test_fail("the probe page would not map exactly once");
     }
@@ -2257,7 +2257,7 @@ static void paging_scenario(const struct paging_device_windows *device_windows)
         kernel_test_fail("the probe page does not translate to its frame");
     }
 
-    if (paging_protect(PAGING_PROBE_ADDRESS, OPENRFS_PAGE_SIZE, PAGING_READ) !=
+    if (paging_protect(PAGING_PROBE_ADDRESS, RSD_PAGE_SIZE, PAGING_READ) !=
         PAGING_STATUS_OK) {
         kernel_test_fail("the probe page would not narrow to read-only");
     }
@@ -2280,7 +2280,7 @@ static void paging_scenario(const struct paging_device_windows *device_windows)
      * kernel, so the check that matters is that the frame count is identical
      * after sixty-four cycles - and the paging state's own table count with it.
      */
-    if (paging_unmap(PAGING_PROBE_ADDRESS, OPENRFS_PAGE_SIZE) !=
+    if (paging_unmap(PAGING_PROBE_ADDRESS, RSD_PAGE_SIZE) !=
         PAGING_STATUS_OK) {
         kernel_test_fail("the probe page would not unmap before the cycle");
     }
@@ -2292,9 +2292,9 @@ static void paging_scenario(const struct paging_device_windows *device_windows)
         uintptr_t cycle_frame;
 
         if (frame_allocate(&cycle_frame) != FRAME_STATUS_OK ||
-            paging_map(PAGING_PROBE_ADDRESS, cycle_frame, OPENRFS_PAGE_SIZE,
+            paging_map(PAGING_PROBE_ADDRESS, cycle_frame, RSD_PAGE_SIZE,
                 PAGING_WRITE) != PAGING_STATUS_OK ||
-            paging_unmap(PAGING_PROBE_ADDRESS, OPENRFS_PAGE_SIZE) !=
+            paging_unmap(PAGING_PROBE_ADDRESS, RSD_PAGE_SIZE) !=
                 PAGING_STATUS_OK ||
             frame_release(cycle_frame) != FRAME_STATUS_OK) {
             kernel_test_fail("a map and unmap cycle did not complete");
@@ -2315,9 +2315,9 @@ static void paging_scenario(const struct paging_device_windows *device_windows)
 
     /* Put the probe page back so the fault below has something to narrow. */
     if (frame_allocate(&frame) != FRAME_STATUS_OK ||
-        paging_map(PAGING_PROBE_ADDRESS, frame, OPENRFS_PAGE_SIZE,
+        paging_map(PAGING_PROBE_ADDRESS, frame, RSD_PAGE_SIZE,
             PAGING_WRITE) != PAGING_STATUS_OK ||
-        paging_protect(PAGING_PROBE_ADDRESS, OPENRFS_PAGE_SIZE, PAGING_READ) !=
+        paging_protect(PAGING_PROBE_ADDRESS, RSD_PAGE_SIZE, PAGING_READ) !=
             PAGING_STATUS_OK) {
         kernel_test_fail("the probe page would not come back read-only");
     }
@@ -2956,7 +2956,7 @@ static void pci_ecam_scenario(
     }
 
     /*
-     * A bus past what OpenRFS mapped is refused rather than folded back into the
+     * A bus past what RSD mapped is refused rather than folded back into the
      * window, which is the failure that would read one bus as another.
      */
     address.segment = 0U;
@@ -3543,7 +3543,7 @@ static void shell_scenario(void)
     }
 
     after = shell_get_state();
-    console_write("OpenRFS: shell scenario ran ");
+    console_write("RSD: shell scenario ran ");
     console_write_u64(after.commands);
     console_write(" commands and refused ");
     console_write_u64(after.unknown);
@@ -3704,7 +3704,7 @@ static void keyboard_scenario(void)
         kernel_test_fail("the keyboard lost events it never accounted for");
     }
 
-    console_write("OpenRFS: keyboard scenario queued ");
+    console_write("RSD: keyboard scenario queued ");
     console_write_u64((uint64_t)after.queued);
     console_write(" and dropped ");
     console_write_u64(after.dropped - before.dropped);
@@ -3724,7 +3724,7 @@ static void screen_scenario(void)
         kernel_test_fail("the screen scenario has no console");
     }
 
-    if (openrfs_font_geometry(&width, &height, &first, &count) !=
+    if (rsd_font_geometry(&width, &height, &first, &count) !=
         FONT_STATUS_OK) {
         kernel_test_fail("the font table would not describe itself");
     }
@@ -3821,7 +3821,7 @@ static void screen_scenario(void)
         }
     }
 
-    console_write("OpenRFS: screen scenario drew ");
+    console_write("RSD: screen scenario drew ");
     console_write_u64((uint64_t)count);
     console_write(" glyphs and read every one back\n");
 }
@@ -4677,7 +4677,7 @@ void kernel_test_run(
     case KERNEL_TEST_BOOT_LEDGER:
         /* Deferred until kernel_main publishes the fully verified receipts. */
         return;
-    case KERNEL_TEST_OPENRFS_PROOF:
+    case KERNEL_TEST_RSD_PROOF:
         /* Deferred until the ledger and UI are both installed and published. */
         return;
     case KERNEL_TEST_DEVICE_SUBSTRATE:
@@ -4701,10 +4701,10 @@ void kernel_test_run(
     case KERNEL_TEST_LINUX_ABI_UNAME:
         /* Deferred until the uname proof receipt is installed and published. */
         return;
-    case KERNEL_TEST_OPENRFS_PROOF_USERLAND:
-    case KERNEL_TEST_OPENRFS_PROOF_USERLAND_ABSENT:
-    case KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE:
-    case KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE_ABSENT:
+    case KERNEL_TEST_RSD_PROOF_USERLAND:
+    case KERNEL_TEST_RSD_PROOF_USERLAND_ABSENT:
+    case KERNEL_TEST_RSD_PROOF_USERLAND_INTERACTIVE:
+    case KERNEL_TEST_RSD_PROOF_USERLAND_INTERACTIVE_ABSENT:
     case KERNEL_TEST_FAT32_SYSTEM:
     case KERNEL_TEST_FAT32_DATA:
     case KERNEL_TEST_FAT32_NESTED:
@@ -4775,10 +4775,10 @@ void kernel_test_run(
     case KERNEL_TEST_NATIVE_SDL:
     case KERNEL_TEST_NATIVE_DYNAMIC:
     case KERNEL_TEST_NATIVE_HTTPS:
-    case KERNEL_TEST_NATIVE_OPENRFS:
+    case KERNEL_TEST_NATIVE_RSD:
     case KERNEL_TEST_EXT4_RECOVERY:
     case KERNEL_TEST_DRIVERS:
-        /* Deferred until OpenRFS and the Boot Ledger are published. */
+        /* Deferred until RSD and the Boot Ledger are published. */
         return;
     case KERNEL_TEST_MULTIPROCESS_SLOTS:
         multiprocess_slots_scenario();
@@ -4788,7 +4788,7 @@ void kernel_test_run(
         interrupt_test_set_gate_present(14U, false);
         interrupt_trigger_page_fault();
     case KERNEL_TEST_INVALID:
-        kernel_test_fail("invalid or duplicate openrfs.test argument");
+        kernel_test_fail("invalid or duplicate rsd.test argument");
     case KERNEL_TEST_NONE:
     default:
         kernel_test_fail("unreachable test scenario");
@@ -4804,9 +4804,9 @@ _Noreturn void kernel_test_complete_normal(void)
     kernel_test_pass();
 }
 
-static void ext4_vfs_require(enum openrfsfs_status status, const char *operation)
+static void ext4_vfs_require(enum rsdfs_status status, const char *operation)
 {
-    if (status != OPENRFSFS_STATUS_OK) {
+    if (status != RSDFS_STATUS_OK) {
         console_write("ST EXT4 VFS operation ");
         console_write(operation);
         console_write(" status ");
@@ -4816,16 +4816,16 @@ static void ext4_vfs_require(enum openrfsfs_status status, const char *operation
     }
 }
 
-static void ext4_vfs_indexed_snapshot(openrfsfs_directory_handle snapshot)
+static void ext4_vfs_indexed_snapshot(rsdfs_directory_handle snapshot)
 {
     uint64_t seen[4] = { 0U };
     static const char prefix[] = "entry-";
-    static const char suffix[] = "-openrfs-fixture";
+    static const char suffix[] = "-rsd-fixture";
     for (unsigned index = 0U; index < 256U; ++index) {
-        struct openrfsfs_list_entry entry;
+        struct rsdfs_list_entry entry;
         bool present = false;
         unsigned number = 0U;
-        ext4_vfs_require(openrfsfs_directory_read(snapshot, &entry, &present), "htree snapshot read");
+        ext4_vfs_require(rsdfs_directory_read(snapshot, &entry, &present), "htree snapshot read");
         if (!present || entry.directory || entry.size != 2U)
             kernel_test_fail("ext4 htree snapshot changed type size or entry count");
         for (size_t letter = 0U; letter < sizeof(prefix) - 1U; ++letter)
@@ -4840,60 +4840,60 @@ static void ext4_vfs_indexed_snapshot(openrfsfs_directory_handle snapshot)
             kernel_test_fail("ext4 htree snapshot duplicated an entry");
         seen[number / 64U] |= UINT64_C(1) << (number % 64U);
     }
-    struct openrfsfs_list_entry entry;
+    struct rsdfs_list_entry entry;
     bool present = true;
-    ext4_vfs_require(openrfsfs_directory_read(snapshot, &entry, &present), "htree snapshot EOF");
+    ext4_vfs_require(rsdfs_directory_read(snapshot, &entry, &present), "htree snapshot EOF");
     if (present) kernel_test_fail("ext4 htree snapshot exposed a later mutation");
-    ext4_vfs_require(openrfsfs_directory_close(snapshot), "htree snapshot close");
+    ext4_vfs_require(rsdfs_directory_close(snapshot), "htree snapshot close");
 }
 
 static void ext4_vfs_indexed_semantics(void)
 {
-    const enum openrfsfs_volume volume = OPENRFSFS_VOLUME_SYSTEM;
-    const char *original = "indexed/entry-0128-openrfs-fixture";
+    const enum rsdfs_volume volume = RSDFS_VOLUME_SYSTEM;
+    const char *original = "indexed/entry-0128-rsd-fixture";
     const char *moved = "data/user/VFS-INDEX.TMP";
     const char *created = "indexed/VFS-INDEX.NEW";
     const char *renamed = "indexed/VFS-INDEX.FINAL";
     const char *linked = "indexed/VFS-INDEX.LINK";
-    const uint64_t initial_free = openrfsfs_drive(volume).free_bytes;
-    struct openrfsfs_stat before, after;
-    openrfsfs_handle held, file;
-    openrfsfs_directory_handle snapshot;
+    const uint64_t initial_free = rsdfs_drive(volume).free_bytes;
+    struct rsdfs_stat before, after;
+    rsdfs_handle held, file;
+    rsdfs_directory_handle snapshot;
     uint8_t bytes[5];
     size_t count;
-    ext4_vfs_require(openrfsfs_open(volume, original, OPENRFSFS_ACCESS_READ, &held), "htree held open");
-    ext4_vfs_require(openrfsfs_fstat(held, &before), "htree held stat");
-    ext4_vfs_require(openrfsfs_directory_open(volume, "indexed", &snapshot), "htree snapshot open");
-    ext4_vfs_require(openrfsfs_rename(volume, original, moved), "htree cross-parent removal");
-    ext4_vfs_require(openrfsfs_open_options(volume, created, OPENRFSFS_ACCESS_READ_WRITE,
-        OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE, 0640U, &file), "htree insertion");
-    ext4_vfs_require(openrfsfs_write(file, (const uint8_t *)"htree", 5U, &count), "htree file write");
+    ext4_vfs_require(rsdfs_open(volume, original, RSDFS_ACCESS_READ, &held), "htree held open");
+    ext4_vfs_require(rsdfs_fstat(held, &before), "htree held stat");
+    ext4_vfs_require(rsdfs_directory_open(volume, "indexed", &snapshot), "htree snapshot open");
+    ext4_vfs_require(rsdfs_rename(volume, original, moved), "htree cross-parent removal");
+    ext4_vfs_require(rsdfs_open_options(volume, created, RSDFS_ACCESS_READ_WRITE,
+        RSDFS_OPEN_CREATE | RSDFS_OPEN_EXCLUSIVE, 0640U, &file), "htree insertion");
+    ext4_vfs_require(rsdfs_write(file, (const uint8_t *)"htree", 5U, &count), "htree file write");
     if (count != 5U) kernel_test_fail("ext4 htree write was short");
-    ext4_vfs_require(openrfsfs_link(volume, created, linked), "htree hard link");
-    ext4_vfs_require(openrfsfs_rename(volume, created, renamed), "htree same-parent rename");
-    ext4_vfs_require(openrfsfs_fsync(file), "htree file sync");
-    ext4_vfs_require(openrfsfs_pread(file, bytes, sizeof(bytes), 0U, &count), "htree held new read");
+    ext4_vfs_require(rsdfs_link(volume, created, linked), "htree hard link");
+    ext4_vfs_require(rsdfs_rename(volume, created, renamed), "htree same-parent rename");
+    ext4_vfs_require(rsdfs_fsync(file), "htree file sync");
+    ext4_vfs_require(rsdfs_pread(file, bytes, sizeof(bytes), 0U, &count), "htree held new read");
     if (count != 5U || bytes[0] != 'h' || bytes[1] != 't' || bytes[2] != 'r' || bytes[3] != 'e' || bytes[4] != 'e')
         kernel_test_fail("ext4 htree new file contents changed");
     // The old htree snapshot must retain the removed original entry and omit
     // both inserted names while the live directory contains those mutations.
     ext4_vfs_indexed_snapshot(snapshot);
-    ext4_vfs_require(openrfsfs_unlink(volume, linked), "htree hard link cleanup");
-    ext4_vfs_require(openrfsfs_unlink(volume, renamed), "htree held new unlink");
-    ext4_vfs_require(openrfsfs_close(file), "htree final new close");
-    ext4_vfs_require(openrfsfs_rename(volume, moved, original), "htree cross-parent reinsertion");
-    ext4_vfs_require(openrfsfs_fstat(held, &after), "htree restored identity");
-    ext4_vfs_require(openrfsfs_pread(held, bytes, sizeof(bytes), 0U, &count), "htree restored contents");
+    ext4_vfs_require(rsdfs_unlink(volume, linked), "htree hard link cleanup");
+    ext4_vfs_require(rsdfs_unlink(volume, renamed), "htree held new unlink");
+    ext4_vfs_require(rsdfs_close(file), "htree final new close");
+    ext4_vfs_require(rsdfs_rename(volume, moved, original), "htree cross-parent reinsertion");
+    ext4_vfs_require(rsdfs_fstat(held, &after), "htree restored identity");
+    ext4_vfs_require(rsdfs_pread(held, bytes, sizeof(bytes), 0U, &count), "htree restored contents");
     if (after.object_id != before.object_id || after.links != 1U || after.size != 2U ||
         count != 2U || bytes[0] != 'x' || bytes[1] != '\n')
         kernel_test_fail("ext4 htree cross-parent rename changed held inode");
-    ext4_vfs_require(openrfsfs_close(held), "htree held close");
-    ext4_vfs_require(openrfsfs_directory_open(volume, "indexed", &snapshot), "htree final snapshot");
+    ext4_vfs_require(rsdfs_close(held), "htree held close");
+    ext4_vfs_require(rsdfs_directory_open(volume, "indexed", &snapshot), "htree final snapshot");
     ext4_vfs_indexed_snapshot(snapshot);
-    ext4_vfs_require(openrfsfs_sync(volume), "htree final sync");
-    if (openrfsfs_drive(volume).free_bytes != initial_free ||
-        openrfsfs_stat_path(volume, moved, &after) != OPENRFSFS_STATUS_NOT_FOUND ||
-        openrfsfs_stat_path(volume, renamed, &after) != OPENRFSFS_STATUS_NOT_FOUND)
+    ext4_vfs_require(rsdfs_sync(volume), "htree final sync");
+    if (rsdfs_drive(volume).free_bytes != initial_free ||
+        rsdfs_stat_path(volume, moved, &after) != RSDFS_STATUS_NOT_FOUND ||
+        rsdfs_stat_path(volume, renamed, &after) != RSDFS_STATUS_NOT_FOUND)
         kernel_test_fail("ext4 htree namespace or allocation cleanup failed");
     console_write("ST EXT4 VFS Linux htree mutations held rename stable iteration cleanup exact\n");
 }
@@ -4902,39 +4902,39 @@ static void ext4_vfs_directory_semantics(void)
 {
     static const char prefix[] = "data/user/VFS2.DIR/";
     char child[sizeof(prefix) + 96U];
-    struct openrfsfs_stat metadata;
-    openrfsfs_directory_handle snapshot;
+    struct rsdfs_stat metadata;
+    rsdfs_directory_handle snapshot;
     uint64_t seen = 0U;
-    const enum openrfsfs_volume volume = OPENRFSFS_VOLUME_SYSTEM;
-    const uint64_t free_before = openrfsfs_drive(volume).free_bytes;
-    ext4_vfs_require(openrfsfs_mkdir(volume, "data/user/VFS2.DIR"), "snapshot mkdir");
+    const enum rsdfs_volume volume = RSDFS_VOLUME_SYSTEM;
+    const uint64_t free_before = rsdfs_drive(volume).free_bytes;
+    ext4_vfs_require(rsdfs_mkdir(volume, "data/user/VFS2.DIR"), "snapshot mkdir");
     for (size_t index = 0U; index < sizeof(prefix) - 1U; ++index) child[index] = prefix[index];
     for (size_t index = sizeof(prefix) - 1U; index < sizeof(child) - 1U; ++index) child[index] = 'x';
     child[sizeof(child) - 1U] = '\0';
     for (unsigned index = 0U; index < 48U; ++index) {
         child[sizeof(prefix) - 1U] = (char)('0' + index / 10U);
         child[sizeof(prefix)] = (char)('0' + index % 10U);
-        ext4_vfs_require(openrfsfs_create(volume, child), "directory grow entry");
+        ext4_vfs_require(rsdfs_create(volume, child), "directory grow entry");
     }
-    ext4_vfs_require(openrfsfs_stat_path(volume, "data/user/VFS2.DIR", &metadata), "grown directory size");
+    ext4_vfs_require(rsdfs_stat_path(volume, "data/user/VFS2.DIR", &metadata), "grown directory size");
     if (metadata.size <= 4096U) kernel_test_fail("ext4 VFS directory growth was not exercised");
-    ext4_vfs_require(openrfsfs_directory_open(volume, "data/user/VFS2.DIR", &snapshot), "directory snapshot");
-    if (openrfsfs_rmdir(volume, "data/user/VFS2.DIR") != OPENRFSFS_STATUS_NOT_EMPTY)
+    ext4_vfs_require(rsdfs_directory_open(volume, "data/user/VFS2.DIR", &snapshot), "directory snapshot");
+    if (rsdfs_rmdir(volume, "data/user/VFS2.DIR") != RSDFS_STATUS_NOT_EMPTY)
         kernel_test_fail("ext4 VFS rmdir accepted live entries");
     // A snapshot keeps the original enumeration after all names and its own
     // directory name disappear. Final close must release the orphaned inode.
     for (unsigned index = 0U; index < 48U; ++index) {
         child[sizeof(prefix) - 1U] = (char)('0' + index / 10U);
         child[sizeof(prefix)] = (char)('0' + index % 10U);
-        ext4_vfs_require(openrfsfs_unlink(volume, child), "directory shrink entry");
+        ext4_vfs_require(rsdfs_unlink(volume, child), "directory shrink entry");
     }
-    ext4_vfs_require(openrfsfs_stat_path(volume, "data/user/VFS2.DIR", &metadata), "shrunken directory size");
+    ext4_vfs_require(rsdfs_stat_path(volume, "data/user/VFS2.DIR", &metadata), "shrunken directory size");
     if (metadata.size != 4096U) kernel_test_fail("ext4 VFS directory did not shrink");
-    ext4_vfs_require(openrfsfs_rmdir(volume, "data/user/VFS2.DIR"), "open snapshot rmdir");
+    ext4_vfs_require(rsdfs_rmdir(volume, "data/user/VFS2.DIR"), "open snapshot rmdir");
     for (unsigned index = 0U; index < 48U; ++index) {
-        struct openrfsfs_list_entry entry;
+        struct rsdfs_list_entry entry;
         bool present = false;
-        ext4_vfs_require(openrfsfs_directory_read(snapshot, &entry, &present), "removed snapshot read");
+        ext4_vfs_require(rsdfs_directory_read(snapshot, &entry, &present), "removed snapshot read");
         if (!present || entry.directory || entry.name[0] < '0' || entry.name[0] > '4' ||
             entry.name[1] < '0' || entry.name[1] > '9' || entry.name[96] != '\0')
             kernel_test_fail("ext4 VFS directory snapshot changed names");
@@ -4945,54 +4945,54 @@ static void ext4_vfs_directory_semantics(void)
         for (size_t letter = 2U; letter < 96U; ++letter)
             if (entry.name[letter] != 'x') kernel_test_fail("ext4 VFS snapshot truncated a long name");
     }
-    struct openrfsfs_list_entry entry;
+    struct rsdfs_list_entry entry;
     bool present = true;
-    ext4_vfs_require(openrfsfs_directory_read(snapshot, &entry, &present), "snapshot EOF");
+    ext4_vfs_require(rsdfs_directory_read(snapshot, &entry, &present), "snapshot EOF");
     if (present || seen != (UINT64_C(1) << 48U) - 1U) kernel_test_fail("ext4 VFS snapshot skipped names");
-    ext4_vfs_require(openrfsfs_directory_close(snapshot), "snapshot final close");
-    if (openrfsfs_directory_read(snapshot, &entry, &present) != OPENRFSFS_STATUS_STALE_HANDLE)
+    ext4_vfs_require(rsdfs_directory_close(snapshot), "snapshot final close");
+    if (rsdfs_directory_read(snapshot, &entry, &present) != RSDFS_STATUS_STALE_HANDLE)
         kernel_test_fail("ext4 VFS closed snapshot remained readable");
     // Move a populated directory across parents over an empty directory whose
     // snapshot remains open. Child file handles retain their inode identity.
-    ext4_vfs_require(openrfsfs_mkdir(volume, "data/user/VFS2.A"), "move first parent");
-    ext4_vfs_require(openrfsfs_mkdir(volume, "data/user/VFS2.B"), "move second parent");
-    ext4_vfs_require(openrfsfs_mkdir(volume, "data/user/VFS2.A/child"), "move source directory");
-    ext4_vfs_require(openrfsfs_mkdir(volume, "data/user/VFS2.B/target"), "move target directory");
-    openrfsfs_handle file;
+    ext4_vfs_require(rsdfs_mkdir(volume, "data/user/VFS2.A"), "move first parent");
+    ext4_vfs_require(rsdfs_mkdir(volume, "data/user/VFS2.B"), "move second parent");
+    ext4_vfs_require(rsdfs_mkdir(volume, "data/user/VFS2.A/child"), "move source directory");
+    ext4_vfs_require(rsdfs_mkdir(volume, "data/user/VFS2.B/target"), "move target directory");
+    rsdfs_handle file;
     size_t count;
     uint8_t byte;
-    ext4_vfs_require(openrfsfs_open_options(volume, "data/user/VFS2.A/child/file", OPENRFSFS_ACCESS_READ_WRITE,
-        OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE, 0600U, &file), "move held child create");
-    ext4_vfs_require(openrfsfs_write(file, (const uint8_t *)"D", 1U, &count), "move held child write");
+    ext4_vfs_require(rsdfs_open_options(volume, "data/user/VFS2.A/child/file", RSDFS_ACCESS_READ_WRITE,
+        RSDFS_OPEN_CREATE | RSDFS_OPEN_EXCLUSIVE, 0600U, &file), "move held child create");
+    ext4_vfs_require(rsdfs_write(file, (const uint8_t *)"D", 1U, &count), "move held child write");
     if (count != 1U) kernel_test_fail("ext4 VFS moved child write was short");
-    ext4_vfs_require(openrfsfs_fstat(file, &metadata), "move held identity");
+    ext4_vfs_require(rsdfs_fstat(file, &metadata), "move held identity");
     const uint64_t child_identity = metadata.object_id;
-    ext4_vfs_require(openrfsfs_directory_open(volume, "data/user/VFS2.B/target", &snapshot), "move destination snapshot");
-    if (openrfsfs_rename(volume, "data/user/VFS2.A/child", "data/user/VFS2.B/target") != OPENRFSFS_STATUS_EXISTS)
+    ext4_vfs_require(rsdfs_directory_open(volume, "data/user/VFS2.B/target", &snapshot), "move destination snapshot");
+    if (rsdfs_rename(volume, "data/user/VFS2.A/child", "data/user/VFS2.B/target") != RSDFS_STATUS_EXISTS)
         kernel_test_fail("ext4 VFS directory no-replace changed target");
-    ext4_vfs_require(openrfsfs_rename_replace(volume, "data/user/VFS2.A/child", "data/user/VFS2.B/target"), "cross-parent directory replace");
-    if (openrfsfs_stat_path(volume, "data/user/VFS2.A/child", &metadata) != OPENRFSFS_STATUS_NOT_FOUND)
+    ext4_vfs_require(rsdfs_rename_replace(volume, "data/user/VFS2.A/child", "data/user/VFS2.B/target"), "cross-parent directory replace");
+    if (rsdfs_stat_path(volume, "data/user/VFS2.A/child", &metadata) != RSDFS_STATUS_NOT_FOUND)
         kernel_test_fail("ext4 VFS moved directory retained old name");
-    ext4_vfs_require(openrfsfs_stat_path(volume, "data/user/VFS2.A", &metadata), "old parent links");
+    ext4_vfs_require(rsdfs_stat_path(volume, "data/user/VFS2.A", &metadata), "old parent links");
     if (metadata.links != 2U) kernel_test_fail("ext4 VFS move retained old parent link");
-    ext4_vfs_require(openrfsfs_stat_path(volume, "data/user/VFS2.B", &metadata), "new parent links");
+    ext4_vfs_require(rsdfs_stat_path(volume, "data/user/VFS2.B", &metadata), "new parent links");
     if (metadata.links != 3U) kernel_test_fail("ext4 VFS replace changed new parent links");
-    ext4_vfs_require(openrfsfs_stat_path(volume, "data/user/VFS2.B/target/file", &metadata), "moved child identity");
+    ext4_vfs_require(rsdfs_stat_path(volume, "data/user/VFS2.B/target/file", &metadata), "moved child identity");
     if (metadata.object_id != child_identity) kernel_test_fail("ext4 VFS move replaced child identity");
-    ext4_vfs_require(openrfsfs_pread(file, &byte, 1U, 0U, &count), "moved held child read");
+    ext4_vfs_require(rsdfs_pread(file, &byte, 1U, 0U, &count), "moved held child read");
     if (count != 1U || byte != 'D') kernel_test_fail("ext4 VFS move lost held child contents");
-    if (openrfsfs_rename(volume, "data/user/VFS2.B", "data/user/VFS2.B/target/cycle") != OPENRFSFS_STATUS_INVALID_ARGUMENT)
+    if (rsdfs_rename(volume, "data/user/VFS2.B", "data/user/VFS2.B/target/cycle") != RSDFS_STATUS_INVALID_ARGUMENT)
         kernel_test_fail("ext4 VFS directory move accepted a parent cycle");
-    ext4_vfs_require(openrfsfs_directory_read(snapshot, &entry, &present), "replaced directory snapshot");
+    ext4_vfs_require(rsdfs_directory_read(snapshot, &entry, &present), "replaced directory snapshot");
     if (present) kernel_test_fail("ext4 VFS replaced empty snapshot followed new directory");
-    ext4_vfs_require(openrfsfs_directory_close(snapshot), "replaced snapshot final close");
-    ext4_vfs_require(openrfsfs_unlink(volume, "data/user/VFS2.B/target/file"), "moved held child unlink");
-    ext4_vfs_require(openrfsfs_close(file), "moved held child final close");
-    ext4_vfs_require(openrfsfs_rmdir(volume, "data/user/VFS2.B/target"), "moved directory cleanup");
-    ext4_vfs_require(openrfsfs_rmdir(volume, "data/user/VFS2.A"), "old parent cleanup");
-    ext4_vfs_require(openrfsfs_rmdir(volume, "data/user/VFS2.B"), "new parent cleanup");
-    ext4_vfs_require(openrfsfs_sync(volume), "snapshot cleanup sync");
-    if (openrfsfs_drive(volume).free_bytes != free_before)
+    ext4_vfs_require(rsdfs_directory_close(snapshot), "replaced snapshot final close");
+    ext4_vfs_require(rsdfs_unlink(volume, "data/user/VFS2.B/target/file"), "moved held child unlink");
+    ext4_vfs_require(rsdfs_close(file), "moved held child final close");
+    ext4_vfs_require(rsdfs_rmdir(volume, "data/user/VFS2.B/target"), "moved directory cleanup");
+    ext4_vfs_require(rsdfs_rmdir(volume, "data/user/VFS2.A"), "old parent cleanup");
+    ext4_vfs_require(rsdfs_rmdir(volume, "data/user/VFS2.B"), "new parent cleanup");
+    ext4_vfs_require(rsdfs_sync(volume), "snapshot cleanup sync");
+    if (rsdfs_drive(volume).free_bytes != free_before)
         kernel_test_fail("ext4 VFS directory leaked allocations");
     console_write("ST EXT4 VFS directory growth shrink removed snapshot long names census exact\n");
     console_write("ST EXT4 VFS cross-parent directory replace held child cycle links cleanup exact\n");
@@ -5003,49 +5003,49 @@ static void ext4_vfs_semantics(void)
     // One unaligned request crosses the coordinator's 32-data-block split.
     static uint8_t payload[131073];
     uint8_t block[4096];
-    const enum openrfsfs_volume volume = OPENRFSFS_VOLUME_SYSTEM;
+    const enum rsdfs_volume volume = RSDFS_VOLUME_SYSTEM;
     const char *name = "data/user/VFS2.TMP";
     const char *alias = "data/user/VFS2.LNK";
     const char *symbolic = "data/user/VFS2.SYM";
     const char *directory = "data/user/VFS2.DIR";
     const char *moved = "data/user/VFS2.DIR/moved";
     static const char target[] = "VFS2.TMP";
-    openrfsfs_handle file, appended, replaced;
-    struct openrfsfs_stat metadata;
+    rsdfs_handle file, appended, replaced;
+    struct rsdfs_stat metadata;
     uint64_t position;
     size_t count;
-    const uint64_t free_before = openrfsfs_drive(volume).free_bytes;
+    const uint64_t free_before = rsdfs_drive(volume).free_bytes;
     for (size_t index = 0U; index < sizeof(payload); ++index) payload[index] = (uint8_t)(index * 37U + 11U);
-    ext4_vfs_require(openrfsfs_open_options(volume, name, OPENRFSFS_ACCESS_READ_WRITE,
-        OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE, 0640U, &file), "exclusive create");
-    ext4_vfs_require(openrfsfs_seek(file, 4095, OPENRFSFS_SEEK_START, &position), "sparse seek");
-    ext4_vfs_require(openrfsfs_write(file, payload, sizeof(payload), &count), "split write");
+    ext4_vfs_require(rsdfs_open_options(volume, name, RSDFS_ACCESS_READ_WRITE,
+        RSDFS_OPEN_CREATE | RSDFS_OPEN_EXCLUSIVE, 0640U, &file), "exclusive create");
+    ext4_vfs_require(rsdfs_seek(file, 4095, RSDFS_SEEK_START, &position), "sparse seek");
+    ext4_vfs_require(rsdfs_write(file, payload, sizeof(payload), &count), "split write");
     if (count != sizeof(payload)) kernel_test_fail("ext4 VFS split write was short");
-    ext4_vfs_require(openrfsfs_fsync(file), "split fsync");
-    ext4_vfs_require(openrfsfs_pread(file, block, 4095U, 0U, &count), "hole read");
+    ext4_vfs_require(rsdfs_fsync(file), "split fsync");
+    ext4_vfs_require(rsdfs_pread(file, block, 4095U, 0U, &count), "hole read");
     if (count != 4095U) kernel_test_fail("ext4 VFS hole read was short");
     for (size_t index = 0U; index < count; ++index)
         if (block[index] != 0U) kernel_test_fail("ext4 VFS sparse hole was not zero");
     for (size_t offset = 0U; offset < sizeof(payload);) {
         const size_t capacity = sizeof(payload) - offset < sizeof(block) ? sizeof(payload) - offset : sizeof(block);
-        ext4_vfs_require(openrfsfs_pread(file, block, capacity, 4095U + offset, &count), "split pread");
+        ext4_vfs_require(rsdfs_pread(file, block, capacity, 4095U + offset, &count), "split pread");
         if (count != capacity) kernel_test_fail("ext4 VFS split read was short");
         for (size_t index = 0U; index < count; ++index)
             if (block[index] != payload[offset + index]) kernel_test_fail("ext4 VFS split content changed");
         offset += count;
     }
-    ext4_vfs_require(openrfsfs_seek(file, 0, OPENRFSFS_SEEK_CURRENT, &position), "pread cursor");
+    ext4_vfs_require(rsdfs_seek(file, 0, RSDFS_SEEK_CURRENT, &position), "pread cursor");
     if (position != 4095U + sizeof(payload)) kernel_test_fail("ext4 VFS pread moved cursor");
-    ext4_vfs_require(openrfsfs_link(volume, name, alias), "hard link");
-    ext4_vfs_require(openrfsfs_open(volume, alias, OPENRFSFS_ACCESS_READ_WRITE, &appended), "alias open");
-    ext4_vfs_require(openrfsfs_set_append(appended, true), "append mode");
-    ext4_vfs_require(openrfsfs_write(appended, (const uint8_t *)"append", 6U, &count), "alias append");
-    ext4_vfs_require(openrfsfs_fstat(file, &metadata), "shared EOF");
+    ext4_vfs_require(rsdfs_link(volume, name, alias), "hard link");
+    ext4_vfs_require(rsdfs_open(volume, alias, RSDFS_ACCESS_READ_WRITE, &appended), "alias open");
+    ext4_vfs_require(rsdfs_set_append(appended, true), "append mode");
+    ext4_vfs_require(rsdfs_write(appended, (const uint8_t *)"append", 6U, &count), "alias append");
+    ext4_vfs_require(rsdfs_fstat(file, &metadata), "shared EOF");
     if (count != 6U || metadata.size != 4101U + sizeof(payload) || metadata.links != 2U)
         kernel_test_fail("ext4 VFS append or link accounting changed");
-    ext4_vfs_require(openrfsfs_ftruncate(file, 4097U), "partial shrink");
-    ext4_vfs_require(openrfsfs_ftruncate(file, 8192U), "sparse grow");
-    ext4_vfs_require(openrfsfs_pread(appended, block, sizeof(block), 4096U, &count), "truncate tail");
+    ext4_vfs_require(rsdfs_ftruncate(file, 4097U), "partial shrink");
+    ext4_vfs_require(rsdfs_ftruncate(file, 8192U), "sparse grow");
+    ext4_vfs_require(rsdfs_pread(appended, block, sizeof(block), 4096U, &count), "truncate tail");
     if (count != sizeof(block) || block[0] != payload[1]) kernel_test_fail("ext4 VFS retained prefix changed");
     for (size_t index = 1U; index < count; ++index)
         if (block[index] != 0U) kernel_test_fail("ext4 VFS truncate exposed discarded bytes");
@@ -5054,148 +5054,148 @@ static void ext4_vfs_semantics(void)
     for (unsigned extent = 0U; extent < 12U; ++extent) {
         const uint64_t offset = (4U + 2U * extent) * UINT64_C(4096) + 13U;
         const uint8_t value = (uint8_t)(extent + 1U);
-        ext4_vfs_require(openrfsfs_seek(file, (int64_t)offset, OPENRFSFS_SEEK_START, &position), "fragment seek");
-        ext4_vfs_require(openrfsfs_write(file, &value, 1U, &count), "fragment extent");
+        ext4_vfs_require(rsdfs_seek(file, (int64_t)offset, RSDFS_SEEK_START, &position), "fragment seek");
+        ext4_vfs_require(rsdfs_write(file, &value, 1U, &count), "fragment extent");
         if (count != 1U) kernel_test_fail("ext4 VFS fragment write was short");
     }
-    ext4_vfs_require(openrfsfs_seek(file, 5 * 4096 + 7, OPENRFSFS_SEEK_START, &position), "hole fill seek");
-    ext4_vfs_require(openrfsfs_write(file, (const uint8_t *)"fill", 4U, &count), "hole fill");
+    ext4_vfs_require(rsdfs_seek(file, 5 * 4096 + 7, RSDFS_SEEK_START, &position), "hole fill seek");
+    ext4_vfs_require(rsdfs_write(file, (const uint8_t *)"fill", 4U, &count), "hole fill");
     if (count != 4U) kernel_test_fail("ext4 VFS hole fill was short");
     for (unsigned extent = 0U; extent < 12U; ++extent) {
         const uint64_t offset = (4U + 2U * extent) * UINT64_C(4096) + 12U;
         const size_t expected_count = extent == 11U ? 2U : 3U;
-        ext4_vfs_require(openrfsfs_pread(appended, block, 3U, offset, &count), "fragment read");
+        ext4_vfs_require(rsdfs_pread(appended, block, 3U, offset, &count), "fragment read");
         if (count != expected_count || block[0] != 0U || block[1] != extent + 1U ||
             (count == 3U && block[2] != 0U))
             kernel_test_fail("ext4 VFS fragmented extent contents changed");
     }
     const uint64_t fragmented_eof = 26U * UINT64_C(4096) + 14U;
-    ext4_vfs_require(openrfsfs_fstat(appended, &metadata), "fragment EOF metadata");
-    ext4_vfs_require(openrfsfs_pread(appended, block, sizeof(block), fragmented_eof, &count), "fragment EOF read");
+    ext4_vfs_require(rsdfs_fstat(appended, &metadata), "fragment EOF metadata");
+    ext4_vfs_require(rsdfs_pread(appended, block, sizeof(block), fragmented_eof, &count), "fragment EOF read");
     if (metadata.size != fragmented_eof || count != 0U)
         kernel_test_fail("ext4 VFS fragmented extent EOF changed");
-    ext4_vfs_require(openrfsfs_ftruncate(file, 8192U), "fragment reclaim");
-    ext4_vfs_require(openrfsfs_seek(file, 8191, OPENRFSFS_SEEK_START, &position), "failed write seek");
+    ext4_vfs_require(rsdfs_ftruncate(file, 8192U), "fragment reclaim");
+    ext4_vfs_require(rsdfs_seek(file, 8191, RSDFS_SEEK_START, &position), "failed write seek");
     if (!ext4_backend_test_fail_storage_once(3U) ||
-        openrfsfs_write(file, (const uint8_t *)"R", 1U, &count) != OPENRFSFS_STATUS_IO)
+        rsdfs_write(file, (const uint8_t *)"R", 1U, &count) != RSDFS_STATUS_IO)
         kernel_test_fail("ext4 VFS storage refusal was not exercised");
-    ext4_vfs_require(openrfsfs_fsync(file), "failed write fsync retry");
-    ext4_vfs_require(openrfsfs_seek(file, 0, OPENRFSFS_SEEK_CURRENT, &position), "failed write cursor");
-    ext4_vfs_require(openrfsfs_pread(appended, block, 1U, 8191U, &count), "resumed write readback");
+    ext4_vfs_require(rsdfs_fsync(file), "failed write fsync retry");
+    ext4_vfs_require(rsdfs_seek(file, 0, RSDFS_SEEK_CURRENT, &position), "failed write cursor");
+    ext4_vfs_require(rsdfs_pread(appended, block, 1U, 8191U, &count), "resumed write readback");
     if (position != 8191U || count != 1U || block[0] != 'R')
         kernel_test_fail("ext4 VFS fsync lost retained write or advanced failed cursor");
     // Exercise the admitted 64 MiB boundary without allocating the intervening
     // hole. Both handles must see the same large EOF and failed append cursor.
-    const uint64_t maximum = OPENRFS_EXT4_MAX_MUTABLE_FILE_BYTES;
-    const uint64_t free_before_large = openrfsfs_drive(volume).free_bytes;
-    ext4_vfs_require(openrfsfs_seek(file, (int64_t)(maximum - 1U), OPENRFSFS_SEEK_START, &position), "large sparse seek");
-    ext4_vfs_require(openrfsfs_write(file, (const uint8_t *)"Q", 1U, &count), "large sparse final byte");
+    const uint64_t maximum = RSD_EXT4_MAX_MUTABLE_FILE_BYTES;
+    const uint64_t free_before_large = rsdfs_drive(volume).free_bytes;
+    ext4_vfs_require(rsdfs_seek(file, (int64_t)(maximum - 1U), RSDFS_SEEK_START, &position), "large sparse seek");
+    ext4_vfs_require(rsdfs_write(file, (const uint8_t *)"Q", 1U, &count), "large sparse final byte");
     if (count != 1U) kernel_test_fail("ext4 VFS large sparse final write was short");
-    ext4_vfs_require(openrfsfs_fstat(appended, &metadata), "large shared EOF");
+    ext4_vfs_require(rsdfs_fstat(appended, &metadata), "large shared EOF");
     if (metadata.size != maximum) kernel_test_fail("ext4 VFS large sparse EOF changed");
-    ext4_vfs_require(openrfsfs_pread(appended, block, 4U, maximum - 4U, &count), "large sparse tail");
+    ext4_vfs_require(rsdfs_pread(appended, block, 4U, maximum - 4U, &count), "large sparse tail");
     if (count != 4U || block[0] != 0U || block[1] != 0U || block[2] != 0U || block[3] != 'Q')
         kernel_test_fail("ext4 VFS large sparse hole or tail changed");
-    ext4_vfs_require(openrfsfs_seek(appended, 0, OPENRFSFS_SEEK_CURRENT, &position), "large append cursor");
+    ext4_vfs_require(rsdfs_seek(appended, 0, RSDFS_SEEK_CURRENT, &position), "large append cursor");
     const uint64_t append_cursor = position;
-    const uint64_t free_at_maximum = openrfsfs_drive(volume).free_bytes;
-    if (openrfsfs_write(appended, (const uint8_t *)"too far", 7U, &count) != OPENRFSFS_STATUS_RANGE || count != 0U ||
-        openrfsfs_ftruncate(file, maximum + 1U) != OPENRFSFS_STATUS_RANGE)
+    const uint64_t free_at_maximum = rsdfs_drive(volume).free_bytes;
+    if (rsdfs_write(appended, (const uint8_t *)"too far", 7U, &count) != RSDFS_STATUS_RANGE || count != 0U ||
+        rsdfs_ftruncate(file, maximum + 1U) != RSDFS_STATUS_RANGE)
         kernel_test_fail("ext4 VFS admitted file limit was not enforced");
-    ext4_vfs_require(openrfsfs_seek(appended, 0, OPENRFSFS_SEEK_CURRENT, &position), "refused append cursor");
-    ext4_vfs_require(openrfsfs_fstat(file, &metadata), "refused growth metadata");
-    if (position != append_cursor || metadata.size != maximum || openrfsfs_drive(volume).free_bytes != free_at_maximum)
+    ext4_vfs_require(rsdfs_seek(appended, 0, RSDFS_SEEK_CURRENT, &position), "refused append cursor");
+    ext4_vfs_require(rsdfs_fstat(file, &metadata), "refused growth metadata");
+    if (position != append_cursor || metadata.size != maximum || rsdfs_drive(volume).free_bytes != free_at_maximum)
         kernel_test_fail("ext4 VFS refused large growth changed cursor EOF or allocations");
-    ext4_vfs_require(openrfsfs_ftruncate(file, 8192U), "large sparse reclaim");
-    if (openrfsfs_drive(volume).free_bytes != free_before_large)
+    ext4_vfs_require(rsdfs_ftruncate(file, 8192U), "large sparse reclaim");
+    if (rsdfs_drive(volume).free_bytes != free_before_large)
         kernel_test_fail("ext4 VFS large sparse reclaim leaked allocations");
     console_write("ST EXT4 VFS 64 MiB sparse EOF maximum refusal and reclaim exact\n");
-    ext4_vfs_require(openrfsfs_chmod(volume, name, 0600U), "chmod");
-    const struct openrfsfs_times times = { .atime_seconds = 2200000000U, .mtime_seconds = 2300000000U,
+    ext4_vfs_require(rsdfs_chmod(volume, name, 0600U), "chmod");
+    const struct rsdfs_times times = { .atime_seconds = 2200000000U, .mtime_seconds = 2300000000U,
         .atime_nanos = 123U, .mtime_nanos = 456U };
-    ext4_vfs_require(openrfsfs_set_times(volume, name, &times), "timestamps");
-    ext4_vfs_require(openrfsfs_set_xattr(volume, name, "user.vfs", (const uint8_t *)"value", 5U, false), "xattr");
-    ext4_vfs_require(openrfsfs_get_xattr(volume, alias, "user.vfs", block, sizeof(block), &count), "alias xattr");
+    ext4_vfs_require(rsdfs_set_times(volume, name, &times), "timestamps");
+    ext4_vfs_require(rsdfs_set_xattr(volume, name, "user.vfs", (const uint8_t *)"value", 5U, false), "xattr");
+    ext4_vfs_require(rsdfs_get_xattr(volume, alias, "user.vfs", block, sizeof(block), &count), "alias xattr");
     if (count != 5U || block[0] != 'v' || block[4] != 'e') kernel_test_fail("ext4 VFS xattr changed");
-    ext4_vfs_require(openrfsfs_fstat(file, &metadata), "metadata");
+    ext4_vfs_require(rsdfs_fstat(file, &metadata), "metadata");
     if ((metadata.mode & 0777U) != 0600U || metadata.atime_seconds != 2200000000LL ||
         metadata.mtime_seconds != 2300000000LL || metadata.atime_nanos != 123U || metadata.mtime_nanos != 456U)
         kernel_test_fail("ext4 VFS metadata changed");
-    const uint64_t free_before_xattr = openrfsfs_drive(volume).free_bytes;
+    const uint64_t free_before_xattr = rsdfs_drive(volume).free_bytes;
     if (!ext4_backend_test_fail_storage_once(3U) ||
-        openrfsfs_set_xattr(volume, name, "user.external", payload, 300U, false) != OPENRFSFS_STATUS_IO)
+        rsdfs_set_xattr(volume, name, "user.external", payload, 300U, false) != RSDFS_STATUS_IO)
         kernel_test_fail("ext4 VFS external xattr storage refusal was not exercised");
-    ext4_vfs_require(openrfsfs_fsync(file), "external xattr retry");
-    ext4_vfs_require(openrfsfs_get_xattr(volume, alias, "user.external", NULL, 0U, &count), "external xattr size");
-    if (count != 300U || openrfsfs_drive(volume).free_bytes != free_before_xattr - 4096U)
+    ext4_vfs_require(rsdfs_fsync(file), "external xattr retry");
+    ext4_vfs_require(rsdfs_get_xattr(volume, alias, "user.external", NULL, 0U, &count), "external xattr size");
+    if (count != 300U || rsdfs_drive(volume).free_bytes != free_before_xattr - 4096U)
         kernel_test_fail("ext4 VFS external xattr allocation changed");
-    if (openrfsfs_get_xattr(volume, alias, "user.external", block, 299U, &count) != OPENRFSFS_STATUS_RANGE || count != 0U ||
-        openrfsfs_set_xattr(volume, alias, "user.external", payload, 4096U, false) != OPENRFSFS_STATUS_FULL ||
-        openrfsfs_set_xattr(volume, name, "security.refused", payload, 1U, false) != OPENRFSFS_STATUS_INVALID_ARGUMENT)
+    if (rsdfs_get_xattr(volume, alias, "user.external", block, 299U, &count) != RSDFS_STATUS_RANGE || count != 0U ||
+        rsdfs_set_xattr(volume, alias, "user.external", payload, 4096U, false) != RSDFS_STATUS_FULL ||
+        rsdfs_set_xattr(volume, name, "security.refused", payload, 1U, false) != RSDFS_STATUS_INVALID_ARGUMENT)
         kernel_test_fail("ext4 VFS xattr boundary or feature refusal changed");
-    ext4_vfs_require(openrfsfs_get_xattr(volume, name, "user.external", block, sizeof(block), &count), "external xattr preserved");
+    ext4_vfs_require(rsdfs_get_xattr(volume, name, "user.external", block, sizeof(block), &count), "external xattr preserved");
     if (count != 300U) kernel_test_fail("ext4 VFS external xattr length changed");
     for (size_t index = 0U; index < count; ++index)
         if (block[index] != payload[index]) kernel_test_fail("ext4 VFS refused xattr update changed value");
-    ext4_vfs_require(openrfsfs_set_xattr(volume, alias, "user.external", NULL, 0U, true), "external xattr remove");
-    if (openrfsfs_drive(volume).free_bytes != free_before_xattr ||
-        openrfsfs_get_xattr(volume, name, "user.external", block, sizeof(block), &count) != OPENRFSFS_STATUS_NOT_FOUND || count != 0U ||
-        openrfsfs_set_xattr(volume, name, "user.external", NULL, 0U, true) != OPENRFSFS_STATUS_NOT_FOUND)
+    ext4_vfs_require(rsdfs_set_xattr(volume, alias, "user.external", NULL, 0U, true), "external xattr remove");
+    if (rsdfs_drive(volume).free_bytes != free_before_xattr ||
+        rsdfs_get_xattr(volume, name, "user.external", block, sizeof(block), &count) != RSDFS_STATUS_NOT_FOUND || count != 0U ||
+        rsdfs_set_xattr(volume, name, "user.external", NULL, 0U, true) != RSDFS_STATUS_NOT_FOUND)
         kernel_test_fail("ext4 VFS xattr removal leaked storage or retained value");
-    ext4_vfs_require(openrfsfs_set_xattr(volume, name, "user.empty", NULL, 0U, false), "empty xattr create");
-    ext4_vfs_require(openrfsfs_get_xattr(volume, alias, "user.empty", block, sizeof(block), &count), "empty xattr read");
+    ext4_vfs_require(rsdfs_set_xattr(volume, name, "user.empty", NULL, 0U, false), "empty xattr create");
+    ext4_vfs_require(rsdfs_get_xattr(volume, alias, "user.empty", block, sizeof(block), &count), "empty xattr read");
     if (count != 0U) kernel_test_fail("ext4 VFS empty xattr became nonempty");
-    ext4_vfs_require(openrfsfs_set_xattr(volume, name, "user.empty", NULL, 0U, true), "empty xattr remove");
-    ext4_vfs_require(openrfsfs_get_xattr(volume, alias, "user.vfs", block, sizeof(block), &count), "retained inline xattr");
+    ext4_vfs_require(rsdfs_set_xattr(volume, name, "user.empty", NULL, 0U, true), "empty xattr remove");
+    ext4_vfs_require(rsdfs_get_xattr(volume, alias, "user.vfs", block, sizeof(block), &count), "retained inline xattr");
     if (count != 5U || block[0] != 'v' || block[4] != 'e') kernel_test_fail("ext4 VFS external xattr changed inline value");
     console_write("ST EXT4 VFS external xattr retry bounds refusal remove empty allocation exact\n");
-    ext4_vfs_require(openrfsfs_symlink(volume, symbolic, target), "symlink");
-    ext4_vfs_require(openrfsfs_readlink(volume, symbolic, block, sizeof(block), &count), "readlink");
+    ext4_vfs_require(rsdfs_symlink(volume, symbolic, target), "symlink");
+    ext4_vfs_require(rsdfs_readlink(volume, symbolic, block, sizeof(block), &count), "readlink");
     if (count != sizeof(target) - 1U) kernel_test_fail("ext4 VFS symlink length changed");
     for (size_t index = 0U; index < count; ++index)
         if (block[index] != (uint8_t)target[index]) kernel_test_fail("ext4 VFS symlink target changed");
     block[3] = 0xa5U;
-    ext4_vfs_require(openrfsfs_readlink(volume, symbolic, block, 3U, &count), "short readlink");
+    ext4_vfs_require(rsdfs_readlink(volume, symbolic, block, 3U, &count), "short readlink");
     if (count != 3U || block[0] != 'V' || block[1] != 'F' || block[2] != 'S' || block[3] != 0xa5U)
         kernel_test_fail("ext4 VFS short readlink changed its bound or appended NUL");
-    ext4_vfs_require(openrfsfs_mkdir(volume, directory), "mkdir");
-    ext4_vfs_require(openrfsfs_rename(volume, name, moved), "open cross-directory rename");
-    ext4_vfs_require(openrfsfs_open_options(volume, name, OPENRFSFS_ACCESS_READ_WRITE,
-        OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE, 0600U, &replaced), "replacement create");
-    ext4_vfs_require(openrfsfs_write(replaced, (const uint8_t *)"old", 3U, &count), "replacement contents");
-    if (count != 3U || openrfsfs_rename(volume, moved, name) != OPENRFSFS_STATUS_EXISTS)
+    ext4_vfs_require(rsdfs_mkdir(volume, directory), "mkdir");
+    ext4_vfs_require(rsdfs_rename(volume, name, moved), "open cross-directory rename");
+    ext4_vfs_require(rsdfs_open_options(volume, name, RSDFS_ACCESS_READ_WRITE,
+        RSDFS_OPEN_CREATE | RSDFS_OPEN_EXCLUSIVE, 0600U, &replaced), "replacement create");
+    ext4_vfs_require(rsdfs_write(replaced, (const uint8_t *)"old", 3U, &count), "replacement contents");
+    if (count != 3U || rsdfs_rename(volume, moved, name) != RSDFS_STATUS_EXISTS)
         kernel_test_fail("ext4 VFS no-replace rename changed target");
-    ext4_vfs_require(openrfsfs_rename_replace(volume, moved, name), "open replacement");
-    ext4_vfs_require(openrfsfs_fstat(replaced, &metadata), "retained destination");
+    ext4_vfs_require(rsdfs_rename_replace(volume, moved, name), "open replacement");
+    ext4_vfs_require(rsdfs_fstat(replaced, &metadata), "retained destination");
     if (metadata.links != 0U || metadata.size != 3U) kernel_test_fail("ext4 VFS replacement orphan changed");
-    ext4_vfs_require(openrfsfs_pread(replaced, block, sizeof(block), 0U, &count), "orphan read");
+    ext4_vfs_require(rsdfs_pread(replaced, block, sizeof(block), 0U, &count), "orphan read");
     if (count != 3U || block[0] != 'o' || block[1] != 'l' || block[2] != 'd')
         kernel_test_fail("ext4 VFS replacement lost open data");
-    if (openrfsfs_unlink_held_file(file, symbolic) != OPENRFSFS_STATUS_STALE_HANDLE)
+    if (rsdfs_unlink_held_file(file, symbolic) != RSDFS_STATUS_STALE_HANDLE)
         kernel_test_fail("ext4 VFS scratch removal followed final symlink");
-    ext4_vfs_require(openrfsfs_unlink_held_file(file, name), "owned name cleanup");
-    ext4_vfs_require(openrfsfs_unlink_held_file(file, alias), "final owned link cleanup");
-    ext4_vfs_require(openrfsfs_fstat(file, &metadata), "unlinked source");
+    ext4_vfs_require(rsdfs_unlink_held_file(file, name), "owned name cleanup");
+    ext4_vfs_require(rsdfs_unlink_held_file(file, alias), "final owned link cleanup");
+    ext4_vfs_require(rsdfs_fstat(file, &metadata), "unlinked source");
     if (metadata.links != 0U || metadata.size != 8192U) kernel_test_fail("ext4 VFS open source not retained");
-    ext4_vfs_require(openrfsfs_fsync(file), "orphan fsync");
-    ext4_vfs_require(openrfsfs_close(file), "source close");
-    ext4_vfs_require(openrfsfs_close(appended), "alias final close");
-    ext4_vfs_require(openrfsfs_close(replaced), "replacement final close");
-    if (openrfsfs_fstat(file, &metadata) != OPENRFSFS_STATUS_STALE_HANDLE)
+    ext4_vfs_require(rsdfs_fsync(file), "orphan fsync");
+    ext4_vfs_require(rsdfs_close(file), "source close");
+    ext4_vfs_require(rsdfs_close(appended), "alias final close");
+    ext4_vfs_require(rsdfs_close(replaced), "replacement final close");
+    if (rsdfs_fstat(file, &metadata) != RSDFS_STATUS_STALE_HANDLE)
         kernel_test_fail("ext4 VFS closed source still usable");
     count = 99U;
-    if (openrfsfs_read(file, block, sizeof(block), &count) != OPENRFSFS_STATUS_STALE_HANDLE || count != 0U)
+    if (rsdfs_read(file, block, sizeof(block), &count) != RSDFS_STATUS_STALE_HANDLE || count != 0U)
         kernel_test_fail("ext4 VFS stale read retained a byte count");
     count = 99U;
-    if (openrfsfs_pread(file, block, sizeof(block), 1U, &count) != OPENRFSFS_STATUS_STALE_HANDLE || count != 0U)
+    if (rsdfs_pread(file, block, sizeof(block), 1U, &count) != RSDFS_STATUS_STALE_HANDLE || count != 0U)
         kernel_test_fail("ext4 VFS stale pread retained a byte count");
     count = 99U;
-    if (openrfsfs_write(file, block, sizeof(block), &count) != OPENRFSFS_STATUS_STALE_HANDLE || count != 0U)
+    if (rsdfs_write(file, block, sizeof(block), &count) != RSDFS_STATUS_STALE_HANDLE || count != 0U)
         kernel_test_fail("ext4 VFS stale write retained a byte count");
-    ext4_vfs_require(openrfsfs_unlink(volume, symbolic), "dangling symlink cleanup");
-    ext4_vfs_require(openrfsfs_rmdir(volume, directory), "directory cleanup");
-    ext4_vfs_require(openrfsfs_sync(volume), "final sync");
-    if (openrfsfs_drive(volume).free_bytes != free_before)
+    ext4_vfs_require(rsdfs_unlink(volume, symbolic), "dangling symlink cleanup");
+    ext4_vfs_require(rsdfs_rmdir(volume, directory), "directory cleanup");
+    ext4_vfs_require(rsdfs_sync(volume), "final sync");
+    if (rsdfs_drive(volume).free_bytes != free_before)
         kernel_test_fail("ext4 VFS semantics leaked block allocations");
     console_write("ST EXT4 VFS split unaligned sparse append truncate metadata links rename held cleanup exact\n");
     ext4_vfs_directory_semantics();
@@ -5204,43 +5204,43 @@ static void ext4_vfs_semantics(void)
 
 static _Noreturn void ext4_vfs_held_unlink_powercut(void)
 {
-    const enum openrfsfs_volume volume = OPENRFSFS_VOLUME_SYSTEM;
+    const enum rsdfs_volume volume = RSDFS_VOLUME_SYSTEM;
     const char *name = "data/user/owned-cut";
-    struct openrfsfs_stat metadata;
-    openrfsfs_handle file;
+    struct rsdfs_stat metadata;
+    rsdfs_handle file;
     uint8_t bytes[4096];
     size_t count;
-    const enum openrfsfs_status status = openrfsfs_lstat_path(volume, name, &metadata);
-    if (status == OPENRFSFS_STATUS_OK) {
+    const enum rsdfs_status status = rsdfs_lstat_path(volume, name, &metadata);
+    if (status == RSDFS_STATUS_OK) {
         if (metadata.directory || metadata.size != 4500U || metadata.links != 1U)
             kernel_test_fail("ext4 held-unlink cut changed old inode");
         console_write("ST EXT4 HELD UNLINK initial old\n");
-        ext4_vfs_require(openrfsfs_open(volume, name, OPENRFSFS_ACCESS_READ_WRITE, &file), "cut held open");
-        ext4_vfs_require(openrfsfs_unlink_held_file(file, name), "cut held unlink");
-        ext4_vfs_require(openrfsfs_fstat(file, &metadata), "cut held orphan");
+        ext4_vfs_require(rsdfs_open(volume, name, RSDFS_ACCESS_READ_WRITE, &file), "cut held open");
+        ext4_vfs_require(rsdfs_unlink_held_file(file, name), "cut held unlink");
+        ext4_vfs_require(rsdfs_fstat(file, &metadata), "cut held orphan");
         if (metadata.links != 0U || metadata.size != 4500U)
             kernel_test_fail("ext4 held-unlink cut lost open orphan");
         for (uint64_t offset = 0U; offset < 4500U; offset += count) {
             const size_t capacity = 4500U - offset < sizeof(bytes) ? (size_t)(4500U - offset) : sizeof(bytes);
-            ext4_vfs_require(openrfsfs_pread(file, bytes, capacity, offset, &count), "cut orphan read");
+            ext4_vfs_require(rsdfs_pread(file, bytes, capacity, offset, &count), "cut orphan read");
             if (count != capacity) kernel_test_fail("ext4 held-unlink cut shortened open data");
             for (size_t index = 0U; index < count; ++index)
                 if (bytes[index] != 0x63U) kernel_test_fail("ext4 held-unlink cut changed open data");
         }
-        ext4_vfs_require(openrfsfs_fsync(file), "cut orphan fsync");
-        ext4_vfs_require(openrfsfs_close(file), "cut orphan final close");
-        if (openrfsfs_fstat(file, &metadata) != OPENRFSFS_STATUS_STALE_HANDLE)
+        ext4_vfs_require(rsdfs_fsync(file), "cut orphan fsync");
+        ext4_vfs_require(rsdfs_close(file), "cut orphan final close");
+        if (rsdfs_fstat(file, &metadata) != RSDFS_STATUS_STALE_HANDLE)
             kernel_test_fail("ext4 held-unlink cut left a usable closed handle");
-    } else if (status == OPENRFSFS_STATUS_NOT_FOUND) {
+    } else if (status == RSDFS_STATUS_NOT_FOUND) {
         console_write("ST EXT4 HELD UNLINK initial new\n");
     } else {
         kernel_test_fail("ext4 held-unlink cut namespace is neither old nor new");
     }
-    ext4_vfs_require(openrfsfs_sync(volume), "cut final orphan reclaim");
-    if (openrfsfs_lstat_path(volume, name, &metadata) != OPENRFSFS_STATUS_NOT_FOUND)
+    ext4_vfs_require(rsdfs_sync(volume), "cut final orphan reclaim");
+    if (rsdfs_lstat_path(volume, name, &metadata) != RSDFS_STATUS_NOT_FOUND)
         kernel_test_fail("ext4 held-unlink cut retained removed name");
-    ext4_vfs_require(openrfsfs_unmount(volume), "cut clean unmount");
-    if (!openrfsfs_resources_released() || !ext4_backend_resources_released() ||
+    ext4_vfs_require(rsdfs_unmount(volume), "cut clean unmount");
+    if (!rsdfs_resources_released() || !ext4_backend_resources_released() ||
         !nvme_filesystem_session_resources_released() || heap_verify() != HEAP_STATUS_OK ||
         paging_verify() != PAGING_STATUS_OK)
         kernel_test_fail("ext4 held-unlink cut resource census failed");
@@ -5248,13 +5248,13 @@ static _Noreturn void ext4_vfs_held_unlink_powercut(void)
     kernel_test_pass();
 }
 
-static void ext4_vfs_cut_contents(openrfsfs_handle file, uint64_t size, uint8_t value)
+static void ext4_vfs_cut_contents(rsdfs_handle file, uint64_t size, uint8_t value)
 {
     uint8_t bytes[4096];
     size_t count;
     for (uint64_t offset = 0U; offset < size; offset += count) {
         const size_t capacity = size - offset < sizeof(bytes) ? (size_t)(size - offset) : sizeof(bytes);
-        ext4_vfs_require(openrfsfs_pread(file, bytes, capacity, offset, &count), "replace cut retained read");
+        ext4_vfs_require(rsdfs_pread(file, bytes, capacity, offset, &count), "replace cut retained read");
         if (count != capacity) kernel_test_fail("ext4 replace cut shortened retained data");
         for (size_t index = 0U; index < count; ++index)
             if (bytes[index] != value) kernel_test_fail("ext4 replace cut changed retained data");
@@ -5263,74 +5263,74 @@ static void ext4_vfs_cut_contents(openrfsfs_handle file, uint64_t size, uint8_t 
 
 static _Noreturn void ext4_vfs_dense_file(void)
 {
-    const enum openrfsfs_volume volume = OPENRFSFS_VOLUME_SYSTEM;
+    const enum rsdfs_volume volume = RSDFS_VOLUME_SYSTEM;
     const char *name = "data/user/dense-target";
-    const uint64_t maximum = OPENRFS_EXT4_MAX_MUTABLE_FILE_BYTES;
+    const uint64_t maximum = RSD_EXT4_MAX_MUTABLE_FILE_BYTES;
     static uint8_t bytes[256U * 1024U];
-    struct openrfsfs_stat original, after;
-    openrfsfs_handle writer, reader;
+    struct rsdfs_stat original, after;
+    rsdfs_handle writer, reader;
     size_t count;
     uint64_t position;
-    enum openrfsfs_status status = openrfsfs_lstat_path(volume, name, &original);
-    if (status == OPENRFSFS_STATUS_NOT_FOUND) {
+    enum rsdfs_status status = rsdfs_lstat_path(volume, name, &original);
+    if (status == RSDFS_STATUS_NOT_FOUND) {
         console_write("ST EXT4 DENSE cleanup retained\n");
     } else {
         ext4_vfs_require(status, "dense fixture stat");
         if (original.directory || original.links != 1U || original.mode != 0100644U ||
             (original.size != 0U && original.size != maximum))
             kernel_test_fail("ext4 dense file has unexpected initial metadata");
-        ext4_vfs_require(openrfsfs_open(volume, name, OPENRFSFS_ACCESS_READ_WRITE, &writer), "dense writer");
-        ext4_vfs_require(openrfsfs_open(volume, name, OPENRFSFS_ACCESS_READ, &reader), "dense held reader");
-        ext4_vfs_require(openrfsfs_seek(reader, 123, OPENRFSFS_SEEK_START, &position), "dense reader cursor");
+        ext4_vfs_require(rsdfs_open(volume, name, RSDFS_ACCESS_READ_WRITE, &writer), "dense writer");
+        ext4_vfs_require(rsdfs_open(volume, name, RSDFS_ACCESS_READ, &reader), "dense held reader");
+        ext4_vfs_require(rsdfs_seek(reader, 123, RSDFS_SEEK_START, &position), "dense reader cursor");
         if (original.size == 0U) {
             for (uint64_t offset = 0U; offset < maximum; offset += sizeof(bytes)) {
                 for (size_t index = 0U; index < sizeof(bytes); ++index)
                     bytes[index] = (uint8_t)(((offset + index) * 17U + 3U) % 251U);
-                ext4_vfs_require(openrfsfs_write(writer, bytes, sizeof(bytes), &count), "dense split write");
-                ext4_vfs_require(openrfsfs_fstat(reader, &after), "dense shared EOF");
+                ext4_vfs_require(rsdfs_write(writer, bytes, sizeof(bytes), &count), "dense split write");
+                ext4_vfs_require(rsdfs_fstat(reader, &after), "dense shared EOF");
                 if (count != sizeof(bytes) || after.object_id != original.object_id ||
                     after.size != offset + sizeof(bytes) || after.links != 1U)
                     kernel_test_fail("ext4 dense split write lost bytes or shared inode state");
             }
-            const uint64_t free_at_limit = openrfsfs_drive(volume).free_bytes;
-            if (openrfsfs_write(writer, (const uint8_t *)"x", 1U, &count) != OPENRFSFS_STATUS_RANGE || count != 0U)
+            const uint64_t free_at_limit = rsdfs_drive(volume).free_bytes;
+            if (rsdfs_write(writer, (const uint8_t *)"x", 1U, &count) != RSDFS_STATUS_RANGE || count != 0U)
                 kernel_test_fail("ext4 dense write exceeded the admitted file limit");
-            ext4_vfs_require(openrfsfs_seek(writer, 0, OPENRFSFS_SEEK_CURRENT, &position), "dense refused write cursor");
-            if (position != maximum || openrfsfs_drive(volume).free_bytes != free_at_limit)
+            ext4_vfs_require(rsdfs_seek(writer, 0, RSDFS_SEEK_CURRENT, &position), "dense refused write cursor");
+            if (position != maximum || rsdfs_drive(volume).free_bytes != free_at_limit)
                 kernel_test_fail("ext4 dense refused write changed cursor or allocation");
             console_write("ST EXT4 DENSE written 67108864\n");
         }
         for (uint64_t offset = 0U; offset < maximum; offset += sizeof(bytes)) {
-            ext4_vfs_require(openrfsfs_pread(reader, bytes, sizeof(bytes), offset, &count), "dense full read");
+            ext4_vfs_require(rsdfs_pread(reader, bytes, sizeof(bytes), offset, &count), "dense full read");
             if (count != sizeof(bytes)) kernel_test_fail("ext4 dense read stopped before EOF");
             for (size_t index = 0U; index < count; ++index)
                 if (bytes[index] != (uint8_t)(((offset + index) * 17U + 3U) % 251U))
                     kernel_test_fail("ext4 dense contents differ from the written pattern");
         }
-        ext4_vfs_require(openrfsfs_seek(reader, 0, OPENRFSFS_SEEK_CURRENT, &position), "dense pread cursor");
+        ext4_vfs_require(rsdfs_seek(reader, 0, RSDFS_SEEK_CURRENT, &position), "dense pread cursor");
         if (position != 123U) kernel_test_fail("ext4 dense pread changed the held reader cursor");
         if (original.size == maximum) {
             console_write("ST EXT4 DENSE cold read 67108864\n");
-            ext4_vfs_require(openrfsfs_ftruncate(writer, 0U), "dense split truncate reclamation");
-            ext4_vfs_require(openrfsfs_fstat(reader, &after), "dense truncated shared EOF");
-            ext4_vfs_require(openrfsfs_pread(reader, bytes, sizeof(bytes), 0U, &count), "dense truncated read");
+            ext4_vfs_require(rsdfs_ftruncate(writer, 0U), "dense split truncate reclamation");
+            ext4_vfs_require(rsdfs_fstat(reader, &after), "dense truncated shared EOF");
+            ext4_vfs_require(rsdfs_pread(reader, bytes, sizeof(bytes), 0U, &count), "dense truncated read");
             if (after.size != 0U || after.object_id != original.object_id || count != 0U)
                 kernel_test_fail("ext4 dense truncate lost shared inode identity or EOF");
         }
-        ext4_vfs_require(openrfsfs_fsync(writer), "dense file sync");
-        ext4_vfs_require(openrfsfs_close(reader), "dense reader close");
-        ext4_vfs_require(openrfsfs_close(writer), "dense writer close");
-        if (openrfsfs_fstat(reader, &after) != OPENRFSFS_STATUS_STALE_HANDLE ||
-            openrfsfs_fstat(writer, &after) != OPENRFSFS_STATUS_STALE_HANDLE)
+        ext4_vfs_require(rsdfs_fsync(writer), "dense file sync");
+        ext4_vfs_require(rsdfs_close(reader), "dense reader close");
+        ext4_vfs_require(rsdfs_close(writer), "dense writer close");
+        if (rsdfs_fstat(reader, &after) != RSDFS_STATUS_STALE_HANDLE ||
+            rsdfs_fstat(writer, &after) != RSDFS_STATUS_STALE_HANDLE)
             kernel_test_fail("ext4 dense file retained a closed handle");
         if (original.size == maximum) {
-            ext4_vfs_require(openrfsfs_unlink(volume, name), "dense final unlink");
+            ext4_vfs_require(rsdfs_unlink(volume, name), "dense final unlink");
             console_write("ST EXT4 DENSE reclaimed\n");
         }
     }
-    ext4_vfs_require(openrfsfs_sync(volume), "dense filesystem sync");
-    ext4_vfs_require(openrfsfs_unmount(volume), "dense clean unmount");
-    if (!openrfsfs_resources_released() || !ext4_backend_resources_released() ||
+    ext4_vfs_require(rsdfs_sync(volume), "dense filesystem sync");
+    ext4_vfs_require(rsdfs_unmount(volume), "dense clean unmount");
+    if (!rsdfs_resources_released() || !ext4_backend_resources_released() ||
         !nvme_filesystem_session_resources_released() || heap_verify() != HEAP_STATUS_OK ||
         paging_verify() != PAGING_STATUS_OK)
         kernel_test_fail("ext4 dense resource census failed");
@@ -5340,41 +5340,41 @@ static _Noreturn void ext4_vfs_dense_file(void)
 
 static _Noreturn void ext4_vfs_journal_wrap(void)
 {
-    const enum openrfsfs_volume volume = OPENRFSFS_VOLUME_SYSTEM;
+    const enum rsdfs_volume volume = RSDFS_VOLUME_SYSTEM;
     const char *name = "data/user/wrap-target";
-    struct openrfsfs_stat original, after;
-    openrfsfs_handle reader;
+    struct rsdfs_stat original, after;
+    rsdfs_handle reader;
     uint64_t position;
-    ext4_vfs_require(openrfsfs_open(volume, name, OPENRFSFS_ACCESS_READ, &reader), "wrap held reader");
-    ext4_vfs_require(openrfsfs_fstat(reader, &original), "wrap original identity");
+    ext4_vfs_require(rsdfs_open(volume, name, RSDFS_ACCESS_READ, &reader), "wrap held reader");
+    ext4_vfs_require(rsdfs_fstat(reader, &original), "wrap original identity");
     if (original.directory || original.size != 1700U || original.links != 1U ||
         (original.mode != 0100644U && original.mode != 0100600U))
         kernel_test_fail("ext4 wrap fixture identity changed");
-    const uint64_t free_bytes = openrfsfs_drive(volume).free_bytes;
-    ext4_vfs_require(openrfsfs_seek(reader, 123, OPENRFSFS_SEEK_START, &position), "wrap reader cursor");
+    const uint64_t free_bytes = rsdfs_drive(volume).free_bytes;
+    ext4_vfs_require(rsdfs_seek(reader, 123, RSDFS_SEEK_START, &position), "wrap reader cursor");
     if (original.mode == 0100644U) {
         for (unsigned index = 0U; index < 512U; ++index) {
             const uint16_t mode = index % 2U == 0U ? 0640U : 0644U;
-            ext4_vfs_require(openrfsfs_chmod(volume, name, mode), "wrap metadata transaction");
-            ext4_vfs_require(openrfsfs_fstat(reader, &after), "wrap held metadata reload");
+            ext4_vfs_require(rsdfs_chmod(volume, name, mode), "wrap metadata transaction");
+            ext4_vfs_require(rsdfs_fstat(reader, &after), "wrap held metadata reload");
             if (after.object_id != original.object_id || after.size != original.size ||
                 after.links != 1U || after.mode != (uint32_t)(0100000U | mode))
                 kernel_test_fail("ext4 wrap lost a held inode metadata update");
         }
-        ext4_vfs_require(openrfsfs_chmod(volume, name, 0600U), "wrap completion mode");
+        ext4_vfs_require(rsdfs_chmod(volume, name, 0600U), "wrap completion mode");
         console_write("ST EXT4 WRAP transactions 513\n");
     } else console_write("ST EXT4 WRAP cold boot retained\n");
-    ext4_vfs_require(openrfsfs_fstat(reader, &after), "wrap final held metadata");
-    ext4_vfs_require(openrfsfs_seek(reader, 0, OPENRFSFS_SEEK_CURRENT, &position), "wrap retained cursor");
+    ext4_vfs_require(rsdfs_fstat(reader, &after), "wrap final held metadata");
+    ext4_vfs_require(rsdfs_seek(reader, 0, RSDFS_SEEK_CURRENT, &position), "wrap retained cursor");
     if (after.mode != 0100600U || after.object_id != original.object_id ||
-        openrfsfs_drive(volume).free_bytes != free_bytes || position != 123U)
+        rsdfs_drive(volume).free_bytes != free_bytes || position != 123U)
         kernel_test_fail("ext4 wrap changed allocation identity or cursor");
     ext4_vfs_cut_contents(reader, 1700U, 't');
-    ext4_vfs_require(openrfsfs_fsync(reader), "wrap held sync");
-    ext4_vfs_require(openrfsfs_close(reader), "wrap reader close");
-    ext4_vfs_require(openrfsfs_sync(volume), "wrap filesystem sync");
-    ext4_vfs_require(openrfsfs_unmount(volume), "wrap clean unmount");
-    if (!openrfsfs_resources_released() || !ext4_backend_resources_released() ||
+    ext4_vfs_require(rsdfs_fsync(reader), "wrap held sync");
+    ext4_vfs_require(rsdfs_close(reader), "wrap reader close");
+    ext4_vfs_require(rsdfs_sync(volume), "wrap filesystem sync");
+    ext4_vfs_require(rsdfs_unmount(volume), "wrap clean unmount");
+    if (!rsdfs_resources_released() || !ext4_backend_resources_released() ||
         !nvme_filesystem_session_resources_released() || heap_verify() != HEAP_STATUS_OK ||
         paging_verify() != PAGING_STATUS_OK)
         kernel_test_fail("ext4 wrap resource census failed");
@@ -5384,51 +5384,51 @@ static _Noreturn void ext4_vfs_journal_wrap(void)
 
 static _Noreturn void ext4_vfs_replace_powercut(void)
 {
-    const enum openrfsfs_volume volume = OPENRFSFS_VOLUME_SYSTEM;
+    const enum rsdfs_volume volume = RSDFS_VOLUME_SYSTEM;
     const char *source = "data/user/replace-source";
     const char *target = "data/user/replace-target";
-    struct openrfsfs_stat source_stat, target_stat, held;
-    openrfsfs_handle source_file, target_file;
-    const enum openrfsfs_status initial = openrfsfs_lstat_path(volume, source, &source_stat);
-    ext4_vfs_require(openrfsfs_lstat_path(volume, target, &target_stat), "replace cut destination");
+    struct rsdfs_stat source_stat, target_stat, held;
+    rsdfs_handle source_file, target_file;
+    const enum rsdfs_status initial = rsdfs_lstat_path(volume, source, &source_stat);
+    ext4_vfs_require(rsdfs_lstat_path(volume, target, &target_stat), "replace cut destination");
     if (target_stat.directory || target_stat.links != 1U)
         kernel_test_fail("ext4 replace cut destination identity changed");
-    if (initial == OPENRFSFS_STATUS_OK) {
+    if (initial == RSDFS_STATUS_OK) {
         if (source_stat.directory || source_stat.size != 4500U || source_stat.links != 1U ||
             target_stat.size != 3000U || source_stat.object_id == target_stat.object_id)
             kernel_test_fail("ext4 replace cut old namespace changed");
         console_write("ST EXT4 HELD REPLACE initial old\n");
-        ext4_vfs_require(openrfsfs_open(volume, source, OPENRFSFS_ACCESS_READ_WRITE, &source_file), "replace cut source open");
-        ext4_vfs_require(openrfsfs_open(volume, target, OPENRFSFS_ACCESS_READ_WRITE, &target_file), "replace cut target open");
-        ext4_vfs_require(openrfsfs_rename_replace(volume, source, target), "replace cut publication");
-        if (openrfsfs_lstat_path(volume, source, &held) != OPENRFSFS_STATUS_NOT_FOUND)
+        ext4_vfs_require(rsdfs_open(volume, source, RSDFS_ACCESS_READ_WRITE, &source_file), "replace cut source open");
+        ext4_vfs_require(rsdfs_open(volume, target, RSDFS_ACCESS_READ_WRITE, &target_file), "replace cut target open");
+        ext4_vfs_require(rsdfs_rename_replace(volume, source, target), "replace cut publication");
+        if (rsdfs_lstat_path(volume, source, &held) != RSDFS_STATUS_NOT_FOUND)
             kernel_test_fail("ext4 replace cut retained source name");
-        ext4_vfs_require(openrfsfs_lstat_path(volume, target, &held), "replace cut published identity");
+        ext4_vfs_require(rsdfs_lstat_path(volume, target, &held), "replace cut published identity");
         if (held.object_id != source_stat.object_id || held.links != 1U || held.size != 4500U)
             kernel_test_fail("ext4 replace cut published wrong inode");
-        ext4_vfs_require(openrfsfs_fstat(target_file, &held), "replace cut orphan identity");
+        ext4_vfs_require(rsdfs_fstat(target_file, &held), "replace cut orphan identity");
         if (held.object_id != target_stat.object_id || held.links != 0U || held.size != 3000U)
             kernel_test_fail("ext4 replace cut lost held destination");
         ext4_vfs_cut_contents(target_file, 3000U, 't');
         ext4_vfs_cut_contents(source_file, 4500U, 's');
-        ext4_vfs_require(openrfsfs_fsync(target_file), "replace cut orphan sync");
-        ext4_vfs_require(openrfsfs_close(target_file), "replace cut orphan final close");
-        if (openrfsfs_fstat(target_file, &held) != OPENRFSFS_STATUS_STALE_HANDLE)
+        ext4_vfs_require(rsdfs_fsync(target_file), "replace cut orphan sync");
+        ext4_vfs_require(rsdfs_close(target_file), "replace cut orphan final close");
+        if (rsdfs_fstat(target_file, &held) != RSDFS_STATUS_STALE_HANDLE)
             kernel_test_fail("ext4 replace cut left closed destination usable");
-        ext4_vfs_require(openrfsfs_fsync(source_file), "replace cut source sync");
-        ext4_vfs_require(openrfsfs_close(source_file), "replace cut source close");
-    } else if (initial == OPENRFSFS_STATUS_NOT_FOUND) {
+        ext4_vfs_require(rsdfs_fsync(source_file), "replace cut source sync");
+        ext4_vfs_require(rsdfs_close(source_file), "replace cut source close");
+    } else if (initial == RSDFS_STATUS_NOT_FOUND) {
         if (target_stat.size != 4500U) kernel_test_fail("ext4 replace cut new destination size changed");
         console_write("ST EXT4 HELD REPLACE initial new\n");
     } else {
         kernel_test_fail("ext4 replace cut namespace is neither old nor new");
     }
-    ext4_vfs_require(openrfsfs_open(volume, target, OPENRFSFS_ACCESS_READ, &target_file), "replace cut final open");
+    ext4_vfs_require(rsdfs_open(volume, target, RSDFS_ACCESS_READ, &target_file), "replace cut final open");
     ext4_vfs_cut_contents(target_file, 4500U, 's');
-    ext4_vfs_require(openrfsfs_close(target_file), "replace cut final read close");
-    ext4_vfs_require(openrfsfs_sync(volume), "replace cut final sync");
-    ext4_vfs_require(openrfsfs_unmount(volume), "replace cut clean unmount");
-    if (!openrfsfs_resources_released() || !ext4_backend_resources_released() ||
+    ext4_vfs_require(rsdfs_close(target_file), "replace cut final read close");
+    ext4_vfs_require(rsdfs_sync(volume), "replace cut final sync");
+    ext4_vfs_require(rsdfs_unmount(volume), "replace cut clean unmount");
+    if (!rsdfs_resources_released() || !ext4_backend_resources_released() ||
         !nvme_filesystem_session_resources_released() || heap_verify() != HEAP_STATUS_OK ||
         paging_verify() != PAGING_STATUS_OK)
         kernel_test_fail("ext4 replace cut resource census failed");
@@ -5436,47 +5436,47 @@ static _Noreturn void ext4_vfs_replace_powercut(void)
     kernel_test_pass();
 }
 
-static bool ext4_vfs_storage_probe_control(enum openrfsfs_volume volume,
+static bool ext4_vfs_storage_probe_control(enum rsdfs_volume volume,
     const char *path, uint32_t *ordinal);
 
 static _Noreturn void ext4_vfs_rename_powercut(bool cross_directory, bool wrapped)
 {
-    const enum openrfsfs_volume volume = OPENRFSFS_VOLUME_SYSTEM;
+    const enum rsdfs_volume volume = RSDFS_VOLUME_SYSTEM;
     const char *source = "data/user/rename-source";
     const char *target = cross_directory ? "data/user/rename-destination/moved-file" : "data/user/rename-target";
     const char *collision = cross_directory ? "data/user/rename-destination/occupied" : "data/user/rename-existing";
-    struct openrfsfs_stat original, destination, occupied, after, parent;
-    openrfsfs_handle file, reader;
+    struct rsdfs_stat original, destination, occupied, after, parent;
+    rsdfs_handle file, reader;
     uint32_t failure_ordinal = 0U;
     const bool storage_probe = ext4_vfs_storage_probe_control(volume, "data/user/RENFAIL.BIN", &failure_ordinal);
-    const enum openrfsfs_status initial = openrfsfs_lstat_path(volume, source, &original);
-    const enum openrfsfs_status destination_status = openrfsfs_lstat_path(volume, target, &destination);
-    const bool old = initial == OPENRFSFS_STATUS_OK && destination_status == OPENRFSFS_STATUS_NOT_FOUND;
-    const bool changed = initial == OPENRFSFS_STATUS_NOT_FOUND && destination_status == OPENRFSFS_STATUS_OK;
+    const enum rsdfs_status initial = rsdfs_lstat_path(volume, source, &original);
+    const enum rsdfs_status destination_status = rsdfs_lstat_path(volume, target, &destination);
+    const bool old = initial == RSDFS_STATUS_OK && destination_status == RSDFS_STATUS_NOT_FOUND;
+    const bool changed = initial == RSDFS_STATUS_NOT_FOUND && destination_status == RSDFS_STATUS_OK;
     if (!old && !changed) kernel_test_fail("ext4 rename cut namespace is neither old nor new");
     if (changed) original = destination;
     if (original.directory || original.size != 4500U || original.links != 1U || original.mode != 0100644U)
         kernel_test_fail("ext4 rename cut source metadata changed");
-    ext4_vfs_require(openrfsfs_lstat_path(volume, collision, &occupied), "rename cut collision inode");
+    ext4_vfs_require(rsdfs_lstat_path(volume, collision, &occupied), "rename cut collision inode");
     if (occupied.directory || occupied.size != 1000U || occupied.links != 1U || occupied.object_id == original.object_id)
         kernel_test_fail("ext4 rename cut collision fixture changed");
-    ext4_vfs_require(openrfsfs_stat_path(volume, "data/user", &parent), "rename cut parent");
-    const uint64_t initial_free = openrfsfs_drive(volume).free_bytes;
-    ext4_vfs_require(openrfsfs_open(volume, old ? source : target, OPENRFSFS_ACCESS_READ, &file), "rename cut held source");
-    ext4_vfs_require(openrfsfs_open(volume, collision, OPENRFSFS_ACCESS_READ, &reader), "rename cut held collision");
+    ext4_vfs_require(rsdfs_stat_path(volume, "data/user", &parent), "rename cut parent");
+    const uint64_t initial_free = rsdfs_drive(volume).free_bytes;
+    ext4_vfs_require(rsdfs_open(volume, old ? source : target, RSDFS_ACCESS_READ, &file), "rename cut held source");
+    ext4_vfs_require(rsdfs_open(volume, collision, RSDFS_ACCESS_READ, &reader), "rename cut held collision");
     if (old) {
         console_write("ST EXT4 RENAME initial old\n");
         // Even a refused mutation may durably mark a clean filesystem dirty.
         // Keep that no-replace probe in the uncut preparation window too.
         if (wrapped && !ext4_backend_test_pause_storage_trace(true))
             kernel_test_fail("ext4 wrapped rename requires device-command tracing");
-        if (openrfsfs_rename(volume, source, collision) != OPENRFSFS_STATUS_EXISTS)
+        if (rsdfs_rename(volume, source, collision) != RSDFS_STATUS_EXISTS)
             kernel_test_fail("ext4 rename cut failed no-replace refusal");
         if (wrapped) {
             // The tested three-record chmod transactions advance the live
             // ring to slot 1021. Only the following rename/recovery is cut.
             for (unsigned index = 0U; index < 340U; ++index)
-                ext4_vfs_require(openrfsfs_chmod(volume, source, index % 2U == 0U ? 0640U : 0644U),
+                ext4_vfs_require(rsdfs_chmod(volume, source, index % 2U == 0U ? 0640U : 0644U),
                     "wrapped rename journal preparation");
             if (!ext4_backend_test_pause_storage_trace(false))
                 kernel_test_fail("ext4 wrapped rename could not restore device cuts");
@@ -5484,58 +5484,58 @@ static _Noreturn void ext4_vfs_rename_powercut(bool cross_directory, bool wrappe
         }
         if (storage_probe && !ext4_backend_test_fail_storage_once(failure_ordinal == 0U ? UINT32_MAX : failure_ordinal))
             kernel_test_fail("ext4 could not arm rename storage refusal");
-        enum openrfsfs_status status = openrfsfs_rename(volume, source, target);
+        enum rsdfs_status status = rsdfs_rename(volume, source, target);
         if (storage_probe) {
             uint32_t attempts;
-            enum openrfs_ext4_test_storage_kind kind;
+            enum rsd_ext4_test_storage_kind kind;
             if (!ext4_backend_test_finish_storage_probe(&attempts, &kind) || attempts == 0U)
                 kernel_test_fail("ext4 rename storage probe was not exercised");
             if (failure_ordinal == 0U) {
-                if (status != OPENRFSFS_STATUS_OK || kind != OPENRFS_EXT4_TEST_STORAGE_KIND_COUNT)
+                if (status != RSDFS_STATUS_OK || kind != RSD_EXT4_TEST_STORAGE_KIND_COUNT)
                     kernel_test_fail("ext4 rename storage baseline failed");
                 console_write("ST EXT4 RENAME storage attempts ");
                 console_write_u64(attempts);
                 console_putc('\n');
             } else {
-                if (status != OPENRFSFS_STATUS_IO || attempts != failure_ordinal ||
-                    kind >= OPENRFS_EXT4_TEST_STORAGE_KIND_COUNT)
+                if (status != RSDFS_STATUS_IO || attempts != failure_ordinal ||
+                    kind >= RSD_EXT4_TEST_STORAGE_KIND_COUNT)
                     kernel_test_fail("ext4 rename storage refusal was not exact");
                 console_write("ST EXT4 RENAME storage refused ");
                 console_write_u64(attempts);
-                console_write(kind == OPENRFS_EXT4_TEST_STORAGE_WRITE ? " write\n" : " flush\n");
+                console_write(kind == RSD_EXT4_TEST_STORAGE_WRITE ? " write\n" : " flush\n");
                 // Retry through normal path resolution while the coordinator
                 // may hide a retained transaction from unrelated lookups.
-                status = openrfsfs_rename(volume, source, target);
+                status = rsdfs_rename(volume, source, target);
             }
         }
         ext4_vfs_require(status, "rename cut identical publication retry");
     } else console_write("ST EXT4 RENAME initial new\n");
-    if (openrfsfs_lstat_path(volume, source, &after) != OPENRFSFS_STATUS_NOT_FOUND)
+    if (rsdfs_lstat_path(volume, source, &after) != RSDFS_STATUS_NOT_FOUND)
         kernel_test_fail("ext4 rename cut retained old source name");
-    ext4_vfs_require(openrfsfs_lstat_path(volume, target, &after), "rename cut target identity");
+    ext4_vfs_require(rsdfs_lstat_path(volume, target, &after), "rename cut target identity");
     if (after.object_id != original.object_id || after.size != original.size || after.links != 1U ||
         after.mode != original.mode || after.uid != original.uid || after.gid != original.gid)
         kernel_test_fail("ext4 rename cut published wrong target inode");
-    ext4_vfs_require(openrfsfs_fstat(file, &after), "rename cut retained source");
+    ext4_vfs_require(rsdfs_fstat(file, &after), "rename cut retained source");
     if (after.object_id != original.object_id || after.links != 1U || after.size != 4500U)
         kernel_test_fail("ext4 rename cut lost held source identity");
-    ext4_vfs_require(openrfsfs_fstat(reader, &after), "rename cut retained collision");
+    ext4_vfs_require(rsdfs_fstat(reader, &after), "rename cut retained collision");
     if (after.object_id != occupied.object_id || after.links != occupied.links || after.size != 1000U || after.mode != occupied.mode)
         kernel_test_fail("ext4 rename cut overwrote no-replace target");
-    ext4_vfs_require(openrfsfs_lstat_path(volume, collision, &after), "rename cut collision namespace");
+    ext4_vfs_require(rsdfs_lstat_path(volume, collision, &after), "rename cut collision namespace");
     if (after.object_id != occupied.object_id || after.links != 1U || after.size != 1000U)
         kernel_test_fail("ext4 rename cut replaced the collision name");
     ext4_vfs_cut_contents(file, 4500U, 's');
     ext4_vfs_cut_contents(reader, 1000U, 'c');
-    ext4_vfs_require(openrfsfs_stat_path(volume, "data/user", &after), "rename cut parent after");
-    if (after.object_id != parent.object_id || after.links != parent.links || openrfsfs_drive(volume).free_bytes != initial_free)
+    ext4_vfs_require(rsdfs_stat_path(volume, "data/user", &after), "rename cut parent after");
+    if (after.object_id != parent.object_id || after.links != parent.links || rsdfs_drive(volume).free_bytes != initial_free)
         kernel_test_fail("ext4 rename cut changed allocation or parent links");
-    ext4_vfs_require(openrfsfs_fsync(file), "rename cut fsync");
-    ext4_vfs_require(openrfsfs_close(file), "rename cut close");
-    ext4_vfs_require(openrfsfs_close(reader), "rename cut collision close");
-    ext4_vfs_require(openrfsfs_sync(volume), "rename cut final sync");
-    ext4_vfs_require(openrfsfs_unmount(volume), "rename cut clean unmount");
-    if (!openrfsfs_resources_released() || !ext4_backend_resources_released() ||
+    ext4_vfs_require(rsdfs_fsync(file), "rename cut fsync");
+    ext4_vfs_require(rsdfs_close(file), "rename cut close");
+    ext4_vfs_require(rsdfs_close(reader), "rename cut collision close");
+    ext4_vfs_require(rsdfs_sync(volume), "rename cut final sync");
+    ext4_vfs_require(rsdfs_unmount(volume), "rename cut clean unmount");
+    if (!rsdfs_resources_released() || !ext4_backend_resources_released() ||
         !nvme_filesystem_session_resources_released() || heap_verify() != HEAP_STATUS_OK ||
         paging_verify() != PAGING_STATUS_OK)
         kernel_test_fail("ext4 rename cut resource census failed");
@@ -5543,15 +5543,15 @@ static _Noreturn void ext4_vfs_rename_powercut(bool cross_directory, bool wrappe
     kernel_test_pass();
 }
 
-static bool ext4_vfs_finish_mutation_storage_probe(enum openrfsfs_status status,
+static bool ext4_vfs_finish_mutation_storage_probe(enum rsdfs_status status,
     uint32_t ordinal, const char *label)
 {
     uint32_t attempts;
-    enum openrfs_ext4_test_storage_kind kind;
+    enum rsd_ext4_test_storage_kind kind;
     if (!ext4_backend_test_finish_storage_probe(&attempts, &kind) || attempts == 0U)
         kernel_test_fail("ext4 mutation storage probe was not exercised");
     if (ordinal == 0U) {
-        if (status != OPENRFSFS_STATUS_OK || kind != OPENRFS_EXT4_TEST_STORAGE_KIND_COUNT)
+        if (status != RSDFS_STATUS_OK || kind != RSD_EXT4_TEST_STORAGE_KIND_COUNT)
             kernel_test_fail("ext4 mutation storage baseline failed");
         console_write(label);
         console_write(" storage attempts ");
@@ -5559,57 +5559,57 @@ static bool ext4_vfs_finish_mutation_storage_probe(enum openrfsfs_status status,
         console_putc('\n');
         return false;
     }
-    if (status != OPENRFSFS_STATUS_IO || attempts != ordinal ||
-        kind >= OPENRFS_EXT4_TEST_STORAGE_KIND_COUNT)
+    if (status != RSDFS_STATUS_IO || attempts != ordinal ||
+        kind >= RSD_EXT4_TEST_STORAGE_KIND_COUNT)
         kernel_test_fail("ext4 mutation storage refusal changed its error or ordinal");
     console_write(label);
     console_write(" storage refused ");
     console_write_u64(attempts);
-    console_write(kind == OPENRFS_EXT4_TEST_STORAGE_WRITE ? " write\n" : " flush\n");
+    console_write(kind == RSD_EXT4_TEST_STORAGE_WRITE ? " write\n" : " flush\n");
     return true;
 }
 
 static _Noreturn void ext4_vfs_mkdir_powercut(void)
 {
-    const enum openrfsfs_volume volume = OPENRFSFS_VOLUME_SYSTEM;
+    const enum rsdfs_volume volume = RSDFS_VOLUME_SYSTEM;
     const char *name = "data/user/created-directory";
-    struct openrfsfs_stat metadata, parent, after;
-    openrfsfs_directory_handle directory;
-    struct openrfsfs_list_entry entry;
+    struct rsdfs_stat metadata, parent, after;
+    rsdfs_directory_handle directory;
+    struct rsdfs_list_entry entry;
     bool present = true;
     uint32_t failure_ordinal = 0U;
     const bool storage_probe = ext4_vfs_storage_probe_control(volume,
         "data/user/MKDIRFAIL.BIN", &failure_ordinal);
-    ext4_vfs_require(openrfsfs_stat_path(volume, "data/user", &parent), "mkdir cut parent");
-    const enum openrfsfs_status initial = openrfsfs_lstat_path(volume, name, &metadata);
-    if (initial == OPENRFSFS_STATUS_NOT_FOUND) {
+    ext4_vfs_require(rsdfs_stat_path(volume, "data/user", &parent), "mkdir cut parent");
+    const enum rsdfs_status initial = rsdfs_lstat_path(volume, name, &metadata);
+    if (initial == RSDFS_STATUS_NOT_FOUND) {
         console_write("ST EXT4 MKDIR initial old\n");
         if (storage_probe && !ext4_backend_test_fail_storage_once(
                 failure_ordinal == 0U ? UINT32_MAX : failure_ordinal))
             kernel_test_fail("ext4 could not arm mkdir storage refusal");
-        enum openrfsfs_status status = openrfsfs_mkdir_mode(volume, name, 0750U);
+        enum rsdfs_status status = rsdfs_mkdir_mode(volume, name, 0750U);
         if (storage_probe && ext4_vfs_finish_mutation_storage_probe(status,
                 failure_ordinal, "ST EXT4 MKDIR"))
-            status = openrfsfs_mkdir_mode(volume, name, 0750U);
+            status = rsdfs_mkdir_mode(volume, name, 0750U);
         ext4_vfs_require(status, "mkdir cut identical mode retry");
-        ext4_vfs_require(openrfsfs_stat_path(volume, "data/user", &after), "mkdir cut parent links");
+        ext4_vfs_require(rsdfs_stat_path(volume, "data/user", &after), "mkdir cut parent links");
         if (after.object_id != parent.object_id || after.links != parent.links + 1U)
             kernel_test_fail("ext4 mkdir cut did not update parent links exactly once");
-    } else if (initial == OPENRFSFS_STATUS_OK) console_write("ST EXT4 MKDIR initial new\n");
+    } else if (initial == RSDFS_STATUS_OK) console_write("ST EXT4 MKDIR initial new\n");
     else kernel_test_fail("ext4 mkdir cut state is neither absent nor committed");
-    ext4_vfs_require(openrfsfs_lstat_path(volume, name, &metadata), "mkdir cut created identity");
+    ext4_vfs_require(rsdfs_lstat_path(volume, name, &metadata), "mkdir cut created identity");
     if (!metadata.directory || metadata.links != 2U || metadata.size != 4096U ||
-        (metadata.mode & 0777U) != 0750U || openrfsfs_mkdir(volume, name) != OPENRFSFS_STATUS_EXISTS)
+        (metadata.mode & 0777U) != 0750U || rsdfs_mkdir(volume, name) != RSDFS_STATUS_EXISTS)
         kernel_test_fail("ext4 mkdir cut changed mode type size links or collision status");
-    ext4_vfs_require(openrfsfs_directory_open(volume, name, &directory), "mkdir cut snapshot");
-    ext4_vfs_require(openrfsfs_directory_read(directory, &entry, &present), "mkdir cut empty read");
+    ext4_vfs_require(rsdfs_directory_open(volume, name, &directory), "mkdir cut snapshot");
+    ext4_vfs_require(rsdfs_directory_read(directory, &entry, &present), "mkdir cut empty read");
     if (present) kernel_test_fail("ext4 mkdir cut exposed unexpected directory entries");
-    ext4_vfs_require(openrfsfs_directory_close(directory), "mkdir cut snapshot close");
-    if (openrfsfs_directory_read(directory, &entry, &present) != OPENRFSFS_STATUS_STALE_HANDLE)
+    ext4_vfs_require(rsdfs_directory_close(directory), "mkdir cut snapshot close");
+    if (rsdfs_directory_read(directory, &entry, &present) != RSDFS_STATUS_STALE_HANDLE)
         kernel_test_fail("ext4 mkdir cut retained its closed snapshot");
-    ext4_vfs_require(openrfsfs_sync(volume), "mkdir cut final sync");
-    ext4_vfs_require(openrfsfs_unmount(volume), "mkdir cut clean unmount");
-    if (!openrfsfs_resources_released() || !ext4_backend_resources_released() ||
+    ext4_vfs_require(rsdfs_sync(volume), "mkdir cut final sync");
+    ext4_vfs_require(rsdfs_unmount(volume), "mkdir cut clean unmount");
+    if (!rsdfs_resources_released() || !ext4_backend_resources_released() ||
         !nvme_filesystem_session_resources_released() || heap_verify() != HEAP_STATUS_OK ||
         paging_verify() != PAGING_STATUS_OK)
         kernel_test_fail("ext4 mkdir cut resource census failed");
@@ -5619,46 +5619,46 @@ static _Noreturn void ext4_vfs_mkdir_powercut(void)
 
 static _Noreturn void ext4_vfs_rmdir_powercut(void)
 {
-    const enum openrfsfs_volume volume = OPENRFSFS_VOLUME_SYSTEM;
+    const enum rsdfs_volume volume = RSDFS_VOLUME_SYSTEM;
     const char *name = "data/user/removed-directory";
-    struct openrfsfs_stat metadata, parent, after;
-    openrfsfs_directory_handle directory;
-    struct openrfsfs_list_entry entry;
+    struct rsdfs_stat metadata, parent, after;
+    rsdfs_directory_handle directory;
+    struct rsdfs_list_entry entry;
     bool present = true;
     uint32_t failure_ordinal = 0U;
     const bool storage_probe = ext4_vfs_storage_probe_control(volume,
         "data/user/RMDIRFAIL.BIN", &failure_ordinal);
-    ext4_vfs_require(openrfsfs_stat_path(volume, "data/user", &parent), "rmdir cut parent");
-    const enum openrfsfs_status initial = openrfsfs_lstat_path(volume, name, &metadata);
-    if (initial == OPENRFSFS_STATUS_OK) {
+    ext4_vfs_require(rsdfs_stat_path(volume, "data/user", &parent), "rmdir cut parent");
+    const enum rsdfs_status initial = rsdfs_lstat_path(volume, name, &metadata);
+    if (initial == RSDFS_STATUS_OK) {
         if (!metadata.directory || metadata.links != 2U || metadata.size != 4096U)
             kernel_test_fail("ext4 rmdir cut initial directory changed");
         console_write("ST EXT4 RMDIR initial old\n");
-        ext4_vfs_require(openrfsfs_directory_open(volume, name, &directory), "rmdir cut held snapshot");
+        ext4_vfs_require(rsdfs_directory_open(volume, name, &directory), "rmdir cut held snapshot");
         if (storage_probe && !ext4_backend_test_fail_storage_once(
                 failure_ordinal == 0U ? UINT32_MAX : failure_ordinal))
             kernel_test_fail("ext4 could not arm rmdir storage refusal");
-        enum openrfsfs_status status = openrfsfs_rmdir(volume, name);
+        enum rsdfs_status status = rsdfs_rmdir(volume, name);
         if (storage_probe && ext4_vfs_finish_mutation_storage_probe(status,
                 failure_ordinal, "ST EXT4 RMDIR"))
-            status = openrfsfs_rmdir(volume, name);
+            status = rsdfs_rmdir(volume, name);
         ext4_vfs_require(status, "rmdir cut identical name retry");
-        ext4_vfs_require(openrfsfs_stat_path(volume, "data/user", &after), "rmdir cut parent links");
+        ext4_vfs_require(rsdfs_stat_path(volume, "data/user", &after), "rmdir cut parent links");
         if (after.object_id != parent.object_id || after.links + 1U != parent.links)
             kernel_test_fail("ext4 rmdir cut did not decrement parent links exactly once");
-        ext4_vfs_require(openrfsfs_directory_read(directory, &entry, &present), "rmdir cut removed snapshot read");
+        ext4_vfs_require(rsdfs_directory_read(directory, &entry, &present), "rmdir cut removed snapshot read");
         if (present) kernel_test_fail("ext4 rmdir cut changed held empty snapshot");
-        ext4_vfs_require(openrfsfs_directory_close(directory), "rmdir cut snapshot close");
-        if (openrfsfs_directory_read(directory, &entry, &present) != OPENRFSFS_STATUS_STALE_HANDLE)
+        ext4_vfs_require(rsdfs_directory_close(directory), "rmdir cut snapshot close");
+        if (rsdfs_directory_read(directory, &entry, &present) != RSDFS_STATUS_STALE_HANDLE)
             kernel_test_fail("ext4 rmdir cut retained closed snapshot");
-    } else if (initial == OPENRFSFS_STATUS_NOT_FOUND) console_write("ST EXT4 RMDIR initial new\n");
+    } else if (initial == RSDFS_STATUS_NOT_FOUND) console_write("ST EXT4 RMDIR initial new\n");
     else kernel_test_fail("ext4 rmdir cut state is neither old nor new");
-    if (openrfsfs_lstat_path(volume, name, &metadata) != OPENRFSFS_STATUS_NOT_FOUND ||
-        openrfsfs_rmdir(volume, name) != OPENRFSFS_STATUS_NOT_FOUND)
+    if (rsdfs_lstat_path(volume, name, &metadata) != RSDFS_STATUS_NOT_FOUND ||
+        rsdfs_rmdir(volume, name) != RSDFS_STATUS_NOT_FOUND)
         kernel_test_fail("ext4 rmdir cut retained removed namespace");
-    ext4_vfs_require(openrfsfs_sync(volume), "rmdir cut final sync");
-    ext4_vfs_require(openrfsfs_unmount(volume), "rmdir cut clean unmount");
-    if (!openrfsfs_resources_released() || !ext4_backend_resources_released() ||
+    ext4_vfs_require(rsdfs_sync(volume), "rmdir cut final sync");
+    ext4_vfs_require(rsdfs_unmount(volume), "rmdir cut clean unmount");
+    if (!rsdfs_resources_released() || !ext4_backend_resources_released() ||
         !nvme_filesystem_session_resources_released() || heap_verify() != HEAP_STATUS_OK ||
         paging_verify() != PAGING_STATUS_OK)
         kernel_test_fail("ext4 rmdir cut resource census failed");
@@ -5668,74 +5668,74 @@ static _Noreturn void ext4_vfs_rmdir_powercut(void)
 
 static _Noreturn void ext4_vfs_create_powercut(void)
 {
-    const enum openrfsfs_volume volume = OPENRFSFS_VOLUME_SYSTEM;
+    const enum rsdfs_volume volume = RSDFS_VOLUME_SYSTEM;
     const char *name = "data/user/created-target";
-    struct openrfsfs_stat metadata, held;
-    openrfsfs_handle file = 0U, reader = 0U, collision = 99U;
+    struct rsdfs_stat metadata, held;
+    rsdfs_handle file = 0U, reader = 0U, collision = 99U;
     uint8_t byte;
     size_t count = 99U;
     uint32_t failure_ordinal = 0U;
     const bool storage_probe = ext4_vfs_storage_probe_control(volume,
         "data/user/CREATEFAIL.BIN", &failure_ordinal);
-    const enum openrfsfs_status initial = openrfsfs_lstat_path(volume, name, &metadata);
-    if (initial == OPENRFSFS_STATUS_NOT_FOUND) {
+    const enum rsdfs_status initial = rsdfs_lstat_path(volume, name, &metadata);
+    if (initial == RSDFS_STATUS_NOT_FOUND) {
         console_write("ST EXT4 CREATE initial old\n");
         if (storage_probe && !ext4_backend_test_fail_storage_once(
                 failure_ordinal == 0U ? UINT32_MAX : failure_ordinal))
             kernel_test_fail("ext4 could not arm create storage refusal");
         file = 99U;
-        enum openrfsfs_status status = openrfsfs_open_options(volume, name, OPENRFSFS_ACCESS_READ_WRITE,
-            OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE, 0640U, &file);
+        enum rsdfs_status status = rsdfs_open_options(volume, name, RSDFS_ACCESS_READ_WRITE,
+            RSDFS_OPEN_CREATE | RSDFS_OPEN_EXCLUSIVE, 0640U, &file);
         if (storage_probe) {
             uint32_t attempts;
-            enum openrfs_ext4_test_storage_kind kind;
+            enum rsd_ext4_test_storage_kind kind;
             if (!ext4_backend_test_finish_storage_probe(&attempts, &kind) || attempts == 0U)
                 kernel_test_fail("ext4 create storage probe was not exercised");
             if (failure_ordinal == 0U) {
-                if (status != OPENRFSFS_STATUS_OK || kind != OPENRFS_EXT4_TEST_STORAGE_KIND_COUNT)
+                if (status != RSDFS_STATUS_OK || kind != RSD_EXT4_TEST_STORAGE_KIND_COUNT)
                     kernel_test_fail("ext4 create storage baseline failed");
                 console_write("ST EXT4 CREATE storage attempts ");
                 console_write_u64(attempts);
                 console_putc('\n');
             } else {
-                if (status != OPENRFSFS_STATUS_IO || file != 0U || attempts != failure_ordinal ||
-                    kind >= OPENRFS_EXT4_TEST_STORAGE_KIND_COUNT ||
-                    openrfsfs_fstat(file, &held) != OPENRFSFS_STATUS_STALE_HANDLE)
+                if (status != RSDFS_STATUS_IO || file != 0U || attempts != failure_ordinal ||
+                    kind >= RSD_EXT4_TEST_STORAGE_KIND_COUNT ||
+                    rsdfs_fstat(file, &held) != RSDFS_STATUS_STALE_HANDLE)
                     kernel_test_fail("ext4 refused create exposed a handle or changed its failure");
                 console_write("ST EXT4 CREATE storage refused ");
                 console_write_u64(attempts);
-                console_write(kind == OPENRFS_EXT4_TEST_STORAGE_WRITE ? " write\n" : " flush\n");
-                status = openrfsfs_open_options(volume, name, OPENRFSFS_ACCESS_READ_WRITE,
-                    OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE, 0640U, &file);
+                console_write(kind == RSD_EXT4_TEST_STORAGE_WRITE ? " write\n" : " flush\n");
+                status = rsdfs_open_options(volume, name, RSDFS_ACCESS_READ_WRITE,
+                    RSDFS_OPEN_CREATE | RSDFS_OPEN_EXCLUSIVE, 0640U, &file);
             }
         }
         ext4_vfs_require(status, "create cut identical exclusive open retry");
-    } else if (initial == OPENRFSFS_STATUS_OK) {
+    } else if (initial == RSDFS_STATUS_OK) {
         console_write("ST EXT4 CREATE initial new\n");
-        ext4_vfs_require(openrfsfs_open(volume, name, OPENRFSFS_ACCESS_READ_WRITE, &file), "create cut existing open");
+        ext4_vfs_require(rsdfs_open(volume, name, RSDFS_ACCESS_READ_WRITE, &file), "create cut existing open");
     } else kernel_test_fail("ext4 create cut state is neither absent nor committed");
-    ext4_vfs_require(openrfsfs_fstat(file, &metadata), "create cut file identity");
+    ext4_vfs_require(rsdfs_fstat(file, &metadata), "create cut file identity");
     if (metadata.directory || metadata.size != 0U || metadata.links != 1U ||
         (metadata.mode & 0777U) != 0640U)
         kernel_test_fail("ext4 create cut changed mode type size or links");
-    if (openrfsfs_open_options(volume, name, OPENRFSFS_ACCESS_READ_WRITE,
-        OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE, 0600U, &collision) != OPENRFSFS_STATUS_EXISTS || collision != 0U)
+    if (rsdfs_open_options(volume, name, RSDFS_ACCESS_READ_WRITE,
+        RSDFS_OPEN_CREATE | RSDFS_OPEN_EXCLUSIVE, 0600U, &collision) != RSDFS_STATUS_EXISTS || collision != 0U)
         kernel_test_fail("ext4 create cut exclusive retry changed the file or leaked a handle");
-    ext4_vfs_require(openrfsfs_open(volume, name, OPENRFSFS_ACCESS_READ, &reader), "create cut second reader");
-    ext4_vfs_require(openrfsfs_fstat(reader, &held), "create cut reader identity");
+    ext4_vfs_require(rsdfs_open(volume, name, RSDFS_ACCESS_READ, &reader), "create cut second reader");
+    ext4_vfs_require(rsdfs_fstat(reader, &held), "create cut reader identity");
     if (held.object_id != metadata.object_id || held.mode != metadata.mode)
         kernel_test_fail("ext4 create cut reader observed another inode");
-    ext4_vfs_require(openrfsfs_pread(reader, &byte, 1U, 0U, &count), "create cut empty contents");
+    ext4_vfs_require(rsdfs_pread(reader, &byte, 1U, 0U, &count), "create cut empty contents");
     if (count != 0U) kernel_test_fail("ext4 create cut exposed uninitialized bytes");
-    ext4_vfs_require(openrfsfs_fsync(file), "create cut file sync");
-    ext4_vfs_require(openrfsfs_close(reader), "create cut reader close");
-    ext4_vfs_require(openrfsfs_close(file), "create cut writer close");
-    if (openrfsfs_fstat(file, &held) != OPENRFSFS_STATUS_STALE_HANDLE ||
-        openrfsfs_fstat(reader, &held) != OPENRFSFS_STATUS_STALE_HANDLE)
+    ext4_vfs_require(rsdfs_fsync(file), "create cut file sync");
+    ext4_vfs_require(rsdfs_close(reader), "create cut reader close");
+    ext4_vfs_require(rsdfs_close(file), "create cut writer close");
+    if (rsdfs_fstat(file, &held) != RSDFS_STATUS_STALE_HANDLE ||
+        rsdfs_fstat(reader, &held) != RSDFS_STATUS_STALE_HANDLE)
         kernel_test_fail("ext4 create cut retained closed handles");
-    ext4_vfs_require(openrfsfs_sync(volume), "create cut final sync");
-    ext4_vfs_require(openrfsfs_unmount(volume), "create cut clean unmount");
-    if (!openrfsfs_resources_released() || !ext4_backend_resources_released() ||
+    ext4_vfs_require(rsdfs_sync(volume), "create cut final sync");
+    ext4_vfs_require(rsdfs_unmount(volume), "create cut clean unmount");
+    if (!rsdfs_resources_released() || !ext4_backend_resources_released() ||
         !nvme_filesystem_session_resources_released() || heap_verify() != HEAP_STATUS_OK ||
         paging_verify() != PAGING_STATUS_OK)
         kernel_test_fail("ext4 create cut resource census failed");
@@ -5743,45 +5743,45 @@ static _Noreturn void ext4_vfs_create_powercut(void)
     kernel_test_pass();
 }
 
-static void ext4_vfs_storage_probe_truncate(openrfsfs_handle file, uint64_t size,
+static void ext4_vfs_storage_probe_truncate(rsdfs_handle file, uint64_t size,
     bool probe, uint32_t ordinal, const char *label);
 
 static _Noreturn void ext4_vfs_truncate_powercut(bool growing)
 {
-    const enum openrfsfs_volume volume = OPENRFSFS_VOLUME_SYSTEM;
+    const enum rsdfs_volume volume = RSDFS_VOLUME_SYSTEM;
     const char *name = "data/user/truncate-target";
-    struct openrfsfs_stat metadata, held;
-    openrfsfs_handle file, reader;
+    struct rsdfs_stat metadata, held;
+    rsdfs_handle file, reader;
     uint8_t byte;
     size_t count;
     const uint64_t old_size = growing ? 1700U : 4500U;
     const uint64_t new_size = growing ? 12345U : 1700U;
-    const uint64_t initial_free = openrfsfs_drive(volume).free_bytes;
+    const uint64_t initial_free = rsdfs_drive(volume).free_bytes;
     uint32_t failure_ordinal = 0U;
     const bool storage_probe = ext4_vfs_storage_probe_control(volume,
         growing ? "data/user/GROWFAIL.BIN" : "data/user/TRUNCFAIL.BIN", &failure_ordinal);
-    ext4_vfs_require(openrfsfs_stat_path(volume, name, &metadata), "truncate cut initial stat");
+    ext4_vfs_require(rsdfs_stat_path(volume, name, &metadata), "truncate cut initial stat");
     if (metadata.directory || metadata.links != 1U ||
         (metadata.size != old_size && metadata.size != new_size))
         kernel_test_fail("ext4 truncate cut state is neither old nor new");
     console_write(metadata.size == old_size ? "ST EXT4 TRUNCATE initial old\n" :
         "ST EXT4 TRUNCATE initial new\n");
-    ext4_vfs_require(openrfsfs_open(volume, name, OPENRFSFS_ACCESS_READ_WRITE, &file), "truncate cut writer");
-    ext4_vfs_require(openrfsfs_open(volume, name, OPENRFSFS_ACCESS_READ, &reader), "truncate cut reader");
+    ext4_vfs_require(rsdfs_open(volume, name, RSDFS_ACCESS_READ_WRITE, &file), "truncate cut writer");
+    ext4_vfs_require(rsdfs_open(volume, name, RSDFS_ACCESS_READ, &reader), "truncate cut reader");
     // Before the commit, all old bytes must survive, including the part of
     // the retained physical block that the shrink will zero in the journal.
     ext4_vfs_cut_contents(reader, growing ? old_size : metadata.size, 't');
     uint64_t position;
-    ext4_vfs_require(openrfsfs_seek(file, 7777, OPENRFSFS_SEEK_START, &position), "truncate writer cursor setup");
-    ext4_vfs_require(openrfsfs_seek(reader, 123, OPENRFSFS_SEEK_START, &position), "truncate reader cursor setup");
+    ext4_vfs_require(rsdfs_seek(file, 7777, RSDFS_SEEK_START, &position), "truncate writer cursor setup");
+    ext4_vfs_require(rsdfs_seek(reader, 123, RSDFS_SEEK_START, &position), "truncate reader cursor setup");
     if (metadata.size == old_size)
         ext4_vfs_storage_probe_truncate(file, new_size, storage_probe, failure_ordinal,
             growing ? "ST EXT4 GROW" : "ST EXT4 TRUNCATE");
-    ext4_vfs_require(openrfsfs_seek(file, 0, OPENRFSFS_SEEK_CURRENT, &position), "truncate writer cursor retained");
+    ext4_vfs_require(rsdfs_seek(file, 0, RSDFS_SEEK_CURRENT, &position), "truncate writer cursor retained");
     if (position != 7777U) kernel_test_fail("ext4 truncate changed writer cursor");
-    ext4_vfs_require(openrfsfs_seek(reader, 0, OPENRFSFS_SEEK_CURRENT, &position), "truncate reader cursor retained");
+    ext4_vfs_require(rsdfs_seek(reader, 0, RSDFS_SEEK_CURRENT, &position), "truncate reader cursor retained");
     if (position != 123U) kernel_test_fail("ext4 truncate changed reader cursor");
-    ext4_vfs_require(openrfsfs_fstat(reader, &held), "truncate cut shared EOF");
+    ext4_vfs_require(rsdfs_fstat(reader, &held), "truncate cut shared EOF");
     if (held.object_id != metadata.object_id || held.links != 1U || held.size != new_size)
         kernel_test_fail("ext4 truncate cut changed inode or retained stale reader EOF");
     ext4_vfs_cut_contents(reader, 1700U, 't');
@@ -5791,27 +5791,27 @@ static _Noreturn void ext4_vfs_truncate_powercut(bool growing)
             const size_t length = new_size - offset < sizeof(zeros) ?
                 (size_t)(new_size - offset) : sizeof(zeros);
             count = 99U;
-            ext4_vfs_require(openrfsfs_pread(reader, zeros, length, offset, &count), "truncate cut hole read");
+            ext4_vfs_require(rsdfs_pread(reader, zeros, length, offset, &count), "truncate cut hole read");
             if (count != length) kernel_test_fail("ext4 truncate cut returned short hole data");
             for (size_t index = 0U; index < count; ++index)
                 if (zeros[index] != 0U) kernel_test_fail("ext4 truncate cut exposed nonzero hole data");
             offset += count;
         }
-        if (openrfsfs_drive(volume).free_bytes != initial_free)
+        if (rsdfs_drive(volume).free_bytes != initial_free)
             kernel_test_fail("ext4 truncate growth allocated hole blocks");
     }
     count = 99U;
-    ext4_vfs_require(openrfsfs_pread(reader, &byte, 1U, new_size, &count), "truncate cut EOF read");
+    ext4_vfs_require(rsdfs_pread(reader, &byte, 1U, new_size, &count), "truncate cut EOF read");
     if (count != 0U) kernel_test_fail("ext4 truncate cut exposed removed tail");
-    ext4_vfs_require(openrfsfs_fsync(file), "truncate cut file sync");
-    ext4_vfs_require(openrfsfs_close(reader), "truncate cut reader close");
-    ext4_vfs_require(openrfsfs_close(file), "truncate cut writer close");
-    if (openrfsfs_fstat(file, &held) != OPENRFSFS_STATUS_STALE_HANDLE ||
-        openrfsfs_fstat(reader, &held) != OPENRFSFS_STATUS_STALE_HANDLE)
+    ext4_vfs_require(rsdfs_fsync(file), "truncate cut file sync");
+    ext4_vfs_require(rsdfs_close(reader), "truncate cut reader close");
+    ext4_vfs_require(rsdfs_close(file), "truncate cut writer close");
+    if (rsdfs_fstat(file, &held) != RSDFS_STATUS_STALE_HANDLE ||
+        rsdfs_fstat(reader, &held) != RSDFS_STATUS_STALE_HANDLE)
         kernel_test_fail("ext4 truncate cut retained closed handles");
-    ext4_vfs_require(openrfsfs_sync(volume), "truncate cut final sync");
-    ext4_vfs_require(openrfsfs_unmount(volume), "truncate cut clean unmount");
-    if (!openrfsfs_resources_released() || !ext4_backend_resources_released() ||
+    ext4_vfs_require(rsdfs_sync(volume), "truncate cut final sync");
+    ext4_vfs_require(rsdfs_unmount(volume), "truncate cut clean unmount");
+    if (!rsdfs_resources_released() || !ext4_backend_resources_released() ||
         !nvme_filesystem_session_resources_released() || heap_verify() != HEAP_STATUS_OK ||
         paging_verify() != PAGING_STATUS_OK)
         kernel_test_fail("ext4 truncate cut resource census failed");
@@ -5820,37 +5820,37 @@ static _Noreturn void ext4_vfs_truncate_powercut(bool growing)
     kernel_test_pass();
 }
 
-static void ext4_vfs_append_cut_contents(openrfsfs_handle file, uint64_t size)
+static void ext4_vfs_append_cut_contents(rsdfs_handle file, uint64_t size)
 {
     uint8_t bytes[513];
     for (uint64_t offset = 0U; offset < size; offset += sizeof(bytes)) {
         size_t count;
         const size_t expected = size - offset < sizeof(bytes) ? (size_t)(size - offset) : sizeof(bytes);
-        ext4_vfs_require(openrfsfs_pread(file, bytes, sizeof(bytes), offset, &count), "append cut contents");
+        ext4_vfs_require(rsdfs_pread(file, bytes, sizeof(bytes), offset, &count), "append cut contents");
         if (count != expected) kernel_test_fail("ext4 append cut changed read length");
         for (size_t index = 0U; index < count; ++index)
             if (bytes[index] != (offset + index < 4500U ? 't' : 's'))
                 kernel_test_fail("ext4 append cut changed prefix or published tail bytes");
     }
     size_t count = 99U;
-    ext4_vfs_require(openrfsfs_pread(file, bytes, sizeof(bytes), size, &count), "append cut EOF");
+    ext4_vfs_require(rsdfs_pread(file, bytes, sizeof(bytes), size, &count), "append cut EOF");
     if (count != 0U) kernel_test_fail("ext4 append cut exposed bytes past EOF");
 }
 
-static bool ext4_vfs_storage_probe_control(enum openrfsfs_volume volume,
+static bool ext4_vfs_storage_probe_control(enum rsdfs_volume volume,
     const char *path, uint32_t *ordinal)
 {
-    struct openrfsfs_stat stat;
-    const enum openrfsfs_status status = openrfsfs_stat_path(volume, path, &stat);
-    if (status == OPENRFSFS_STATUS_NOT_FOUND) return false;
+    struct rsdfs_stat stat;
+    const enum rsdfs_status status = rsdfs_stat_path(volume, path, &stat);
+    if (status == RSDFS_STATUS_NOT_FOUND) return false;
     ext4_vfs_require(status, "storage refusal control stat");
-    openrfsfs_handle control;
+    rsdfs_handle control;
     uint8_t encoded[4];
     size_t count;
     if (stat.size != sizeof(encoded)) kernel_test_fail("ext4 storage refusal control size");
-    ext4_vfs_require(openrfsfs_open(volume, path, OPENRFSFS_ACCESS_READ, &control), "storage refusal control open");
-    ext4_vfs_require(openrfsfs_read(control, encoded, sizeof(encoded), &count), "storage refusal control read");
-    ext4_vfs_require(openrfsfs_close(control), "storage refusal control close");
+    ext4_vfs_require(rsdfs_open(volume, path, RSDFS_ACCESS_READ, &control), "storage refusal control open");
+    ext4_vfs_require(rsdfs_read(control, encoded, sizeof(encoded), &count), "storage refusal control read");
+    ext4_vfs_require(rsdfs_close(control), "storage refusal control close");
     if (count != sizeof(encoded) || ext4_backend_test_power_cut_configured())
         kernel_test_fail("ext4 storage refusal control conflicts with cut");
     const uint32_t value = (uint32_t)encoded[0] | (uint32_t)encoded[1] << 8U |
@@ -5861,72 +5861,72 @@ static bool ext4_vfs_storage_probe_control(enum openrfsfs_volume volume,
     return true;
 }
 
-static void ext4_vfs_storage_probe_truncate(openrfsfs_handle file, uint64_t size,
+static void ext4_vfs_storage_probe_truncate(rsdfs_handle file, uint64_t size,
     bool probe, uint32_t ordinal, const char *label)
 {
     if (probe && !ext4_backend_test_fail_storage_once(ordinal == 0U ? UINT32_MAX : ordinal))
         kernel_test_fail("ext4 could not arm truncate storage refusal");
-    enum openrfsfs_status status = openrfsfs_ftruncate(file, size);
+    enum rsdfs_status status = rsdfs_ftruncate(file, size);
     if (probe) {
         uint32_t attempts;
-        enum openrfs_ext4_test_storage_kind kind;
+        enum rsd_ext4_test_storage_kind kind;
         if (!ext4_backend_test_finish_storage_probe(&attempts, &kind) || attempts == 0U)
             kernel_test_fail("ext4 truncate storage probe was not exercised");
         if (ordinal == 0U) {
-            if (status != OPENRFSFS_STATUS_OK || kind != OPENRFS_EXT4_TEST_STORAGE_KIND_COUNT)
+            if (status != RSDFS_STATUS_OK || kind != RSD_EXT4_TEST_STORAGE_KIND_COUNT)
                 kernel_test_fail("ext4 truncate storage baseline failed");
             console_write(label);
             console_write(" storage attempts ");
             console_write_u64(attempts);
             console_putc('\n');
         } else {
-            if (status != OPENRFSFS_STATUS_IO || attempts != ordinal ||
-                kind >= OPENRFS_EXT4_TEST_STORAGE_KIND_COUNT)
+            if (status != RSDFS_STATUS_IO || attempts != ordinal ||
+                kind >= RSD_EXT4_TEST_STORAGE_KIND_COUNT)
                 kernel_test_fail("ext4 truncate storage refusal was not exact");
             uint64_t position;
-            ext4_vfs_require(openrfsfs_seek(file, 0, OPENRFSFS_SEEK_CURRENT, &position), "truncate refused cursor");
+            ext4_vfs_require(rsdfs_seek(file, 0, RSDFS_SEEK_CURRENT, &position), "truncate refused cursor");
             if (position != 7777U) kernel_test_fail("ext4 refused truncate changed cursor");
             console_write(label);
             console_write(" storage refused ");
             console_write_u64(attempts);
-            console_write(kind == OPENRFS_EXT4_TEST_STORAGE_WRITE ? " write\n" : " flush\n");
-            status = openrfsfs_ftruncate(file, size);
+            console_write(kind == RSD_EXT4_TEST_STORAGE_WRITE ? " write\n" : " flush\n");
+            status = rsdfs_ftruncate(file, size);
         }
     }
     ext4_vfs_require(status, "truncate identical size retry");
 }
 
-static size_t ext4_vfs_storage_probe_write(openrfsfs_handle writer, const uint8_t *bytes,
+static size_t ext4_vfs_storage_probe_write(rsdfs_handle writer, const uint8_t *bytes,
     size_t length, bool probe, uint32_t ordinal, uint64_t old_cursor, const char *label)
 {
     size_t count;
     if (probe && !ext4_backend_test_fail_storage_once(ordinal == 0U ? UINT32_MAX : ordinal))
         kernel_test_fail("ext4 could not arm storage refusal probe");
-    enum openrfsfs_status status = openrfsfs_write(writer, bytes, length, &count);
+    enum rsdfs_status status = rsdfs_write(writer, bytes, length, &count);
     if (probe) {
         uint32_t attempts;
-        enum openrfs_ext4_test_storage_kind kind;
+        enum rsd_ext4_test_storage_kind kind;
         if (!ext4_backend_test_finish_storage_probe(&attempts, &kind) || attempts == 0U)
             kernel_test_fail("ext4 storage refusal probe was not exercised");
         if (ordinal == 0U) {
-            if (status != OPENRFSFS_STATUS_OK || kind != OPENRFS_EXT4_TEST_STORAGE_KIND_COUNT)
+            if (status != RSDFS_STATUS_OK || kind != RSD_EXT4_TEST_STORAGE_KIND_COUNT)
                 kernel_test_fail("ext4 storage refusal baseline failed");
             console_write(label);
             console_write(" storage attempts ");
             console_write_u64(attempts);
             console_putc('\n');
         } else {
-            if (status != OPENRFSFS_STATUS_IO || count != 0U || attempts != ordinal ||
-                kind >= OPENRFS_EXT4_TEST_STORAGE_KIND_COUNT)
+            if (status != RSDFS_STATUS_IO || count != 0U || attempts != ordinal ||
+                kind >= RSD_EXT4_TEST_STORAGE_KIND_COUNT)
                 kernel_test_fail("ext4 storage refusal was not exact");
             uint64_t position;
-            ext4_vfs_require(openrfsfs_seek(writer, 0, OPENRFSFS_SEEK_CURRENT, &position), "storage refusal cursor");
+            ext4_vfs_require(rsdfs_seek(writer, 0, RSDFS_SEEK_CURRENT, &position), "storage refusal cursor");
             if (position != old_cursor) kernel_test_fail("ext4 refused write advanced cursor");
             console_write(label);
             console_write(" storage refused ");
             console_write_u64(attempts);
-            console_write(kind == OPENRFS_EXT4_TEST_STORAGE_WRITE ? " write\n" : " flush\n");
-            status = openrfsfs_write(writer, bytes, length, &count);
+            console_write(kind == RSD_EXT4_TEST_STORAGE_WRITE ? " write\n" : " flush\n");
+            status = rsdfs_write(writer, bytes, length, &count);
         }
     }
     ext4_vfs_require(status, "storage refusal identical write retry");
@@ -5935,44 +5935,44 @@ static size_t ext4_vfs_storage_probe_write(openrfsfs_handle writer, const uint8_
 
 static _Noreturn void ext4_vfs_append_powercut(void)
 {
-    const enum openrfsfs_volume volume = OPENRFSFS_VOLUME_SYSTEM;
+    const enum rsdfs_volume volume = RSDFS_VOLUME_SYSTEM;
     const char *name = "data/user/append-target";
-    openrfsfs_handle writer, reader;
-    struct openrfsfs_stat original, after;
+    rsdfs_handle writer, reader;
+    struct rsdfs_stat original, after;
     uint8_t tail[4500];
     size_t count;
     uint32_t failure_ordinal = 0U;
     const bool storage_probe = ext4_vfs_storage_probe_control(volume, "data/user/APPFAIL.BIN", &failure_ordinal);
-    ext4_vfs_require(openrfsfs_open(volume, name, OPENRFSFS_ACCESS_READ_WRITE, &writer), "append cut writer");
-    ext4_vfs_require(openrfsfs_open(volume, name, OPENRFSFS_ACCESS_READ, &reader), "append cut existing reader");
-    ext4_vfs_require(openrfsfs_fstat(writer, &original), "append cut source identity");
+    ext4_vfs_require(rsdfs_open(volume, name, RSDFS_ACCESS_READ_WRITE, &writer), "append cut writer");
+    ext4_vfs_require(rsdfs_open(volume, name, RSDFS_ACCESS_READ, &reader), "append cut existing reader");
+    ext4_vfs_require(rsdfs_fstat(writer, &original), "append cut source identity");
     if (original.directory || original.links != 1U || (original.size != 4500U && original.size != 9000U))
         kernel_test_fail("ext4 append cut source is neither old nor committed");
     ext4_vfs_append_cut_contents(reader, original.size);
     if (original.size == 4500U) {
         console_write("ST EXT4 APPEND initial old\n");
-        const uint64_t free_bytes = openrfsfs_drive(volume).free_bytes;
+        const uint64_t free_bytes = rsdfs_drive(volume).free_bytes;
         for (size_t index = 0U; index < sizeof(tail); ++index) tail[index] = 's';
-        ext4_vfs_require(openrfsfs_set_append(writer, true), "append cut atomic append mode");
+        ext4_vfs_require(rsdfs_set_append(writer, true), "append cut atomic append mode");
         count = ext4_vfs_storage_probe_write(writer, tail, sizeof(tail), storage_probe,
             failure_ordinal, 0U, "ST EXT4 APPEND");
-        if (count != sizeof(tail) || openrfsfs_drive(volume).free_bytes != free_bytes - 4096U)
+        if (count != sizeof(tail) || rsdfs_drive(volume).free_bytes != free_bytes - 4096U)
             kernel_test_fail("ext4 append cut lost bytes or allocated wrong blocks");
         uint64_t position;
-        ext4_vfs_require(openrfsfs_seek(writer, 0, OPENRFSFS_SEEK_CURRENT, &position), "append cut final cursor");
+        ext4_vfs_require(rsdfs_seek(writer, 0, RSDFS_SEEK_CURRENT, &position), "append cut final cursor");
         if (position != 9000U) kernel_test_fail("ext4 append cut wrong final cursor");
     } else console_write("ST EXT4 APPEND initial new\n");
-    ext4_vfs_require(openrfsfs_fstat(reader, &after), "append cut reader shared size");
+    ext4_vfs_require(rsdfs_fstat(reader, &after), "append cut reader shared size");
     if (after.size != 9000U || after.object_id != original.object_id || after.mode != original.mode || after.links != 1U)
         kernel_test_fail("ext4 append cut failed shared inode or EOF update");
     ext4_vfs_append_cut_contents(reader, 9000U);
     ext4_vfs_append_cut_contents(writer, 9000U);
-    ext4_vfs_require(openrfsfs_fsync(writer), "append cut fsync");
-    ext4_vfs_require(openrfsfs_close(reader), "append cut reader close");
-    ext4_vfs_require(openrfsfs_close(writer), "append cut writer close");
-    ext4_vfs_require(openrfsfs_sync(volume), "append cut final sync");
-    ext4_vfs_require(openrfsfs_unmount(volume), "append cut clean unmount");
-    if (!openrfsfs_resources_released() || !ext4_backend_resources_released() ||
+    ext4_vfs_require(rsdfs_fsync(writer), "append cut fsync");
+    ext4_vfs_require(rsdfs_close(reader), "append cut reader close");
+    ext4_vfs_require(rsdfs_close(writer), "append cut writer close");
+    ext4_vfs_require(rsdfs_sync(volume), "append cut final sync");
+    ext4_vfs_require(rsdfs_unmount(volume), "append cut clean unmount");
+    if (!rsdfs_resources_released() || !ext4_backend_resources_released() ||
         !nvme_filesystem_session_resources_released() || heap_verify() != HEAP_STATUS_OK ||
         paging_verify() != PAGING_STATUS_OK)
         kernel_test_fail("ext4 append cut resource census failed");
@@ -5980,11 +5980,11 @@ static _Noreturn void ext4_vfs_append_powercut(void)
     kernel_test_pass();
 }
 
-static unsigned ext4_vfs_overwrite_cut_contents(openrfsfs_handle file, bool command_cut)
+static unsigned ext4_vfs_overwrite_cut_contents(rsdfs_handle file, bool command_cut)
 {
     uint8_t bytes[4500];
     size_t count;
-    ext4_vfs_require(openrfsfs_pread(file, bytes, sizeof(bytes), 0U, &count), "overwrite cut held contents");
+    ext4_vfs_require(rsdfs_pread(file, bytes, sizeof(bytes), 0U, &count), "overwrite cut held contents");
     if (count != sizeof(bytes)) kernel_test_fail("ext4 overwrite cut changed size");
     const unsigned changed = (bytes[123] == 's' ? 1U : 0U) | (bytes[4096] == 's' ? 2U : 0U);
     if (!command_cut && changed != 0U && changed != 3U)
@@ -5998,28 +5998,28 @@ static unsigned ext4_vfs_overwrite_cut_contents(openrfsfs_handle file, bool comm
 
 static _Noreturn void ext4_vfs_overwrite_powercut(void)
 {
-    const enum openrfsfs_volume volume = OPENRFSFS_VOLUME_SYSTEM;
+    const enum rsdfs_volume volume = RSDFS_VOLUME_SYSTEM;
     const char *name = "data/user/overwrite-target";
-    openrfsfs_handle writer, reader;
-    struct openrfsfs_stat original, after;
+    rsdfs_handle writer, reader;
+    struct rsdfs_stat original, after;
     size_t count;
     uint64_t position;
     uint8_t changed[4097];
     uint32_t failure_ordinal = 0U;
     const bool storage_probe = ext4_vfs_storage_probe_control(volume, "data/user/OVERFAIL.BIN", &failure_ordinal);
-    struct openrfsfs_stat control;
-    const enum openrfsfs_status control_status = openrfsfs_stat_path(volume, "data/user/OVERDEVICE.TST", &control);
-    if (control_status != OPENRFSFS_STATUS_OK && control_status != OPENRFSFS_STATUS_NOT_FOUND)
+    struct rsdfs_stat control;
+    const enum rsdfs_status control_status = rsdfs_stat_path(volume, "data/user/OVERDEVICE.TST", &control);
+    if (control_status != RSDFS_STATUS_OK && control_status != RSDFS_STATUS_NOT_FOUND)
         kernel_test_fail("ext4 overwrite command-cut control unavailable");
-    const bool command_cut = control_status == OPENRFSFS_STATUS_OK;
+    const bool command_cut = control_status == RSDFS_STATUS_OK;
     if (command_cut && (control.directory || control.size != 0U || storage_probe))
         kernel_test_fail("ext4 overwrite command-cut control conflicts with refusal probe");
-    ext4_vfs_require(openrfsfs_open(volume, name, OPENRFSFS_ACCESS_READ_WRITE, &writer), "overwrite cut writer");
-    ext4_vfs_require(openrfsfs_open(volume, name, OPENRFSFS_ACCESS_READ, &reader), "overwrite cut reader");
-    ext4_vfs_require(openrfsfs_fstat(writer, &original), "overwrite cut original inode");
+    ext4_vfs_require(rsdfs_open(volume, name, RSDFS_ACCESS_READ_WRITE, &writer), "overwrite cut writer");
+    ext4_vfs_require(rsdfs_open(volume, name, RSDFS_ACCESS_READ, &reader), "overwrite cut reader");
+    ext4_vfs_require(rsdfs_fstat(writer, &original), "overwrite cut original inode");
     if (original.directory || original.size != 4500U || original.links != 1U || original.mode != 0100644U)
         kernel_test_fail("ext4 overwrite cut unexpected original inode");
-    const uint64_t free_bytes = openrfsfs_drive(volume).free_bytes;
+    const uint64_t free_bytes = rsdfs_drive(volume).free_bytes;
     const unsigned initial = ext4_vfs_overwrite_cut_contents(reader, command_cut);
     if (command_cut) {
         console_write("ST EXT4 OVERWRITE block mask ");
@@ -6029,27 +6029,27 @@ static _Noreturn void ext4_vfs_overwrite_powercut(void)
     if (initial != 3U) {
         console_write(initial == 0U ? "ST EXT4 OVERWRITE initial old\n" : "ST EXT4 OVERWRITE initial mixed\n");
         for (size_t index = 0U; index < sizeof(changed); ++index) changed[index] = 's';
-        ext4_vfs_require(openrfsfs_seek(writer, 123, OPENRFSFS_SEEK_START, &position), "overwrite cut unaligned seek");
+        ext4_vfs_require(rsdfs_seek(writer, 123, RSDFS_SEEK_START, &position), "overwrite cut unaligned seek");
         if (position != 123U) kernel_test_fail("ext4 overwrite cut wrong start");
         count = ext4_vfs_storage_probe_write(writer, changed, sizeof(changed), storage_probe,
             failure_ordinal, 123U, "ST EXT4 OVERWRITE");
         if (count != sizeof(changed)) kernel_test_fail("ext4 overwrite cut short write");
-        ext4_vfs_require(openrfsfs_seek(writer, 0, OPENRFSFS_SEEK_CURRENT, &position), "overwrite cut final cursor");
+        ext4_vfs_require(rsdfs_seek(writer, 0, RSDFS_SEEK_CURRENT, &position), "overwrite cut final cursor");
         if (position != 4220U) kernel_test_fail("ext4 overwrite cut wrong final cursor");
     } else console_write("ST EXT4 OVERWRITE initial new\n");
     if (ext4_vfs_overwrite_cut_contents(reader, false) != 3U || ext4_vfs_overwrite_cut_contents(writer, false) != 3U)
         kernel_test_fail("ext4 overwrite cut did not publish both partial blocks");
-    ext4_vfs_require(openrfsfs_fstat(reader, &after), "overwrite cut held inode");
+    ext4_vfs_require(rsdfs_fstat(reader, &after), "overwrite cut held inode");
     if (after.object_id != original.object_id || after.size != original.size || after.links != original.links ||
         after.mode != original.mode || after.uid != original.uid || after.gid != original.gid ||
-        openrfsfs_drive(volume).free_bytes != free_bytes)
+        rsdfs_drive(volume).free_bytes != free_bytes)
         kernel_test_fail("ext4 overwrite cut changed inode or allocation");
-    ext4_vfs_require(openrfsfs_fsync(writer), "overwrite cut fsync");
-    ext4_vfs_require(openrfsfs_close(reader), "overwrite cut reader close");
-    ext4_vfs_require(openrfsfs_close(writer), "overwrite cut writer close");
-    ext4_vfs_require(openrfsfs_sync(volume), "overwrite cut final sync");
-    ext4_vfs_require(openrfsfs_unmount(volume), "overwrite cut clean unmount");
-    if (!openrfsfs_resources_released() || !ext4_backend_resources_released() ||
+    ext4_vfs_require(rsdfs_fsync(writer), "overwrite cut fsync");
+    ext4_vfs_require(rsdfs_close(reader), "overwrite cut reader close");
+    ext4_vfs_require(rsdfs_close(writer), "overwrite cut writer close");
+    ext4_vfs_require(rsdfs_sync(volume), "overwrite cut final sync");
+    ext4_vfs_require(rsdfs_unmount(volume), "overwrite cut clean unmount");
+    if (!rsdfs_resources_released() || !ext4_backend_resources_released() ||
         !nvme_filesystem_session_resources_released() || heap_verify() != HEAP_STATUS_OK ||
         paging_verify() != PAGING_STATUS_OK)
         kernel_test_fail("ext4 overwrite cut resource census failed");
@@ -6059,53 +6059,53 @@ static _Noreturn void ext4_vfs_overwrite_powercut(void)
 
 static _Noreturn void ext4_vfs_link_powercut(void)
 {
-    const enum openrfsfs_volume volume = OPENRFSFS_VOLUME_SYSTEM;
+    const enum rsdfs_volume volume = RSDFS_VOLUME_SYSTEM;
     const char *source = "data/user/link-source", *alias = "data/user/link-alias";
-    struct openrfsfs_stat original, linked, held;
-    openrfsfs_handle file, second;
+    struct rsdfs_stat original, linked, held;
+    rsdfs_handle file, second;
     uint32_t failure_ordinal = 0U;
     const bool storage_probe = ext4_vfs_storage_probe_control(volume,
         "data/user/LINKFAIL.BIN", &failure_ordinal);
-    ext4_vfs_require(openrfsfs_open(volume, source, OPENRFSFS_ACCESS_READ, &file), "link cut held source");
-    ext4_vfs_require(openrfsfs_fstat(file, &original), "link cut source identity");
-    const uint64_t free_bytes = openrfsfs_drive(volume).free_bytes;
-    const enum openrfsfs_status initial = openrfsfs_lstat_path(volume, alias, &linked);
-    if (initial == OPENRFSFS_STATUS_NOT_FOUND && original.links == 1U) {
+    ext4_vfs_require(rsdfs_open(volume, source, RSDFS_ACCESS_READ, &file), "link cut held source");
+    ext4_vfs_require(rsdfs_fstat(file, &original), "link cut source identity");
+    const uint64_t free_bytes = rsdfs_drive(volume).free_bytes;
+    const enum rsdfs_status initial = rsdfs_lstat_path(volume, alias, &linked);
+    if (initial == RSDFS_STATUS_NOT_FOUND && original.links == 1U) {
         console_write("ST EXT4 LINK initial old\n");
         if (storage_probe && !ext4_backend_test_fail_storage_once(
                 failure_ordinal == 0U ? UINT32_MAX : failure_ordinal))
             kernel_test_fail("ext4 could not arm hard-link storage refusal");
-        enum openrfsfs_status status = openrfsfs_link(volume, source, alias);
+        enum rsdfs_status status = rsdfs_link(volume, source, alias);
         if (storage_probe && ext4_vfs_finish_mutation_storage_probe(status,
                 failure_ordinal, "ST EXT4 LINK"))
-            status = openrfsfs_link(volume, source, alias);
+            status = rsdfs_link(volume, source, alias);
         ext4_vfs_require(status, "link cut identical source and alias retry");
-    } else if (initial == OPENRFSFS_STATUS_OK && original.links == 2U && linked.links == 2U &&
+    } else if (initial == RSDFS_STATUS_OK && original.links == 2U && linked.links == 2U &&
             linked.object_id == original.object_id) {
         console_write("ST EXT4 LINK initial new\n");
     } else kernel_test_fail("ext4 link cut observed partial namespace or link accounting");
     if (original.directory || original.size != 4500U ||
-        openrfsfs_drive(volume).free_bytes != free_bytes)
+        rsdfs_drive(volume).free_bytes != free_bytes)
         kernel_test_fail("ext4 link cut changed source contents or allocation");
-    if (openrfsfs_link(volume, source, alias) != OPENRFSFS_STATUS_EXISTS)
+    if (rsdfs_link(volume, source, alias) != RSDFS_STATUS_EXISTS)
         kernel_test_fail("ext4 link cut duplicate name was not refused");
-    ext4_vfs_require(openrfsfs_open(volume, alias, OPENRFSFS_ACCESS_READ, &second), "link cut alias reader");
-    ext4_vfs_require(openrfsfs_fstat(second, &linked), "link cut alias identity");
-    ext4_vfs_require(openrfsfs_fstat(file, &held), "link cut shared link count");
+    ext4_vfs_require(rsdfs_open(volume, alias, RSDFS_ACCESS_READ, &second), "link cut alias reader");
+    ext4_vfs_require(rsdfs_fstat(second, &linked), "link cut alias identity");
+    ext4_vfs_require(rsdfs_fstat(file, &held), "link cut shared link count");
     if (linked.object_id != original.object_id || held.object_id != original.object_id ||
         linked.links != 2U || held.links != 2U || linked.mode != original.mode || held.mode != original.mode)
         kernel_test_fail("ext4 link cut changed inode identity or shared metadata");
     ext4_vfs_cut_contents(file, 4500U, 's');
     ext4_vfs_cut_contents(second, 4500U, 's');
-    ext4_vfs_require(openrfsfs_fsync(file), "link cut fsync");
-    ext4_vfs_require(openrfsfs_close(second), "link cut alias close");
-    ext4_vfs_require(openrfsfs_close(file), "link cut source close");
-    if (openrfsfs_fstat(file, &held) != OPENRFSFS_STATUS_STALE_HANDLE ||
-        openrfsfs_fstat(second, &held) != OPENRFSFS_STATUS_STALE_HANDLE)
+    ext4_vfs_require(rsdfs_fsync(file), "link cut fsync");
+    ext4_vfs_require(rsdfs_close(second), "link cut alias close");
+    ext4_vfs_require(rsdfs_close(file), "link cut source close");
+    if (rsdfs_fstat(file, &held) != RSDFS_STATUS_STALE_HANDLE ||
+        rsdfs_fstat(second, &held) != RSDFS_STATUS_STALE_HANDLE)
         kernel_test_fail("ext4 link cut leaked closed handles");
-    ext4_vfs_require(openrfsfs_sync(volume), "link cut final sync");
-    ext4_vfs_require(openrfsfs_unmount(volume), "link cut clean unmount");
-    if (!openrfsfs_resources_released() || !ext4_backend_resources_released() ||
+    ext4_vfs_require(rsdfs_sync(volume), "link cut final sync");
+    ext4_vfs_require(rsdfs_unmount(volume), "link cut clean unmount");
+    if (!rsdfs_resources_released() || !ext4_backend_resources_released() ||
         !nvme_filesystem_session_resources_released() || heap_verify() != HEAP_STATUS_OK ||
         paging_verify() != PAGING_STATUS_OK)
         kernel_test_fail("ext4 link cut resource census failed");
@@ -6115,7 +6115,7 @@ static _Noreturn void ext4_vfs_link_powercut(void)
 
 static _Noreturn void ext4_vfs_symlink_powercut(bool external)
 {
-    const enum openrfsfs_volume volume = OPENRFSFS_VOLUME_SYSTEM;
+    const enum rsdfs_volume volume = RSDFS_VOLUME_SYSTEM;
     const char *target = external ?
         "link-source-abcdefghijklmnopqrstuvwxyz-abcdefghijklmnopqrstuvwxyz-abcdefghijklmnopqrstuvwxyz" : "link-source";
     char source[128] = "data/user/";
@@ -6123,57 +6123,57 @@ static _Noreturn void ext4_vfs_symlink_powercut(bool external)
     size_t length = 0U;
     while (target[length] != '\0') { source[10U + length] = target[length]; ++length; }
     source[10U + length] = '\0';
-    struct openrfsfs_stat original, symbolic, followed;
-    openrfsfs_handle file, second;
+    struct rsdfs_stat original, symbolic, followed;
+    rsdfs_handle file, second;
     uint8_t bytes[128];
     size_t count;
     uint32_t failure_ordinal = 0U;
     const bool storage_probe = ext4_vfs_storage_probe_control(volume,
         "data/user/SYMFAIL.BIN", &failure_ordinal);
-    ext4_vfs_require(openrfsfs_open(volume, source, OPENRFSFS_ACCESS_READ, &file), "symlink cut held source");
-    ext4_vfs_require(openrfsfs_fstat(file, &original), "symlink cut source inode");
-    const uint64_t free_bytes = openrfsfs_drive(volume).free_bytes;
-    const enum openrfsfs_status initial = openrfsfs_lstat_path(volume, alias, &symbolic);
-    if (initial == OPENRFSFS_STATUS_NOT_FOUND) {
+    ext4_vfs_require(rsdfs_open(volume, source, RSDFS_ACCESS_READ, &file), "symlink cut held source");
+    ext4_vfs_require(rsdfs_fstat(file, &original), "symlink cut source inode");
+    const uint64_t free_bytes = rsdfs_drive(volume).free_bytes;
+    const enum rsdfs_status initial = rsdfs_lstat_path(volume, alias, &symbolic);
+    if (initial == RSDFS_STATUS_NOT_FOUND) {
         console_write("ST EXT4 SYMLINK initial old\n");
         if (storage_probe && !ext4_backend_test_fail_storage_once(
                 failure_ordinal == 0U ? UINT32_MAX : failure_ordinal))
             kernel_test_fail("ext4 could not arm symlink storage refusal");
-        enum openrfsfs_status status = openrfsfs_symlink(volume, alias, target);
+        enum rsdfs_status status = rsdfs_symlink(volume, alias, target);
         if (storage_probe && ext4_vfs_finish_mutation_storage_probe(status,
                 failure_ordinal, "ST EXT4 SYMLINK"))
-            status = openrfsfs_symlink(volume, alias, target);
+            status = rsdfs_symlink(volume, alias, target);
         ext4_vfs_require(status, "symlink cut identical target and alias retry");
-        if (openrfsfs_drive(volume).free_bytes != free_bytes - (external ? 4096U : 0U))
+        if (rsdfs_drive(volume).free_bytes != free_bytes - (external ? 4096U : 0U))
             kernel_test_fail("ext4 symlink cut allocation changed");
-    } else if (initial == OPENRFSFS_STATUS_OK) console_write("ST EXT4 SYMLINK initial new\n");
+    } else if (initial == RSDFS_STATUS_OK) console_write("ST EXT4 SYMLINK initial new\n");
     else kernel_test_fail("ext4 symlink cut state is neither absent nor committed");
-    ext4_vfs_require(openrfsfs_lstat_path(volume, alias, &symbolic), "symlink cut literal inode");
+    ext4_vfs_require(rsdfs_lstat_path(volume, alias, &symbolic), "symlink cut literal inode");
     if ((symbolic.mode & 0170000U) != 0120000U || symbolic.object_id == original.object_id ||
         symbolic.size != length || symbolic.links != 1U || original.links != 1U || original.size != 4500U)
         kernel_test_fail("ext4 symlink cut literal inode accounting changed");
-    ext4_vfs_require(openrfsfs_readlink(volume, alias, bytes, sizeof(bytes), &count), "symlink cut readlink");
+    ext4_vfs_require(rsdfs_readlink(volume, alias, bytes, sizeof(bytes), &count), "symlink cut readlink");
     if (count != length) kernel_test_fail("ext4 symlink cut target length changed");
     for (size_t index = 0U; index < length; ++index)
         if (bytes[index] != (uint8_t)target[index]) kernel_test_fail("ext4 symlink cut target bytes changed");
     bytes[3] = 0xa5U;
-    ext4_vfs_require(openrfsfs_readlink(volume, alias, bytes, 3U, &count), "symlink cut short readlink");
+    ext4_vfs_require(rsdfs_readlink(volume, alias, bytes, 3U, &count), "symlink cut short readlink");
     if (count != 3U || bytes[0] != 'l' || bytes[1] != 'i' || bytes[2] != 'n' || bytes[3] != 0xa5U)
         kernel_test_fail("ext4 symlink cut short readlink changed bounds");
-    if (openrfsfs_symlink(volume, alias, "wrong-target") != OPENRFSFS_STATUS_EXISTS)
+    if (rsdfs_symlink(volume, alias, "wrong-target") != RSDFS_STATUS_EXISTS)
         kernel_test_fail("ext4 symlink cut duplicate name was not refused");
-    ext4_vfs_require(openrfsfs_open(volume, alias, OPENRFSFS_ACCESS_READ, &second), "symlink cut followed reader");
-    ext4_vfs_require(openrfsfs_fstat(second, &followed), "symlink cut followed inode");
+    ext4_vfs_require(rsdfs_open(volume, alias, RSDFS_ACCESS_READ, &second), "symlink cut followed reader");
+    ext4_vfs_require(rsdfs_fstat(second, &followed), "symlink cut followed inode");
     if (followed.object_id != original.object_id || followed.links != 1U || followed.mode != original.mode)
         kernel_test_fail("ext4 symlink cut followed another inode");
     ext4_vfs_cut_contents(file, 4500U, 's');
     ext4_vfs_cut_contents(second, 4500U, 's');
-    ext4_vfs_require(openrfsfs_fsync(second), "symlink cut fsync");
-    ext4_vfs_require(openrfsfs_close(second), "symlink cut followed close");
-    ext4_vfs_require(openrfsfs_close(file), "symlink cut source close");
-    ext4_vfs_require(openrfsfs_sync(volume), "symlink cut final sync");
-    ext4_vfs_require(openrfsfs_unmount(volume), "symlink cut clean unmount");
-    if (!openrfsfs_resources_released() || !ext4_backend_resources_released() ||
+    ext4_vfs_require(rsdfs_fsync(second), "symlink cut fsync");
+    ext4_vfs_require(rsdfs_close(second), "symlink cut followed close");
+    ext4_vfs_require(rsdfs_close(file), "symlink cut source close");
+    ext4_vfs_require(rsdfs_sync(volume), "symlink cut final sync");
+    ext4_vfs_require(rsdfs_unmount(volume), "symlink cut clean unmount");
+    if (!rsdfs_resources_released() || !ext4_backend_resources_released() ||
         !nvme_filesystem_session_resources_released() || heap_verify() != HEAP_STATUS_OK ||
         paging_verify() != PAGING_STATUS_OK)
         kernel_test_fail("ext4 symlink cut resource census failed");
@@ -6181,7 +6181,7 @@ static _Noreturn void ext4_vfs_symlink_powercut(bool external)
     kernel_test_pass();
 }
 
-static bool ext4_vfs_cut_times_match(const struct openrfsfs_stat *metadata, bool changed)
+static bool ext4_vfs_cut_times_match(const struct rsdfs_stat *metadata, bool changed)
 {
     return metadata->atime_seconds == (changed ? INT64_C(2200000000) : INT64_C(1704067200)) &&
         metadata->mtime_seconds == (changed ? INT64_C(2300000000) : INT64_C(1704067200)) &&
@@ -6191,60 +6191,60 @@ static bool ext4_vfs_cut_times_match(const struct openrfsfs_stat *metadata, bool
 
 static _Noreturn void ext4_vfs_metadata_powercut(bool changing_times)
 {
-    const enum openrfsfs_volume volume = OPENRFSFS_VOLUME_SYSTEM;
+    const enum rsdfs_volume volume = RSDFS_VOLUME_SYSTEM;
     const char *name = "data/user/metadata-target";
-    const struct openrfsfs_times times = { .atime_seconds = 2200000000U, .mtime_seconds = 2300000000U,
+    const struct rsdfs_times times = { .atime_seconds = 2200000000U, .mtime_seconds = 2300000000U,
         .atime_nanos = 123456789U, .mtime_nanos = 987654321U };
-    struct openrfsfs_stat metadata, after;
-    openrfsfs_handle file, reader;
+    struct rsdfs_stat metadata, after;
+    rsdfs_handle file, reader;
     uint32_t failure_ordinal = 0U;
     const bool storage_probe = ext4_vfs_storage_probe_control(volume,
         changing_times ? "data/user/TIMEFAIL.BIN" : "data/user/MODEFAIL.BIN", &failure_ordinal);
-    ext4_vfs_require(openrfsfs_open(volume, name, OPENRFSFS_ACCESS_READ, &file), "metadata cut held file");
-    ext4_vfs_require(openrfsfs_open(volume, name, OPENRFSFS_ACCESS_READ, &reader), "metadata cut second reader");
-    ext4_vfs_require(openrfsfs_fstat(file, &metadata), "metadata cut initial inode");
+    ext4_vfs_require(rsdfs_open(volume, name, RSDFS_ACCESS_READ, &file), "metadata cut held file");
+    ext4_vfs_require(rsdfs_open(volume, name, RSDFS_ACCESS_READ, &reader), "metadata cut second reader");
+    ext4_vfs_require(rsdfs_fstat(file, &metadata), "metadata cut initial inode");
     if (metadata.directory || metadata.size != 1700U || metadata.links != 1U)
         kernel_test_fail("ext4 metadata cut source changed");
     const bool old = metadata.mode == 0100644U && ext4_vfs_cut_times_match(&metadata, false);
     const bool changed = metadata.mode == (changing_times ? 0100644U : 0100640U) &&
         ext4_vfs_cut_times_match(&metadata, changing_times);
     if (!old && !changed) kernel_test_fail("ext4 metadata cut recovered mixed or unexpected fields");
-    const uint64_t initial_free = openrfsfs_drive(volume).free_bytes;
+    const uint64_t initial_free = rsdfs_drive(volume).free_bytes;
     if (old) {
         console_write("ST EXT4 METADATA initial old\n");
         if (storage_probe && !ext4_backend_test_fail_storage_once(
                 failure_ordinal == 0U ? UINT32_MAX : failure_ordinal))
             kernel_test_fail("ext4 could not arm metadata storage refusal");
-        enum openrfsfs_status status = changing_times ? openrfsfs_set_times(volume, name, &times) :
-            openrfsfs_chmod(volume, name, 0640U);
+        enum rsdfs_status status = changing_times ? rsdfs_set_times(volume, name, &times) :
+            rsdfs_chmod(volume, name, 0640U);
         if (storage_probe && ext4_vfs_finish_mutation_storage_probe(status,
                 failure_ordinal, "ST EXT4 METADATA"))
-            status = changing_times ? openrfsfs_set_times(volume, name, &times) :
-                openrfsfs_chmod(volume, name, 0640U);
+            status = changing_times ? rsdfs_set_times(volume, name, &times) :
+                rsdfs_chmod(volume, name, 0640U);
         ext4_vfs_require(status, "metadata cut identical fields retry");
     } else console_write("ST EXT4 METADATA initial new\n");
-    struct openrfsfs_times invalid = times;
+    struct rsdfs_times invalid = times;
     invalid.mtime_nanos = 1000000000U;
-    if (openrfsfs_set_times(volume, name, &invalid) != OPENRFSFS_STATUS_INVALID_ARGUMENT ||
-        openrfsfs_chmod(volume, name, 0100640U) != OPENRFSFS_STATUS_OK)
+    if (rsdfs_set_times(volume, name, &invalid) != RSDFS_STATUS_INVALID_ARGUMENT ||
+        rsdfs_chmod(volume, name, 0100640U) != RSDFS_STATUS_OK)
         kernel_test_fail("ext4 metadata cut invalid fields or stat mode round-trip failed");
-    const openrfsfs_handle held[] = { file, reader };
+    const rsdfs_handle held[] = { file, reader };
     for (size_t index = 0U; index < 2U; ++index) {
-        ext4_vfs_require(openrfsfs_fstat(held[index], &after), "metadata cut shared inode");
+        ext4_vfs_require(rsdfs_fstat(held[index], &after), "metadata cut shared inode");
         if (after.object_id != metadata.object_id || after.size != metadata.size || after.links != 1U ||
             after.uid != metadata.uid || after.gid != metadata.gid ||
             after.mode != (changing_times ? 0100644U : 0100640U) || !ext4_vfs_cut_times_match(&after, changing_times))
             kernel_test_fail("ext4 metadata cut held inode fields changed");
         ext4_vfs_cut_contents(held[index], 1700U, 't');
     }
-    if (openrfsfs_drive(volume).free_bytes != initial_free)
+    if (rsdfs_drive(volume).free_bytes != initial_free)
         kernel_test_fail("ext4 metadata cut changed allocation accounting");
-    ext4_vfs_require(openrfsfs_fsync(file), "metadata cut fsync");
-    ext4_vfs_require(openrfsfs_close(file), "metadata cut close");
-    ext4_vfs_require(openrfsfs_close(reader), "metadata cut reader close");
-    ext4_vfs_require(openrfsfs_sync(volume), "metadata cut final sync");
-    ext4_vfs_require(openrfsfs_unmount(volume), "metadata cut clean unmount");
-    if (!openrfsfs_resources_released() || !ext4_backend_resources_released() ||
+    ext4_vfs_require(rsdfs_fsync(file), "metadata cut fsync");
+    ext4_vfs_require(rsdfs_close(file), "metadata cut close");
+    ext4_vfs_require(rsdfs_close(reader), "metadata cut reader close");
+    ext4_vfs_require(rsdfs_sync(volume), "metadata cut final sync");
+    ext4_vfs_require(rsdfs_unmount(volume), "metadata cut clean unmount");
+    if (!rsdfs_resources_released() || !ext4_backend_resources_released() ||
         !nvme_filesystem_session_resources_released() || heap_verify() != HEAP_STATUS_OK ||
         paging_verify() != PAGING_STATUS_OK)
         kernel_test_fail("ext4 metadata cut resource census failed");
@@ -6254,10 +6254,10 @@ static _Noreturn void ext4_vfs_metadata_powercut(bool changing_times)
 
 static _Noreturn void ext4_vfs_xattr_powercut(bool removing)
 {
-    const enum openrfsfs_volume volume = OPENRFSFS_VOLUME_SYSTEM;
+    const enum rsdfs_volume volume = RSDFS_VOLUME_SYSTEM;
     const char *name = "data/user/attribute-target";
-    struct openrfsfs_stat metadata, after;
-    openrfsfs_handle file;
+    struct rsdfs_stat metadata, after;
+    rsdfs_handle file;
     uint8_t expected[300], actual[300];
     size_t count = 99U;
     uint32_t failure_ordinal = 0U;
@@ -6265,17 +6265,17 @@ static _Noreturn void ext4_vfs_xattr_powercut(bool removing)
         removing ? "data/user/XRMFAIL.BIN" : "data/user/XATTRFAIL.BIN", &failure_ordinal);
     for (size_t index = 0U; index < sizeof(expected); ++index)
         expected[index] = (uint8_t)(index % 251U);
-    ext4_vfs_require(openrfsfs_open(volume, name, OPENRFSFS_ACCESS_READ, &file), "xattr cut held file");
-    ext4_vfs_require(openrfsfs_fstat(file, &metadata), "xattr cut inode");
+    ext4_vfs_require(rsdfs_open(volume, name, RSDFS_ACCESS_READ, &file), "xattr cut held file");
+    ext4_vfs_require(rsdfs_fstat(file, &metadata), "xattr cut inode");
     if (metadata.directory || metadata.size != 1700U || metadata.links != 1U)
         kernel_test_fail("ext4 xattr cut source changed");
-    const uint64_t initial_free = openrfsfs_drive(volume).free_bytes;
-    const enum openrfsfs_status initial = openrfsfs_get_xattr(volume, name, "user.cut", NULL, 0U, &count);
-    const bool present = initial == OPENRFSFS_STATUS_OK && count == sizeof(expected);
-    if (!present && (initial != OPENRFSFS_STATUS_NOT_FOUND || count != 0U))
+    const uint64_t initial_free = rsdfs_drive(volume).free_bytes;
+    const enum rsdfs_status initial = rsdfs_get_xattr(volume, name, "user.cut", NULL, 0U, &count);
+    const bool present = initial == RSDFS_STATUS_OK && count == sizeof(expected);
+    if (!present && (initial != RSDFS_STATUS_NOT_FOUND || count != 0U))
         kernel_test_fail("ext4 xattr cut state is neither absent nor committed");
     if (present) {
-        ext4_vfs_require(openrfsfs_get_xattr(volume, name, "user.cut", actual, sizeof(actual), &count), "xattr cut initial value");
+        ext4_vfs_require(rsdfs_get_xattr(volume, name, "user.cut", actual, sizeof(actual), &count), "xattr cut initial value");
         if (count != sizeof(expected)) kernel_test_fail("ext4 xattr initial value was short");
         for (size_t index = 0U; index < count; ++index)
             if (actual[index] != expected[index]) kernel_test_fail("ext4 xattr initial bytes changed");
@@ -6285,39 +6285,39 @@ static _Noreturn void ext4_vfs_xattr_powercut(bool removing)
         if (storage_probe && !ext4_backend_test_fail_storage_once(
                 failure_ordinal == 0U ? UINT32_MAX : failure_ordinal))
             kernel_test_fail("ext4 could not arm xattr storage refusal");
-        enum openrfsfs_status status = openrfsfs_set_xattr(volume, name, "user.cut", removing ? NULL : expected,
+        enum rsdfs_status status = rsdfs_set_xattr(volume, name, "user.cut", removing ? NULL : expected,
             removing ? 0U : sizeof(expected), removing);
         if (storage_probe && ext4_vfs_finish_mutation_storage_probe(status,
                 failure_ordinal, "ST EXT4 XATTR"))
-            status = openrfsfs_set_xattr(volume, name, "user.cut", removing ? NULL : expected,
+            status = rsdfs_set_xattr(volume, name, "user.cut", removing ? NULL : expected,
                 removing ? 0U : sizeof(expected), removing);
         ext4_vfs_require(status, "xattr cut identical value and flags retry");
         const uint64_t expected_free = removing ? initial_free + 4096U : initial_free - 4096U;
-        if (openrfsfs_drive(volume).free_bytes != expected_free)
+        if (rsdfs_drive(volume).free_bytes != expected_free)
             kernel_test_fail("ext4 external xattr allocation changed");
     } else console_write("ST EXT4 XATTR initial new\n");
     count = 99U;
     if (removing) {
-        if (openrfsfs_get_xattr(volume, name, "user.cut", actual, sizeof(actual), &count) != OPENRFSFS_STATUS_NOT_FOUND || count != 0U)
+        if (rsdfs_get_xattr(volume, name, "user.cut", actual, sizeof(actual), &count) != RSDFS_STATUS_NOT_FOUND || count != 0U)
             kernel_test_fail("ext4 xattr cut retained removed value");
     } else {
-        ext4_vfs_require(openrfsfs_get_xattr(volume, name, "user.cut", actual, sizeof(actual), &count), "xattr cut read");
+        ext4_vfs_require(rsdfs_get_xattr(volume, name, "user.cut", actual, sizeof(actual), &count), "xattr cut read");
         if (count != sizeof(expected)) kernel_test_fail("ext4 xattr cut returned short value");
         for (size_t index = 0U; index < count; ++index)
             if (actual[index] != expected[index]) kernel_test_fail("ext4 xattr cut changed value bytes");
         count = 99U;
-        if (openrfsfs_get_xattr(volume, name, "user.cut", actual, sizeof(actual) - 1U, &count) != OPENRFSFS_STATUS_RANGE || count != 0U)
+        if (rsdfs_get_xattr(volume, name, "user.cut", actual, sizeof(actual) - 1U, &count) != RSDFS_STATUS_RANGE || count != 0U)
             kernel_test_fail("ext4 xattr cut failed short-buffer refusal");
     }
-    ext4_vfs_require(openrfsfs_fstat(file, &after), "xattr cut retained inode");
+    ext4_vfs_require(rsdfs_fstat(file, &after), "xattr cut retained inode");
     if (after.object_id != metadata.object_id || after.size != metadata.size || after.mode != metadata.mode || after.links != 1U)
         kernel_test_fail("ext4 xattr cut changed file identity or metadata");
     ext4_vfs_cut_contents(file, 1700U, 't');
-    ext4_vfs_require(openrfsfs_fsync(file), "xattr cut fsync");
-    ext4_vfs_require(openrfsfs_close(file), "xattr cut close");
-    ext4_vfs_require(openrfsfs_sync(volume), "xattr cut final sync");
-    ext4_vfs_require(openrfsfs_unmount(volume), "xattr cut clean unmount");
-    if (!openrfsfs_resources_released() || !ext4_backend_resources_released() ||
+    ext4_vfs_require(rsdfs_fsync(file), "xattr cut fsync");
+    ext4_vfs_require(rsdfs_close(file), "xattr cut close");
+    ext4_vfs_require(rsdfs_sync(volume), "xattr cut final sync");
+    ext4_vfs_require(rsdfs_unmount(volume), "xattr cut clean unmount");
+    if (!rsdfs_resources_released() || !ext4_backend_resources_released() ||
         !nvme_filesystem_session_resources_released() || heap_verify() != HEAP_STATUS_OK ||
         paging_verify() != PAGING_STATUS_OK)
         kernel_test_fail("ext4 xattr cut resource census failed");
@@ -6328,52 +6328,52 @@ static _Noreturn void ext4_vfs_xattr_powercut(bool removing)
 
 static _Noreturn void ext4_vfs_inode_exhaustion(void)
 {
-    const enum openrfsfs_volume volume = OPENRFSFS_VOLUME_SYSTEM;
+    const enum rsdfs_volume volume = RSDFS_VOLUME_SYSTEM;
     const char *name = "data/user/INODE.TMP";
     const char *recycled_name = "inode-full/entry-0";
-    const uint64_t initial_free = openrfsfs_drive(volume).free_bytes;
-    struct openrfsfs_stat recycled, metadata;
-    openrfsfs_handle file;
+    const uint64_t initial_free = rsdfs_drive(volume).free_bytes;
+    struct rsdfs_stat recycled, metadata;
+    rsdfs_handle file;
     size_t count;
     uint8_t bytes[6];
-    ext4_vfs_require(openrfsfs_stat_path(volume, recycled_name, &recycled), "inode-full source");
+    ext4_vfs_require(rsdfs_stat_path(volume, recycled_name, &recycled), "inode-full source");
     if (recycled.directory || recycled.size != 0U || recycled.links != 1U)
         kernel_test_fail("ext4 VFS inode-full source is not an empty file");
     for (unsigned attempt = 0U; attempt < 2U; ++attempt) {
         file = 0U;
-        if (openrfsfs_open_options(volume, name, OPENRFSFS_ACCESS_READ_WRITE,
-                OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE, 0600U, &file) != OPENRFSFS_STATUS_FULL || file != 0U ||
-            openrfsfs_mkdir(volume, name) != OPENRFSFS_STATUS_FULL ||
-            openrfsfs_symlink(volume, name, "missing") != OPENRFSFS_STATUS_FULL ||
-            openrfsfs_stat_path(volume, name, &metadata) != OPENRFSFS_STATUS_NOT_FOUND)
+        if (rsdfs_open_options(volume, name, RSDFS_ACCESS_READ_WRITE,
+                RSDFS_OPEN_CREATE | RSDFS_OPEN_EXCLUSIVE, 0600U, &file) != RSDFS_STATUS_FULL || file != 0U ||
+            rsdfs_mkdir(volume, name) != RSDFS_STATUS_FULL ||
+            rsdfs_symlink(volume, name, "missing") != RSDFS_STATUS_FULL ||
+            rsdfs_stat_path(volume, name, &metadata) != RSDFS_STATUS_NOT_FOUND)
             kernel_test_fail("ext4 VFS inode exhaustion changed namespace or returned a handle");
-        ext4_vfs_require(openrfsfs_sync(volume), "inode-full rollback sync");
-        if (openrfsfs_drive(volume).free_bytes != initial_free)
+        ext4_vfs_require(rsdfs_sync(volume), "inode-full rollback sync");
+        if (rsdfs_drive(volume).free_bytes != initial_free)
             kernel_test_fail("ext4 VFS inode exhaustion leaked blocks");
     }
-    ext4_vfs_require(openrfsfs_unlink(volume, recycled_name), "inode-full free");
-    ext4_vfs_require(openrfsfs_open_options(volume, name, OPENRFSFS_ACCESS_READ_WRITE,
-        OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE, 0600U, &file), "inode-full reuse");
-    ext4_vfs_require(openrfsfs_fstat(file, &metadata), "inode-full reused identity");
+    ext4_vfs_require(rsdfs_unlink(volume, recycled_name), "inode-full free");
+    ext4_vfs_require(rsdfs_open_options(volume, name, RSDFS_ACCESS_READ_WRITE,
+        RSDFS_OPEN_CREATE | RSDFS_OPEN_EXCLUSIVE, 0600U, &file), "inode-full reuse");
+    ext4_vfs_require(rsdfs_fstat(file, &metadata), "inode-full reused identity");
     if (metadata.object_id != recycled.object_id) kernel_test_fail("ext4 VFS did not reuse the only free inode");
-    ext4_vfs_require(openrfsfs_write(file, (const uint8_t *)"reused", 6U, &count), "inode-full reused write");
+    ext4_vfs_require(rsdfs_write(file, (const uint8_t *)"reused", 6U, &count), "inode-full reused write");
     if (count != 6U) kernel_test_fail("ext4 VFS reused inode write was short");
-    ext4_vfs_require(openrfsfs_fsync(file), "inode-full reused sync");
-    ext4_vfs_require(openrfsfs_pread(file, bytes, sizeof(bytes), 0U, &count), "inode-full reused read");
+    ext4_vfs_require(rsdfs_fsync(file), "inode-full reused sync");
+    ext4_vfs_require(rsdfs_pread(file, bytes, sizeof(bytes), 0U, &count), "inode-full reused read");
     if (count != sizeof(bytes) || bytes[0] != 'r' || bytes[1] != 'e' || bytes[2] != 'u' ||
         bytes[3] != 's' || bytes[4] != 'e' || bytes[5] != 'd')
         kernel_test_fail("ext4 VFS reused inode changed contents");
-    ext4_vfs_require(openrfsfs_close(file), "inode-full reused close");
-    ext4_vfs_require(openrfsfs_unlink(volume, name), "inode-full reused cleanup");
-    ext4_vfs_require(openrfsfs_open_options(volume, recycled_name, OPENRFSFS_ACCESS_READ_WRITE,
-        OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE, recycled.mode & 0777U, &file), "inode-full restore");
-    ext4_vfs_require(openrfsfs_close(file), "inode-full restore close");
-    ext4_vfs_require(openrfsfs_sync(volume), "inode-full restore sync");
-    if (openrfsfs_drive(volume).free_bytes != initial_free ||
-        openrfsfs_stat_path(volume, name, &metadata) != OPENRFSFS_STATUS_NOT_FOUND)
+    ext4_vfs_require(rsdfs_close(file), "inode-full reused close");
+    ext4_vfs_require(rsdfs_unlink(volume, name), "inode-full reused cleanup");
+    ext4_vfs_require(rsdfs_open_options(volume, recycled_name, RSDFS_ACCESS_READ_WRITE,
+        RSDFS_OPEN_CREATE | RSDFS_OPEN_EXCLUSIVE, recycled.mode & 0777U, &file), "inode-full restore");
+    ext4_vfs_require(rsdfs_close(file), "inode-full restore close");
+    ext4_vfs_require(rsdfs_sync(volume), "inode-full restore sync");
+    if (rsdfs_drive(volume).free_bytes != initial_free ||
+        rsdfs_stat_path(volume, name, &metadata) != RSDFS_STATUS_NOT_FOUND)
         kernel_test_fail("ext4 VFS inode-full cleanup leaked blocks or namespace");
-    ext4_vfs_require(openrfsfs_unmount(volume), "inode-full unmount");
-    if (!openrfsfs_resources_released() || !ext4_backend_resources_released() ||
+    ext4_vfs_require(rsdfs_unmount(volume), "inode-full unmount");
+    if (!rsdfs_resources_released() || !ext4_backend_resources_released() ||
         !nvme_filesystem_session_resources_released() || heap_verify() != HEAP_STATUS_OK ||
         paging_verify() != PAGING_STATUS_OK)
         kernel_test_fail("ext4 VFS inode-full resource census failed");
@@ -6385,83 +6385,83 @@ static _Noreturn void ext4_vfs_low_space(void)
 {
     static uint8_t payload[64U * 4096U];
     uint8_t block[4096];
-    const enum openrfsfs_volume volume = OPENRFSFS_VOLUME_SYSTEM;
+    const enum rsdfs_volume volume = RSDFS_VOLUME_SYSTEM;
     const char *name = "data/user/ENOSPC.TMP";
-    const uint64_t initial_free = openrfsfs_drive(volume).free_bytes;
-    openrfsfs_handle file;
-    struct openrfsfs_stat metadata;
+    const uint64_t initial_free = rsdfs_drive(volume).free_bytes;
+    rsdfs_handle file;
+    struct rsdfs_stat metadata;
     uint64_t position;
     size_t count;
     if (initial_free <= 32U * 4096U || initial_free >= 64U * 4096U)
         kernel_test_fail("ext4 VFS low-space fixture reserve is wrong");
     for (size_t index = 0U; index < sizeof(payload); ++index) payload[index] = 0x52U;
-    ext4_vfs_require(openrfsfs_open_options(volume, name, OPENRFSFS_ACCESS_READ_WRITE,
-        OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE, 0600U, &file), "low-space create");
+    ext4_vfs_require(rsdfs_open_options(volume, name, RSDFS_ACCESS_READ_WRITE,
+        RSDFS_OPEN_CREATE | RSDFS_OPEN_EXCLUSIVE, 0600U, &file), "low-space create");
     // An uncertain marker write retains the request. A retry that reaches
     // ENOSPC must expose its durable prefix and report FULL, never full success.
     for (unsigned file_sync = 0U; file_sync < 2U; ++file_sync) {
-        ext4_vfs_require(openrfsfs_fsync(file), "low-space retry setup sync");
+        ext4_vfs_require(rsdfs_fsync(file), "low-space retry setup sync");
         count = 99U;
         if (!ext4_backend_test_fail_storage_once(1U) ||
-            openrfsfs_write(file, payload, sizeof(payload), &count) != OPENRFSFS_STATUS_IO || count != 0U)
+            rsdfs_write(file, payload, sizeof(payload), &count) != RSDFS_STATUS_IO || count != 0U)
             kernel_test_fail("ext4 VFS low-space marker refusal did not retain request");
-        const enum openrfsfs_status retry_status = file_sync ?
-            openrfsfs_fsync(file) : openrfsfs_sync(volume);
-        if (retry_status != OPENRFSFS_STATUS_FULL)
+        const enum rsdfs_status retry_status = file_sync ?
+            rsdfs_fsync(file) : rsdfs_sync(volume);
+        if (retry_status != RSDFS_STATUS_FULL)
             kernel_test_fail("ext4 VFS low-space retry falsely acknowledged full durability");
-        ext4_vfs_require(openrfsfs_fsync(file), "low-space retry settled sync");
-        ext4_vfs_require(openrfsfs_seek(file, 0, OPENRFSFS_SEEK_CURRENT, &position), "low-space retry cursor");
-        ext4_vfs_require(openrfsfs_fstat(file, &metadata), "low-space retry metadata");
+        ext4_vfs_require(rsdfs_fsync(file), "low-space retry settled sync");
+        ext4_vfs_require(rsdfs_seek(file, 0, RSDFS_SEEK_CURRENT, &position), "low-space retry cursor");
+        ext4_vfs_require(rsdfs_fstat(file, &metadata), "low-space retry metadata");
         if (position != 0U || metadata.size != 32U * 4096U)
             kernel_test_fail("ext4 VFS low-space retry changed cursor or durable prefix");
         for (uint64_t offset = 0U; offset < metadata.size; offset += sizeof(block)) {
-            ext4_vfs_require(openrfsfs_pread(file, block, sizeof(block), offset, &count), "low-space retry prefix");
+            ext4_vfs_require(rsdfs_pread(file, block, sizeof(block), offset, &count), "low-space retry prefix");
             if (count != sizeof(block)) kernel_test_fail("ext4 VFS low-space retry prefix was short");
             for (size_t index = 0U; index < sizeof(block); ++index)
                 if (block[index] != 0x52U) kernel_test_fail("ext4 VFS low-space retry changed bytes");
         }
-        ext4_vfs_require(openrfsfs_ftruncate(file, 0U), "low-space retry reclaim");
-        ext4_vfs_require(openrfsfs_fsync(file), "low-space retry reclaim sync");
+        ext4_vfs_require(rsdfs_ftruncate(file, 0U), "low-space retry reclaim");
+        ext4_vfs_require(rsdfs_fsync(file), "low-space retry reclaim sync");
     }
     console_write("ST EXT4 VFS retained write fsync and sync ENOSPC prefix cursor exact\n");
-    ext4_vfs_require(openrfsfs_write(file, payload, sizeof(payload), &count), "low-space short write");
+    ext4_vfs_require(rsdfs_write(file, payload, sizeof(payload), &count), "low-space short write");
     if (count != 32U * 4096U) kernel_test_fail("ext4 VFS low-space durable prefix changed");
-    const uint64_t free_after_prefix = openrfsfs_drive(volume).free_bytes;
+    const uint64_t free_after_prefix = rsdfs_drive(volume).free_bytes;
     if (free_after_prefix == 0U || free_after_prefix >= 32U * 4096U)
         kernel_test_fail("ext4 VFS low-space prefix did not consume reserve");
     for (unsigned attempt = 0U; attempt < 2U; ++attempt) {
         count = 99U;
-        if (openrfsfs_write(file, payload, 32U * 4096U, &count) != OPENRFSFS_STATUS_FULL || count != 0U)
+        if (rsdfs_write(file, payload, 32U * 4096U, &count) != RSDFS_STATUS_FULL || count != 0U)
             kernel_test_fail("ext4 VFS low-space refusal returned an invalid count");
-        ext4_vfs_require(openrfsfs_fsync(file), "low-space refusal sync");
-        ext4_vfs_require(openrfsfs_seek(file, 0, OPENRFSFS_SEEK_CURRENT, &position), "low-space cursor");
-        ext4_vfs_require(openrfsfs_fstat(file, &metadata), "low-space metadata");
+        ext4_vfs_require(rsdfs_fsync(file), "low-space refusal sync");
+        ext4_vfs_require(rsdfs_seek(file, 0, RSDFS_SEEK_CURRENT, &position), "low-space cursor");
+        ext4_vfs_require(rsdfs_fstat(file, &metadata), "low-space metadata");
         if (position != 32U * 4096U || metadata.size != position ||
-            openrfsfs_drive(volume).free_bytes != free_after_prefix)
+            rsdfs_drive(volume).free_bytes != free_after_prefix)
             kernel_test_fail("ext4 VFS ENOSPC leaked allocations or moved EOF/cursor");
     }
     for (uint64_t offset = 0U; offset < 32U * 4096U; offset += sizeof(block)) {
-        ext4_vfs_require(openrfsfs_pread(file, block, sizeof(block), offset, &count), "low-space prefix read");
+        ext4_vfs_require(rsdfs_pread(file, block, sizeof(block), offset, &count), "low-space prefix read");
         if (count != sizeof(block)) kernel_test_fail("ext4 VFS low-space prefix was short");
         for (size_t index = 0U; index < sizeof(block); ++index)
             if (block[index] != 0x52U) kernel_test_fail("ext4 VFS low-space prefix changed bytes");
     }
-    ext4_vfs_require(openrfsfs_pread(file, block, 1U, 32U * 4096U, &count), "low-space EOF");
+    ext4_vfs_require(rsdfs_pread(file, block, 1U, 32U * 4096U, &count), "low-space EOF");
     if (count != 0U) kernel_test_fail("ext4 VFS low-space rollback exposed a tail");
-    ext4_vfs_require(openrfsfs_write(file, (const uint8_t *)"fits", 4U, &count), "low-space reuse");
+    ext4_vfs_require(rsdfs_write(file, (const uint8_t *)"fits", 4U, &count), "low-space reuse");
     if (count != 4U) kernel_test_fail("ext4 VFS low-space reuse was short");
-    ext4_vfs_require(openrfsfs_fsync(file), "low-space reuse sync");
-    ext4_vfs_require(openrfsfs_pread(file, block, 4U, 32U * 4096U, &count), "low-space reuse read");
+    ext4_vfs_require(rsdfs_fsync(file), "low-space reuse sync");
+    ext4_vfs_require(rsdfs_pread(file, block, 4U, 32U * 4096U, &count), "low-space reuse read");
     if (count != 4U || block[0] != 'f' || block[1] != 'i' || block[2] != 't' || block[3] != 's')
         kernel_test_fail("ext4 VFS low-space reuse changed bytes");
-    ext4_vfs_require(openrfsfs_close(file), "low-space close");
-    ext4_vfs_require(openrfsfs_unlink(volume, name), "low-space cleanup");
-    ext4_vfs_require(openrfsfs_sync(volume), "low-space cleanup sync");
-    if (openrfsfs_drive(volume).free_bytes != initial_free ||
-        openrfsfs_stat_path(volume, name, &metadata) != OPENRFSFS_STATUS_NOT_FOUND)
+    ext4_vfs_require(rsdfs_close(file), "low-space close");
+    ext4_vfs_require(rsdfs_unlink(volume, name), "low-space cleanup");
+    ext4_vfs_require(rsdfs_sync(volume), "low-space cleanup sync");
+    if (rsdfs_drive(volume).free_bytes != initial_free ||
+        rsdfs_stat_path(volume, name, &metadata) != RSDFS_STATUS_NOT_FOUND)
         kernel_test_fail("ext4 VFS low-space cleanup leaked allocations or namespace");
-    ext4_vfs_require(openrfsfs_unmount(volume), "low-space unmount");
-    if (!openrfsfs_resources_released() || !ext4_backend_resources_released() ||
+    ext4_vfs_require(rsdfs_unmount(volume), "low-space unmount");
+    if (!rsdfs_resources_released() || !ext4_backend_resources_released() ||
         !nvme_filesystem_session_resources_released() || heap_verify() != HEAP_STATUS_OK ||
         paging_verify() != PAGING_STATUS_OK)
         kernel_test_fail("ext4 VFS low-space resource census failed");
@@ -6472,17 +6472,17 @@ static _Noreturn void ext4_vfs_low_space(void)
 _Noreturn void kernel_test_complete_ext4_recovery(void)
 {
     static const uint8_t expected[] =
-        "OpenRFS deterministic ext4 fixture\n";
+        "RSD deterministic ext4 fixture\n";
     static const uint8_t transaction_byte = 'X';
     const struct boot_ledger *ledger = boot_ledger_installed();
     const struct boot_stage_receipt *nvme_proof;
     const struct boot_stage_receipt *fat16_proof;
-    struct openrfs_ext4_mount_diagnostic mount_diagnostic = {0};
-    struct openrfs_ext4_recovery_report clean_remount = {0};
-    struct openrfs_ext4_recovery_report recovery = {0};
-    const struct openrfsfs_drive_info drive = openrfsfs_drive(OPENRFSFS_VOLUME_SYSTEM);
-    struct openrfsfs_stat stat = {0};
-    openrfsfs_handle handle = 0U;
+    struct rsd_ext4_mount_diagnostic mount_diagnostic = {0};
+    struct rsd_ext4_recovery_report clean_remount = {0};
+    struct rsd_ext4_recovery_report recovery = {0};
+    const struct rsdfs_drive_info drive = rsdfs_drive(RSDFS_VOLUME_SYSTEM);
+    struct rsdfs_stat stat = {0};
+    rsdfs_handle handle = 0U;
     uint8_t bytes[sizeof(expected)] = {0};
     uint8_t appended = 0U;
     size_t read_bytes = 0U;
@@ -6490,7 +6490,7 @@ _Noreturn void kernel_test_complete_ext4_recovery(void)
     bool contents_match = true;
     bool transaction_already_visible = false;
     const bool power_cut = ext4_backend_test_power_cut_configured();
-    const uint64_t before = openrfsfs_completion_count(OPENRFSFS_VOLUME_SYSTEM);
+    const uint64_t before = rsdfs_completion_count(RSDFS_VOLUME_SYSTEM);
 
     if (active_scenario != KERNEL_TEST_EXT4_RECOVERY) {
         kernel_test_fail("ext4 recovery completion used outside its scenario");
@@ -6514,20 +6514,20 @@ _Noreturn void kernel_test_complete_ext4_recovery(void)
     }
     if (ext4_geometry_refusal_test || ext4_admission_refusal_test) {
         if (drive.mounted ||
-            ext4_backend_last_mount_status(OPENRFSFS_VOLUME_SYSTEM) !=
-                (ext4_geometry_refusal_test ? OPENRFSFS_STATUS_RANGE : OPENRFSFS_STATUS_CORRUPT) ||
-            !ext4_backend_mount_diagnostic(OPENRFSFS_VOLUME_SYSTEM, &mount_diagnostic) ||
+            ext4_backend_last_mount_status(RSDFS_VOLUME_SYSTEM) !=
+                (ext4_geometry_refusal_test ? RSDFS_STATUS_RANGE : RSDFS_STATUS_CORRUPT) ||
+            !ext4_backend_mount_diagnostic(RSDFS_VOLUME_SYSTEM, &mount_diagnostic) ||
             mount_diagnostic.begin_status !=
-                (ext4_geometry_refusal_test ? OPENRFSFS_STATUS_RANGE : OPENRFSFS_STATUS_OK) ||
+                (ext4_geometry_refusal_test ? RSDFS_STATUS_RANGE : RSDFS_STATUS_OK) ||
             mount_diagnostic.rust_status !=
-                (ext4_geometry_refusal_test ? OPENRFS_EXT4_STATUS_COUNT : OPENRFS_EXT4_STATUS_INVALID) ||
-            (ext4_admission_refusal_test && mount_diagnostic.close_status != OPENRFSFS_STATUS_OK))
+                (ext4_geometry_refusal_test ? RSD_EXT4_STATUS_COUNT : RSD_EXT4_STATUS_INVALID) ||
+            (ext4_admission_refusal_test && mount_diagnostic.close_status != RSDFS_STATUS_OK))
             kernel_test_fail("ext4 refusal occurred at an unexpected admission phase");
         handle = UINT64_MAX;
-        if (openrfsfs_open(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT", OPENRFSFS_ACCESS_READ, &handle) !=
-                OPENRFSFS_STATUS_NOT_MOUNTED || handle != 0U ||
-            openrfsfs_create(OPENRFSFS_VOLUME_SYSTEM, "data/user/refused-sector") != OPENRFSFS_STATUS_NOT_MOUNTED ||
-            !openrfsfs_resources_released() || !ext4_backend_resources_released() ||
+        if (rsdfs_open(RSDFS_VOLUME_SYSTEM, "system/README.TXT", RSDFS_ACCESS_READ, &handle) !=
+                RSDFS_STATUS_NOT_MOUNTED || handle != 0U ||
+            rsdfs_create(RSDFS_VOLUME_SYSTEM, "data/user/refused-sector") != RSDFS_STATUS_NOT_MOUNTED ||
+            !rsdfs_resources_released() || !ext4_backend_resources_released() ||
             !nvme_filesystem_session_resources_released() || heap_verify() != HEAP_STATUS_OK ||
             paging_verify() != PAGING_STATUS_OK)
             kernel_test_fail("ext4 sector refusal admitted a VFS view or retained resources");
@@ -6537,13 +6537,13 @@ _Noreturn void kernel_test_complete_ext4_recovery(void)
         kernel_test_pass();
     }
     if (!drive.present || !drive.mounted || drive.read_only || !drive.healthy) {
-        if (!ext4_backend_mount_diagnostic(OPENRFSFS_VOLUME_SYSTEM,
+        if (!ext4_backend_mount_diagnostic(RSDFS_VOLUME_SYSTEM,
                 &mount_diagnostic)) {
             kernel_test_fail("ext4 mount diagnostic is unavailable");
         }
         console_write("ST EXT4 RECOVERY mount status ");
         console_write_u64((uint64_t)ext4_backend_last_mount_status(
-            OPENRFSFS_VOLUME_SYSTEM));
+            RSDFS_VOLUME_SYSTEM));
         console_write(" begin ");
         console_write_u64((uint64_t)mount_diagnostic.begin_status);
         console_write(" rust ");
@@ -6565,53 +6565,53 @@ _Noreturn void kernel_test_complete_ext4_recovery(void)
     if (drive.free_bytes == 0U || drive.free_bytes >= drive.total_bytes) {
         kernel_test_fail("ext4 allocator capacity was not exported");
     }
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/WRAP.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/WRAP.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_journal_wrap();
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/DENSE.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/DENSE.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_dense_file();
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/CUTUNLINK.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/CUTUNLINK.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_held_unlink_powercut();
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/CUTREPLACE.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/CUTREPLACE.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_replace_powercut();
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/CUTRENAME.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/CUTRENAME.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_rename_powercut(false, false);
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/CUTRENCROSS.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/CUTRENCROSS.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_rename_powercut(true, false);
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/CUTRENWRAP.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/CUTRENWRAP.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_rename_powercut(false, true);
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/CUTTRUNC.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/CUTTRUNC.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_truncate_powercut(false);
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/CUTGROW.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/CUTGROW.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_truncate_powercut(true);
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/CUTRMDIR.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/CUTRMDIR.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_rmdir_powercut();
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/CUTXATTR.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/CUTXATTR.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_xattr_powercut(false);
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/CUTLINK.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/CUTLINK.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_link_powercut();
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/CUTAPPEND.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/CUTAPPEND.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_append_powercut();
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/CUTOVER.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/CUTOVER.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_overwrite_powercut();
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/CUTMODE.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/CUTMODE.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_metadata_powercut(false);
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/CUTTIMES.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/CUTTIMES.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_metadata_powercut(true);
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/CUTSYM.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/CUTSYM.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_symlink_powercut(false);
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/CUTSYMLONG.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/CUTSYMLONG.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_symlink_powercut(true);
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/CUTXREM.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/CUTXREM.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_xattr_powercut(true);
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/CUTCREATE.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/CUTCREATE.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_create_powercut();
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/CUTMKDIR.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/CUTMKDIR.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_mkdir_powercut();
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/LOWSPACE.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/LOWSPACE.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_low_space();
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/INOFULL.TST", &stat) == OPENRFSFS_STATUS_OK)
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/INOFULL.TST", &stat) == RSDFS_STATUS_OK)
         ext4_vfs_inode_exhaustion();
-    if (!ext4_backend_recovery_report(OPENRFSFS_VOLUME_SYSTEM, &recovery)) {
+    if (!ext4_backend_recovery_report(RSDFS_VOLUME_SYSTEM, &recovery)) {
         kernel_test_fail("ext4 recovery report is unavailable");
     }
     if (recovery.performed) {
@@ -6628,13 +6628,13 @@ _Noreturn void kernel_test_complete_ext4_recovery(void)
         recovery.consumed_slots != 0U) {
         kernel_test_fail("clean ext4 mount reported journal recovery");
     }
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
-            OPENRFSFS_STATUS_OK || stat.directory || stat.read_only ||
+    if (rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
+            RSDFS_STATUS_OK || stat.directory || stat.read_only ||
         (stat.size != sizeof(expected) - 1U && stat.size != UINT64_C(4097)) ||
-        openrfsfs_open(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT",
-            OPENRFSFS_ACCESS_READ, &handle) != OPENRFSFS_STATUS_OK ||
-        openrfsfs_pread(handle, bytes, sizeof(expected) - 1U, 0U, &read_bytes) !=
-            OPENRFSFS_STATUS_OK || read_bytes != sizeof(expected) - 1U) {
+        rsdfs_open(RSDFS_VOLUME_SYSTEM, "system/README.TXT",
+            RSDFS_ACCESS_READ, &handle) != RSDFS_STATUS_OK ||
+        rsdfs_pread(handle, bytes, sizeof(expected) - 1U, 0U, &read_bytes) !=
+            RSDFS_STATUS_OK || read_bytes != sizeof(expected) - 1U) {
         kernel_test_fail("ext4 recovered namespace could not be read");
     }
     transaction_already_visible = stat.size == UINT64_C(4097);
@@ -6645,186 +6645,186 @@ _Noreturn void kernel_test_complete_ext4_recovery(void)
     }
     if (!contents_match ||
         (transaction_already_visible &&
-            (openrfsfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
-                &read_bytes) != OPENRFSFS_STATUS_OK || read_bytes != 1U ||
+            (rsdfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
+                &read_bytes) != RSDFS_STATUS_OK || read_bytes != 1U ||
              appended != transaction_byte)) ||
-        openrfsfs_close(handle) != OPENRFSFS_STATUS_OK ||
-        openrfsfs_close(handle) != OPENRFSFS_STATUS_STALE_HANDLE ||
-        openrfsfs_completion_count(OPENRFSFS_VOLUME_SYSTEM) <= before) {
+        rsdfs_close(handle) != RSDFS_STATUS_OK ||
+        rsdfs_close(handle) != RSDFS_STATUS_STALE_HANDLE ||
+        rsdfs_completion_count(RSDFS_VOLUME_SYSTEM) <= before) {
         kernel_test_fail("ext4 recovery read leaked or changed data");
     }
-    if (openrfsfs_open(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT",
-            OPENRFSFS_ACCESS_WRITE, &handle) != OPENRFSFS_STATUS_OK ||
-        openrfsfs_pread(handle, &appended, sizeof(appended), 0U, &read_bytes) !=
-            OPENRFSFS_STATUS_ACCESS ||
-        openrfsfs_close(handle) != OPENRFSFS_STATUS_OK) {
+    if (rsdfs_open(RSDFS_VOLUME_SYSTEM, "system/README.TXT",
+            RSDFS_ACCESS_WRITE, &handle) != RSDFS_STATUS_OK ||
+        rsdfs_pread(handle, &appended, sizeof(appended), 0U, &read_bytes) !=
+            RSDFS_STATUS_ACCESS ||
+        rsdfs_close(handle) != RSDFS_STATUS_OK) {
         kernel_test_fail("ext4 writable handle access enforcement failed");
     }
-    if (openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK) {
+    if (rsdfs_sync(RSDFS_VOLUME_SYSTEM) != RSDFS_STATUS_OK) {
         kernel_test_fail("clean ext4 sync failed");
     }
     if (!power_cut && !transaction_already_visible) {
         if (!ext4_backend_test_fail_storage_once(3U) ||
-            ext4_backend_transaction_probe(OPENRFSFS_VOLUME_SYSTEM,
+            ext4_backend_transaction_probe(RSDFS_VOLUME_SYSTEM,
                 "system/README.TXT", UINT64_C(4096), &transaction_byte,
-                sizeof(transaction_byte), &written_bytes) != OPENRFSFS_STATUS_IO ||
+                sizeof(transaction_byte), &written_bytes) != RSDFS_STATUS_IO ||
             !ext4_backend_test_storage_failure_observed(
-                OPENRFS_EXT4_TEST_STORAGE_WRITE) ||
+                RSD_EXT4_TEST_STORAGE_WRITE) ||
             !ext4_backend_test_fail_storage_once(3U) ||
-            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_IO ||
+            rsdfs_sync(RSDFS_VOLUME_SYSTEM) != RSDFS_STATUS_IO ||
             !ext4_backend_test_storage_failure_observed(
-                OPENRFS_EXT4_TEST_STORAGE_FLUSH)) {
+                RSD_EXT4_TEST_STORAGE_FLUSH)) {
             kernel_test_fail("ext4 pending allocation failure retry is invalid");
         }
     }
     if (!transaction_already_visible &&
-        (ext4_backend_transaction_probe(OPENRFSFS_VOLUME_SYSTEM,
+        (ext4_backend_transaction_probe(RSDFS_VOLUME_SYSTEM,
             "system/README.TXT", UINT64_C(4096), &transaction_byte,
-            sizeof(transaction_byte), &written_bytes) != OPENRFSFS_STATUS_OK ||
+            sizeof(transaction_byte), &written_bytes) != RSDFS_STATUS_OK ||
          written_bytes != sizeof(transaction_byte))) {
         kernel_test_fail("ext4 private journal transaction probe failed");
     }
     if (!power_cut && !transaction_already_visible) {
         if (!ext4_backend_test_fail_storage_once(1U) ||
-            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_IO ||
+            rsdfs_sync(RSDFS_VOLUME_SYSTEM) != RSDFS_STATUS_IO ||
             !ext4_backend_test_storage_failure_observed(
-                OPENRFS_EXT4_TEST_STORAGE_WRITE) ||
+                RSD_EXT4_TEST_STORAGE_WRITE) ||
             !ext4_backend_test_fail_storage_once(2U) ||
-            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_IO ||
+            rsdfs_sync(RSDFS_VOLUME_SYSTEM) != RSDFS_STATUS_IO ||
             !ext4_backend_test_storage_failure_observed(
-                OPENRFS_EXT4_TEST_STORAGE_FLUSH)) {
+                RSD_EXT4_TEST_STORAGE_FLUSH)) {
             kernel_test_fail("ext4 sync retry is invalid");
         }
     }
-    if (openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
-        openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
-            OPENRFSFS_STATUS_OK || stat.size != UINT64_C(4097) ||
-        openrfsfs_open(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT",
-            OPENRFSFS_ACCESS_READ, &handle) != OPENRFSFS_STATUS_OK ||
-        openrfsfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
-            &read_bytes) != OPENRFSFS_STATUS_OK || read_bytes != 1U ||
+    if (rsdfs_sync(RSDFS_VOLUME_SYSTEM) != RSDFS_STATUS_OK ||
+        rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
+            RSDFS_STATUS_OK || stat.size != UINT64_C(4097) ||
+        rsdfs_open(RSDFS_VOLUME_SYSTEM, "system/README.TXT",
+            RSDFS_ACCESS_READ, &handle) != RSDFS_STATUS_OK ||
+        rsdfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
+            &read_bytes) != RSDFS_STATUS_OK || read_bytes != 1U ||
         appended != transaction_byte ||
-        openrfsfs_close(handle) != OPENRFSFS_STATUS_OK) {
+        rsdfs_close(handle) != RSDFS_STATUS_OK) {
         kernel_test_fail("ext4 private journal transaction probe failed");
     }
     if (!power_cut && !transaction_already_visible) {
-        if (openrfsfs_truncate(OPENRFSFS_VOLUME_SYSTEM,
+        if (rsdfs_truncate(RSDFS_VOLUME_SYSTEM,
                 "system/README.TXT", sizeof(expected) - 1U) !=
-                OPENRFSFS_STATUS_OK ||
-            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
-            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
-                OPENRFSFS_STATUS_OK || stat.size != sizeof(expected) - 1U ||
-            openrfsfs_open(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT",
-                OPENRFSFS_ACCESS_READ, &handle) != OPENRFSFS_STATUS_OK ||
-            openrfsfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
-                &read_bytes) != OPENRFSFS_STATUS_OK || read_bytes != 0U ||
-            openrfsfs_close(handle) != OPENRFSFS_STATUS_OK) {
+                RSDFS_STATUS_OK ||
+            rsdfs_sync(RSDFS_VOLUME_SYSTEM) != RSDFS_STATUS_OK ||
+            rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
+                RSDFS_STATUS_OK || stat.size != sizeof(expected) - 1U ||
+            rsdfs_open(RSDFS_VOLUME_SYSTEM, "system/README.TXT",
+                RSDFS_ACCESS_READ, &handle) != RSDFS_STATUS_OK ||
+            rsdfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
+                &read_bytes) != RSDFS_STATUS_OK || read_bytes != 0U ||
+            rsdfs_close(handle) != RSDFS_STATUS_OK) {
             kernel_test_fail("ext4 private truncate revocation probe failed");
         }
         written_bytes = 0U;
-        if (openrfsfs_open(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT",
-                OPENRFSFS_ACCESS_WRITE, &handle) != OPENRFSFS_STATUS_OK ||
-            openrfsfs_seek(handle, INT64_C(4096), OPENRFSFS_SEEK_START, NULL) !=
-                OPENRFSFS_STATUS_INVALID_ARGUMENT ||
-            openrfsfs_seek(handle, INT64_C(4096), OPENRFSFS_SEEK_START,
-                &stat.size) != OPENRFSFS_STATUS_OK || stat.size != UINT64_C(4096) ||
-            openrfsfs_write(handle, &transaction_byte, sizeof(transaction_byte),
-                &written_bytes) != OPENRFSFS_STATUS_OK ||
+        if (rsdfs_open(RSDFS_VOLUME_SYSTEM, "system/README.TXT",
+                RSDFS_ACCESS_WRITE, &handle) != RSDFS_STATUS_OK ||
+            rsdfs_seek(handle, INT64_C(4096), RSDFS_SEEK_START, NULL) !=
+                RSDFS_STATUS_INVALID_ARGUMENT ||
+            rsdfs_seek(handle, INT64_C(4096), RSDFS_SEEK_START,
+                &stat.size) != RSDFS_STATUS_OK || stat.size != UINT64_C(4096) ||
+            rsdfs_write(handle, &transaction_byte, sizeof(transaction_byte),
+                &written_bytes) != RSDFS_STATUS_OK ||
             written_bytes != sizeof(transaction_byte) ||
-            openrfsfs_close(handle) != OPENRFSFS_STATUS_OK ||
-            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
-            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
-                OPENRFSFS_STATUS_OK || stat.size != UINT64_C(4097)) {
+            rsdfs_close(handle) != RSDFS_STATUS_OK ||
+            rsdfs_sync(RSDFS_VOLUME_SYSTEM) != RSDFS_STATUS_OK ||
+            rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
+                RSDFS_STATUS_OK || stat.size != UINT64_C(4097)) {
             kernel_test_fail("ext4 post-truncate marker re-arm failed");
         }
-        if (openrfsfs_create_mode(OPENRFSFS_VOLUME_SYSTEM,
+        if (rsdfs_create_mode(RSDFS_VOLUME_SYSTEM,
                 "data/user/JRNLPROBE.TMP", UINT16_C(0555)) !=
-                OPENRFSFS_STATUS_OK ||
-            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.TMP",
-                &stat) != OPENRFSFS_STATUS_OK || stat.directory || stat.size != 0U ||
+                RSDFS_STATUS_OK ||
+            rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.TMP",
+                &stat) != RSDFS_STATUS_OK || stat.directory || stat.size != 0U ||
             stat.read_only || (stat.mode & UINT16_C(0777)) != UINT16_C(0555) ||
-            openrfsfs_open(OPENRFSFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.TMP",
-                OPENRFSFS_ACCESS_READ_WRITE, &handle) != OPENRFSFS_STATUS_OK ||
-            openrfsfs_write(handle, &transaction_byte, sizeof(transaction_byte),
-                &written_bytes) != OPENRFSFS_STATUS_OK || written_bytes != 1U ||
-            openrfsfs_seek(handle, 0, OPENRFSFS_SEEK_START, &stat.size) !=
-                OPENRFSFS_STATUS_OK || stat.size != 0U ||
-            openrfsfs_read(handle, &appended, sizeof(appended), &read_bytes) !=
-                OPENRFSFS_STATUS_OK || read_bytes != 1U ||
+            rsdfs_open(RSDFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.TMP",
+                RSDFS_ACCESS_READ_WRITE, &handle) != RSDFS_STATUS_OK ||
+            rsdfs_write(handle, &transaction_byte, sizeof(transaction_byte),
+                &written_bytes) != RSDFS_STATUS_OK || written_bytes != 1U ||
+            rsdfs_seek(handle, 0, RSDFS_SEEK_START, &stat.size) !=
+                RSDFS_STATUS_OK || stat.size != 0U ||
+            rsdfs_read(handle, &appended, sizeof(appended), &read_bytes) !=
+                RSDFS_STATUS_OK || read_bytes != 1U ||
             appended != transaction_byte ||
-            openrfsfs_rename(OPENRFSFS_VOLUME_SYSTEM,
+            rsdfs_rename(RSDFS_VOLUME_SYSTEM,
                 "data/user/JRNLPROBE.TMP", "data/user/JRNLPROBE.BUSY") !=
-                    OPENRFSFS_STATUS_OK ||
-            openrfsfs_fstat(handle, &stat) != OPENRFSFS_STATUS_OK || stat.size != 1U ||
-            openrfsfs_pread(handle, &appended, sizeof(appended), 0U, &read_bytes) !=
-                OPENRFSFS_STATUS_OK || read_bytes != 1U || appended != transaction_byte ||
-            openrfsfs_rename(OPENRFSFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.BUSY", "data/user/JRNLPROBE.TMP") != OPENRFSFS_STATUS_OK ||
-            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
-            openrfsfs_link(OPENRFSFS_VOLUME_SYSTEM,
+                    RSDFS_STATUS_OK ||
+            rsdfs_fstat(handle, &stat) != RSDFS_STATUS_OK || stat.size != 1U ||
+            rsdfs_pread(handle, &appended, sizeof(appended), 0U, &read_bytes) !=
+                RSDFS_STATUS_OK || read_bytes != 1U || appended != transaction_byte ||
+            rsdfs_rename(RSDFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.BUSY", "data/user/JRNLPROBE.TMP") != RSDFS_STATUS_OK ||
+            rsdfs_sync(RSDFS_VOLUME_SYSTEM) != RSDFS_STATUS_OK ||
+            rsdfs_link(RSDFS_VOLUME_SYSTEM,
                 "data/user/JRNLPROBE.TMP", "data/user/JRNLPROBE.LNK") !=
-                    OPENRFSFS_STATUS_OK ||
-            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
-            openrfsfs_unlink(OPENRFSFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.TMP") != OPENRFSFS_STATUS_OK ||
-            openrfsfs_fstat(handle, &stat) != OPENRFSFS_STATUS_OK || stat.links != 1U ||
-            openrfsfs_pread(handle, &appended, sizeof(appended), 0U, &read_bytes) !=
-                OPENRFSFS_STATUS_OK || read_bytes != 1U || appended != transaction_byte ||
-            openrfsfs_close(handle) != OPENRFSFS_STATUS_OK ||
-            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
-            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.TMP",
-                &stat) != OPENRFSFS_STATUS_NOT_FOUND ||
-            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.LNK",
-                &stat) != OPENRFSFS_STATUS_OK || stat.directory || stat.size != 1U ||
-            openrfsfs_rename(OPENRFSFS_VOLUME_SYSTEM,
+                    RSDFS_STATUS_OK ||
+            rsdfs_sync(RSDFS_VOLUME_SYSTEM) != RSDFS_STATUS_OK ||
+            rsdfs_unlink(RSDFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.TMP") != RSDFS_STATUS_OK ||
+            rsdfs_fstat(handle, &stat) != RSDFS_STATUS_OK || stat.links != 1U ||
+            rsdfs_pread(handle, &appended, sizeof(appended), 0U, &read_bytes) !=
+                RSDFS_STATUS_OK || read_bytes != 1U || appended != transaction_byte ||
+            rsdfs_close(handle) != RSDFS_STATUS_OK ||
+            rsdfs_sync(RSDFS_VOLUME_SYSTEM) != RSDFS_STATUS_OK ||
+            rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.TMP",
+                &stat) != RSDFS_STATUS_NOT_FOUND ||
+            rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.LNK",
+                &stat) != RSDFS_STATUS_OK || stat.directory || stat.size != 1U ||
+            rsdfs_rename(RSDFS_VOLUME_SYSTEM,
                 "data/user/JRNLPROBE.LNK", "data/user/JRNLPROBE.REN") !=
-                    OPENRFSFS_STATUS_OK ||
-            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
-            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.LNK",
-                &stat) != OPENRFSFS_STATUS_NOT_FOUND ||
-            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.REN",
-                &stat) != OPENRFSFS_STATUS_OK || stat.directory || stat.size != 1U ||
-            openrfsfs_unlink(OPENRFSFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.REN") != OPENRFSFS_STATUS_OK ||
-            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
-            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.REN",
-                &stat) != OPENRFSFS_STATUS_NOT_FOUND ||
-            openrfsfs_mkdir(OPENRFSFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.DIR") != OPENRFSFS_STATUS_OK ||
-            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
-            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.DIR",
-                &stat) != OPENRFSFS_STATUS_OK || !stat.directory ||
-            openrfsfs_rename(OPENRFSFS_VOLUME_SYSTEM,
+                    RSDFS_STATUS_OK ||
+            rsdfs_sync(RSDFS_VOLUME_SYSTEM) != RSDFS_STATUS_OK ||
+            rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.LNK",
+                &stat) != RSDFS_STATUS_NOT_FOUND ||
+            rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.REN",
+                &stat) != RSDFS_STATUS_OK || stat.directory || stat.size != 1U ||
+            rsdfs_unlink(RSDFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.REN") != RSDFS_STATUS_OK ||
+            rsdfs_sync(RSDFS_VOLUME_SYSTEM) != RSDFS_STATUS_OK ||
+            rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.REN",
+                &stat) != RSDFS_STATUS_NOT_FOUND ||
+            rsdfs_mkdir(RSDFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.DIR") != RSDFS_STATUS_OK ||
+            rsdfs_sync(RSDFS_VOLUME_SYSTEM) != RSDFS_STATUS_OK ||
+            rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.DIR",
+                &stat) != RSDFS_STATUS_OK || !stat.directory ||
+            rsdfs_rename(RSDFS_VOLUME_SYSTEM,
                 "data/user/JRNLPROBE.DIR", "data/user/JRNLPROBE.RDR") !=
-                    OPENRFSFS_STATUS_OK ||
-            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
-            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.DIR",
-                &stat) != OPENRFSFS_STATUS_NOT_FOUND ||
-            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.RDR",
-                &stat) != OPENRFSFS_STATUS_OK || !stat.directory ||
-            openrfsfs_create(OPENRFSFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.RDR/CHILD.TMP") != OPENRFSFS_STATUS_OK ||
-            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
-            openrfsfs_rmdir(OPENRFSFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.RDR") != OPENRFSFS_STATUS_NOT_EMPTY ||
-            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM,
+                    RSDFS_STATUS_OK ||
+            rsdfs_sync(RSDFS_VOLUME_SYSTEM) != RSDFS_STATUS_OK ||
+            rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.DIR",
+                &stat) != RSDFS_STATUS_NOT_FOUND ||
+            rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.RDR",
+                &stat) != RSDFS_STATUS_OK || !stat.directory ||
+            rsdfs_create(RSDFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.RDR/CHILD.TMP") != RSDFS_STATUS_OK ||
+            rsdfs_sync(RSDFS_VOLUME_SYSTEM) != RSDFS_STATUS_OK ||
+            rsdfs_rmdir(RSDFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.RDR") != RSDFS_STATUS_NOT_EMPTY ||
+            rsdfs_stat_path(RSDFS_VOLUME_SYSTEM,
                 "data/user/JRNLPROBE.RDR/CHILD.TMP", &stat) !=
-                    OPENRFSFS_STATUS_OK || stat.directory ||
-            openrfsfs_unlink(OPENRFSFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.RDR/CHILD.TMP") != OPENRFSFS_STATUS_OK ||
-            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
-            openrfsfs_rmdir(OPENRFSFS_VOLUME_SYSTEM,
-                "data/user/JRNLPROBE.RDR") != OPENRFSFS_STATUS_OK ||
-            openrfsfs_sync(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
-            openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.RDR",
-                &stat) != OPENRFSFS_STATUS_NOT_FOUND) {
+                    RSDFS_STATUS_OK || stat.directory ||
+            rsdfs_unlink(RSDFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.RDR/CHILD.TMP") != RSDFS_STATUS_OK ||
+            rsdfs_sync(RSDFS_VOLUME_SYSTEM) != RSDFS_STATUS_OK ||
+            rsdfs_rmdir(RSDFS_VOLUME_SYSTEM,
+                "data/user/JRNLPROBE.RDR") != RSDFS_STATUS_OK ||
+            rsdfs_sync(RSDFS_VOLUME_SYSTEM) != RSDFS_STATUS_OK ||
+            rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "data/user/JRNLPROBE.RDR",
+                &stat) != RSDFS_STATUS_NOT_FOUND) {
             kernel_test_fail("ext4 VFS namespace journal proof failed");
         }
     }
     if (!power_cut && !transaction_already_visible) ext4_vfs_semantics();
-    if (openrfsfs_unmount(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
-        openrfsfs_drive(OPENRFSFS_VOLUME_SYSTEM).mounted ||
-        !openrfsfs_resources_released() || !ext4_backend_resources_released() ||
+    if (rsdfs_unmount(RSDFS_VOLUME_SYSTEM) != RSDFS_STATUS_OK ||
+        rsdfs_drive(RSDFS_VOLUME_SYSTEM).mounted ||
+        !rsdfs_resources_released() || !ext4_backend_resources_released() ||
         !nvme_filesystem_session_resources_released() ||
         heap_verify() != HEAP_STATUS_OK) {
         kernel_test_fail("ext4 recovered mount did not release cleanly");
@@ -6832,22 +6832,22 @@ _Noreturn void kernel_test_complete_ext4_recovery(void)
     const struct heap_state heap_before_remount = heap_get_state();
     const struct frame_allocator_stats frames_before_remount =
         frame_allocator_get_stats();
-    if (openrfsfs_mount(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
-        !ext4_backend_recovery_report(OPENRFSFS_VOLUME_SYSTEM, &clean_remount) ||
+    if (rsdfs_mount(RSDFS_VOLUME_SYSTEM) != RSDFS_STATUS_OK ||
+        !ext4_backend_recovery_report(RSDFS_VOLUME_SYSTEM, &clean_remount) ||
         clean_remount.performed || clean_remount.transactions != 0U ||
         clean_remount.replayed_blocks != 0U ||
         clean_remount.consumed_slots != 0U ||
-        openrfsfs_stat_path(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
-            OPENRFSFS_STATUS_OK || stat.directory ||
+        rsdfs_stat_path(RSDFS_VOLUME_SYSTEM, "system/README.TXT", &stat) !=
+            RSDFS_STATUS_OK || stat.directory ||
         stat.size != UINT64_C(4097) ||
-        openrfsfs_open(OPENRFSFS_VOLUME_SYSTEM, "system/README.TXT",
-            OPENRFSFS_ACCESS_READ, &handle) != OPENRFSFS_STATUS_OK ||
-        openrfsfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
-            &read_bytes) != OPENRFSFS_STATUS_OK || read_bytes != 1U ||
-        appended != transaction_byte || openrfsfs_close(handle) != OPENRFSFS_STATUS_OK ||
-        openrfsfs_unmount(OPENRFSFS_VOLUME_SYSTEM) != OPENRFSFS_STATUS_OK ||
-        openrfsfs_drive(OPENRFSFS_VOLUME_SYSTEM).mounted ||
-        !openrfsfs_resources_released() || !ext4_backend_resources_released() ||
+        rsdfs_open(RSDFS_VOLUME_SYSTEM, "system/README.TXT",
+            RSDFS_ACCESS_READ, &handle) != RSDFS_STATUS_OK ||
+        rsdfs_pread(handle, &appended, sizeof(appended), UINT64_C(4096),
+            &read_bytes) != RSDFS_STATUS_OK || read_bytes != 1U ||
+        appended != transaction_byte || rsdfs_close(handle) != RSDFS_STATUS_OK ||
+        rsdfs_unmount(RSDFS_VOLUME_SYSTEM) != RSDFS_STATUS_OK ||
+        rsdfs_drive(RSDFS_VOLUME_SYSTEM).mounted ||
+        !rsdfs_resources_released() || !ext4_backend_resources_released() ||
         !nvme_filesystem_session_resources_released() ||
         heap_verify() != HEAP_STATUS_OK ||
         paging_verify() != PAGING_STATUS_OK) {
@@ -6891,8 +6891,8 @@ _Noreturn void kernel_test_complete_native(void)
 {
     static const uint8_t expected[] = "native ABI v1\n";
     struct native_process_result result = { 0 };
-    struct openrfsfs_stat output;
-    openrfsfs_handle file;
+    struct rsdfs_stat output;
+    rsdfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
     size_t read_bytes = 0U;
     bool content_matches = true;
@@ -6903,7 +6903,7 @@ _Noreturn void kernel_test_complete_native(void)
     }
     launch_status = native_process_launch("NATIVET.MAN", &result);
     if (launch_status != NATIVE_PROCESS_OK) {
-        console_write("OpenRFS: native launch refusal: ");
+        console_write("RSD: native launch refusal: ");
         console_write(native_process_status_string(launch_status));
         console_putc('\n');
         kernel_test_fail("native application admission failed");
@@ -6914,7 +6914,7 @@ _Noreturn void kernel_test_complete_native(void)
         result.context_transition_samples == 0U ||
         result.context_cycles_with_fpu < result.context_cycles_without_fpu ||
         !native_process_resources_released()) {
-        console_write("OpenRFS: native result exit ");
+        console_write("RSD: native result exit ");
         if (result.exit_status < 0) {
             console_putc('-');
             console_write_u64((uint64_t)(-(int64_t)result.exit_status));
@@ -6938,7 +6938,7 @@ _Noreturn void kernel_test_complete_native(void)
         console_putc('\n');
         kernel_test_fail("native application did not exit with a clean census");
     }
-    console_write("OPENRFS PERF context-switch transitions=");
+    console_write("RSD PERF context-switch transitions=");
     console_write_u64(result.context_transition_samples);
     console_write(" without_fpu_cycles=");
     console_write_u64(result.context_cycles_without_fpu /
@@ -6947,31 +6947,31 @@ _Noreturn void kernel_test_complete_native(void)
     console_write_u64(result.context_cycles_with_fpu /
         result.context_transition_samples);
     console_putc('\n');
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "NATIVET/FOUND.TXT", &output) !=
-            OPENRFSFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
-        openrfsfs_open(OPENRFSFS_VOLUME_DATA, "NATIVET/FOUND.TXT", OPENRFSFS_ACCESS_READ,
-            &file) != OPENRFSFS_STATUS_OK ||
-        openrfsfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENRFSFS_STATUS_OK ||
+    if (rsdfs_stat_path(RSDFS_VOLUME_DATA, "NATIVET/FOUND.TXT", &output) !=
+            RSDFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
+        rsdfs_open(RSDFS_VOLUME_DATA, "NATIVET/FOUND.TXT", RSDFS_ACCESS_READ,
+            &file) != RSDFS_STATUS_OK ||
+        rsdfs_read(file, bytes, sizeof(bytes), &read_bytes) != RSDFS_STATUS_OK ||
         read_bytes != sizeof(bytes)) {
         kernel_test_fail("native Ring 3 file result is missing");
     }
     for (size_t index = 0U; index < sizeof(bytes); ++index) {
         content_matches = content_matches && bytes[index] == expected[index];
     }
-    if (openrfsfs_close(file) != OPENRFSFS_STATUS_OK || !content_matches) {
+    if (rsdfs_close(file) != RSDFS_STATUS_OK || !content_matches) {
         kernel_test_fail("native Ring 3 file result is wrong");
     }
-    console_write("OpenRFS: native general loader, SDK, TLS, threads and FPU passed\n");
+    console_write("RSD: native general loader, SDK, TLS, threads and FPU passed\n");
     kernel_test_pass();
 }
 
 _Noreturn void kernel_test_complete_native_lua(void)
 {
     static const uint8_t expected[] =
-        "input=openrfs\nsum=5050\nmath=ok\n";
+        "input=rsd\nsum=5050\nmath=ok\n";
     struct native_process_result result;
-    struct openrfsfs_stat output;
-    openrfsfs_handle file;
+    struct rsdfs_stat output;
+    rsdfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
     size_t read_bytes = 0U;
     bool content_matches = true;
@@ -6985,7 +6985,7 @@ _Noreturn void kernel_test_complete_native_lua(void)
         !result.exited || result.faulted || result.exit_status != 0 ||
         !result.resources_released || result.syscall_count < 10U ||
         !native_process_resources_released()) {
-        console_write("OpenRFS: Lua result launch ");
+        console_write("RSD: Lua result launch ");
         console_write(native_process_status_string(launch_status));
         console_write(" exit ");
         console_write_u64((uint64_t)result.exit_status);
@@ -6996,22 +6996,22 @@ _Noreturn void kernel_test_complete_native_lua(void)
         console_putc('\n');
         kernel_test_fail("Lua did not exit with a clean resource census");
     }
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "LUA/RESULT.TXT", &output) !=
-            OPENRFSFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
-        openrfsfs_open(OPENRFSFS_VOLUME_DATA, "LUA/RESULT.TXT", OPENRFSFS_ACCESS_READ,
-            &file) != OPENRFSFS_STATUS_OK ||
-        openrfsfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENRFSFS_STATUS_OK ||
+    if (rsdfs_stat_path(RSDFS_VOLUME_DATA, "LUA/RESULT.TXT", &output) !=
+            RSDFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
+        rsdfs_open(RSDFS_VOLUME_DATA, "LUA/RESULT.TXT", RSDFS_ACCESS_READ,
+            &file) != RSDFS_STATUS_OK ||
+        rsdfs_read(file, bytes, sizeof(bytes), &read_bytes) != RSDFS_STATUS_OK ||
         read_bytes != sizeof(bytes)) {
         kernel_test_fail("Lua result file is missing");
     }
     for (size_t index = 0U; index < sizeof(bytes); ++index) {
         content_matches = content_matches && bytes[index] == expected[index];
     }
-    if (openrfsfs_close(file) != OPENRFSFS_STATUS_OK || !content_matches ||
-        openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK) {
+    if (rsdfs_close(file) != RSDFS_STATUS_OK || !content_matches ||
+        rsdfs_sync(RSDFS_VOLUME_DATA) != RSDFS_STATUS_OK) {
         kernel_test_fail("Lua result file is wrong or could not be synchronized");
     }
-    console_write("OpenRFS: upstream Lua used stdin, Data, math and stdout\n");
+    console_write("RSD: upstream Lua used stdin, Data, math and stdout\n");
     kernel_test_pass();
 }
 
@@ -7020,20 +7020,20 @@ _Noreturn void kernel_test_complete_native_sqlite(void)
     static const uint8_t expected[] =
         "rows=3\nsum=66\nintegrity=ok\n";
     struct native_process_result result;
-    struct openrfsfs_stat database;
-    struct openrfsfs_stat journal;
-    struct openrfsfs_stat output;
-    openrfsfs_handle file;
+    struct rsdfs_stat database;
+    struct rsdfs_stat journal;
+    struct rsdfs_stat output;
+    rsdfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
     size_t read_bytes = 0U;
     bool content_matches = true;
-    const enum openrfsfs_status before = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA,
+    const enum rsdfs_status before = rsdfs_stat_path(RSDFS_VOLUME_DATA,
         "SQLITE/PORT.DB", &database);
 
     if (active_scenario != KERNEL_TEST_NATIVE_SQLITE) {
         kernel_test_fail("SQLite completion used outside its scenario");
     }
-    if (before != OPENRFSFS_STATUS_OK && before != OPENRFSFS_STATUS_NOT_FOUND) {
+    if (before != RSDFS_STATUS_OK && before != RSDFS_STATUS_NOT_FOUND) {
         kernel_test_fail("SQLite database census failed before launch");
     }
     if (native_process_launch("SQLITE.MAN", &result) != NATIVE_PROCESS_OK ||
@@ -7042,36 +7042,36 @@ _Noreturn void kernel_test_complete_native_sqlite(void)
         !native_process_resources_released()) {
         kernel_test_fail("SQLite did not exit with a clean resource census");
     }
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "SQLITE/PORT.JRN", &journal) !=
-            OPENRFSFS_STATUS_NOT_FOUND) {
+    if (rsdfs_stat_path(RSDFS_VOLUME_DATA, "SQLITE/PORT.JRN", &journal) !=
+            RSDFS_STATUS_NOT_FOUND) {
         kernel_test_fail("SQLite left a rollback journal after clean close");
     }
-    if (before == OPENRFSFS_STATUS_NOT_FOUND) {
-        if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "SQLITE/PORT.DB", &database) !=
-                OPENRFSFS_STATUS_OK || database.directory || database.size == 0U ||
-            openrfsfs_unmount(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK) {
+    if (before == RSDFS_STATUS_NOT_FOUND) {
+        if (rsdfs_stat_path(RSDFS_VOLUME_DATA, "SQLITE/PORT.DB", &database) !=
+                RSDFS_STATUS_OK || database.directory || database.size == 0U ||
+            rsdfs_unmount(RSDFS_VOLUME_DATA) != RSDFS_STATUS_OK) {
             kernel_test_fail("SQLite first phase did not synchronize its database");
         }
-        console_write("OpenRFS: upstream SQLite synchronized reboot phase\n");
+        console_write("RSD: upstream SQLite synchronized reboot phase\n");
         cpu_out8(UINT16_C(0x0064), UINT8_C(0xFE));
         kernel_test_fail("platform reset did not restart SQLite scenario");
     }
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "SQLITE/RESULT.TXT", &output) !=
-            OPENRFSFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
-        openrfsfs_open(OPENRFSFS_VOLUME_DATA, "SQLITE/RESULT.TXT", OPENRFSFS_ACCESS_READ,
-            &file) != OPENRFSFS_STATUS_OK ||
-        openrfsfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENRFSFS_STATUS_OK ||
+    if (rsdfs_stat_path(RSDFS_VOLUME_DATA, "SQLITE/RESULT.TXT", &output) !=
+            RSDFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
+        rsdfs_open(RSDFS_VOLUME_DATA, "SQLITE/RESULT.TXT", RSDFS_ACCESS_READ,
+            &file) != RSDFS_STATUS_OK ||
+        rsdfs_read(file, bytes, sizeof(bytes), &read_bytes) != RSDFS_STATUS_OK ||
         read_bytes != sizeof(bytes)) {
         kernel_test_fail("SQLite reboot result is missing");
     }
     for (size_t index = 0U; index < sizeof(bytes); ++index) {
         content_matches = content_matches && bytes[index] == expected[index];
     }
-    if (openrfsfs_close(file) != OPENRFSFS_STATUS_OK || !content_matches ||
-        openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK) {
+    if (rsdfs_close(file) != RSDFS_STATUS_OK || !content_matches ||
+        rsdfs_sync(RSDFS_VOLUME_DATA) != RSDFS_STATUS_OK) {
         kernel_test_fail("SQLite reboot result is wrong or could not be synchronized");
     }
-    console_write("OpenRFS: upstream SQLite retained and verified three rows after reboot\n");
+    console_write("RSD: upstream SQLite retained and verified three rows after reboot\n");
     kernel_test_pass();
 }
 
@@ -7102,11 +7102,11 @@ static void network_native_teardown_census(void)
 
 _Noreturn void kernel_test_complete_native_network(void)
 {
-    static const uint8_t expected[] = "hello from the OpenRFS network\n";
+    static const uint8_t expected[] = "hello from the RSD network\n";
     struct native_process_result result = { 0 };
-    struct openrfsfs_stat output;
+    struct rsdfs_stat output;
     struct network_state network;
-    openrfsfs_handle file;
+    rsdfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
     size_t read_bytes = 0U;
     bool matches = true;
@@ -7120,7 +7120,7 @@ _Noreturn void kernel_test_complete_native_network(void)
         !result.exited || result.faulted || result.exit_status != 0 ||
         !result.resources_released || result.syscall_count < 25U ||
         !native_process_resources_released()) {
-        console_write("OpenRFS: native network launch ");
+        console_write("RSD: native network launch ");
         console_write(native_process_status_string(launch_status));
         console_write(" result exit ");
         if (result.exit_status < 0) {
@@ -7146,22 +7146,22 @@ _Noreturn void kernel_test_complete_native_network(void)
         network.timers != 0U) {
         kernel_test_fail("native network handles survived process teardown");
     }
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "NETAPP/HTTP.TXT", &output) !=
-            OPENRFSFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
-        openrfsfs_open(OPENRFSFS_VOLUME_DATA, "NETAPP/HTTP.TXT", OPENRFSFS_ACCESS_READ,
-            &file) != OPENRFSFS_STATUS_OK ||
-        openrfsfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENRFSFS_STATUS_OK ||
+    if (rsdfs_stat_path(RSDFS_VOLUME_DATA, "NETAPP/HTTP.TXT", &output) !=
+            RSDFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
+        rsdfs_open(RSDFS_VOLUME_DATA, "NETAPP/HTTP.TXT", RSDFS_ACCESS_READ,
+            &file) != RSDFS_STATUS_OK ||
+        rsdfs_read(file, bytes, sizeof(bytes), &read_bytes) != RSDFS_STATUS_OK ||
         read_bytes != sizeof(bytes)) {
         kernel_test_fail("native HTTP body is missing from Data");
     }
     for (size_t index = 0U; index < sizeof(bytes); ++index) {
         matches = matches && bytes[index] == expected[index];
     }
-    if (openrfsfs_close(file) != OPENRFSFS_STATUS_OK || !matches) {
+    if (rsdfs_close(file) != RSDFS_STATUS_OK || !matches) {
         kernel_test_fail("native HTTP body framing or contents are wrong");
     }
     network_native_teardown_census();
-    console_write("OpenRFS: native DNS, TCP, UDP, timeout, reset and cancellation passed\n");
+    console_write("RSD: native DNS, TCP, UDP, timeout, reset and cancellation passed\n");
     console_write("ST NETWORK production path bounded and recoverable\n");
     kernel_test_pass();
 }
@@ -7170,8 +7170,8 @@ _Noreturn void kernel_test_complete_native_rust(void)
 {
     static const uint8_t expected[] = "native Rust no_std ABI v1\n";
     struct native_process_result result;
-    struct openrfsfs_stat output;
-    openrfsfs_handle file;
+    struct rsdfs_stat output;
+    rsdfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
     size_t read_bytes = 0U;
     bool matches = true;
@@ -7185,21 +7185,21 @@ _Noreturn void kernel_test_complete_native_rust(void)
         result.thread_switches == 0U || !native_process_resources_released()) {
         kernel_test_fail("Rust application did not exit with a clean census");
     }
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "RUSTAPP/RUST.TXT", &output) !=
-            OPENRFSFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
-        openrfsfs_open(OPENRFSFS_VOLUME_DATA, "RUSTAPP/RUST.TXT", OPENRFSFS_ACCESS_READ,
-            &file) != OPENRFSFS_STATUS_OK ||
-        openrfsfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENRFSFS_STATUS_OK ||
+    if (rsdfs_stat_path(RSDFS_VOLUME_DATA, "RUSTAPP/RUST.TXT", &output) !=
+            RSDFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
+        rsdfs_open(RSDFS_VOLUME_DATA, "RUSTAPP/RUST.TXT", RSDFS_ACCESS_READ,
+            &file) != RSDFS_STATUS_OK ||
+        rsdfs_read(file, bytes, sizeof(bytes), &read_bytes) != RSDFS_STATUS_OK ||
         read_bytes != sizeof(bytes)) {
         kernel_test_fail("Rust application output is missing");
     }
     for (size_t index = 0U; index < sizeof(bytes); ++index) {
         matches = matches && bytes[index] == expected[index];
     }
-    if (openrfsfs_close(file) != OPENRFSFS_STATUS_OK || !matches) {
+    if (rsdfs_close(file) != RSDFS_STATUS_OK || !matches) {
         kernel_test_fail("Rust application output is wrong");
     }
-    console_write("OpenRFS: no_std Rust application used native ABI v1 services\n");
+    console_write("RSD: no_std Rust application used native ABI v1 services\n");
     kernel_test_pass();
 }
 
@@ -7212,7 +7212,7 @@ _Noreturn void kernel_test_complete_native_crash(void)
         kernel_test_fail("native crash completion used outside its scenario");
     }
     if (native_process_launch("CRASH.MAN", &crash) != NATIVE_PROCESS_OK ||
-        !crash.exited || !crash.faulted || crash.exit_status != -OPENRFS_EFAULT ||
+        !crash.exited || !crash.faulted || crash.exit_status != -RSD_EFAULT ||
         !crash.resources_released || crash.peak_handles < 6U ||
         crash.peak_pages < 20U || !native_process_resources_released()) {
         kernel_test_fail("faulted process did not release its live resources");
@@ -7222,7 +7222,7 @@ _Noreturn void kernel_test_complete_native_crash(void)
         !survivor.resources_released || !native_process_resources_released()) {
         kernel_test_fail("process after fault observed damaged or leaked state");
     }
-    console_write("OpenRFS: native crash contained; mappings handles threads windows FS x87 SSE reclaimed\n");
+    console_write("RSD: native crash contained; mappings handles threads windows FS x87 SSE reclaimed\n");
     kernel_test_pass();
 }
 
@@ -7235,15 +7235,15 @@ _Noreturn void kernel_test_complete_native_admission_refusal(void)
     switch (active_scenario) {
     case KERNEL_TEST_NATIVE_ELF_REFUSAL:
         manifest = "BADELF.MAN";
-        diagnostic = "OpenRFS: native malformed ELF refused; resource census unchanged\n";
+        diagnostic = "RSD: native malformed ELF refused; resource census unchanged\n";
         break;
     case KERNEL_TEST_NATIVE_DIGEST_REFUSAL:
         manifest = "BADDGST.MAN";
-        diagnostic = "OpenRFS: native manifest digest mismatch refused; resource census unchanged\n";
+        diagnostic = "RSD: native manifest digest mismatch refused; resource census unchanged\n";
         break;
     case KERNEL_TEST_NATIVE_ABI_REFUSAL:
         manifest = "BADABI.MAN";
-        diagnostic = "OpenRFS: native unsupported ABI version refused; resource census unchanged\n";
+        diagnostic = "RSD: native unsupported ABI version refused; resource census unchanged\n";
         break;
     default:
         kernel_test_fail("native admission completion used outside its scenario");
@@ -7275,7 +7275,7 @@ _Noreturn void kernel_test_complete_native_relaunch(void)
         !native_process_resources_released()) {
         kernel_test_fail("native relaunch did not reset generations and resources");
     }
-    console_write("OpenRFS: native relaunch advanced generation; both resource censuses clean\n");
+    console_write("RSD: native relaunch advanced generation; both resource censuses clean\n");
     kernel_test_pass();
 }
 
@@ -7332,7 +7332,7 @@ _Noreturn void kernel_test_complete_native_audio(void)
         kernel_test_fail("native audio proof did not leave a clean census");
     }
     console_write(
-        "OpenRFS: native audio ABI capability, mixing, cancellation and teardown passed\n");
+        "RSD: native audio ABI capability, mixing, cancellation and teardown passed\n");
     kernel_test_pass();
 }
 
@@ -7341,8 +7341,8 @@ _Noreturn void kernel_test_complete_native_sdl(void)
     static const char state_path[] = "SDLPROOF/SDL/DCDB3FF2/STATE.BIN";
     struct native_process_result first = { 0 };
     struct native_process_result second = { 0 };
-    struct openrfsfs_stat state;
-    openrfsfs_handle file;
+    struct rsdfs_stat state;
+    rsdfs_handle file;
     uint8_t bytes[4];
     size_t read_bytes = 0U;
 
@@ -7368,17 +7368,17 @@ _Noreturn void kernel_test_complete_native_sdl(void)
         ui_native_window_is_open(0U) || ui_native_window_is_open(1U)) {
         kernel_test_fail("second SDL process did not leave a clean census");
     }
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, state_path, &state) !=
-            OPENRFSFS_STATUS_OK || state.directory || state.size != sizeof(bytes) ||
-        openrfsfs_open(OPENRFSFS_VOLUME_DATA, state_path, OPENRFSFS_ACCESS_READ, &file) !=
-            OPENRFSFS_STATUS_OK ||
-        openrfsfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENRFSFS_STATUS_OK ||
-        read_bytes != sizeof(bytes) || openrfsfs_close(file) != OPENRFSFS_STATUS_OK ||
+    if (rsdfs_stat_path(RSDFS_VOLUME_DATA, state_path, &state) !=
+            RSDFS_STATUS_OK || state.directory || state.size != sizeof(bytes) ||
+        rsdfs_open(RSDFS_VOLUME_DATA, state_path, RSDFS_ACCESS_READ, &file) !=
+            RSDFS_STATUS_OK ||
+        rsdfs_read(file, bytes, sizeof(bytes), &read_bytes) != RSDFS_STATUS_OK ||
+        read_bytes != sizeof(bytes) || rsdfs_close(file) != RSDFS_STATUS_OK ||
         bytes[0] != 2U || bytes[1] != 0U || bytes[2] != 0U || bytes[3] != 0U) {
         kernel_test_fail("SDL preference state did not survive process relaunch");
     }
     console_write(
-        "OpenRFS: SDL 2 window, input, partial damage, PCM and persistence passed\n");
+        "RSD: SDL 2 window, input, partial damage, PCM and persistence passed\n");
     kernel_test_pass();
 }
 
@@ -7406,18 +7406,18 @@ _Noreturn void kernel_test_complete_native_dynamic(void)
             "concurrent dynamic ELF proofs did not leave a clean census");
     }
     console_write(
-        "OpenRFS: dynamic ELF shared RX, private TLS and lifecycle passed\n");
+        "RSD: dynamic ELF shared RX, private TLS and lifecycle passed\n");
     kernel_test_pass();
 }
 
 _Noreturn void kernel_test_complete_native_https(void)
 {
     static const uint8_t expected[] =
-        "hello from the OpenRFS HTTPS peer\n";
+        "hello from the RSD HTTPS peer\n";
     struct native_process_result proof = { 0 };
-    struct openrfsfs_stat output;
+    struct rsdfs_stat output;
     struct network_state network;
-    openrfsfs_handle file;
+    rsdfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
     size_t read_bytes = 0U;
     bool matches = true;
@@ -7440,29 +7440,29 @@ _Noreturn void kernel_test_complete_native_https(void)
         network.timers != 0U) {
         kernel_test_fail("native HTTPS network resources survived teardown");
     }
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "HTTPSAPP/HTTPS.TXT", &output) !=
-            OPENRFSFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
-        openrfsfs_open(OPENRFSFS_VOLUME_DATA, "HTTPSAPP/HTTPS.TXT", OPENRFSFS_ACCESS_READ,
-            &file) != OPENRFSFS_STATUS_OK ||
-        openrfsfs_read(file, bytes, sizeof(bytes), &read_bytes) != OPENRFSFS_STATUS_OK ||
+    if (rsdfs_stat_path(RSDFS_VOLUME_DATA, "HTTPSAPP/HTTPS.TXT", &output) !=
+            RSDFS_STATUS_OK || output.directory || output.size != sizeof(bytes) ||
+        rsdfs_open(RSDFS_VOLUME_DATA, "HTTPSAPP/HTTPS.TXT", RSDFS_ACCESS_READ,
+            &file) != RSDFS_STATUS_OK ||
+        rsdfs_read(file, bytes, sizeof(bytes), &read_bytes) != RSDFS_STATUS_OK ||
         read_bytes != sizeof(bytes)) {
         kernel_test_fail("authenticated HTTPS body is missing from Data");
     }
     for (size_t index = 0U; index < sizeof(bytes); ++index) {
         matches = matches && bytes[index] == expected[index];
     }
-    if (openrfsfs_close(file) != OPENRFSFS_STATUS_OK || !matches) {
+    if (rsdfs_close(file) != RSDFS_STATUS_OK || !matches) {
         kernel_test_fail("authenticated HTTPS body contents are wrong");
     }
     network_native_teardown_census();
-    console_write("OpenRFS: HTTPS strong hardware entropy passed\n");
+    console_write("RSD: HTTPS strong hardware entropy passed\n");
     console_write(
-        "OpenRFS: HTTPS TLS 1.2 hostname time trust framing close and teardown passed\n");
+        "RSD: HTTPS TLS 1.2 hostname time trust framing close and teardown passed\n");
     console_write("ST NETWORK production path bounded and recoverable\n");
     kernel_test_pass();
 }
 
-static bool native_openrfs_authority_is_canonical(
+static bool native_rsd_authority_is_canonical(
     uint8_t *database,
     size_t database_capacity,
     struct package_service_report *service
@@ -7503,7 +7503,7 @@ static bool native_openrfs_authority_is_canonical(
         manifest.owner_index == 0U && manifest.length == UINT64_C(1024);
 }
 
-_Noreturn void kernel_test_complete_native_openrfs(void)
+_Noreturn void kernel_test_complete_native_rsd(void)
 {
     static const uint8_t expected[] = "SDL chess release-2.32.10\n";
     static const char damaged_manifest[] =
@@ -7515,39 +7515,39 @@ _Noreturn void kernel_test_complete_native_openrfs(void)
     static uint8_t database[4096U];
     struct native_process_result proof = { 0 };
     struct package_service_report service;
-    const struct openrfsfs_drive_info data = openrfsfs_drive(OPENRFSFS_VOLUME_DATA);
-    struct openrfsfs_stat authority;
-    struct openrfsfs_stat output;
-    openrfsfs_handle file;
+    const struct rsdfs_drive_info data = rsdfs_drive(RSDFS_VOLUME_DATA);
+    struct rsdfs_stat authority;
+    struct rsdfs_stat output;
+    rsdfs_handle file;
     uint8_t bytes[sizeof(expected) - 1U];
     size_t read_bytes = 0U;
     size_t database_bytes = 0U;
     bool matches = true;
     struct network_state network;
-    enum openrfsfs_status authority_status;
+    enum rsdfs_status authority_status;
     enum native_process_status launch_status;
 
-    if (active_scenario != KERNEL_TEST_NATIVE_OPENRFS) {
-        kernel_test_fail("native openrfs completion used outside its scenario");
+    if (active_scenario != KERNEL_TEST_NATIVE_RSD) {
+        kernel_test_fail("native rsd completion used outside its scenario");
     }
     if (random_get_state().capability != RANDOM_CAPABILITY_INITIALIZED) {
-        kernel_test_fail("native openrfs did not retain strong hardware entropy");
+        kernel_test_fail("native rsd did not retain strong hardware entropy");
     }
     if (!data.present || !data.mounted || data.read_only || !data.healthy ||
         data.total_bytes != UINT64_C(128) * UINT64_C(1024) * UINT64_C(1024) ||
         data.free_bytes == 0U || data.free_bytes >= data.total_bytes) {
-        kernel_test_fail("native openrfs writable ext4 volume is unavailable");
+        kernel_test_fail("native rsd writable ext4 volume is unavailable");
     }
-    authority_status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA,
+    authority_status = rsdfs_stat_path(RSDFS_VOLUME_DATA,
         PACKAGE_SERVICE_AUTHORITY_PATH, &authority);
-    if (authority_status == OPENRFSFS_STATUS_NOT_FOUND) {
-        launch_status = native_process_launch("OPENRFS.MAN", &proof);
+    if (authority_status == RSDFS_STATUS_NOT_FOUND) {
+        launch_status = native_process_launch("RSD.MAN", &proof);
         if (launch_status != NATIVE_PROCESS_OK ||
             !proof.exited || proof.faulted || proof.exit_status != 0 ||
             !proof.resources_released || proof.peak_handles < 3U ||
             proof.syscall_count < 20U || proof.thread_switches == 0U ||
             !native_process_resources_released()) {
-            console_write("ST OPENRFS DIAGNOSTIC launch ");
+            console_write("ST RSD DIAGNOSTIC launch ");
             console_write_u64((uint64_t)launch_status);
             console_write(" exited ");
             console_write(proof.exited ? "yes" : "no");
@@ -7573,109 +7573,109 @@ _Noreturn void kernel_test_complete_native_openrfs(void)
             console_write(" switches ");
             console_write_u64(proof.thread_switches);
             console_putc('\n');
-            kernel_test_fail("native openrfs client did not leave a clean census");
+            kernel_test_fail("native rsd client did not leave a clean census");
         }
-        if (!native_openrfs_authority_is_canonical(database, sizeof(database),
+        if (!native_rsd_authority_is_canonical(database, sizeof(database),
                 &service) || service.generation != 1U) {
-            kernel_test_fail("native openrfs installed authority is not canonical");
+            kernel_test_fail("native rsd installed authority is not canonical");
         }
-        if (openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK ||
-            openrfsfs_unmount(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK ||
+        if (rsdfs_sync(RSDFS_VOLUME_DATA) != RSDFS_STATUS_OK ||
+            rsdfs_unmount(RSDFS_VOLUME_DATA) != RSDFS_STATUS_OK ||
             !nvme_filesystem_session_resources_released() ||
             !native_process_resources_released()) {
-            kernel_test_fail("native openrfs ext4 reboot barrier leaked resources");
+            kernel_test_fail("native rsd ext4 reboot barrier leaked resources");
         }
         network_native_teardown_census();
         console_write(
-            "OpenRFS: signed HTTPS package install synchronized reboot phase\n");
+            "RSD: signed HTTPS package install synchronized reboot phase\n");
         cpu_out8(UINT16_C(0x0064), UINT8_C(0xFE));
         kernel_test_fail("platform reset did not restart QEMU");
     }
-    if (authority_status != OPENRFSFS_STATUS_OK || authority.directory ||
+    if (authority_status != RSDFS_STATUS_OK || authority.directory ||
         authority.size == 0U) {
-        kernel_test_fail("native openrfs reboot authority is unavailable");
+        kernel_test_fail("native rsd reboot authority is unavailable");
     }
     network = network_get_state();
     if (network.dns_requests != 0U || network.udp_sockets != 0U ||
         network.tcp_connections != 0U ||
         network.timers != 0U) {
-        kernel_test_fail("native openrfs network resources survived teardown");
+        kernel_test_fail("native rsd network resources survived teardown");
     }
-    if (!native_openrfs_authority_is_canonical(database, sizeof(database),
+    if (!native_rsd_authority_is_canonical(database, sizeof(database),
             &service)) {
-        kernel_test_fail("native openrfs reboot authority is not canonical");
+        kernel_test_fail("native rsd reboot authority is not canonical");
     }
     if (service.generation == 1U) {
-        if (native_process_launch("OPENRFS.MAN", &proof) != NATIVE_PROCESS_OK ||
+        if (native_process_launch("RSD.MAN", &proof) != NATIVE_PROCESS_OK ||
             !proof.exited || proof.faulted || proof.exit_status != 0 ||
             !proof.resources_released || proof.peak_handles < 3U ||
             proof.syscall_count < 20U || proof.thread_switches == 0U ||
             !native_process_resources_released() ||
-            !native_openrfs_authority_is_canonical(database, sizeof(database),
+            !native_rsd_authority_is_canonical(database, sizeof(database),
                 &service) || service.generation != 2U ||
-            openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK ||
-            openrfsfs_unmount(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK ||
+            rsdfs_sync(RSDFS_VOLUME_DATA) != RSDFS_STATUS_OK ||
+            rsdfs_unmount(RSDFS_VOLUME_DATA) != RSDFS_STATUS_OK ||
             !nvme_filesystem_session_resources_released()) {
-            kernel_test_fail("native openrfs ext4 update did not commit cleanly");
+            kernel_test_fail("native rsd ext4 update did not commit cleanly");
         }
         network_native_teardown_census();
         console_write(
-            "OpenRFS: signed HTTPS package update synchronized reboot phase\n");
+            "RSD: signed HTTPS package update synchronized reboot phase\n");
         cpu_out8(UINT16_C(0x0064), UINT8_C(0xFE));
         kernel_test_fail("platform reset did not restart QEMU");
     }
     if (service.generation != 2U ||
-        native_process_launch("OPENRFS.MAN", &proof) != NATIVE_PROCESS_OK ||
+        native_process_launch("RSD.MAN", &proof) != NATIVE_PROCESS_OK ||
         !proof.exited || proof.faulted || proof.exit_status != 21 ||
         !proof.resources_released || !native_process_resources_released() ||
-        !native_openrfs_authority_is_canonical(database, sizeof(database),
+        !native_rsd_authority_is_canonical(database, sizeof(database),
             &service) || service.generation != 2U) {
-        kernel_test_fail("native openrfs signed rollback was not refused cleanly");
+        kernel_test_fail("native rsd signed rollback was not refused cleanly");
     }
-    if (openrfsfs_truncate(OPENRFSFS_VOLUME_DATA, damaged_manifest, UINT64_C(1)) !=
-            OPENRFSFS_STATUS_OK ||
-        openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK ||
+    if (rsdfs_truncate(RSDFS_VOLUME_DATA, damaged_manifest, UINT64_C(1)) !=
+            RSDFS_STATUS_OK ||
+        rsdfs_sync(RSDFS_VOLUME_DATA) != RSDFS_STATUS_OK ||
         package_service_snapshot(database, sizeof(database), &database_bytes,
             &service) != PACKAGE_SERVICE_STATUS_INCOMPLETE ||
         database_bytes != 0U || service.journal_present ||
         service.live_file_handles != 0U || service.live_allocations != 0U) {
-        kernel_test_fail("native openrfs damaged generation was not quarantined");
+        kernel_test_fail("native rsd damaged generation was not quarantined");
     }
     console_write(
-        "OpenRFS: damaged package generation quarantined before repair passed\n");
-    if (native_process_launch("OPENRFSR.MAN", &proof) != NATIVE_PROCESS_OK ||
+        "RSD: damaged package generation quarantined before repair passed\n");
+    if (native_process_launch("RSDR.MAN", &proof) != NATIVE_PROCESS_OK ||
         !proof.exited || proof.faulted || proof.exit_status != 0 ||
         !proof.resources_released || proof.peak_handles < 3U ||
         proof.syscall_count < 20U || proof.thread_switches == 0U ||
         !native_process_resources_released() ||
-        !native_openrfs_authority_is_canonical(database, sizeof(database),
+        !native_rsd_authority_is_canonical(database, sizeof(database),
             &service) || service.generation != 3U ||
         native_process_launch_installed(repaired_manifest, &proof) !=
             NATIVE_PROCESS_OK ||
         !proof.exited || proof.faulted || proof.exit_status != 0 ||
         !proof.resources_released || proof.syscall_count < 12U ||
         proof.thread_switches == 0U || !native_process_resources_released() ||
-        openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, state_path, &output) !=
-            OPENRFSFS_STATUS_OK || output.directory ||
+        rsdfs_stat_path(RSDFS_VOLUME_DATA, state_path, &output) !=
+            RSDFS_STATUS_OK || output.directory ||
         output.size != sizeof(bytes) ||
-        openrfsfs_open(OPENRFSFS_VOLUME_DATA, state_path,
-            OPENRFSFS_ACCESS_READ, &file) != OPENRFSFS_STATUS_OK ||
-        openrfsfs_read(file, bytes, sizeof(bytes), &read_bytes) !=
-            OPENRFSFS_STATUS_OK || read_bytes != sizeof(bytes)) {
-        kernel_test_fail("native openrfs authenticated repair did not launch");
+        rsdfs_open(RSDFS_VOLUME_DATA, state_path,
+            RSDFS_ACCESS_READ, &file) != RSDFS_STATUS_OK ||
+        rsdfs_read(file, bytes, sizeof(bytes), &read_bytes) !=
+            RSDFS_STATUS_OK || read_bytes != sizeof(bytes)) {
+        kernel_test_fail("native rsd authenticated repair did not launch");
     }
     for (size_t index = 0U; index < sizeof(bytes); ++index) {
         matches = matches && bytes[index] == expected[index];
     }
-    if (openrfsfs_close(file) != OPENRFSFS_STATUS_OK || !matches ||
-        openrfsfs_sync(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK ||
-        openrfsfs_unmount(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK ||
+    if (rsdfs_close(file) != RSDFS_STATUS_OK || !matches ||
+        rsdfs_sync(RSDFS_VOLUME_DATA) != RSDFS_STATUS_OK ||
+        rsdfs_unmount(RSDFS_VOLUME_DATA) != RSDFS_STATUS_OK ||
         !nvme_filesystem_session_resources_released()) {
-        kernel_test_fail("native openrfs upstream SDL launch did not cleanly sync");
+        kernel_test_fail("native rsd upstream SDL launch did not cleanly sync");
     }
     network_native_teardown_census();
     console_write(
-        "OpenRFS: damaged SDL package repaired authenticated and launched from writable ext4 passed\n");
+        "RSD: damaged SDL package repaired authenticated and launched from writable ext4 passed\n");
     console_write("ST NETWORK production path bounded and recoverable\n");
     kernel_test_pass();
 }
@@ -7839,19 +7839,19 @@ _Noreturn void kernel_test_complete_boot_ledger(
     kernel_test_pass();
 }
 
-static uint32_t openrfs_proof_pixel(uint32_t x, uint32_t y)
+static uint32_t rsd_proof_pixel(uint32_t x, uint32_t y)
 {
     uint32_t pixel = 0U;
     struct surface *surface = screen_surface();
 
     if (surface == NULL ||
         surface_read_pixel(surface, x, y, &pixel) != SURFACE_STATUS_OK) {
-        kernel_test_fail("OpenRFS cached-surface pixel read failed");
+        kernel_test_fail("RSD cached-surface pixel read failed");
     }
     return pixel;
 }
 
-static void openrfs_proof_process_ui(const char *failure)
+static void rsd_proof_process_ui(const char *failure)
 {
     enum ui_status status = ui_process_events();
 
@@ -7863,7 +7863,7 @@ static void openrfs_proof_process_ui(const char *failure)
     }
 }
 
-static void openrfs_proof_inject_pointer(
+static void rsd_proof_inject_pointer(
     uint8_t flags,
     int32_t delta_x,
     int32_t delta_y,
@@ -7887,10 +7887,10 @@ static void openrfs_proof_inject_pointer(
     if (status != POINTER_STATUS_OK) {
         kernel_test_fail(failure);
     }
-    openrfs_proof_process_ui(failure);
+    rsd_proof_process_ui(failure);
 }
 
-static void openrfs_proof_move_pointer(
+static void rsd_proof_move_pointer(
     uint32_t target_x,
     uint32_t target_y,
     const char *failure
@@ -7916,12 +7916,12 @@ static void openrfs_proof_move_pointer(
         } else if (delta_y < -127) {
             delta_y = -127;
         }
-        openrfs_proof_inject_pointer(0U, delta_x, delta_y, failure);
+        rsd_proof_inject_pointer(0U, delta_x, delta_y, failure);
     }
-    kernel_test_fail("OpenRFS cursor did not reach its UI target");
+    kernel_test_fail("RSD cursor did not reach its UI target");
 }
 
-_Noreturn void kernel_test_complete_openrfs_proof(void)
+_Noreturn void kernel_test_complete_rsd_proof(void)
 {
     const struct boot_ledger *ledger = boot_ledger_installed();
     const struct boot_stage_receipt *font;
@@ -7939,13 +7939,13 @@ _Noreturn void kernel_test_complete_openrfs_proof(void)
         .control = false, .alt = false, .character = '\0'
     };
 
-    if (active_scenario != KERNEL_TEST_OPENRFS_PROOF) {
-        kernel_test_fail("OpenRFS completion used outside its scenario");
+    if (active_scenario != KERNEL_TEST_RSD_PROOF) {
+        kernel_test_fail("RSD completion used outside its scenario");
     }
     if (ledger == NULL || !ledger->validated || !ledger->executed ||
             ledger->status != BOOT_LEDGER_STATUS_OK || ledger->degraded ||
             !boot_ledger_fingerprint_valid(ledger)) {
-        kernel_test_fail("OpenRFS installed ledger is invalid");
+        kernel_test_fail("RSD installed ledger is invalid");
     }
     font = boot_ledger_receipt_for(ledger, BOOT_STAGE_UI_FONT);
     layout = boot_ledger_receipt_for(ledger, BOOT_STAGE_UI_LAYOUT);
@@ -7954,7 +7954,7 @@ _Noreturn void kernel_test_complete_openrfs_proof(void)
     activation = boot_ledger_receipt_for(ledger,
         BOOT_STAGE_DESKTOP_ACTIVATION);
     proof_receipt = boot_ledger_receipt_for(ledger,
-        BOOT_STAGE_OPENRFS_INSTALLED_PROOF);
+        BOOT_STAGE_RSD_INSTALLED_PROOF);
     wc = boot_ledger_receipt_for(ledger, BOOT_STAGE_FRAMEBUFFER_WC);
     if (font == NULL || layout == NULL || construction == NULL ||
             activation == NULL || proof_receipt == NULL || wc == NULL ||
@@ -7967,7 +7967,7 @@ _Noreturn void kernel_test_complete_openrfs_proof(void)
             wc->sequence >= construction->sequence ||
             construction->sequence >= activation->sequence ||
             activation->sequence >= proof_receipt->sequence) {
-        kernel_test_fail("OpenRFS required desktop receipt is invalid");
+        kernel_test_fail("RSD required desktop receipt is invalid");
     }
     if (!boot_ledger_has_capability(ledger,
             BOOT_CAPABILITY_UI_FONT_VERIFIED) ||
@@ -7976,59 +7976,59 @@ _Noreturn void kernel_test_complete_openrfs_proof(void)
             !boot_ledger_has_capability(ledger,
                 BOOT_CAPABILITY_DESKTOP_SHELL_ACTIVATED) ||
             !boot_ledger_has_capability(ledger,
-                BOOT_CAPABILITY_OPENRFS_INSTALLED_PROOF_COMPLETE)) {
-        kernel_test_fail("OpenRFS installed desktop capability is missing");
+                BOOT_CAPABILITY_RSD_INSTALLED_PROOF_COMPLETE)) {
+        kernel_test_fail("RSD installed desktop capability is missing");
     }
     if (!ui->active || !ui->pointer_present || !ui->ledger_pass ||
             !pointer_is_present() || ui->layout.surface.width != 1024U ||
             ui->layout.surface.height != 768U ||
             ui_layout_validate(&ui->layout) != UI_STATUS_OK) {
-        kernel_test_fail("OpenRFS installed desktop state is incomplete");
+        kernel_test_fail("RSD installed desktop state is incomplete");
     }
-    if (openrfs_proof_pixel(512U, 250U) == 0U ||
-            openrfs_proof_pixel(512U, 767U) == 0U) {
-        kernel_test_fail("OpenRFS wallpaper or panel is not integrated");
+    if (rsd_proof_pixel(512U, 250U) == 0U ||
+            rsd_proof_pixel(512U, 767U) == 0U) {
+        kernel_test_fail("RSD wallpaper or panel is not integrated");
     }
 
-    openrfs_proof_move_pointer(200U, 160U,
-        "OpenRFS cursor did not move over the new desktop");
+    rsd_proof_move_pointer(200U, 160U,
+        "RSD cursor did not move over the new desktop");
     if (ui_get_state()->renders.cursor_moves <= initial_renders.cursor_moves) {
-        kernel_test_fail("OpenRFS cursor movement was not recorded");
+        kernel_test_fail("RSD cursor movement was not recorded");
     }
 
     if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("OpenRFS focused window did not close");
+        kernel_test_fail("RSD focused window did not close");
     }
-    openrfs_proof_process_ui("OpenRFS close redraw failed");
+    rsd_proof_process_ui("RSD close redraw failed");
     keyboard.scancode = 0x0FU;
     if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("OpenRFS keyboard focus-next failed");
+        kernel_test_fail("RSD keyboard focus-next failed");
     }
-    openrfs_proof_process_ui("OpenRFS focus-next redraw failed");
+    rsd_proof_process_ui("RSD focus-next redraw failed");
     if (ui_get_state()->focus != UI_ELEMENT_DOCK_TERMINAL) {
-        kernel_test_fail("OpenRFS keyboard focus-next chose wrong app");
+        kernel_test_fail("RSD keyboard focus-next chose wrong app");
     }
     keyboard.shift = true;
     if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("OpenRFS keyboard focus-previous failed");
+        kernel_test_fail("RSD keyboard focus-previous failed");
     }
-    openrfs_proof_process_ui("OpenRFS focus-previous redraw failed");
+    rsd_proof_process_ui("RSD focus-previous redraw failed");
     if (ui_get_state()->focus != UI_ELEMENT_DOCK_FILES) {
-        kernel_test_fail("OpenRFS keyboard focus-previous chose wrong app");
+        kernel_test_fail("RSD keyboard focus-previous chose wrong app");
     }
     keyboard.scancode = 0x1CU;
     keyboard.shift = false;
     if (ui_handle_keyboard(&keyboard) != UI_STATUS_OK) {
-        kernel_test_fail("OpenRFS keyboard activation failed");
+        kernel_test_fail("RSD keyboard activation failed");
     }
-    openrfs_proof_process_ui("OpenRFS application redraw failed");
+    rsd_proof_process_ui("RSD application redraw failed");
     if (ui_get_state()->active_panel != UI_PANEL_FILES) {
-        kernel_test_fail("OpenRFS Files window did not open");
+        kernel_test_fail("RSD Files window did not open");
     }
-    console_serial_write("ST OPENRFS DE keyboard and pointer passed\n");
+    console_serial_write("ST RSD DE keyboard and pointer passed\n");
 
     if (!boot_plan_pointer_absence_self_test()) {
-        kernel_test_fail("OpenRFS pointer-absence synthetic plan failed");
+        kernel_test_fail("RSD pointer-absence synthetic plan failed");
     }
     proof_status = ui_verify_installed(&proof);
     if (proof_status != UI_STATUS_OK) {
@@ -8040,10 +8040,10 @@ _Noreturn void kernel_test_complete_openrfs_proof(void)
             proof.render_hash == 0U || proof.events == 0U ||
             proof.panels == 0U || proof.cursor_moves == 0U ||
             proof.damage_rectangles == 0U || proof.glyphs == 0U) {
-        kernel_test_fail("OpenRFS final desktop proof is inconsistent");
+        kernel_test_fail("RSD final desktop proof is inconsistent");
     }
 
-    console_write("ST OPENRFS_PROOF geometry ");
+    console_write("ST RSD_PROOF geometry ");
     console_write_u64(proof.width);
     console_putc('x');
     console_write_u64(proof.height);
@@ -8535,7 +8535,7 @@ static bool inject_keyboard_ctrl_d(void)
     return true;
 }
 
-static bool focus_openrfs_proof_terminal(void)
+static bool focus_rsd_proof_terminal(void)
 {
     if (ui_get_state()->active_panel == UI_PANEL_TERMINAL) {
         return true;
@@ -8548,13 +8548,13 @@ static bool focus_openrfs_proof_terminal(void)
             return false;
         }
         shell_process_keyboard_events();
-        openrfs_proof_process_ui(
+        rsd_proof_process_ui(
             "interactive terminal focus-next processing failed");
         if (!inject_keyboard_byte(UINT8_C(0x8F))) {
             return false;
         }
         shell_process_keyboard_events();
-        openrfs_proof_process_ui(
+        rsd_proof_process_ui(
             "interactive terminal focus release processing failed");
     }
     if (ui_get_state()->focus != UI_ELEMENT_DOCK_TERMINAL) {
@@ -8564,13 +8564,13 @@ static bool focus_openrfs_proof_terminal(void)
         return false;
     }
     shell_process_keyboard_events();
-    openrfs_proof_process_ui(
+    rsd_proof_process_ui(
         "interactive terminal activation processing failed");
     if (!inject_keyboard_byte(UINT8_C(0x9C))) {
         return false;
     }
     shell_process_keyboard_events();
-    openrfs_proof_process_ui(
+    rsd_proof_process_ui(
         "interactive terminal activation release processing failed");
     return ui_get_state()->active_panel == UI_PANEL_TERMINAL;
 }
@@ -8594,7 +8594,7 @@ static bool installed_test_runtime_ready(void)
             BOOT_CAPABILITY_LINUX_CAT_IMAGE_STDIN_FOUNDATION_AVAILABLE);
 }
 
-_Noreturn void kernel_test_complete_openrfs_proof_userland(void)
+_Noreturn void kernel_test_complete_rsd_proof_userland(void)
 {
     const struct shell_state before = shell_get_state();
     const uint32_t echo_before =
@@ -8604,20 +8604,20 @@ _Noreturn void kernel_test_complete_openrfs_proof_userland(void)
     struct linux_abi_proof_result echo;
     struct linux_uname_abi_proof_result uname;
 
-    if (active_scenario != KERNEL_TEST_OPENRFS_PROOF_USERLAND ||
+    if (active_scenario != KERNEL_TEST_RSD_PROOF_USERLAND ||
         !installed_test_runtime_ready() || !shell_is_active()) {
-        kernel_test_fail("OpenRFS userspace prerequisites are incomplete");
+        kernel_test_fail("RSD userspace prerequisites are incomplete");
     }
     cpu_interrupt_enable();
     console_write("\n");
-    console_write("openrfs$ ");
+    console_write("rsd$ ");
     if (!feed_shell_line("linux unsupported") ||
         !feed_shell_line("echo native") ||
         !feed_shell_line("linux echo") ||
         !feed_shell_line("linux uname") ||
         !feed_shell_line("linux echo") ||
         !feed_shell_line("linux uname")) {
-        kernel_test_fail("OpenRFS shell input injection was refused");
+        kernel_test_fail("RSD shell input injection was refused");
     }
     echo = linux_abi_get_proof_result();
     uname = linux_uname_abi_get_proof_result();
@@ -8638,27 +8638,27 @@ _Noreturn void kernel_test_complete_openrfs_proof_userland(void)
         !uname.real_syscall_instruction || !uname.uts_copy_valid ||
         !uname.stdout_valid || !uname.exit_zero || !uname.teardown_complete ||
         !linux_userland_resources_released() || !cpu_interrupts_enabled()) {
-        kernel_test_fail("OpenRFS userspace relaunch contract failed");
+        kernel_test_fail("RSD userspace relaunch contract failed");
     }
-    console_write("\nST OPENRFS_PROOF_USERLAND shell production echo 2 uname 2 ");
+    console_write("\nST RSD_PROOF_USERLAND shell production echo 2 uname 2 ");
     console_write("invalid-profile recovered CPL3 SYSCALL stdout exact exit 0 ");
     console_write("teardown clean prompt restored\n");
     kernel_test_pass();
 }
 
-_Noreturn void kernel_test_complete_openrfs_proof_userland_absent(void)
+_Noreturn void kernel_test_complete_rsd_proof_userland_absent(void)
 {
     const struct shell_state before = shell_get_state();
     const uint32_t echo_before =
         linux_userland_completed(LINUX_USERLAND_PROFILE_ECHO);
 
-    if (active_scenario != KERNEL_TEST_OPENRFS_PROOF_USERLAND_ABSENT ||
+    if (active_scenario != KERNEL_TEST_RSD_PROOF_USERLAND_ABSENT ||
         !installed_test_runtime_ready() || !shell_is_active()) {
         kernel_test_fail("absent-volume userspace prerequisites are incomplete");
     }
     cpu_interrupt_enable();
     console_write("\n");
-    console_write("openrfs$ ");
+    console_write("rsd$ ");
     if (!feed_shell_line("linux echo") ||
         !feed_shell_line("echo still usable") ||
         shell_get_state().commands != before.commands + 2U ||
@@ -8668,12 +8668,12 @@ _Noreturn void kernel_test_complete_openrfs_proof_userland_absent(void)
         !linux_userland_resources_released() || !cpu_interrupts_enabled()) {
         kernel_test_fail("absent userspace volume did not recover cleanly");
     }
-    console_write("\nST OPENRFS_PROOF_USERLAND_ABSENT concise refusal prompt usable ");
+    console_write("\nST RSD_PROOF_USERLAND_ABSENT concise refusal prompt usable ");
     console_write("teardown clean\n");
     kernel_test_pass();
 }
 
-_Noreturn void kernel_test_complete_openrfs_proof_userland_interactive(void)
+_Noreturn void kernel_test_complete_rsd_proof_userland_interactive(void)
 {
     const struct shell_state before = shell_get_state();
     const uint32_t cat_before =
@@ -8682,18 +8682,18 @@ _Noreturn void kernel_test_complete_openrfs_proof_userland_interactive(void)
     uint64_t second_generation;
     struct linux_cat_abi_proof_result proof;
 
-    if (active_scenario != KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE ||
+    if (active_scenario != KERNEL_TEST_RSD_PROOF_USERLAND_INTERACTIVE ||
         !installed_test_runtime_ready() || !shell_is_active() ||
         !keyboard_is_initialized()) {
         kernel_test_fail("interactive userspace prerequisites are incomplete");
     }
     cpu_interrupt_enable();
     shell_process_keyboard_events();
-    if (!focus_openrfs_proof_terminal()) {
+    if (!focus_rsd_proof_terminal()) {
         kernel_test_fail("interactive scenario could not focus Terminal");
     }
     console_write("\n");
-    console_write("openrfs$ ");
+    console_write("rsd$ ");
 
     if (!inject_keyboard_text("linux cat\n") ||
         !linux_userland_foreground_waiting()) {
@@ -8738,13 +8738,13 @@ _Noreturn void kernel_test_complete_openrfs_proof_userland_interactive(void)
         !cpu_interrupts_enabled()) {
         kernel_test_fail("interactive cat proof is inconsistent");
     }
-    console_write("\nST OPENRFS_PROOF_USERLAND_INTERACTIVE cat 2 keyboard IRQ ");
+    console_write("\nST RSD_PROOF_USERLAND_INTERACTIVE cat 2 keyboard IRQ ");
     console_write("read SYSCALL copy-out resume write SYSCALL stdout exact ");
     console_write("EOF exit 0 teardown clean fresh generation prompt restored\n");
     kernel_test_pass();
 }
 
-_Noreturn void kernel_test_complete_openrfs_proof_userland_interactive_absent(
+_Noreturn void kernel_test_complete_rsd_proof_userland_interactive_absent(
     void
 )
 {
@@ -8756,18 +8756,18 @@ _Noreturn void kernel_test_complete_openrfs_proof_userland_interactive_absent(
     struct linux_abi_proof_result echo;
 
     if (active_scenario !=
-            KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE_ABSENT ||
+            KERNEL_TEST_RSD_PROOF_USERLAND_INTERACTIVE_ABSENT ||
         !installed_test_runtime_ready() || !shell_is_active() ||
         !keyboard_is_initialized()) {
         kernel_test_fail("interactive absent-profile prerequisites incomplete");
     }
     cpu_interrupt_enable();
     shell_process_keyboard_events();
-    if (!focus_openrfs_proof_terminal()) {
+    if (!focus_rsd_proof_terminal()) {
         kernel_test_fail("absent scenario could not focus Terminal");
     }
     console_write("\n");
-    console_write("openrfs$ ");
+    console_write("rsd$ ");
     if (!inject_keyboard_text("linux cat\n") ||
         linux_userland_foreground_waiting() ||
         !linux_userland_resources_released() ||
@@ -8787,7 +8787,7 @@ _Noreturn void kernel_test_complete_openrfs_proof_userland_interactive_absent(
         !linux_userland_resources_released() || !cpu_interrupts_enabled()) {
         kernel_test_fail("missing cat profile recovery proof is inconsistent");
     }
-    console_write("\nST OPENRFS_PROOF_USERLAND_INTERACTIVE_ABSENT cat missing ");
+    console_write("\nST RSD_PROOF_USERLAND_INTERACTIVE_ABSENT cat missing ");
     console_write("echo valid keyboard IRQ refusal recoverable teardown clean ");
     console_write("prompt usable\n");
     kernel_test_pass();
@@ -8800,24 +8800,24 @@ static bool fat32_read_file(
     size_t *file_bytes
 )
 {
-    openrfsfs_handle handle;
-    struct openrfsfs_stat stat;
+    rsdfs_handle handle;
+    struct rsdfs_stat stat;
     size_t read_bytes = 0U;
-    enum openrfsfs_status status;
+    enum rsdfs_status status;
 
     if (path == NULL || buffer == NULL || file_bytes == NULL ||
-        openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, path, &stat) != OPENRFSFS_STATUS_OK ||
+        rsdfs_stat_path(RSDFS_VOLUME_DATA, path, &stat) != RSDFS_STATUS_OK ||
         stat.directory || stat.size > capacity ||
-        openrfsfs_open(OPENRFSFS_VOLUME_DATA, path, OPENRFSFS_ACCESS_READ, &handle) !=
-            OPENRFSFS_STATUS_OK) {
+        rsdfs_open(RSDFS_VOLUME_DATA, path, RSDFS_ACCESS_READ, &handle) !=
+            RSDFS_STATUS_OK) {
         return false;
     }
-    status = openrfsfs_read(handle, buffer, capacity, &read_bytes);
-    if (openrfsfs_close(handle) != OPENRFSFS_STATUS_OK) {
+    status = rsdfs_read(handle, buffer, capacity, &read_bytes);
+    if (rsdfs_close(handle) != RSDFS_STATUS_OK) {
         return false;
     }
     *file_bytes = read_bytes;
-    return status == OPENRFSFS_STATUS_OK && read_bytes == stat.size;
+    return status == RSDFS_STATUS_OK && read_bytes == stat.size;
 }
 
 static bool fat32_file_equals(
@@ -8849,14 +8849,14 @@ static bool fat32_file_equals(
 static void fat32_feed(const char *line)
 {
     if (!feed_shell_line(line)) {
-        kernel_test_fail("OpenRFS refused a FAT32 command line");
+        kernel_test_fail("RSD refused a FAT32 command line");
     }
 }
 
 static void fat32_require_base(bool data_required)
 {
-    struct openrfsfs_drive_info system = openrfsfs_drive(OPENRFSFS_VOLUME_SYSTEM);
-    struct openrfsfs_drive_info data = openrfsfs_drive(OPENRFSFS_VOLUME_DATA);
+    struct rsdfs_drive_info system = rsdfs_drive(RSDFS_VOLUME_SYSTEM);
+    struct rsdfs_drive_info data = rsdfs_drive(RSDFS_VOLUME_DATA);
 
     if (!installed_test_runtime_ready() || !shell_is_active() ||
         !system.present || !system.healthy || !system.mounted ||
@@ -8906,7 +8906,7 @@ static void fat32_data_scenario(void)
 static void fat32_nested_scenario(void)
 {
     static const uint8_t expected[] = "nested\n";
-    struct openrfsfs_stat stat;
+    struct rsdfs_stat stat;
 
     fat32_require_base(true);
     fat32_feed("mkdir projects");
@@ -8918,8 +8918,8 @@ static void fat32_nested_scenario(void)
     fat32_feed("cd ..");
     if (!fat32_file_equals("projects/cuts/notes.txt", expected,
             sizeof(expected) - 1U) ||
-        openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "projects/cuts", &stat) !=
-            OPENRFSFS_STATUS_OK || !stat.directory) {
+        rsdfs_stat_path(RSDFS_VOLUME_DATA, "projects/cuts", &stat) !=
+            RSDFS_STATUS_OK || !stat.directory) {
         kernel_test_fail("nested FAT32 traversal changed");
     }
     console_write("\nST FAT32 NESTED dot dotdot traversal enumeration exact\n");
@@ -8927,7 +8927,7 @@ static void fat32_nested_scenario(void)
 
 static void fat32_growth_scenario(void)
 {
-    struct openrfsfs_stat stat;
+    struct rsdfs_stat stat;
     uint8_t buffer[1024];
     size_t bytes = 0U;
 
@@ -8937,8 +8937,8 @@ static void fat32_growth_scenario(void)
         fat32_feed("append growth.bin \"0123456789012345678901234567890123456789012345678901234567890123456789\"");
     }
     fat32_feed("stat growth.bin");
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "growth.bin", &stat) !=
-            OPENRFSFS_STATUS_OK || stat.size != 568U || stat.cluster_count != 2U ||
+    if (rsdfs_stat_path(RSDFS_VOLUME_DATA, "growth.bin", &stat) !=
+            RSDFS_STATUS_OK || stat.size != 568U || stat.cluster_count != 2U ||
         !fat32_read_file("growth.bin", buffer, sizeof(buffer), &bytes) ||
         bytes != stat.size) {
         kernel_test_fail("multi-cluster FAT32 growth changed");
@@ -8962,7 +8962,7 @@ static void fat32_random_scenario(void)
 
 static void fat32_truncate_scenario(void)
 {
-    struct openrfsfs_stat stat;
+    struct rsdfs_stat stat;
     uint8_t buffer[800];
     size_t bytes = 0U;
 
@@ -8971,8 +8971,8 @@ static void fat32_truncate_scenario(void)
     fat32_feed("truncate trim.bin 648");
     fat32_feed("writeat trim.bin 0 \"prefix\"");
     fat32_feed("truncate trim.bin 100");
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "trim.bin", &stat) !=
-            OPENRFSFS_STATUS_OK || stat.size != 100U || stat.cluster_count != 1U) {
+    if (rsdfs_stat_path(RSDFS_VOLUME_DATA, "trim.bin", &stat) !=
+            RSDFS_STATUS_OK || stat.size != 100U || stat.cluster_count != 1U) {
         kernel_test_fail("FAT32 truncation did not release its tail");
     }
     fat32_feed("truncate trim.bin 700");
@@ -8991,27 +8991,27 @@ static void fat32_truncate_scenario(void)
 static void fat32_rename_scenario(void)
 {
     static const uint8_t expected[] = "move me\n";
-    struct openrfsfs_stat stat;
+    struct rsdfs_stat stat;
 
     fat32_require_base(true);
     fat32_feed("mkdir a");
     fat32_feed("mkdir b");
     fat32_feed("mkdir a/child");
-    if (openrfsfs_rename(OPENRFSFS_VOLUME_DATA, "a", "a/child/a") !=
-            OPENRFSFS_STATUS_PATH) {
+    if (rsdfs_rename(RSDFS_VOLUME_DATA, "a", "a/child/a") !=
+            RSDFS_STATUS_PATH) {
         kernel_test_fail("FAT32 accepted a directory move into itself");
     }
     fat32_feed("write a/note.txt \"move me\"");
     fat32_feed("mv a/note.txt b/moved.txt");
     fat32_feed("mv b archive");
     fat32_feed("touch conflict.txt");
-    if (openrfsfs_rename(OPENRFSFS_VOLUME_DATA, "conflict.txt",
-            "archive/moved.txt") != OPENRFSFS_STATUS_EXISTS) {
+    if (rsdfs_rename(RSDFS_VOLUME_DATA, "conflict.txt",
+            "archive/moved.txt") != RSDFS_STATUS_EXISTS) {
         kernel_test_fail("FAT32 rename conflict was not rejected");
     }
     fat32_feed("ls archive");
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "a/note.txt", &stat) !=
-            OPENRFSFS_STATUS_NOT_FOUND ||
+    if (rsdfs_stat_path(RSDFS_VOLUME_DATA, "a/note.txt", &stat) !=
+            RSDFS_STATUS_NOT_FOUND ||
         !fat32_file_equals("archive/moved.txt", expected,
             sizeof(expected) - 1U)) {
         kernel_test_fail("FAT32 rename or move changed ownership");
@@ -9021,22 +9021,22 @@ static void fat32_rename_scenario(void)
 
 static void fat32_delete_scenario(void)
 {
-    struct openrfsfs_stat first;
-    struct openrfsfs_stat second;
+    struct rsdfs_stat first;
+    struct rsdfs_stat second;
 
     fat32_require_base(true);
     fat32_feed("write first.bin \"one\"");
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "first.bin", &first) !=
-            OPENRFSFS_STATUS_OK) {
+    if (rsdfs_stat_path(RSDFS_VOLUME_DATA, "first.bin", &first) !=
+            RSDFS_STATUS_OK) {
         kernel_test_fail("FAT32 deletion setup failed");
     }
     fat32_feed("rm first.bin");
     fat32_feed("write second.bin \"two\"");
     fat32_feed("mkdir kept");
     fat32_feed("write kept/live.txt \"live\"");
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "second.bin", &second) !=
-            OPENRFSFS_STATUS_OK || first.first_cluster != second.first_cluster ||
-        openrfsfs_rmdir(OPENRFSFS_VOLUME_DATA, "kept") != OPENRFSFS_STATUS_NOT_EMPTY) {
+    if (rsdfs_stat_path(RSDFS_VOLUME_DATA, "second.bin", &second) !=
+            RSDFS_STATUS_OK || first.first_cluster != second.first_cluster ||
+        rsdfs_rmdir(RSDFS_VOLUME_DATA, "kept") != RSDFS_STATUS_NOT_EMPTY) {
         kernel_test_fail("FAT32 deletion did not reuse or protect ownership");
     }
     fat32_feed("rm kept/live.txt");
@@ -9046,22 +9046,22 @@ static void fat32_delete_scenario(void)
 
 static void fat32_full_scenario(void)
 {
-    struct openrfsfs_stat stat;
+    struct rsdfs_stat stat;
 
     fat32_require_base(true);
-    if (openrfsfs_drive(OPENRFSFS_VOLUME_DATA).free_bytes != 0U) {
+    if (rsdfs_drive(RSDFS_VOLUME_DATA).free_bytes != 0U) {
         kernel_test_fail("full FAT32 fixture retained free clusters");
     }
     fat32_feed("write recovery.txt \"blocked\"");
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "recovery.txt", &stat) !=
-            OPENRFSFS_STATUS_OK || stat.size != 0U) {
+    if (rsdfs_stat_path(RSDFS_VOLUME_DATA, "recovery.txt", &stat) !=
+            RSDFS_STATUS_OK || stat.size != 0U) {
         kernel_test_fail("full-volume refusal exposed partial contents");
     }
     fat32_feed("rm tiny.bin");
     fat32_feed("write recovery.txt \"recovered\"");
     fat32_feed("sync");
-    if (openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "recovery.txt", &stat) !=
-            OPENRFSFS_STATUS_OK || stat.size != 10U) {
+    if (rsdfs_stat_path(RSDFS_VOLUME_DATA, "recovery.txt", &stat) !=
+            RSDFS_STATUS_OK || stat.size != 10U) {
         kernel_test_fail("full FAT32 volume did not recover after deletion");
     }
     console_write("\nST FAT32 FULL refusal no leak deletion recovered\n");
@@ -9069,7 +9069,7 @@ static void fat32_full_scenario(void)
 
 static void fat32_unavailable_scenario(bool corrupt)
 {
-    struct openrfsfs_drive_info data = openrfsfs_drive(OPENRFSFS_VOLUME_DATA);
+    struct rsdfs_drive_info data = rsdfs_drive(RSDFS_VOLUME_DATA);
     const uint32_t before =
         linux_userland_completed(LINUX_USERLAND_PROFILE_ECHO);
 
@@ -9091,26 +9091,26 @@ static void fat32_unavailable_scenario(bool corrupt)
 static void fat32_persistence_scenario(void)
 {
     static const uint8_t expected[] = "first cut\nsecond line\n";
-    struct openrfsfs_stat stat;
-    enum openrfsfs_status status;
+    struct rsdfs_stat stat;
+    enum rsdfs_status status;
 
     fat32_require_base(true);
-    status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "projects/notes.txt", &stat);
-    if (status == OPENRFSFS_STATUS_NOT_FOUND) {
+    status = rsdfs_stat_path(RSDFS_VOLUME_DATA, "projects/notes.txt", &stat);
+    if (status == RSDFS_STATUS_NOT_FOUND) {
         fat32_feed("mkdir projects");
         fat32_feed("write projects/notes.txt \"first cut\"");
         fat32_feed("append projects/notes.txt \"second line\"");
         fat32_feed("sync");
         if (!fat32_file_equals("projects/notes.txt", expected,
                 sizeof(expected) - 1U) ||
-            openrfsfs_unmount(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK) {
+            rsdfs_unmount(RSDFS_VOLUME_DATA) != RSDFS_STATUS_OK) {
             kernel_test_fail("clean persistence write phase failed");
         }
         console_write("\nST FAT32 PERSISTENCE synchronized reboot phase\n");
         cpu_out8(UINT16_C(0x0064), UINT8_C(0xFE));
         kernel_test_fail("platform reset did not restart QEMU");
     }
-    if (status != OPENRFSFS_STATUS_OK ||
+    if (status != RSDFS_STATUS_OK ||
         !fat32_file_equals("projects/notes.txt", expected,
             sizeof(expected) - 1U)) {
         kernel_test_fail("clean reboot did not retain FAT32 contents");
@@ -9151,16 +9151,16 @@ static void fat32_cache_scenario(void)
 
 static void fat32_immutable_scenario(void)
 {
-    openrfsfs_handle handle;
+    rsdfs_handle handle;
     const uint32_t before =
         linux_userland_completed(LINUX_USERLAND_PROFILE_ECHO);
 
     fat32_require_base(true);
     fat32_feed("linux echo");
-    if (openrfsfs_create(OPENRFSFS_VOLUME_SYSTEM, "ATTACK.TXT") !=
-            OPENRFSFS_STATUS_READ_ONLY ||
-        openrfsfs_open(OPENRFSFS_VOLUME_SYSTEM, "BUSYBOX", OPENRFSFS_ACCESS_WRITE,
-            &handle) != OPENRFSFS_STATUS_READ_ONLY ||
+    if (rsdfs_create(RSDFS_VOLUME_SYSTEM, "ATTACK.TXT") !=
+            RSDFS_STATUS_READ_ONLY ||
+        rsdfs_open(RSDFS_VOLUME_SYSTEM, "BUSYBOX", RSDFS_ACCESS_WRITE,
+            &handle) != RSDFS_STATUS_READ_ONLY ||
         linux_userland_completed(LINUX_USERLAND_PROFILE_ECHO) != before + 1U) {
         kernel_test_fail("immutable FAT32 system volume accepted a write");
     }
@@ -9169,37 +9169,37 @@ static void fat32_immutable_scenario(void)
 
 static void fat32_handles_scenario(void)
 {
-    openrfsfs_handle handles[OPENRFSFS_MAX_HANDLES];
-    openrfsfs_handle extra;
+    rsdfs_handle handles[RSDFS_MAX_HANDLES];
+    rsdfs_handle extra;
     size_t bytes = 0U;
     uint8_t byte = 0U;
 
     fat32_require_base(true);
     fat32_feed("write handle.txt \"generation\"");
-    if (openrfsfs_open(OPENRFSFS_VOLUME_DATA, "handle.txt", OPENRFSFS_ACCESS_READ,
-            &handles[0]) != OPENRFSFS_STATUS_OK ||
-        openrfsfs_write(handles[0], &byte, 1U, &bytes) != OPENRFSFS_STATUS_ACCESS ||
-        openrfsfs_read(handles[0], NULL, 1U, &bytes) !=
-            OPENRFSFS_STATUS_INVALID_ARGUMENT ||
-        openrfsfs_unlink(OPENRFSFS_VOLUME_DATA, "handle.txt") != OPENRFSFS_STATUS_BUSY ||
-        openrfsfs_close(handles[0]) != OPENRFSFS_STATUS_OK ||
-        openrfsfs_close(handles[0]) != OPENRFSFS_STATUS_STALE_HANDLE ||
-        openrfsfs_read(handles[0], &byte, 1U, &bytes) !=
-            OPENRFSFS_STATUS_STALE_HANDLE) {
+    if (rsdfs_open(RSDFS_VOLUME_DATA, "handle.txt", RSDFS_ACCESS_READ,
+            &handles[0]) != RSDFS_STATUS_OK ||
+        rsdfs_write(handles[0], &byte, 1U, &bytes) != RSDFS_STATUS_ACCESS ||
+        rsdfs_read(handles[0], NULL, 1U, &bytes) !=
+            RSDFS_STATUS_INVALID_ARGUMENT ||
+        rsdfs_unlink(RSDFS_VOLUME_DATA, "handle.txt") != RSDFS_STATUS_BUSY ||
+        rsdfs_close(handles[0]) != RSDFS_STATUS_OK ||
+        rsdfs_close(handles[0]) != RSDFS_STATUS_STALE_HANDLE ||
+        rsdfs_read(handles[0], &byte, 1U, &bytes) !=
+            RSDFS_STATUS_STALE_HANDLE) {
         kernel_test_fail("FAT32 handle generation controls changed");
     }
-    for (size_t index = 0U; index < OPENRFSFS_MAX_HANDLES; ++index) {
-        if (openrfsfs_open(OPENRFSFS_VOLUME_DATA, "handle.txt", OPENRFSFS_ACCESS_READ,
-                &handles[index]) != OPENRFSFS_STATUS_OK) {
+    for (size_t index = 0U; index < RSDFS_MAX_HANDLES; ++index) {
+        if (rsdfs_open(RSDFS_VOLUME_DATA, "handle.txt", RSDFS_ACCESS_READ,
+                &handles[index]) != RSDFS_STATUS_OK) {
             kernel_test_fail("FAT32 handle table filled early");
         }
     }
-    if (openrfsfs_open(OPENRFSFS_VOLUME_DATA, "handle.txt", OPENRFSFS_ACCESS_READ,
-            &extra) != OPENRFSFS_STATUS_NO_HANDLES) {
+    if (rsdfs_open(RSDFS_VOLUME_DATA, "handle.txt", RSDFS_ACCESS_READ,
+            &extra) != RSDFS_STATUS_NO_HANDLES) {
         kernel_test_fail("FAT32 handle table exceeded its fixed bound");
     }
-    for (size_t index = 0U; index < OPENRFSFS_MAX_HANDLES; ++index) {
-        if (openrfsfs_close(handles[index]) != OPENRFSFS_STATUS_OK) {
+    for (size_t index = 0U; index < RSDFS_MAX_HANDLES; ++index) {
+        if (rsdfs_close(handles[index]) != RSDFS_STATUS_OK) {
             kernel_test_fail("FAT32 handle teardown leaked ownership");
         }
     }
@@ -9213,7 +9213,7 @@ _Noreturn void kernel_test_complete_fat32(void)
         kernel_test_fail("FAT32 completion used outside its scenario");
     }
     cpu_interrupt_enable();
-    console_write("\nopenrfs$ ");
+    console_write("\nrsd$ ");
     switch (active_scenario) {
     case KERNEL_TEST_FAT32_SYSTEM: fat32_system_scenario(); break;
     case KERNEL_TEST_FAT32_DATA: fat32_data_scenario(); break;
@@ -9243,7 +9243,7 @@ _Noreturn void kernel_test_complete_fat32(void)
 #define NETWORK_TEST_HTTP UINT32_C(0x0A000214)
 
 static const uint8_t network_welcome[] =
-    "hello from the OpenRFS network\n";
+    "hello from the RSD network\n";
 
 static void network_require_device(void)
 {
@@ -9308,7 +9308,7 @@ static void network_syscall_http_download_scenario(void)
     const uint64_t response_address = request_address + UINT64_C(256);
     const uint64_t url_address = request_address + UINT64_C(512);
     const uint64_t path_address = request_address + UINT64_C(640);
-    static const char url[] = "http://openrfs.test/welcome.txt";
+    static const char url[] = "http://rsd.test/welcome.txt";
     static const char destination[] = "HTTPLEN.TXT";
     uintptr_t executable_frame = 0U;
     uintptr_t data_frame = 0U;
@@ -9393,7 +9393,7 @@ static void network_syscall_http_download_scenario(void)
         response->network_status != NETWORK_STATUS_OK ||
         response->http_status != 200U ||
         response->value != sizeof(network_welcome) - 1U) {
-        console_write("OpenRFS: network syscall register ");
+        console_write("RSD: network syscall register ");
         console_write(network_syscall_status_string(register_status));
         console_write(" dispatch ");
         console_write(network_syscall_status_string(dispatch_status));
@@ -9539,7 +9539,7 @@ static void network_tcp_connect_close(bool expect_reset)
 #define NETWORK_TEST_LISTEN_PORT UINT16_C(7777)
 #define NETWORK_TEST_CLOSED_PORT UINT16_C(7778)
 
-static const uint8_t network_listen_request[] = "OPENRFS LISTEN\n";
+static const uint8_t network_listen_request[] = "RSD LISTEN\n";
 static const uint8_t network_refusal_notice[] = "REFUSED";
 static const uint8_t network_sequence_notice[] = "SEQUENCE";
 
@@ -10045,7 +10045,7 @@ static void network_download(const char *destination)
 
     network_require_dhcp();
     if (network_http_download(NETWORK_TEST_OWNER,
-            "http://openrfs.test/welcome.txt", destination, false,
+            "http://rsd.test/welcome.txt", destination, false,
             UINT64_C(15000000000), &result) != NETWORK_STATUS_OK ||
         !result.synchronized || result.status_code != 200U ||
         !fat32_file_equals(destination, network_welcome,
@@ -10239,7 +10239,7 @@ _Noreturn void kernel_test_complete_network(void)
         uint32_t address;
 
         network_require_dhcp();
-        if (network_resolve(NETWORK_TEST_OWNER, "openrfs.test", &address,
+        if (network_resolve(NETWORK_TEST_OWNER, "rsd.test", &address,
                 NETWORK_DEFAULT_OPERATION_TIMEOUT_NS) != NETWORK_STATUS_OK ||
             address != NETWORK_TEST_HTTP ||
             network_get_state().dns_requests != 0U ||
@@ -10253,7 +10253,7 @@ _Noreturn void kernel_test_complete_network(void)
             const char *name;
             enum network_status expected;
         } controls[] = {
-            {"openrfs.test", NETWORK_STATUS_DNS_FAILURE},
+            {"rsd.test", NETWORK_STATUS_DNS_FAILURE},
             {"mismatch.test", NETWORK_STATUS_TIMEOUT},
             {"poison.test", NETWORK_STATUS_DNS_FAILURE},
             {"compression.test", NETWORK_STATUS_DNS_FAILURE},
@@ -10314,32 +10314,32 @@ _Noreturn void kernel_test_complete_network(void)
     }
     case KERNEL_TEST_NETWORK_HTTP_CHUNKED:
         network_http_download_scenario(
-            "http://openrfs.test/welcome.txt", "HTTPCHNK.TXT", true, 0U);
+            "http://rsd.test/welcome.txt", "HTTPCHNK.TXT", true, 0U);
         break;
     case KERNEL_TEST_NETWORK_HTTP_REDIRECT:
         network_http_download_scenario(
-            "http://openrfs.test/start", "HTTPREDR.TXT", false, 1U);
+            "http://rsd.test/start", "HTTPREDR.TXT", false, 1U);
         break;
     case KERNEL_TEST_NETWORK_HTTP_MALFORMED: {
         struct network_http_result result;
-        struct openrfsfs_stat stat;
+        struct rsdfs_stat stat;
 
         fat32_require_base(true);
         network_require_dhcp();
         if (network_http_download(NETWORK_TEST_OWNER,
-                "http://openrfs.test/welcome.txt", "BADHTTP.TXT", false,
+                "http://rsd.test/welcome.txt", "BADHTTP.TXT", false,
                 UINT64_C(5000000000), &result) == NETWORK_STATUS_OK ||
-            openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "BADHTTP.TXT", &stat) !=
-                OPENRFSFS_STATUS_NOT_FOUND) {
+            rsdfs_stat_path(RSDFS_VOLUME_DATA, "BADHTTP.TXT", &stat) !=
+                RSDFS_STATUS_NOT_FOUND) {
             kernel_test_fail("malformed HTTP response was accepted");
         }
         break;
     }
     case KERNEL_TEST_NETWORK_HTTP_NESTED:
         fat32_require_base(true);
-        if (openrfsfs_mkdir(OPENRFSFS_VOLUME_DATA, "DOWNLDS") != OPENRFSFS_STATUS_OK &&
-            openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "DOWNLDS",
-                &(struct openrfsfs_stat){0}) != OPENRFSFS_STATUS_OK) {
+        if (rsdfs_mkdir(RSDFS_VOLUME_DATA, "DOWNLDS") != RSDFS_STATUS_OK &&
+            rsdfs_stat_path(RSDFS_VOLUME_DATA, "DOWNLDS",
+                &(struct rsdfs_stat){0}) != RSDFS_STATUS_OK) {
             kernel_test_fail("download directory was not available");
         }
         network_download("DOWNLDS/WELCOME.TXT");
@@ -10356,7 +10356,7 @@ _Noreturn void kernel_test_complete_network(void)
         fat32_require_base(true);
         network_require_dhcp();
         status = network_http_download(NETWORK_TEST_OWNER,
-            "http://openrfs.test/welcome.txt", "full.txt", false,
+            "http://rsd.test/welcome.txt", "full.txt", false,
             UINT64_C(5000000000), &result);
         if (status != NETWORK_STATUS_TOO_LARGE &&
             status != NETWORK_STATUS_FILESYSTEM) {
@@ -10549,14 +10549,14 @@ _Noreturn void kernel_test_complete_network(void)
         break;
     }
     case KERNEL_TEST_NETWORK_SYSTEM_IMMUTABLE: {
-        openrfsfs_handle handle;
+        rsdfs_handle handle;
 
         fat32_require_base(true);
         network_http_download_scenario(
-            "http://openrfs.test/welcome.txt", "IMMUTABL.TXT",
+            "http://rsd.test/welcome.txt", "IMMUTABL.TXT",
             false, 0U);
-        if (openrfsfs_open(OPENRFSFS_VOLUME_SYSTEM, "BUSYBOX", OPENRFSFS_ACCESS_WRITE,
-                &handle) != OPENRFSFS_STATUS_READ_ONLY) {
+        if (rsdfs_open(RSDFS_VOLUME_SYSTEM, "BUSYBOX", RSDFS_ACCESS_WRITE,
+                &handle) != RSDFS_STATUS_READ_ONLY) {
             kernel_test_fail("networking weakened the immutable system volume");
         }
         break;
@@ -10584,13 +10584,13 @@ _Noreturn void kernel_test_complete_network(void)
         network_linux_cat_twice();
         break;
     case KERNEL_TEST_NETWORK_FILES: {
-        struct openrfsfs_list_entry entries[4];
+        struct rsdfs_list_entry entries[4];
         size_t count = 0U;
 
         fat32_require_base(true);
         network_require_dhcp();
-        if (openrfsfs_list(OPENRFSFS_VOLUME_DATA, ".", entries, 4U, &count) !=
-                OPENRFSFS_STATUS_OK || ui_flush() != UI_STATUS_OK) {
+        if (rsdfs_list(RSDFS_VOLUME_DATA, ".", entries, 4U, &count) !=
+                RSDFS_STATUS_OK || ui_flush() != UI_STATUS_OK) {
             kernel_test_fail("networking regressed Files");
         }
         break;
@@ -10604,14 +10604,14 @@ _Noreturn void kernel_test_complete_network(void)
         }
         break;
     case KERNEL_TEST_NETWORK_PERSISTENCE: {
-        struct openrfsfs_stat stat;
-        enum openrfsfs_status status;
+        struct rsdfs_stat stat;
+        enum rsdfs_status status;
 
         fat32_require_base(true);
-        status = openrfsfs_stat_path(OPENRFSFS_VOLUME_DATA, "network.txt", &stat);
-        if (status == OPENRFSFS_STATUS_NOT_FOUND) {
+        status = rsdfs_stat_path(RSDFS_VOLUME_DATA, "network.txt", &stat);
+        if (status == RSDFS_STATUS_NOT_FOUND) {
             network_download("network.txt");
-            if (openrfsfs_unmount(OPENRFSFS_VOLUME_DATA) != OPENRFSFS_STATUS_OK) {
+            if (rsdfs_unmount(RSDFS_VOLUME_DATA) != RSDFS_STATUS_OK) {
                 kernel_test_fail("network download did not unmount cleanly");
             }
             network_native_teardown_census();
@@ -10619,7 +10619,7 @@ _Noreturn void kernel_test_complete_network(void)
             cpu_out8(UINT16_C(0x0064), UINT8_C(0xFE));
             kernel_test_fail("platform reset did not restart QEMU");
         }
-        if (status != OPENRFSFS_STATUS_OK ||
+        if (status != RSDFS_STATUS_OK ||
             !fat32_file_equals("network.txt", network_welcome,
                 sizeof(network_welcome) - 1U)) {
             kernel_test_fail("network download did not persist after reboot");
@@ -11375,8 +11375,8 @@ const char *kernel_test_scenario_name(enum kernel_test_scenario scenario)
         return "device-windows";
     case KERNEL_TEST_BOOT_LEDGER:
         return "boot-ledger";
-    case KERNEL_TEST_OPENRFS_PROOF:
-        return "openrfs-proof";
+    case KERNEL_TEST_RSD_PROOF:
+        return "rsd-proof";
     case KERNEL_TEST_DEVICE_SUBSTRATE:
         return "device-substrate";
     case KERNEL_TEST_XHCI:
@@ -11391,14 +11391,14 @@ const char *kernel_test_scenario_name(enum kernel_test_scenario scenario)
         return "linux-abi";
     case KERNEL_TEST_LINUX_ABI_UNAME:
         return "linux-abi-uname";
-    case KERNEL_TEST_OPENRFS_PROOF_USERLAND:
-        return "openrfs-proof-userland";
-    case KERNEL_TEST_OPENRFS_PROOF_USERLAND_ABSENT:
-        return "openrfs-proof-userland-absent";
-    case KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE:
-        return "openrfs-proof-userland-interactive";
-    case KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE_ABSENT:
-        return "openrfs-proof-userland-interactive-absent";
+    case KERNEL_TEST_RSD_PROOF_USERLAND:
+        return "rsd-proof-userland";
+    case KERNEL_TEST_RSD_PROOF_USERLAND_ABSENT:
+        return "rsd-proof-userland-absent";
+    case KERNEL_TEST_RSD_PROOF_USERLAND_INTERACTIVE:
+        return "rsd-proof-userland-interactive";
+    case KERNEL_TEST_RSD_PROOF_USERLAND_INTERACTIVE_ABSENT:
+        return "rsd-proof-userland-interactive-absent";
     case KERNEL_TEST_FAT32_SYSTEM:
         return "fat32-system";
     case KERNEL_TEST_FAT32_DATA:
@@ -11541,8 +11541,8 @@ const char *kernel_test_scenario_name(enum kernel_test_scenario scenario)
         return "native-dynamic";
     case KERNEL_TEST_NATIVE_HTTPS:
         return "native-https";
-    case KERNEL_TEST_NATIVE_OPENRFS:
-        return "native-openrfs";
+    case KERNEL_TEST_NATIVE_RSD:
+        return "native-rsd";
     case KERNEL_TEST_EXT4_RECOVERY:
         return "ext4-recovery";
     case KERNEL_TEST_DRIVERS:

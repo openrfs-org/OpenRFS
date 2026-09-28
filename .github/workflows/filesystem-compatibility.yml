@@ -1,4 +1,4 @@
-name: OpenRFS filesystem compatibility and FAT32 persistence
+name: RSD filesystem compatibility and FAT32 persistence
 
 on:
     pull_request:
@@ -33,10 +33,10 @@ jobs:
         timeout-minutes: 360
         env:
             RUST_TEST_THREADS: "2"
-            OPENRFS_EXT4_KERNEL_INTEROP: "1"
-            OPENRFS_EXT4_CUT_OPERATION: ${{ inputs.ext4_cut_operation || 'all' }}
+            RSD_EXT4_KERNEL_INTEROP: "1"
+            RSD_EXT4_CUT_OPERATION: ${{ inputs.ext4_cut_operation || 'all' }}
             # Exact Ubuntu package used by the successful 8520fa7 evidence.
-            OPENRFS_E2FSPROGS_VERSION: "1.47.0-2.4~exp1ubuntu4.1"
+            RSD_E2FSPROGS_VERSION: "1.47.0-2.4~exp1ubuntu4.1"
         steps:
             - name: Check out source
               uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -47,7 +47,7 @@ jobs:
                   sudo sed -i '\|azure.archive.ubuntu.com|d' /etc/apt/apt-mirrors.txt
                   sudo apt-get update
                   sudo apt-get install --yes --no-install-recommends \
-                      binutils bzip2 clang "e2fsprogs=$OPENRFS_E2FSPROGS_VERSION" ffmpeg file gcc grub-common \
+                      binutils bzip2 clang "e2fsprogs=$RSD_E2FSPROGS_VERSION" ffmpeg file gcc grub-common \
                       grub-pc-bin lld make \
                       mtools qemu-system-x86 xorriso
             - name: Install the Rust bare-metal target
@@ -56,7 +56,7 @@ jobs:
               shell: bash
               run: |
                   mkdir -p evidence/filesystem evidence/ext4
-                  test "$(dpkg-query -W -f='${Version}' e2fsprogs)" = "$OPENRFS_E2FSPROGS_VERSION"
+                  test "$(dpkg-query -W -f='${Version}' e2fsprogs)" = "$RSD_E2FSPROGS_VERSION"
                   dpkg-query -s e2fsprogs >evidence/ext4/e2fsprogs-package.txt
                   for tool in mke2fs e2fsck debugfs dumpe2fs; do
                       executable="$(command -v "$tool")"
@@ -73,14 +73,14 @@ jobs:
             - name: Verify the kernel artifact
               if: ${{ !inputs.ext4_boot_probe }}
               env:
-                  OPENRFS_EXT4_KERNEL_INTEROP: "1"
+                  RSD_EXT4_KERNEL_INTEROP: "1"
               shell: bash
               run: |
                   set -euo pipefail
                   mkdir -p evidence/ext4
                   python3 tools/filesystem_evidence.py source evidence/ext4/source.json
                   git rev-parse HEAD >evidence/ext4/head.txt
-                  if [[ "$OPENRFS_EXT4_CUT_OPERATION" != 'all' ]]; then
+                  if [[ "$RSD_EXT4_CUT_OPERATION" != 'all' ]]; then
                       echo 'A selected cut requires the explicit boot diagnostic mode.'
                       exit 1
                   fi
@@ -94,11 +94,11 @@ jobs:
                   mkdir -p evidence/ext4
                   python3 tools/filesystem_evidence.py source evidence/ext4/source.json
                   git rev-parse HEAD >evidence/ext4/head.txt
-                  if [[ "$OPENRFS_EXT4_CUT_OPERATION" != 'all' && '${{ inputs.ext4_boot_probe }}' != 'true' ]]; then
+                  if [[ "$RSD_EXT4_CUT_OPERATION" != 'all' && '${{ inputs.ext4_boot_probe }}' != 'true' ]]; then
                       echo 'A selected cut requires the explicit boot diagnostic mode.'
                       exit 1
                   fi
-                  case "$OPENRFS_EXT4_CUT_OPERATION" in
+                  case "$RSD_EXT4_CUT_OPERATION" in
                       all|vfs|journal-wrap|dense-file|geometry|admission-refusals|storage-refusals|metadata-device-cuts|namespace-device-cuts|unlink-device|replace-device|mkdir-device|rmdir-device|link-device|symlink-device|symlink-long-device|chmod-device|times-device|xattr-device|xattr-remove-device|unlink|replace|rename|rename-errors|rename-device|rename-cross|rename-cross-errors|rename-cross-device|rename-wrap-device|truncate|truncate-errors|truncate-device|grow|grow-errors|grow-device|append|append-errors|append-device|overwrite|overwrite-errors|overwrite-device|chmod|chmod-errors|times|times-errors|create|create-errors|create-device|mkdir|mkdir-errors|rmdir|rmdir-errors|xattr|xattr-errors|xattr-remove|xattr-remove-errors|link|link-errors|symlink|symlink-errors|symlink-long|symlink-long-errors) ;;
                       *) echo 'Unsupported cut diagnostic.'; exit 1 ;;
                   esac
@@ -135,14 +135,14 @@ jobs:
                   make package-upload-tests 2>&1 | tee evidence/ext4/package-upload-host.log
                   make package-service-tests 2>&1 | tee evidence/ext4/package-service-host.log
                   make package-control-tests 2>&1 | tee evidence/ext4/package-control-host.log
-                  make build/tests/ext4/openrfs-ext4.raw
-                  export OPENRFS_EXT4_RUST_FIXTURE="$PWD/build/tests/ext4/openrfs-ext4.raw"
+                  make build/tests/ext4/rsd-ext4.raw
+                  export RSD_EXT4_RUST_FIXTURE="$PWD/build/tests/ext4/rsd-ext4.raw"
                   CARGO_TARGET_DIR="$PWD/build/ext4-transaction-target" \
                       cargo test --manifest-path tools/ext4-transaction-tests/Cargo.toml \
                           --locked --offline --test revoke_allocations -- --include-ignored --nocapture \
                           2>&1 | tee evidence/ext4/revoke-allocation-host.log
                   export CARGO_TARGET_DIR="$PWD/build/ext4-transaction-target"
-                  if [[ "$OPENRFS_EXT4_CUT_OPERATION" == 'storage-refusals' || "$OPENRFS_EXT4_CUT_OPERATION" == 'admission-refusals' ]]; then
+                  if [[ "$RSD_EXT4_CUT_OPERATION" == 'storage-refusals' || "$RSD_EXT4_CUT_OPERATION" == 'admission-refusals' ]]; then
                       cargo test --manifest-path tools/ext4-transaction-tests/Cargo.toml \
                           --locked --offline --lib --test coordinator -- --nocapture \
                           2>&1 | tee evidence/ext4/journal-and-coordinator-host.log
@@ -191,16 +191,16 @@ jobs:
                       targets+=(qemu-test-ext4-journal-wrap)
                       targets+=(qemu-test-ext4-dense-file qemu-test-ext4-geometry qemu-test-ext4-admission-refusals)
                       targets+=(qemu-test-ext4-rename-wrap-device-powercuts)
-                      if [[ "$OPENRFS_EXT4_CUT_OPERATION" != 'all' ]]; then
-                          if [[ "$OPENRFS_EXT4_CUT_OPERATION" == 'vfs' ]]; then
+                      if [[ "$RSD_EXT4_CUT_OPERATION" != 'all' ]]; then
+                          if [[ "$RSD_EXT4_CUT_OPERATION" == 'vfs' ]]; then
                               targets=(qemu-test-ext4-recovery)
-                          elif [[ "$OPENRFS_EXT4_CUT_OPERATION" == 'journal-wrap' || "$OPENRFS_EXT4_CUT_OPERATION" == 'dense-file' || "$OPENRFS_EXT4_CUT_OPERATION" == 'geometry' || "$OPENRFS_EXT4_CUT_OPERATION" == 'admission-refusals' || "$OPENRFS_EXT4_CUT_OPERATION" == 'storage-refusals' || "$OPENRFS_EXT4_CUT_OPERATION" == 'metadata-device-cuts' || "$OPENRFS_EXT4_CUT_OPERATION" == 'namespace-device-cuts' ]]; then
-                              targets=("qemu-test-ext4-${OPENRFS_EXT4_CUT_OPERATION}")
+                          elif [[ "$RSD_EXT4_CUT_OPERATION" == 'journal-wrap' || "$RSD_EXT4_CUT_OPERATION" == 'dense-file' || "$RSD_EXT4_CUT_OPERATION" == 'geometry' || "$RSD_EXT4_CUT_OPERATION" == 'admission-refusals' || "$RSD_EXT4_CUT_OPERATION" == 'storage-refusals' || "$RSD_EXT4_CUT_OPERATION" == 'metadata-device-cuts' || "$RSD_EXT4_CUT_OPERATION" == 'namespace-device-cuts' ]]; then
+                              targets=("qemu-test-ext4-${RSD_EXT4_CUT_OPERATION}")
                           else
-                              targets=("qemu-test-ext4-${OPENRFS_EXT4_CUT_OPERATION}-powercuts")
+                              targets=("qemu-test-ext4-${RSD_EXT4_CUT_OPERATION}-powercuts")
                           fi
                           printf 'Single operation diagnostic: %s. Full recovery and milestone gates remain required.\n' \
-                              "$OPENRFS_EXT4_CUT_OPERATION" >evidence/ext4/SINGLE-CUT-DIAGNOSTIC.txt
+                              "$RSD_EXT4_CUT_OPERATION" >evidence/ext4/SINGLE-CUT-DIAGNOSTIC.txt
                       fi
                   fi
                   make "${targets[@]}" QEMU_ACCEL=tcg \
@@ -247,7 +247,7 @@ jobs:
               if: always()
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
-                  name: openrfs-writable-ext4-${{ github.sha }}
+                  name: rsd-writable-ext4-${{ github.sha }}
                   path: |
                       evidence/ext4
                       build/tests/ext4-recovery
@@ -277,15 +277,15 @@ jobs:
                   make qemu-test-boot-ledger QEMU_ACCEL=tcg
                   proof=evidence/filesystem/tcg-sweep-10-logs/filesystem.log
                   grep -Fx \
-                      'ST FAT16 file OPENRFS.BIN bytes 128 reads 4 msix 4 ownership CPU-CONTROLLER-CPU teardown clean robustness 28' \
+                      'ST FAT16 file RSD.BIN bytes 128 reads 4 msix 4 ownership CPU-CONTROLLER-CPU teardown clean robustness 28' \
                       "$proof" >evidence/filesystem/filesystem-proof-transcript.txt
                   grep -Fx 'ST PASS filesystem' "$proof" \
                       >>evidence/filesystem/filesystem-proof-transcript.txt
                   mkdir -p evidence/filesystem/scenario-isos
                   for log in build/tests/*/serial.log; do
                       scenario=$(basename "$(dirname "$log")")
-                      make "build/tests/${scenario}/openrfs.iso"
-                      cp "build/tests/${scenario}/openrfs.iso" \
+                      make "build/tests/${scenario}/rsd.iso"
+                      cp "build/tests/${scenario}/rsd.iso" \
                           "evidence/filesystem/scenario-isos/${scenario}.iso"
                   done
             - name: Record the accelerator safety boundary
@@ -304,8 +304,8 @@ jobs:
               run: |
                   set -euo pipefail
                   make iso
-                  cp build/openrfs.iso \
-                      evidence/filesystem/OpenRFS-filesystem-regression.iso
+                  cp build/rsd.iso \
+                      evidence/filesystem/RSD-filesystem-regression.iso
                   python3 tools/make-fat16-fixture.py \
                       build/tests/filesystem/fat16-fixture.raw
                   fixture_sha=$(
@@ -336,30 +336,30 @@ jobs:
                   test -n "$ordinary_record"
                   stage_capacity=$(sed -nE \
                       's/^#define BOOT_LEDGER_STAGE_CAPACITY ([0-9]+)U$/\1/p' \
-                      include/openrfs/boot_ledger.h)
+                      include/rsd/boot_ledger.h)
                   receipt_capacity=$(sed -nE \
                       's/^#define BOOT_LEDGER_RECEIPT_CAPACITY ([0-9]+)U$/\1/p' \
-                      include/openrfs/boot_ledger.h)
+                      include/rsd/boot_ledger.h)
                   capability_capacity=$(sed -nE \
                       's/^#define BOOT_STAGE_CAPABILITY_CAPACITY ([0-9]+)U$/\1/p' \
-                      include/openrfs/boot_ledger.h)
+                      include/rsd/boot_ledger.h)
                   test -n "$stage_capacity"
                   test -n "$receipt_capacity"
                   test -n "$capability_capacity"
                   {
-                      printf 'OpenRFS v0.6.0 deterministic FAT16 fixture\n'
+                      printf 'RSD v0.6.0 deterministic FAT16 fixture\n'
                       printf 'logical sectors: 4096\n'
                       printf 'bytes per sector: 4096\n'
                       printf 'BPB LBA: 0\n'
                       printf 'FAT span: LBA 1, 2 sectors\n'
                       printf 'root directory: LBA 3, 128 entries\n'
-                      printf 'OPENRFS.BIN data: cluster 2, LBA 4, 128 bytes\n'
+                      printf 'RSD.BIN data: cluster 2, LBA 4, 128 bytes\n'
                       printf 'payload SHA-256: D399F065C9F21E2FD51E2AEADB7768EAB7E6E45E5150F31227C9711934A4D1D3\n'
                       printf 'image SHA-256: %s\n' "$fixture_sha"
                       printf 'backend: temporary regular file, raw, guest read-only\n'
                   } >evidence/filesystem/fixture-layout-digest.txt
                   {
-                      printf 'OpenRFS Read-Only Filesystem Foundation verification\n'
+                      printf 'RSD Read-Only Filesystem Foundation verification\n'
                       printf 'commit: %s\n' "$GITHUB_SHA"
                       printf 'tree: %s\n' "$(git rev-parse 'HEAD^{tree}')"
                       printf 'scenarios per sweep: %s\n' "$scenario_count"
@@ -369,8 +369,8 @@ jobs:
                       printf 'ordinary ledger: %s\n' "$ordinary_record"
                       printf 'source lines (src and include): %s\n' "$source_lines"
                       printf 'shell assertion lines: %s\n' "$assertion_count"
-                      printf 'kernel bytes: %s\n' "$(stat -c %s build/openrfs.elf)"
-                      printf 'ISO bytes: %s\n' "$(stat -c %s build/openrfs.iso)"
+                      printf 'kernel bytes: %s\n' "$(stat -c %s build/rsd.elf)"
+                      printf 'ISO bytes: %s\n' "$(stat -c %s build/rsd.iso)"
                       printf 'make verify: passed\n'
                       printf 'serial TCG complete sweeps: 10 passed\n'
                       cat evidence/filesystem/accelerator-results.txt
@@ -403,7 +403,7 @@ jobs:
               if: ${{ always() && !inputs.ext4_only && !inputs.ext4_boot_probe }}
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
-                  name: openrfs-filesystem-milestone-${{ github.sha }}
+                  name: rsd-filesystem-milestone-${{ github.sha }}
                   path: evidence/filesystem
                   if-no-files-found: error
                   retention-days: 30

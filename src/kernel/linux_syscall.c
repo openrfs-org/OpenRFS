@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Three measured Linux x86-64 SYSCALL profiles for bounded BusyBox proofs. */
 
-#include <openrfs/linux_syscall.h>
+#include <rsd/linux_syscall.h>
 
 #include <stddef.h>
 
-#include <openrfs/console.h>
-#include <openrfs/cpu.h>
-#include <openrfs/linux_abi.h>
-#include <openrfs/linux_cat.h>
-#include <openrfs/linux_uname.h>
-#include <openrfs/memory.h>
+#include <rsd/console.h>
+#include <rsd/cpu.h>
+#include <rsd/linux_abi.h>
+#include <rsd/linux_cat.h>
+#include <rsd/linux_uname.h>
+#include <rsd/memory.h>
 
 #define CPUID_EXTENDED_ROOT UINT32_C(0x80000000)
 #define CPUID_EXTENDED_FEATURES UINT32_C(0x80000001)
@@ -173,11 +173,11 @@ static const uint64_t cat_allowlist[LINUX_CAT_SYSCALL_ALLOWLIST_COUNT] = {
     UINT64_C(0), UINT64_C(1), UINT64_C(158), UINT64_C(218), UINT64_C(231)
 };
 
-static const struct linux_utsname_record openrfs_uts_record = {
+static const struct linux_utsname_record rsd_uts_record = {
     .sysname = "Linux",
-    .nodename = "openrfs",
-    .release = "2.4.0-openrfs",
-    .version = "OpenRFS",
+    .nodename = "rsd",
+    .release = "2.4.0-rsd",
+    .version = "RSD",
     .machine = "x86_64",
     .domainname = "(none)"
 };
@@ -1619,13 +1619,13 @@ bool linux_syscall_uname_semantic_self_test(void)
     struct linux_syscall_runtime candidate;
     struct linux_syscall_frame frame;
 
-    if (!uts_field_valid(openrfs_uts_record.sysname, "Linux", 5U) ||
-        !uts_field_valid(openrfs_uts_record.nodename, "openrfs", 7U) ||
-        !uts_field_valid(openrfs_uts_record.release, "2.4.0-openrfs", 13U) ||
-        !uts_field_valid(openrfs_uts_record.version, "OpenRFS", 7U) ||
-        !uts_field_valid(openrfs_uts_record.machine, "x86_64", 6U) ||
-        !uts_field_valid(openrfs_uts_record.domainname, "(none)", 6U) ||
-        sizeof(openrfs_uts_record) != 390U ||
+    if (!uts_field_valid(rsd_uts_record.sysname, "Linux", 5U) ||
+        !uts_field_valid(rsd_uts_record.nodename, "rsd", 7U) ||
+        !uts_field_valid(rsd_uts_record.release, "2.4.0-rsd", 13U) ||
+        !uts_field_valid(rsd_uts_record.version, "RSD", 7U) ||
+        !uts_field_valid(rsd_uts_record.machine, "x86_64", 6U) ||
+        !uts_field_valid(rsd_uts_record.domainname, "(none)", 6U) ||
+        sizeof(rsd_uts_record) != 390U ||
         LINUX_UNAME_SYSCALL_ALLOWLIST_COUNT >
             LINUX_SYSCALL_ALLOWLIST_MAX) {
         return false;
@@ -1934,28 +1934,28 @@ bool linux_syscall_uname_copyout_self_test(size_t *completed_tests)
         runtime.context.address_space->state !=
             PAGING_PROCESS_SPACE_INSTALLED ||
         !copy_from_user(before, valid, sizeof(before)) ||
-        copy_to_user_stack(0U, &openrfs_uts_record,
-            sizeof(openrfs_uts_record)) ||
-        copy_to_user_stack(UINT64_MAX - 1U, &openrfs_uts_record,
-            sizeof(openrfs_uts_record)) ||
+        copy_to_user_stack(0U, &rsd_uts_record,
+            sizeof(rsd_uts_record)) ||
+        copy_to_user_stack(UINT64_MAX - 1U, &rsd_uts_record,
+            sizeof(rsd_uts_record)) ||
         copy_to_user_stack(UINT64_C(0x0000800000000000),
-            &openrfs_uts_record, sizeof(openrfs_uts_record)) ||
+            &rsd_uts_record, sizeof(rsd_uts_record)) ||
         copy_to_user_stack(PAGING_LINUX_STACK_GUARD,
-            &openrfs_uts_record, sizeof(openrfs_uts_record)) ||
+            &rsd_uts_record, sizeof(rsd_uts_record)) ||
         copy_to_user_stack(runtime.context.executable_start,
-            &openrfs_uts_record, sizeof(openrfs_uts_record)) ||
+            &rsd_uts_record, sizeof(rsd_uts_record)) ||
         !copy_from_user(prefix_before, invalid_cross,
             sizeof(prefix_before)) ||
-        copy_to_user_stack(invalid_cross, &openrfs_uts_record,
-            sizeof(openrfs_uts_record)) ||
+        copy_to_user_stack(invalid_cross, &rsd_uts_record,
+            sizeof(rsd_uts_record)) ||
         !copy_from_user(prefix_after, invalid_cross,
             sizeof(prefix_after)) ||
         !bytes_equal(prefix_before, prefix_after, sizeof(prefix_before)) ||
-        !copy_to_user_stack(valid, &openrfs_uts_record,
-            sizeof(openrfs_uts_record)) ||
+        !copy_to_user_stack(valid, &rsd_uts_record,
+            sizeof(rsd_uts_record)) ||
         !copy_from_user(after, valid, sizeof(after)) ||
-        !bytes_equal(after, &openrfs_uts_record,
-            sizeof(openrfs_uts_record)) ||
+        !bytes_equal(after, &rsd_uts_record,
+            sizeof(rsd_uts_record)) ||
         !copy_to_user_stack(valid, before, sizeof(before))) {
         return false;
     }
@@ -2092,8 +2092,8 @@ static enum linux_syscall_status execute_uname_call(
                 LINUX_SYSCALL_STATUS_OK) {
             return LINUX_SYSCALL_STATUS_BAD_STATE;
         }
-        if (!copy_to_user_stack(frame->rdi, &openrfs_uts_record,
-                sizeof(openrfs_uts_record))) {
+        if (!copy_to_user_stack(frame->rdi, &rsd_uts_record,
+                sizeof(rsd_uts_record))) {
             if (transition_uts(LINUX_UTS_COPY_FAILED) !=
                     LINUX_SYSCALL_STATUS_OK) {
                 return LINUX_SYSCALL_STATUS_BAD_STATE;

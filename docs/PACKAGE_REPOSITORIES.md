@@ -2,7 +2,7 @@
 
 # Signed package repositories
 
-`tools/openrfs-repository.py` defines OpenRFS's deterministic repository index and
+`tools/rsd-repository.py` defines RSD's deterministic repository index and
 host lock format. It builds and verifies a canonical binary index, authenticates
 it against an external immutable Ed25519 root, checks freshness and
 repository-version floors, verifies downloaded package bytes, and emits an exact
@@ -10,7 +10,7 @@ dependency-first install plan and lock representation.
 
 The guest parser/planner in `package_manager.c` consumes the same canonical
 index and package-v3 metadata behind the fail-closed `package_trust.c` immutable-key
-and Ed25519 callbacks. The platform table provisions those keys, the OpenRFS
+and Ed25519 callbacks. The platform table provisions those keys, the RSD
 client fetches the index and payloads over HTTPS, and the package controller
 binds them to staged generation commits. Desktop package actions queue that same client
 path. See
@@ -130,25 +130,25 @@ A JSON build specification mirrors the fields above. Package entries use
 `publisher_key_id`, and optional `root_key_id` are 64 hexadecimal digits.
 
 ```sh
-python3 tools/openrfs-repository.py build \
+python3 tools/rsd-repository.py build \
     --spec repository/index.json \
     --signing-key keys/repository-root-private.pem \
     --output build/repository/index.sri
 
-python3 tools/openrfs-repository.py inspect \
+python3 tools/rsd-repository.py inspect \
     --trusted-root keys/repository-root-public.pem \
     --minimum-version 42 \
     build/repository/index.sri
 
-python3 tools/openrfs-repository.py resolve \
+python3 tools/rsd-repository.py resolve \
     --trusted-root keys/repository-root-public.pem \
     --minimum-version 42 --abi 1 \
     --lock-output build/repository/desktop.lock \
-    build/repository/index.sri org.openrfs.desktop@^3.0.0
+    build/repository/index.sri org.rsd.desktop@^3.0.0
 
-python3 tools/openrfs-repository.py verify-download \
+python3 tools/rsd-repository.py verify-download \
     --trusted-root keys/repository-root-public.pem \
-    --identifier org.openrfs.desktop --version 3.0.0 \
+    --identifier org.rsd.desktop --version 3.0.0 \
     --file downloads/desktop-3.0.0.spk \
     build/repository/index.sri
 ```

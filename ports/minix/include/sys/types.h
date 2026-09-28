@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * OpenRFS environment for the vendored MINIX 3 audio drivers: basic types,
+ * RSD environment for the vendored MINIX 3 audio drivers: basic types,
  * with the widths MINIX 3's i386 port gives them. phys_bytes stays 32-bit:
  * every buffer these drivers hand a device lies below 4 GiB (below 16 MiB
  * for the ISA card).
  */
-#ifndef OPENRFS_MINIX_SYS_TYPES_H
-#define OPENRFS_MINIX_SYS_TYPES_H
+#ifndef RSD_MINIX_SYS_TYPES_H
+#define RSD_MINIX_SYS_TYPES_H
 
 #include <stddef.h>
 #include <stdint.h>

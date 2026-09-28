@@ -2,16 +2,16 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include <openrfs/minimal_de.h>
-#include <trait/menu.h>
-#include <trait/shell.h>
+#include <rsd/minimal_de.h>
+#include <rsd_desktop/menu.h>
+#include <rsd_desktop/shell.h>
 
 static uint32_t pixels[1024U * 768U];
 
 int main(void)
 {
     struct ui_rect terminal;
-    struct trait_rect menu;
+    struct rsd_rect menu;
     struct ui_event close = { .type = UI_EVENT_PANEL_CLOSE };
     struct ui_event press = {
         .type = UI_EVENT_POINTER_BUTTON_PRESS,
@@ -27,10 +27,10 @@ int main(void)
             !minimal_de_self_test() ||
             !minimal_de_construct(pixels, 1024U, 768U) ||
             !minimal_de_terminal_client(&terminal) ||
-            trait_menu_row_count() != 4U ||
-            trait_shell_run_match_count() != 2U ||
-            terminal.x != 87U || terminal.y != 107U ||
-            terminal.width != 546U || terminal.height != 306U) {
+            rsd_menu_row_count() != 7U ||
+            rsd_shell_run_match_count() != 5U ||
+            terminal.x != 84U || terminal.y != 108U ||
+            terminal.width != 552U || terminal.height != 308U) {
         fputs("minimal desktop construction or terminal geometry failed\n",
             stderr);
         return 1;
@@ -41,33 +41,34 @@ int main(void)
         fputs("minimal desktop frame did not reach the surface\n", stderr);
         return 1;
     }
-    if (trait_shell_open(TRAIT_APP_TERMINAL,
-            (struct trait_rect){ 400U, 400U, 300U, 200U }) >=
-                TRAIT_SHELL_MAX_WINDOWS ||
-            trait_shell_window_count() != 1U ||
-            !minimal_de_terminal_client(&terminal) || terminal.x != 87U) {
-        fputs("reopening the real terminal created a false second view\n",
+    if (rsd_shell_open(RSD_APP_TERMINAL,
+            (struct rsd_rect){ 400U, 400U, 300U, 200U }) >=
+                RSD_SHELL_MAX_WINDOWS ||
+            rsd_shell_window_count() != 2U ||
+            !minimal_de_terminal_client(&terminal) || terminal.x < 400U) {
+        fputs("second RSD terminal did not open\n",
             stderr);
         return 1;
     }
     (void)minimal_de_event(&move);
-    if (!minimal_de_terminal_client(&terminal) || terminal.x != 87U ||
-            terminal.y != 107U) {
+    if (!minimal_de_terminal_client(&terminal) || terminal.x < 400U) {
         fputs("pointer hover moved the terminal without a drag\n", stderr);
         return 1;
     }
     if (!minimal_de_event(&close) ||
-            minimal_de_terminal_client(&terminal) ||
-            trait_shell_window_count() != 0U ||
+            rsd_shell_window_count() != 1U ||
+            !minimal_de_terminal_client(&terminal) ||
+            !minimal_de_event(&close) ||
+            rsd_shell_window_count() != 0U ||
             !minimal_de_event(&press) ||
-            !trait_shell_root_menu_open() ||
-            !trait_shell_root_menu_bounds(&menu)) {
+            !rsd_shell_root_menu_open() ||
+            !rsd_shell_root_menu_bounds(&menu)) {
         fputs("minimal desktop close or root menu failed\n", stderr);
         return 1;
     }
     press.point.x = (int32_t)(menu.x + 20U);
-    press.point.y = (int32_t)(menu.y + TRAIT_MENU_TITLE_HEIGHT + 10U);
-    if (!minimal_de_event(&press) || trait_shell_root_menu_open() ||
+    press.point.y = (int32_t)(menu.y + RSD_MENU_TITLE_HEIGHT + 10U);
+    if (!minimal_de_event(&press) || rsd_shell_root_menu_open() ||
             !minimal_de_terminal_client(&terminal)) {
         fputs("minimal desktop terminal relaunch failed\n", stderr);
         return 1;

@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * OpenRFS environment for the vendored MINIX 3 audio drivers: the PCI
+ * RSD environment for the vendored MINIX 3 audio drivers: the PCI
  * configuration offsets MINIX's <machine/pci.h> names, from the PCI Local
  * Bus Specification's type 0 header.
  */
-#ifndef OPENRFS_MINIX_MACHINE_PCI_H
-#define OPENRFS_MINIX_MACHINE_PCI_H
+#ifndef RSD_MINIX_MACHINE_PCI_H
+#define RSD_MINIX_MACHINE_PCI_H
 
 #define PCI_VID 0x00  /* vendor ID, 16-bit */
 #define PCI_DID 0x02  /* device ID, 16-bit */

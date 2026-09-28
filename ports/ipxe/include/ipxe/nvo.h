@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * Non-volatile option storage (include/ipxe/nvo.h). OpenRFS has no iPXE
+ * Non-volatile option storage (include/ipxe/nvo.h). RSD has no iPXE
  * settings tree, so an NVO block is described but never registered; the
  * driver keeps working exactly as iPXE does when registration is refused.
  */
-#ifndef OPENRFS_IPXE_NVO_H
-#define OPENRFS_IPXE_NVO_H
+#ifndef RSD_IPXE_NVO_H
+#define RSD_IPXE_NVO_H
 
 #include <stddef.h>
 #include <ipxe/nvs.h>

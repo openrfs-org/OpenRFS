@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * OpenRFS environment for the vendored SeaBIOS drivers: platform detection.
+ * RSD environment for the vendored SeaBIOS drivers: platform detection.
  * runningOnQEMU answers from QEMU's fw_cfg signature, probed once.
  */
-#ifndef OPENRFS_SEABIOS_FW_PARAVIRT_H
-#define OPENRFS_SEABIOS_FW_PARAVIRT_H
+#ifndef RSD_SEABIOS_FW_PARAVIRT_H
+#define RSD_SEABIOS_FW_PARAVIRT_H
 
 #include "config.h"
 #include "types.h"
@@ -27,7 +27,7 @@ typedef struct QemuCfgDmaAccess {
 #define QEMU_CFG_DMA_CTL_WRITE   0x10
 
 static inline int runningOnQEMU(void) {
-    return openrfs_seabios_running_on_qemu();
+    return rsd_seabios_running_on_qemu();
 }
 
 #endif

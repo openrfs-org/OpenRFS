@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Fixed-size process teardown history storage. */
 
-#include <openrfs/native_process.h>
+#include <rsd/native_process.h>
 
 static void zero_bytes(void *pointer, size_t length)
 {

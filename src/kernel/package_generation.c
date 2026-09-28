@@ -2,8 +2,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/package_generation.h>
-#include <openrfs/package_state.h>
+#include <rsd/package_generation.h>
+#include <rsd/package_state.h>
 
 static void clear_bytes(uint8_t *destination, size_t count)
 {

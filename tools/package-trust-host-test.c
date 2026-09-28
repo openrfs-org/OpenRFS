@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef OPENRFS_PACKAGE_TRUST_WASM
+#ifndef RSD_PACKAGE_TRUST_WASM
 #include <stdio.h>
 #endif
 
-#include <openrfs/package_trust.h>
-#include <openrfs/package_platform_trust.h>
+#include <rsd/package_trust.h>
+#include <rsd/package_platform_trust.h>
 
 /*
  * Python cryptography Ed25519 key from seed 00..1f, signing
@@ -315,7 +315,7 @@ static int package_trust_test(void)
     return 0;
 }
 
-#ifdef OPENRFS_PACKAGE_TRUST_WASM
+#ifdef RSD_PACKAGE_TRUST_WASM
 int package_trust_wasm_test(void);
 
 int package_trust_wasm_test(void)
@@ -330,7 +330,7 @@ int main(void)
         (void)fprintf(stderr, "package trust test failed: %d\n", status);
         return status;
     }
-    (void)puts("OpenRFS Ed25519 package trust tests passed");
+    (void)puts("RSD Ed25519 package trust tests passed");
     return 0;
 }
 #endif

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef OPENRFS_IPXE_STRINGS_H
-#define OPENRFS_IPXE_STRINGS_H
+#ifndef RSD_IPXE_STRINGS_H
+#define RSD_IPXE_STRINGS_H
 
 #include <string.h>
 
@@ -16,12 +16,12 @@ static inline int ffsll(long long value)
 
 #define ffsl(value) ffsll((long long)(value))
 
-static inline int openrfs_ipxe_fls(unsigned long long value)
+static inline int rsd_ipxe_fls(unsigned long long value)
 {
     return value == 0U ? 0 : 64 - __builtin_clzll(value);
 }
 
-#define fls(value) openrfs_ipxe_fls((unsigned long long)(value))
+#define fls(value) rsd_ipxe_fls((unsigned long long)(value))
 #define flsl(value) fls(value)
 #define flsll(value) fls(value)
 

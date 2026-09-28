@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * OpenRFS environment for the vendored MINIX 3 audio drivers: ioctl
+ * RSD environment for the vendored MINIX 3 audio drivers: ioctl
  * request encoding, as MINIX 3's <sys/ioccom.h> (from NetBSD) defines it.
  * The drivers only compare requests against the codes <sys/ioc_sound.h>
  * builds from these macros; the glue passes the same codes.
  */
-#ifndef OPENRFS_MINIX_IOCTL_H
-#define OPENRFS_MINIX_IOCTL_H
+#ifndef RSD_MINIX_IOCTL_H
+#define RSD_MINIX_IOCTL_H
 
 #define IOCPARM_MASK 0xfff
 #define IOCPARM_SHIFT 16

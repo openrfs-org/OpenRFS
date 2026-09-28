@@ -3,11 +3,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/boot.h>
-#include <openrfs/memory.h>
+#include <rsd/boot.h>
+#include <rsd/memory.h>
 
-#define FRAME_COUNT ((size_t)(OPENRFS_EARLY_PHYSICAL_LIMIT / OPENRFS_PAGE_SIZE))
-#define ISA_DMA_FRAME_LIMIT ((size_t)(UINT64_C(0x1000000) / OPENRFS_PAGE_SIZE))
+#define FRAME_COUNT ((size_t)(RSD_EARLY_PHYSICAL_LIMIT / RSD_PAGE_SIZE))
+#define ISA_DMA_FRAME_LIMIT ((size_t)(UINT64_C(0x1000000) / RSD_PAGE_SIZE))
 #define BITMAP_BYTE_COUNT ((FRAME_COUNT + 7U) / 8U)
 
 extern uint8_t __kernel_start[];
@@ -79,7 +79,7 @@ static bool frame_in_contiguous_allocation(size_t frame)
          ++index) {
         const struct contiguous_record *record = &contiguous_records[index];
         const size_t first = (size_t)((uint64_t)record->physical_base /
-            OPENRFS_PAGE_SIZE);
+            RSD_PAGE_SIZE);
 
         if (record->active && frame >= first &&
             frame - first < record->page_count) {
@@ -97,7 +97,7 @@ static enum frame_status available_frame_bounds(
     size_t *past_last_frame
 )
 {
-    const uint64_t page_mask = OPENRFS_PAGE_SIZE - 1U;
+    const uint64_t page_mask = RSD_PAGE_SIZE - 1U;
     uint64_t end;
     uint64_t clipped_end;
     uint64_t aligned_base;
@@ -106,15 +106,15 @@ static enum frame_status available_frame_bounds(
         return FRAME_STATUS_RANGE_OVERFLOW;
     }
 
-    if (length == 0U || base >= OPENRFS_EARLY_PHYSICAL_LIMIT) {
+    if (length == 0U || base >= RSD_EARLY_PHYSICAL_LIMIT) {
         *first_frame = 0;
         *past_last_frame = 0;
         return FRAME_STATUS_OK;
     }
 
-    clipped_end = end < OPENRFS_EARLY_PHYSICAL_LIMIT
+    clipped_end = end < RSD_EARLY_PHYSICAL_LIMIT
         ? end
-        : OPENRFS_EARLY_PHYSICAL_LIMIT;
+        : RSD_EARLY_PHYSICAL_LIMIT;
     aligned_base = (base + page_mask) & ~page_mask;
 
     if (aligned_base >= clipped_end) {
@@ -123,8 +123,8 @@ static enum frame_status available_frame_bounds(
         return FRAME_STATUS_OK;
     }
 
-    *first_frame = (size_t)(aligned_base / OPENRFS_PAGE_SIZE);
-    *past_last_frame = (size_t)((clipped_end & ~page_mask) / OPENRFS_PAGE_SIZE);
+    *first_frame = (size_t)(aligned_base / RSD_PAGE_SIZE);
+    *past_last_frame = (size_t)((clipped_end & ~page_mask) / RSD_PAGE_SIZE);
     return FRAME_STATUS_OK;
 }
 
@@ -148,17 +148,17 @@ static enum frame_status covering_frame_bounds(
         return FRAME_STATUS_OK;
     }
 
-    if (base >= OPENRFS_EARLY_PHYSICAL_LIMIT) {
+    if (base >= RSD_EARLY_PHYSICAL_LIMIT) {
         return FRAME_STATUS_RANGE_OUTSIDE_LIMIT;
     }
 
-    clipped_end = end < OPENRFS_EARLY_PHYSICAL_LIMIT
+    clipped_end = end < RSD_EARLY_PHYSICAL_LIMIT
         ? end
-        : OPENRFS_EARLY_PHYSICAL_LIMIT;
-    *first_frame = (size_t)(base / OPENRFS_PAGE_SIZE);
-    *past_last_frame = (size_t)(clipped_end / OPENRFS_PAGE_SIZE);
+        : RSD_EARLY_PHYSICAL_LIMIT;
+    *first_frame = (size_t)(base / RSD_PAGE_SIZE);
+    *past_last_frame = (size_t)(clipped_end / RSD_PAGE_SIZE);
 
-    if ((clipped_end & (OPENRFS_PAGE_SIZE - 1U)) != 0U) {
+    if ((clipped_end & (RSD_PAGE_SIZE - 1U)) != 0U) {
         ++*past_last_frame;
     }
 
@@ -219,7 +219,7 @@ static void recompute_stats(void)
 
         ++stats.allocatable_frames;
         stats.highest_allocatable_address =
-            ((uint64_t)frame + 1U) * OPENRFS_PAGE_SIZE;
+            ((uint64_t)frame + 1U) * RSD_PAGE_SIZE;
 
         if (bitmap_get(used_bitmap, frame)) {
             ++stats.allocated_frames;
@@ -321,7 +321,7 @@ enum frame_status frame_allocator_initialize(
         return status;
     }
 
-    status = reserve_internal(0U, OPENRFS_LOW_MEMORY_RESERVATION);
+    status = reserve_internal(0U, RSD_LOW_MEMORY_RESERVATION);
 
     if (status != FRAME_STATUS_OK) {
         return status;
@@ -355,7 +355,7 @@ enum frame_status frame_allocator_initialize(
         return FRAME_STATUS_OUT_OF_MEMORY;
     }
 
-    next_search_index = (size_t)(OPENRFS_LOW_MEMORY_RESERVATION / OPENRFS_PAGE_SIZE);
+    next_search_index = (size_t)(RSD_LOW_MEMORY_RESERVATION / RSD_PAGE_SIZE);
     allocator_initialized = true;
     return FRAME_STATUS_OK;
 }
@@ -395,7 +395,7 @@ enum frame_status frame_allocate(uintptr_t *physical_address)
                 if (next_search_index == FRAME_COUNT) {
                     next_search_index = ISA_DMA_FRAME_LIMIT;
                 }
-                *physical_address = (uintptr_t)((uint64_t)frame * OPENRFS_PAGE_SIZE);
+                *physical_address = (uintptr_t)((uint64_t)frame * RSD_PAGE_SIZE);
                 return FRAME_STATUS_OK;
             }
         }
@@ -412,15 +412,15 @@ enum frame_status frame_release(uintptr_t physical_address)
         return FRAME_STATUS_NOT_INITIALIZED;
     }
 
-    if (((uint64_t)physical_address & (OPENRFS_PAGE_SIZE - 1U)) != 0U) {
+    if (((uint64_t)physical_address & (RSD_PAGE_SIZE - 1U)) != 0U) {
         return FRAME_STATUS_UNALIGNED_ADDRESS;
     }
 
-    if ((uint64_t)physical_address >= OPENRFS_EARLY_PHYSICAL_LIMIT) {
+    if ((uint64_t)physical_address >= RSD_EARLY_PHYSICAL_LIMIT) {
         return FRAME_STATUS_RANGE_OUTSIDE_LIMIT;
     }
 
-    frame = (size_t)((uint64_t)physical_address / OPENRFS_PAGE_SIZE);
+    frame = (size_t)((uint64_t)physical_address / RSD_PAGE_SIZE);
 
     if (!bitmap_get(eligible_bitmap, frame)) {
         return FRAME_STATUS_FRAME_NOT_ALLOCATABLE;
@@ -475,22 +475,22 @@ enum frame_status frame_allocate_contiguous(
     }
 
     if (!power_of_two(request->alignment) ||
-        request->alignment < OPENRFS_PAGE_SIZE ||
-        request->alignment % OPENRFS_PAGE_SIZE != 0U) {
+        request->alignment < RSD_PAGE_SIZE ||
+        request->alignment % RSD_PAGE_SIZE != 0U) {
         return FRAME_STATUS_BAD_ALIGNMENT;
     }
 
-    if (request->alignment > OPENRFS_EARLY_PHYSICAL_LIMIT ||
+    if (request->alignment > RSD_EARLY_PHYSICAL_LIMIT ||
         request->alignment > request->maximum_physical_address +
             (request->maximum_physical_address != UINT64_MAX ? 1U : 0U)) {
         return FRAME_STATUS_ALIGNMENT_UNSATISFIABLE;
     }
 
-    if (request->page_count > UINT64_MAX / OPENRFS_PAGE_SIZE) {
+    if (request->page_count > UINT64_MAX / RSD_PAGE_SIZE) {
         return FRAME_STATUS_RANGE_OVERFLOW;
     }
 
-    length = (uint64_t)request->page_count * OPENRFS_PAGE_SIZE;
+    length = (uint64_t)request->page_count * RSD_PAGE_SIZE;
     if (length == 0U || request->maximum_physical_address < length - 1U) {
         return FRAME_STATUS_ADDRESS_BOUND_UNSATISFIED;
     }
@@ -498,10 +498,10 @@ enum frame_status frame_allocate_contiguous(
     bound_end = request->maximum_physical_address == UINT64_MAX
         ? UINT64_MAX
         : request->maximum_physical_address + 1U;
-    if (bound_end > OPENRFS_EARLY_PHYSICAL_LIMIT) {
-        bound_end = OPENRFS_EARLY_PHYSICAL_LIMIT;
+    if (bound_end > RSD_EARLY_PHYSICAL_LIMIT) {
+        bound_end = RSD_EARLY_PHYSICAL_LIMIT;
     }
-    maximum_past_frame = (size_t)(bound_end / OPENRFS_PAGE_SIZE);
+    maximum_past_frame = (size_t)(bound_end / RSD_PAGE_SIZE);
     if (maximum_past_frame < request->page_count) {
         return FRAME_STATUS_ADDRESS_BOUND_UNSATISFIED;
     }
@@ -522,7 +522,7 @@ enum frame_status frame_allocate_contiguous(
     for (size_t first = 0U;
          first <= maximum_past_frame - request->page_count;
          ++first) {
-        const uint64_t base = (uint64_t)first * OPENRFS_PAGE_SIZE;
+        const uint64_t base = (uint64_t)first * RSD_PAGE_SIZE;
         bool available = true;
 
         if ((base & (request->alignment - 1U)) != 0U) {
@@ -613,7 +613,7 @@ enum frame_status frame_release_contiguous(
         return FRAME_STATUS_BAD_CONTIGUOUS_ALLOCATION;
     }
 
-    first = (size_t)((uint64_t)record->physical_base / OPENRFS_PAGE_SIZE);
+    first = (size_t)((uint64_t)record->physical_base / RSD_PAGE_SIZE);
     for (size_t offset = 0U; offset < record->page_count; ++offset) {
         if (!bitmap_get(eligible_bitmap, first + offset) ||
             !bitmap_get(used_bitmap, first + offset)) {
@@ -681,16 +681,16 @@ bool frame_range_overlaps_allocatable_memory(
         !checked_range_end(base_address, length, &end)) {
         return false;
     }
-    if (base_address >= OPENRFS_EARLY_PHYSICAL_LIMIT) {
+    if (base_address >= RSD_EARLY_PHYSICAL_LIMIT) {
         return false;
     }
-    if (end > OPENRFS_EARLY_PHYSICAL_LIMIT) {
-        end = OPENRFS_EARLY_PHYSICAL_LIMIT;
+    if (end > RSD_EARLY_PHYSICAL_LIMIT) {
+        end = RSD_EARLY_PHYSICAL_LIMIT;
     }
 
-    first_frame = (size_t)(base_address / OPENRFS_PAGE_SIZE);
-    past_last_frame = (size_t)(end / OPENRFS_PAGE_SIZE);
-    if ((end & (OPENRFS_PAGE_SIZE - 1U)) != 0U) {
+    first_frame = (size_t)(base_address / RSD_PAGE_SIZE);
+    past_last_frame = (size_t)(end / RSD_PAGE_SIZE);
+    if ((end & (RSD_PAGE_SIZE - 1U)) != 0U) {
         ++past_last_frame;
     }
     for (size_t frame = first_frame; frame < past_last_frame; ++frame) {

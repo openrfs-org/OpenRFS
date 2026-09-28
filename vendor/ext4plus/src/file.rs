@@ -146,7 +146,7 @@ impl File {
 
     /// Return the initialized physical filesystem block mapped at `offset`.
     ///
-    /// This exposes no storage writer. OpenRFS uses the result after a staged
+    /// This exposes no storage writer. RSD uses the result after a staged
     /// regular-file mutation to classify its exact data block as ordered data;
     /// holes and uninitialized extents return `None`.
     #[maybe_async::maybe_async]

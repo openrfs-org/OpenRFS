@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * The registry of TPMs driven by upstream drivers. See include/openrfs/tpm.h.
+ * The registry of TPMs driven by upstream drivers. See include/rsd/tpm.h.
  */
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/tpm.h>
+#include <rsd/tpm.h>
 
 struct tpm_device {
     char name[TPM_NAME_CAPACITY];

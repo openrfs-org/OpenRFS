@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * The installed OpenRFS Boot Ledger plan.
+ * The installed RSD Boot Ledger plan.
  *
  * Every function that performs migrated boot work is private to this file and
  * can only be reached through a typed descriptor. kernel_main constructs,
@@ -10,70 +10,70 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/acpi.h>
-#include <openrfs/apic.h>
-#include <openrfs/apic_timer.h>
-#include <openrfs/boot.h>
-#include <openrfs/blockdev.h>
-#include <openrfs/boot_ledger.h>
-#include <openrfs/boot_plan.h>
-#include <openrfs/boot_stages.h>
-#include <openrfs/clock.h>
-#include <openrfs/console.h>
-#include <openrfs/cpu.h>
-#include <openrfs/device_substrate.h>
-#include <openrfs/dma.h>
-#include <openrfs/framebuffer.h>
-#include <openrfs/filesystem.h>
-#include <openrfs/elf64.h>
-#include <openrfs/heap.h>
-#include <openrfs/interrupts.h>
-#include <openrfs/interrupt_vector.h>
-#include <openrfs/font.h>
-#include <openrfs/logo.h>
-#include <openrfs/ioapic.h>
-#include <openrfs/keyboard.h>
-#include <openrfs/linux_abi.h>
-#include <openrfs/linux_cat.h>
-#include <openrfs/linux_syscall.h>
-#include <openrfs/linux_uname.h>
-#include <openrfs/memory.h>
-#include <openrfs/msix.h>
-#include <openrfs/hwdrv.h>
-#include <openrfs/netdev.h>
-#include <openrfs/network.h>
-#include <openrfs/network_syscall.h>
-#include <openrfs/nvidia.h>
-#include <openrfs/nvme.h>
-#include <openrfs/audio.h>
-#include <openrfs/driver.h>
-#include <openrfs/multiprocess.h>
-#include <openrfs/paging.h>
-#include <openrfs/pci.h>
-#include <openrfs/pci_resource.h>
-#include <openrfs/pointer.h>
-#include <openrfs/process.h>
-#include <openrfs/pm_timer.h>
-#include <openrfs/random.h>
-#include <openrfs/screen.h>
-#include <openrfs/self_test.h>
-#include <openrfs/shell.h>
-#include <openrfs/surface.h>
-#include <openrfs/test.h>
-#include <openrfs/thread.h>
-#include <openrfs/timer.h>
-#include <openrfs/tsc.h>
-#include <openrfs/ui.h>
-#include <openrfs/wall_clock.h>
-#include <openrfs/ui_font.h>
-#include <openrfs/xhci.h>
+#include <rsd/acpi.h>
+#include <rsd/apic.h>
+#include <rsd/apic_timer.h>
+#include <rsd/boot.h>
+#include <rsd/blockdev.h>
+#include <rsd/boot_ledger.h>
+#include <rsd/boot_plan.h>
+#include <rsd/boot_stages.h>
+#include <rsd/clock.h>
+#include <rsd/console.h>
+#include <rsd/cpu.h>
+#include <rsd/device_substrate.h>
+#include <rsd/dma.h>
+#include <rsd/framebuffer.h>
+#include <rsd/filesystem.h>
+#include <rsd/elf64.h>
+#include <rsd/heap.h>
+#include <rsd/interrupts.h>
+#include <rsd/interrupt_vector.h>
+#include <rsd/font.h>
+#include <rsd/logo.h>
+#include <rsd/ioapic.h>
+#include <rsd/keyboard.h>
+#include <rsd/linux_abi.h>
+#include <rsd/linux_cat.h>
+#include <rsd/linux_syscall.h>
+#include <rsd/linux_uname.h>
+#include <rsd/memory.h>
+#include <rsd/msix.h>
+#include <rsd/hwdrv.h>
+#include <rsd/netdev.h>
+#include <rsd/network.h>
+#include <rsd/network_syscall.h>
+#include <rsd/nvidia.h>
+#include <rsd/nvme.h>
+#include <rsd/audio.h>
+#include <rsd/driver.h>
+#include <rsd/multiprocess.h>
+#include <rsd/paging.h>
+#include <rsd/pci.h>
+#include <rsd/pci_resource.h>
+#include <rsd/pointer.h>
+#include <rsd/process.h>
+#include <rsd/pm_timer.h>
+#include <rsd/random.h>
+#include <rsd/screen.h>
+#include <rsd/self_test.h>
+#include <rsd/shell.h>
+#include <rsd/surface.h>
+#include <rsd/test.h>
+#include <rsd/thread.h>
+#include <rsd/timer.h>
+#include <rsd/tsc.h>
+#include <rsd/ui.h>
+#include <rsd/wall_clock.h>
+#include <rsd/ui_font.h>
+#include <rsd/xhci.h>
 
-static bool test_uses_openrfs_proof_userland(enum kernel_test_scenario scenario)
+static bool test_uses_rsd_proof_userland(enum kernel_test_scenario scenario)
 {
-    return scenario == KERNEL_TEST_OPENRFS_PROOF_USERLAND ||
-        scenario == KERNEL_TEST_OPENRFS_PROOF_USERLAND_ABSENT ||
-        scenario == KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE ||
-        scenario == KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE_ABSENT;
+    return scenario == KERNEL_TEST_RSD_PROOF_USERLAND ||
+        scenario == KERNEL_TEST_RSD_PROOF_USERLAND_ABSENT ||
+        scenario == KERNEL_TEST_RSD_PROOF_USERLAND_INTERACTIVE ||
+        scenario == KERNEL_TEST_RSD_PROOF_USERLAND_INTERACTIVE_ABSENT;
 }
 
 static bool test_uses_fat32_volumes(enum kernel_test_scenario scenario)
@@ -83,7 +83,7 @@ static bool test_uses_fat32_volumes(enum kernel_test_scenario scenario)
         (scenario >= KERNEL_TEST_NETWORK_NIC_DISCOVERY &&
             scenario <= KERNEL_TEST_NETWORK_SOCKET_ISOLATION) ||
         (scenario >= KERNEL_TEST_NATIVE &&
-            scenario <= KERNEL_TEST_NATIVE_OPENRFS);
+            scenario <= KERNEL_TEST_NATIVE_RSD);
 }
 
 static void stage_failed(
@@ -136,7 +136,7 @@ static void report_optional_window_refusal(
     enum paging_status status
 )
 {
-    console_write("OpenRFS: ");
+    console_write("RSD: ");
     console_write(paging_device_window_kind_string(kind));
     console_write(" unavailable: ");
     console_write(paging_status_string(status));
@@ -182,7 +182,7 @@ static enum paging_status construct_device_windows(
         const uint64_t base = mcfg->allocations[0].base_address;
 
         if (base == 0U ||
-            base > OPENRFS_EARLY_PHYSICAL_LIMIT - PAGING_ECAM_WINDOW_SIZE) {
+            base > RSD_EARLY_PHYSICAL_LIMIT - PAGING_ECAM_WINDOW_SIZE) {
             report_optional_window_refusal(PAGING_DEVICE_WINDOW_PCI_ECAM,
                 PAGING_STATUS_DEVICE_WINDOW_UNSUPPORTED_RANGE);
         } else if ((base & (PAGING_HUGE_PAGE_SIZE - 1U)) != 0U) {
@@ -218,7 +218,7 @@ static enum paging_status construct_device_windows(
             const uint64_t framebuffer_end =
                 framebuffer->address + framebuffer->size;
 
-            if (framebuffer_end > OPENRFS_EARLY_PHYSICAL_LIMIT) {
+            if (framebuffer_end > RSD_EARLY_PHYSICAL_LIMIT) {
                 report_optional_window_refusal(
                     PAGING_DEVICE_WINDOW_FRAMEBUFFER,
                     PAGING_STATUS_DEVICE_WINDOW_UNSUPPORTED_RANGE);
@@ -280,7 +280,7 @@ static void execute_interrupt_foundation(
 
     if (status != INTERRUPT_STATUS_OK) {
         if (status == INTERRUPT_STATUS_CPU_TABLE_FAILURE) {
-            console_write("OpenRFS: CPU table detail: ");
+            console_write("RSD: CPU table detail: ");
             console_write(cpu_status_string(cpu_tables_validate()));
             console_putc('\n');
         }
@@ -289,9 +289,9 @@ static void execute_interrupt_foundation(
         return;
     }
 
-    console_write("OpenRFS: kernel online\n");
-    console_write("OpenRFS: descriptor tables verified\n");
-    console_write("OpenRFS: interrupt foundation online\n");
+    console_write("RSD: kernel online\n");
+    console_write("RSD: descriptor tables verified\n");
+    console_write("RSD: interrupt foundation online\n");
     boot_stage_result_succeed(descriptor, result);
 }
 
@@ -351,9 +351,9 @@ static void execute_pure_self_tests(
         failure = ui_font_self_test_failure();
     } else if (!ui_self_test()) {
         failure = ui_self_test_failure();
-    } else if (openrfs_logo_self_test() != 1) {
+    } else if (rsd_logo_self_test() != 1) {
         failure = "logo decoder self-test failed";
-    } else if (openrfs_font_self_test() != 1) {
+    } else if (rsd_font_self_test() != 1) {
         failure = "font reader self-test failed";
     }
 
@@ -362,7 +362,7 @@ static void execute_pure_self_tests(
         return;
     }
 
-    console_write("OpenRFS: parser rejection tests passed\n");
+    console_write("RSD: parser rejection tests passed\n");
     boot_stage_result_succeed(descriptor, result);
 }
 
@@ -470,11 +470,11 @@ static void execute_interrupt_controllers(
     report_acpi_fadt(&context->acpi_fadt);
     report_pm_timer(&pm_timer_state);
     report_acpi_mcfg(&context->acpi_mcfg, context->mcfg_present);
-    console_write("OpenRFS: ACPI root verified\n");
-    console_write("OpenRFS: ACPI MADT verified\n");
-    console_write("OpenRFS: ACPI topology verified\n");
-    console_write("OpenRFS: ACPI FADT verified\n");
-    console_write("OpenRFS: ACPI configuration windows verified\n");
+    console_write("RSD: ACPI root verified\n");
+    console_write("RSD: ACPI MADT verified\n");
+    console_write("RSD: ACPI topology verified\n");
+    console_write("RSD: ACPI FADT verified\n");
+    console_write("RSD: ACPI configuration windows verified\n");
 
     apic_status = apic_bring_online(&context->topology);
     if (apic_status != APIC_STATUS_OK) {
@@ -484,7 +484,7 @@ static void execute_interrupt_controllers(
 
     apic_state = apic_get_state();
     report_apic(&apic_state);
-    console_write("OpenRFS: local APIC online\n");
+    console_write("RSD: local APIC online\n");
     ioapic_status = ioapic_initialize(&context->topology);
 
     if (ioapic_status != IOAPIC_STATUS_OK) {
@@ -494,7 +494,7 @@ static void execute_interrupt_controllers(
 
     ioapic_state = ioapic_get_state();
     report_ioapic(&ioapic_state);
-    console_write("OpenRFS: I/O APIC online\n");
+    console_write("RSD: I/O APIC online\n");
     boot_stage_result_succeed(descriptor, result);
 }
 
@@ -666,10 +666,10 @@ static void execute_ui_font(
         return;
     }
 
-    console_write("OpenRFS: font verified\n");
+    console_write("RSD: font verified\n");
     boot_stage_result_succeed(descriptor, result);
-    result->proof_counters[0] = openrfs_ui_font_size();
-    result->proof_counters[1] = openrfs_ui_font_fingerprint();
+    result->proof_counters[0] = rsd_ui_font_size();
+    result->proof_counters[1] = rsd_ui_font_fingerprint();
     result->proof_counter_count = 2U;
 }
 
@@ -683,9 +683,9 @@ static void execute_pointer_decision(
 
     (void)context;
     if (status == POINTER_STATUS_OK) {
-        console_write("OpenRFS: PS/2 pointer available\n");
+        console_write("RSD: PS/2 pointer available\n");
     } else {
-        console_write("OpenRFS: PS/2 pointer unavailable: ");
+        console_write("RSD: PS/2 pointer unavailable: ");
         console_write(pointer_status_string(status));
         console_putc('\n');
     }
@@ -728,7 +728,7 @@ static void execute_ui_layout(
         return;
     }
 
-    console_write("OpenRFS: layout validated\n");
+    console_write("RSD: layout validated\n");
     boot_stage_result_succeed(descriptor, result);
     result->proof_counters[0] = framebuffer.width;
     result->proof_counters[1] = framebuffer.height;
@@ -741,8 +741,8 @@ static void execute_early_scenario(
     struct boot_stage_result *result
 )
 {
-    console_write("OpenRFS: day one passed\n");
-    console_write("OpenRFS: memory foundation passed\n");
+    console_write("RSD: day one passed\n");
+    console_write("RSD: memory foundation passed\n");
     context->test_scenario = kernel_test_select(&context->information);
     context->test_context.mcfg = context->mcfg_present ?
         &context->acpi_mcfg : NULL;
@@ -853,8 +853,8 @@ static void execute_pci_resource_foundation(
             "PCI BAR transaction negative controls failed");
         return;
     }
-    console_write("OpenRFS: PCI resource ownership negative controls 4/4 passed\n");
-    console_write("OpenRFS: supervisor NX UC device-MMIO arena established\n");
+    console_write("RSD: PCI resource ownership negative controls 4/4 passed\n");
+    console_write("RSD: supervisor NX UC device-MMIO arena established\n");
     boot_stage_result_succeed(descriptor, result);
     result->proof_counters[0] =
         pci_resource_get_state().arena_pages;
@@ -879,8 +879,8 @@ static void execute_dynamic_vector_foundation(
             "dynamic vector or MSI-X negative controls failed");
         return;
     }
-    console_write("OpenRFS: dynamic vector negative controls 4/4 passed\n");
-    console_write("OpenRFS: dynamic interrupt vector foundation established\n");
+    console_write("RSD: dynamic vector negative controls 4/4 passed\n");
+    console_write("RSD: dynamic interrupt vector foundation established\n");
     boot_stage_result_succeed(descriptor, result);
     result->proof_counters[0] = interrupt_vector_get_state().capacity;
     result->proof_counter_count = 1U;
@@ -902,8 +902,8 @@ static void execute_dma_foundation(
         stage_failed(context, result, "DMA ownership negative controls failed");
         return;
     }
-    console_write("OpenRFS: bounded DMA negative controls 2/2 passed\n");
-    console_write("OpenRFS: contiguous DMA ownership foundation established\n");
+    console_write("RSD: bounded DMA negative controls 2/2 passed\n");
+    console_write("RSD: contiguous DMA ownership foundation established\n");
     boot_stage_result_succeed(descriptor, result);
 }
 
@@ -933,7 +933,7 @@ static void execute_network_foundation(
         stage_failed(context, result, network_status_string(status));
         return;
     }
-    console_write("OpenRFS: network controls ");
+    console_write("RSD: network controls ");
     console_write_u64(network_tests + syscall_tests);
     console_write(" passed; entropy ");
     console_write(random_capability_string(random_get_state().capability));
@@ -941,18 +941,18 @@ static void execute_network_foundation(
     if (netdev_active_kind() == NETDEV_KIND_REGISTERED &&
         (status == NETWORK_STATUS_OK || status == NETWORK_STATUS_LINK_DOWN)) {
         /* An upstream driver's interface; virtio-net keeps its own lines. */
-        console_write("OpenRFS: ");
+        console_write("RSD: ");
         console_write(netdev_active_name());
         console_write(" (");
         console_write(netdev_active_driver());
         console_write(status == NETWORK_STATUS_OK ? ") initialized\n" :
             ") initialized without carrier\n");
     } else if (status == NETWORK_STATUS_OK) {
-        console_write("OpenRFS: virtio-net0 initialized\n");
+        console_write("RSD: virtio-net0 initialized\n");
     } else if (status == NETWORK_STATUS_LINK_DOWN) {
-        console_write("OpenRFS: virtio-net0 initialized without carrier\n");
+        console_write("RSD: virtio-net0 initialized without carrier\n");
     } else {
-        console_write("OpenRFS: virtio-net0 absent\n");
+        console_write("RSD: virtio-net0 absent\n");
     }
     boot_stage_result_succeed(descriptor, result);
     result->proof_counters[0] = network_tests + syscall_tests;
@@ -1044,7 +1044,7 @@ static void execute_device_substrate_proof(
 
     status = device_substrate_prove(&proof);
     if (status == DEVICE_SUBSTRATE_STATUS_ABSENT) {
-        console_write("OpenRFS: device-substrate fixture absent\n");
+        console_write("RSD: device-substrate fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
@@ -1052,7 +1052,7 @@ static void execute_device_substrate_proof(
         const struct pci_function *function = pci_find_device(
             UINT16_C(0x1AF4), UINT16_C(0x1044));
 
-        console_write("OpenRFS: PCI ");
+        console_write("RSD: PCI ");
         if (function != NULL) {
             console_write_u64(function->address.segment);
             console_putc(':');
@@ -1071,19 +1071,19 @@ static void execute_device_substrate_proof(
         return;
     }
 
-    console_write("OpenRFS: VirtIO RNG device DMA wrote ");
+    console_write("RSD: VirtIO RNG device DMA wrote ");
     console_write_u64(proof.random_bytes);
     console_write(" bytes; nonzero ");
     console_write_u64(proof.nonzero_bytes);
     console_putc('\n');
-    console_write("OpenRFS: MSI-X delivered ");
+    console_write("RSD: MSI-X delivered ");
     console_write_u64(proof.interrupt_count);
     console_write(" interrupt; used ring ");
     console_write_u64(proof.used_before);
     console_write(" -> ");
     console_write_u64(proof.used_after);
     console_putc('\n');
-    console_write("OpenRFS: device substrate teardown complete\n");
+    console_write("RSD: device substrate teardown complete\n");
     boot_stage_result_succeed(descriptor, result);
     result->proof_counters[0] = proof.interrupt_count;
     result->proof_counters[1] = proof.random_bytes;
@@ -1104,13 +1104,13 @@ static void execute_xhci_foundation(
             "xHCI foundation robustness controls failed");
         return;
     }
-    console_write("OpenRFS: xHCI foundation robustness controls ");
+    console_write("RSD: xHCI foundation robustness controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(XHCI_FOUNDATION_ROBUSTNESS_TESTS);
     console_write(" passed\n");
     console_write(
-        "OpenRFS: bounded xHCI host-controller foundation established\n");
+        "RSD: bounded xHCI host-controller foundation established\n");
     boot_stage_result_succeed(descriptor, result);
 }
 
@@ -1185,14 +1185,14 @@ static void execute_xhci_descriptor_proof(
 
     status = xhci_descriptor_prove(&proof);
     if (status == XHCI_STATUS_ABSENT) {
-        console_write("OpenRFS: xHCI fixture absent\n");
+        console_write("RSD: xHCI fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
     if (status != XHCI_STATUS_OK) {
         const struct pci_function *function = xhci_pci_function();
 
-        console_write("OpenRFS: PCI ");
+        console_write("RSD: PCI ");
         if (function == NULL) {
             console_write("unknown");
         } else {
@@ -1231,16 +1231,16 @@ static void execute_xhci_descriptor_proof(
         return;
     }
 
-    console_write("OpenRFS: xHCI controller ready\n");
-    console_write("OpenRFS: USB device descriptor DMA completed: ");
+    console_write("RSD: xHCI controller ready\n");
+    console_write("RSD: USB device descriptor DMA completed: ");
     console_write_u64(proof.descriptor_bytes);
     console_write(" bytes\n");
-    console_write("OpenRFS: xHCI MSI-X descriptor completion count ");
+    console_write("RSD: xHCI MSI-X descriptor completion count ");
     console_write_u64(proof.msix_completion_count);
     console_putc('\n');
     console_write(
-        "OpenRFS: xHCI DMA ownership CPU-CONTROLLER-CPU complete\n");
-    console_write("OpenRFS: xHCI teardown complete\n");
+        "RSD: xHCI DMA ownership CPU-CONTROLLER-CPU complete\n");
+    console_write("RSD: xHCI teardown complete\n");
     boot_stage_result_succeed(descriptor, result);
     result->proof_counters[0] = proof.descriptor_bytes;
     result->proof_counters[1] = proof.msix_completion_count;
@@ -1261,13 +1261,13 @@ static void execute_nvme_foundation(
             "NVMe foundation robustness controls failed");
         return;
     }
-    console_write("OpenRFS: NVMe foundation robustness controls ");
+    console_write("RSD: NVMe foundation robustness controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(NVME_FOUNDATION_ROBUSTNESS_TESTS);
     console_write(" passed\n");
     console_write(
-        "OpenRFS: bounded NVMe block-controller foundation established\n");
+        "RSD: bounded NVMe block-controller foundation established\n");
     boot_stage_result_succeed(descriptor, result);
 }
 
@@ -1332,38 +1332,38 @@ static void execute_nvme_read_proof(
         context->test_scenario == KERNEL_TEST_LINUX_ABI ||
         context->test_scenario == KERNEL_TEST_LINUX_ABI_UNAME ||
         context->test_scenario == KERNEL_TEST_EXT4_RECOVERY ||
-        test_uses_openrfs_proof_userland(context->test_scenario) ||
+        test_uses_rsd_proof_userland(context->test_scenario) ||
         test_uses_fat32_volumes(context->test_scenario)) {
-        console_write("OpenRFS: NVMe fixture absent\n");
+        console_write("RSD: NVMe fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
 
     status = nvme_read_prove(&proof);
     if (status == NVME_STATUS_ABSENT) {
-        console_write("OpenRFS: NVMe fixture absent\n");
+        console_write("RSD: NVMe fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
     if (status != NVME_STATUS_OK) {
-        console_write("OpenRFS: NVMe read proof violated invariant: ");
+        console_write("RSD: NVMe read proof violated invariant: ");
         console_write(nvme_status_string(status));
         console_putc('\n');
         stage_failed(context, result, nvme_status_string(status));
         return;
     }
 
-    console_write("OpenRFS: NVMe controller ready\n");
-    console_write("OpenRFS: NVMe namespace ready\n");
-    console_write("OpenRFS: NVMe block read completed: ");
+    console_write("RSD: NVMe controller ready\n");
+    console_write("RSD: NVMe namespace ready\n");
+    console_write("RSD: NVMe block read completed: ");
     console_write_u64(proof.block_bytes);
     console_write(" bytes\n");
-    console_write("OpenRFS: NVMe MSI-X read completion count ");
+    console_write("RSD: NVMe MSI-X read completion count ");
     console_write_u64(proof.msix_completion_count);
     console_putc('\n');
     console_write(
-        "OpenRFS: NVMe DMA ownership CPU-CONTROLLER-CPU complete\n");
-    console_write("OpenRFS: NVMe teardown complete\n");
+        "RSD: NVMe DMA ownership CPU-CONTROLLER-CPU complete\n");
+    console_write("RSD: NVMe teardown complete\n");
     boot_stage_result_succeed(descriptor, result);
     result->proof_counters[0] = proof.block_bytes;
     result->proof_counters[1] = proof.msix_completion_count;
@@ -1384,13 +1384,13 @@ static void execute_fat16_foundation(
             "FAT16 foundation robustness controls failed");
         return;
     }
-    console_write("OpenRFS: FAT16 foundation robustness controls ");
+    console_write("RSD: FAT16 foundation robustness controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(FILESYSTEM_INTEGRATION_CONTROLS);
     console_write(" passed\n");
     console_write(
-        "OpenRFS: bounded read-only FAT16 foundation established\n");
+        "RSD: bounded read-only FAT16 foundation established\n");
     boot_stage_result_succeed(descriptor, result);
 }
 
@@ -1456,38 +1456,38 @@ static void execute_filesystem_file_proof(
         context->test_scenario == KERNEL_TEST_LINUX_ABI ||
         context->test_scenario == KERNEL_TEST_LINUX_ABI_UNAME ||
         context->test_scenario == KERNEL_TEST_EXT4_RECOVERY ||
-        test_uses_openrfs_proof_userland(context->test_scenario) ||
+        test_uses_rsd_proof_userland(context->test_scenario) ||
         test_uses_fat32_volumes(context->test_scenario)) {
-        console_write("OpenRFS: FAT16 fixture absent\n");
+        console_write("RSD: FAT16 fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
 
     status = filesystem_file_prove(&proof);
     if (status == FILESYSTEM_STATUS_ABSENT) {
-        console_write("OpenRFS: FAT16 fixture absent\n");
+        console_write("RSD: FAT16 fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
     if (status != FILESYSTEM_STATUS_OK) {
-        console_write("OpenRFS: FAT16 file proof violated invariant: ");
+        console_write("RSD: FAT16 file proof violated invariant: ");
         console_write(filesystem_status_string(status));
         console_putc('\n');
         stage_failed(context, result, filesystem_status_string(status));
         return;
     }
 
-    console_write("OpenRFS: FAT16 volume ready\n");
-    console_write("OpenRFS: FAT16 file OPENRFS.BIN read: ");
+    console_write("RSD: FAT16 volume ready\n");
+    console_write("RSD: FAT16 file RSD.BIN read: ");
     console_write_u64(proof.file_bytes);
     console_write(" bytes\n");
-    console_write("OpenRFS: FAT16 MSI-X completion count ");
+    console_write("RSD: FAT16 MSI-X completion count ");
     console_write_u64(proof.msix_completion_count);
     console_putc('\n');
     console_write(
-        "OpenRFS: FAT16 DMA ownership CPU-CONTROLLER-CPU complete\n");
-    console_write("OpenRFS: FAT16 teardown complete\n");
-    console_write("ST FAT16 file OPENRFS.BIN bytes ");
+        "RSD: FAT16 DMA ownership CPU-CONTROLLER-CPU complete\n");
+    console_write("RSD: FAT16 teardown complete\n");
+    console_write("ST FAT16 file RSD.BIN bytes ");
     console_write_u64(proof.file_bytes);
     console_write(" reads ");
     console_write_u64(proof.read_count);
@@ -1517,7 +1517,7 @@ static void execute_process_address_space_foundation(
             "private process address-space controls failed");
         return;
     }
-    console_write("OpenRFS: process address-space foundation controls ");
+    console_write("RSD: process address-space foundation controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(PROCESS_ADDRESS_SPACE_FOUNDATION_CONTROLS);
@@ -1538,7 +1538,7 @@ static void execute_elf64_loader_foundation(
         stage_failed(context, result, "bounded ELF64 parser controls failed");
         return;
     }
-    console_write("OpenRFS: ELF64 parser robustness controls ");
+    console_write("RSD: ELF64 parser robustness controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(ELF64_PARSER_ROBUSTNESS_CONTROLS);
@@ -1616,25 +1616,25 @@ static void execute_process_installed_proof(
     }
 
     if (context->test_scenario != KERNEL_TEST_PROCESS) {
-        console_write("OpenRFS: process fixture absent\n");
+        console_write("RSD: process fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
 
     status = process_installed_prove(&proof);
     if (status == PROCESS_STATUS_ABSENT) {
-        console_write("OpenRFS: process fixture absent\n");
+        console_write("RSD: process fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
     if (status != PROCESS_STATUS_OK) {
-        console_write("OpenRFS: process proof violated invariant: ");
+        console_write("RSD: process proof violated invariant: ");
         console_write(process_status_string(status));
         console_putc('\n');
         stage_failed(context, result, process_status_string(status));
         return;
     }
-    console_write("ST PROCESS ELF64 OPENRFS.BIN bytes ");
+    console_write("ST PROCESS ELF64 RSD.BIN bytes ");
     console_write_u64(proof.file_bytes);
     console_write(" segments ");
     console_write_u64(proof.segment_count);
@@ -1662,7 +1662,7 @@ static void execute_linux_syscall_cpu_foundation(
             "Linux SYSCALL CPU foundation controls failed");
         return;
     }
-    console_write("OpenRFS: Linux SYSCALL CPU foundation controls ");
+    console_write("RSD: Linux SYSCALL CPU foundation controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(LINUX_SYSCALL_CPU_FOUNDATION_CONTROLS);
@@ -1684,7 +1684,7 @@ static void execute_linux_image_stack_foundation(
             "BusyBox ELF and Linux initial-stack controls failed");
         return;
     }
-    console_write("OpenRFS: BusyBox image and Linux stack controls ");
+    console_write("RSD: BusyBox image and Linux stack controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(LINUX_ABI_IMAGE_STACK_FOUNDATION_CONTROLS);
@@ -1703,7 +1703,7 @@ static void execute_linux_uname_image_uts_foundation(
 
     if (!linux_uname_image_uts_foundation_self_test(&completed) ||
         completed != LINUX_UNAME_ABI_IMAGE_UTS_FOUNDATION_CONTROLS) {
-        console_write("OpenRFS: BusyBox uname foundation stopped after ");
+        console_write("RSD: BusyBox uname foundation stopped after ");
         console_write_u64(completed);
         console_write(" counted controls\n");
         stage_failed(context, result,
@@ -1712,19 +1712,19 @@ static void execute_linux_uname_image_uts_foundation(
     }
     if (!linux_cat_image_stdin_foundation_self_test(&cat_completed) ||
         cat_completed != LINUX_CAT_ABI_IMAGE_STDIN_FOUNDATION_CONTROLS) {
-        console_write("OpenRFS: BusyBox cat foundation stopped after ");
+        console_write("RSD: BusyBox cat foundation stopped after ");
         console_write_u64(cat_completed);
         console_write(" counted controls\n");
         stage_failed(context, result,
             "BusyBox cat ELF, stack, and stdin controls failed");
         return;
     }
-    console_write("OpenRFS: BusyBox uname image and UTS controls ");
+    console_write("RSD: BusyBox uname image and UTS controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(LINUX_UNAME_ABI_IMAGE_UTS_FOUNDATION_CONTROLS);
     console_write(" passed\n");
-    console_write("OpenRFS: BusyBox cat image and stdin controls ");
+    console_write("RSD: BusyBox cat image and stdin controls ");
     console_write_u64(cat_completed);
     console_putc('/');
     console_write_u64(LINUX_CAT_ABI_IMAGE_STDIN_FOUNDATION_CONTROLS);
@@ -1804,18 +1804,18 @@ static void execute_linux_installed_proof(
         return;
     }
     if (context->test_scenario != KERNEL_TEST_LINUX_ABI) {
-        console_write("OpenRFS: Linux ABI fixture absent\n");
+        console_write("RSD: Linux ABI fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
     status = linux_abi_installed_prove(&proof);
     if (status == LINUX_ABI_STATUS_ABSENT) {
-        console_write("OpenRFS: Linux ABI fixture absent\n");
+        console_write("RSD: Linux ABI fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
     if (status != LINUX_ABI_STATUS_OK) {
-        console_write("OpenRFS: Linux ABI proof violated invariant: ");
+        console_write("RSD: Linux ABI proof violated invariant: ");
         console_write(linux_abi_status_string(status));
         console_putc('\n');
         stage_failed(context, result, linux_abi_status_string(status));
@@ -1911,18 +1911,18 @@ static void execute_linux_uname_installed_proof(
         return;
     }
     if (context->test_scenario != KERNEL_TEST_LINUX_ABI_UNAME) {
-        console_write("OpenRFS: Linux uname ABI fixture absent\n");
+        console_write("RSD: Linux uname ABI fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
     status = linux_uname_abi_installed_prove(&proof);
     if (status == LINUX_UNAME_ABI_STATUS_ABSENT) {
-        console_write("OpenRFS: Linux uname ABI fixture absent\n");
+        console_write("RSD: Linux uname ABI fixture absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
     if (status != LINUX_UNAME_ABI_STATUS_OK) {
-        console_write("OpenRFS: Linux uname ABI proof violated invariant: ");
+        console_write("RSD: Linux uname ABI proof violated invariant: ");
         console_write(linux_uname_abi_status_string(status));
         console_putc('\n');
         stage_failed(context, result, linux_uname_abi_status_string(status));
@@ -2043,50 +2043,50 @@ static void execute_closing_proofs(
         }
     }
 
-    console_write("OpenRFS: exception probes passed\n");
-    console_write("OpenRFS: PIC spurious paths passed\n");
-    console_write("OpenRFS: PIT delivered eight interrupts\n");
-    console_write("OpenRFS: I/O APIC delivered eight interrupts\n");
-    console_write("OpenRFS: legacy 8259 retired\n");
-    console_write("OpenRFS: timer survives legacy retirement\n");
+    console_write("RSD: exception probes passed\n");
+    console_write("RSD: PIC spurious paths passed\n");
+    console_write("RSD: PIT delivered eight interrupts\n");
+    console_write("RSD: I/O APIC delivered eight interrupts\n");
+    console_write("RSD: legacy 8259 retired\n");
+    console_write("RSD: timer survives legacy retirement\n");
     console_write(
-        "OpenRFS: I/O APIC delivered eight level-triggered interrupts\n"
+        "RSD: I/O APIC delivered eight level-triggered interrupts\n"
     );
-    console_write("OpenRFS: level-triggered routing established\n");
-    console_write("OpenRFS: local APIC timer delivered eight interrupts\n");
-    console_write("OpenRFS: TSC reference established\n");
-    console_write("OpenRFS: PM timer independent reference established\n");
-    console_write("OpenRFS: PIT retired\n");
-    console_write("OpenRFS: clocks survive PIT retirement\n");
-    console_write("OpenRFS: deadline timers online\n");
-    console_write("OpenRFS: monotonic time established\n");
-    console_write("OpenRFS: virtual memory established\n");
-    console_write("OpenRFS: kernel heap established\n");
-    console_write("OpenRFS: PCI enumeration established\n");
-    console_write("OpenRFS: device foundations established\n");
-    console_write("OpenRFS: kernel threads passed\n");
-    console_write("OpenRFS: preemption passed\n");
+    console_write("RSD: level-triggered routing established\n");
+    console_write("RSD: local APIC timer delivered eight interrupts\n");
+    console_write("RSD: TSC reference established\n");
+    console_write("RSD: PM timer independent reference established\n");
+    console_write("RSD: PIT retired\n");
+    console_write("RSD: clocks survive PIT retirement\n");
+    console_write("RSD: deadline timers online\n");
+    console_write("RSD: monotonic time established\n");
+    console_write("RSD: virtual memory established\n");
+    console_write("RSD: kernel heap established\n");
+    console_write("RSD: PCI enumeration established\n");
+    console_write("RSD: device foundations established\n");
+    console_write("RSD: kernel threads passed\n");
+    console_write("RSD: preemption passed\n");
     if (framebuffer_is_active()) {
-        console_write("OpenRFS: framebuffer passed\n");
-        console_write("OpenRFS: logo passed\n");
-        console_write("OpenRFS: screen console passed\n");
-        console_write("OpenRFS: shell passed\n");
+        console_write("RSD: framebuffer passed\n");
+        console_write("RSD: logo passed\n");
+        console_write("RSD: screen console passed\n");
+        console_write("RSD: shell passed\n");
     }
-    console_write("OpenRFS: keyboard passed\n");
-    console_write("OpenRFS: never triple fault milestone passed\n");
+    console_write("RSD: keyboard passed\n");
+    console_write("RSD: never triple fault milestone passed\n");
     boot_stage_result_succeed(descriptor, result);
 }
 
 static bool scenario_starts_desktop(enum kernel_test_scenario scenario)
 {
-    return scenario == KERNEL_TEST_OPENRFS_PROOF ||
-        scenario == KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE ||
-        scenario == KERNEL_TEST_OPENRFS_PROOF_USERLAND_INTERACTIVE_ABSENT ||
+    return scenario == KERNEL_TEST_RSD_PROOF ||
+        scenario == KERNEL_TEST_RSD_PROOF_USERLAND_INTERACTIVE ||
+        scenario == KERNEL_TEST_RSD_PROOF_USERLAND_INTERACTIVE_ABSENT ||
         scenario == KERNEL_TEST_NATIVE_CRASH ||
         scenario == KERNEL_TEST_NETWORK_FILES ||
         scenario == KERNEL_TEST_NETWORK_NOTES ||
         scenario == KERNEL_TEST_NATIVE_SDL ||
-        scenario == KERNEL_TEST_NATIVE_OPENRFS;
+        scenario == KERNEL_TEST_NATIVE_RSD;
 }
 
 enum ui_status boot_plan_start_desktop(void)
@@ -2132,20 +2132,20 @@ static void execute_desktop_construction(
     enum ui_status status;
 
     if (!scenario_starts_desktop(context->test_scenario)) {
-        console_write("OpenRFS: command line ready; desktop waits for starty\n");
+        console_write("RSD: command line ready; desktop waits for starty\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
     status = ui_construct(pointer_is_present());
     if (status != UI_STATUS_OK) {
-        console_write("OpenRFS: desktop construction failed: ");
+        console_write("RSD: desktop construction failed: ");
         console_write(ui_status_string(status));
         console_putc('\n');
         stage_failed(context, result, ui_status_string(status));
         return;
     }
 
-    console_write("OpenRFS: desktop constructed\n");
+    console_write("RSD: desktop constructed\n");
     boot_stage_result_succeed(descriptor, result);
 }
 
@@ -2158,18 +2158,18 @@ static void execute_desktop_activation(
     const enum ui_status status = ui_activate();
 
     if (status != UI_STATUS_OK) {
-        console_write("OpenRFS: desktop activation failed: ");
+        console_write("RSD: desktop activation failed: ");
         console_write(ui_status_string(status));
         console_putc('\n');
         stage_failed(context, result, ui_status_string(status));
         return;
     }
 
-    console_write("OpenRFS: desktop activated\n");
+    console_write("RSD: desktop activated\n");
     boot_stage_result_succeed(descriptor, result);
 }
 
-static void execute_openrfs_installed_proof(
+static void execute_rsd_installed_proof(
     struct boot_context *context,
     const struct boot_stage_descriptor *descriptor,
     struct boot_stage_result *result
@@ -2183,7 +2183,7 @@ static void execute_openrfs_installed_proof(
         return;
     }
 
-    console_write("OpenRFS: installed proof passed\n");
+    console_write("RSD: installed proof passed\n");
     boot_stage_result_succeed(descriptor, result);
     result->proof_counters[0] = proof.render_hash;
     result->proof_counters[1] = proof.glyphs;
@@ -2204,7 +2204,7 @@ static void execute_multiprocess_foundation(
             "bounded multiprocess foundation controls failed");
         return;
     }
-    console_write("OpenRFS: multiprocess foundation controls ");
+    console_write("RSD: multiprocess foundation controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(MULTIPROCESS_CONTROLLED_ROBUSTNESS_TESTS);
@@ -2282,7 +2282,7 @@ static void execute_multiprocess_proof(
 
     status = multiprocess_prove(&proof);
     if (status != MULTIPROCESS_STATUS_OK) {
-        console_write("OpenRFS: multiprocess proof violated invariant: ");
+        console_write("RSD: multiprocess proof violated invariant: ");
         console_write(multiprocess_status_string(status));
         console_putc('\n');
         stage_failed(context, result, multiprocess_status_string(status));
@@ -2323,7 +2323,7 @@ static void execute_driver_matrix_foundation(
             "bounded PCI driver matrix controls failed");
         return;
     }
-    console_write("OpenRFS: PCI driver matrix controls ");
+    console_write("RSD: PCI driver matrix controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(DRIVER_MATRIX_CONTROLLED_CONTROLS);
@@ -2400,19 +2400,19 @@ static void execute_driver_matrix_probe(
 
     if (context->test_scenario != KERNEL_TEST_DRIVER_MATRIX &&
         context->test_scenario != KERNEL_TEST_DRIVER_MATRIX_BUILTIN) {
-        console_write("OpenRFS: PCI driver matrix devices absent\n");
+        console_write("RSD: PCI driver matrix devices absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
 
     status = driver_matrix_bind(&matrix);
     if (status == DRIVER_STATUS_ABSENT) {
-        console_write("OpenRFS: PCI driver matrix devices absent\n");
+        console_write("RSD: PCI driver matrix devices absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
     if (status != DRIVER_STATUS_OK) {
-        console_write("OpenRFS: PCI driver matrix violated invariant: ");
+        console_write("RSD: PCI driver matrix violated invariant: ");
         console_write(driver_status_string(status));
         if (matrix.failed_driver < driver_matrix_count()) {
             const struct driver_probe *failed =
@@ -2483,7 +2483,7 @@ static void execute_audio_foundation(
         stage_failed(context, result, "bounded HD Audio controls failed");
         return;
     }
-    console_write("OpenRFS: HD Audio foundation controls ");
+    console_write("RSD: HD Audio foundation controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(AUDIO_CONTROLLED_CONTROLS);
@@ -2558,19 +2558,19 @@ static void execute_audio_codec_proof(
     }
 
     if (context->test_scenario != KERNEL_TEST_AUDIO) {
-        console_write("OpenRFS: HD Audio controller absent\n");
+        console_write("RSD: HD Audio controller absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
 
     status = audio_prove(&proof);
     if (status == AUDIO_STATUS_ABSENT) {
-        console_write("OpenRFS: HD Audio controller absent\n");
+        console_write("RSD: HD Audio controller absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
     if (status != AUDIO_STATUS_OK) {
-        console_write("OpenRFS: HD Audio proof violated invariant: ");
+        console_write("RSD: HD Audio proof violated invariant: ");
         console_write(audio_status_string(status));
         console_putc('\n');
         stage_failed(context, result, audio_status_string(status));
@@ -2667,7 +2667,7 @@ static void execute_nvidia_foundation(
         stage_failed(context, result, "bounded NVIDIA controls failed");
         return;
     }
-    console_write("OpenRFS: NVIDIA driver foundation controls ");
+    console_write("RSD: NVIDIA driver foundation controls ");
     console_write_u64(completed);
     console_putc('/');
     console_write_u64(NVIDIA_CONTROLLED_CONTROLS);
@@ -2743,14 +2743,14 @@ static void execute_nvidia_probe(
         return;
     }
     if (context->test_scenario != KERNEL_TEST_NVIDIA) {
-        console_write("OpenRFS: NVIDIA functions absent\n");
+        console_write("RSD: NVIDIA functions absent\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
 
     status = nvidia_bind(&probe);
     if (status != NVIDIA_STATUS_OK) {
-        console_write("OpenRFS: NVIDIA probe violated invariant: ");
+        console_write("RSD: NVIDIA probe violated invariant: ");
         console_write(nvidia_status_string(status));
         console_putc('\n');
         stage_failed(context, result, nvidia_status_string(status));
@@ -2862,7 +2862,7 @@ static void execute_driver_framework_foundation(
         stage_failed(context, result, "block device layer controls failed");
         return;
     }
-    console_write("OpenRFS: upstream driver framework controls ");
+    console_write("RSD: upstream driver framework controls ");
     console_write_u64(completed);
     console_write(" passed; block layer controls ");
     console_write_u64(block_completed);
@@ -2910,13 +2910,13 @@ static void execute_driver_framework_bind(
 
     (void)context;
     if (hwdrv_get_mode() == HWDRV_MODE_NONE) {
-        console_write("OpenRFS: upstream drivers disabled\n");
+        console_write("RSD: upstream drivers disabled\n");
         boot_stage_result_skip(descriptor, result);
         return;
     }
     status = hwdrv_bind_all();
     state = hwdrv_get_state();
-    console_write("OpenRFS: upstream drivers bound ");
+    console_write("RSD: upstream drivers bound ");
     console_write_u64(state.active_bindings);
     console_write(" device(s); status ");
     console_write(hwdrv_status_string(status));
@@ -2970,7 +2970,7 @@ static const struct boot_stage_descriptor installed_descriptors[] = {
         execute_keyboard),
     OPTIONAL_STAGE(BOOT_STAGE_SHELL, "interactive shell",
         BOOT_PHASE_RUNTIME, BOOT_IRREVERSIBLE_NONE, execute_shell),
-    OPTIONAL_STAGE(BOOT_STAGE_UI_FONT, "OpenRFS UI font",
+    OPTIONAL_STAGE(BOOT_STAGE_UI_FONT, "RSD UI font",
         BOOT_PHASE_RUNTIME, BOOT_IRREVERSIBLE_NONE, execute_ui_font),
     OPTIONAL_STAGE(BOOT_STAGE_POINTER_DECISION,
         "pointer availability decision", BOOT_PHASE_RUNTIME,
@@ -2978,7 +2978,7 @@ static const struct boot_stage_descriptor installed_descriptors[] = {
     OPTIONAL_NEUTRAL_STAGE(BOOT_STAGE_POINTER_OUTCOME,
         "pointer availability outcome", BOOT_PHASE_RUNTIME,
         BOOT_IRREVERSIBLE_NONE, execute_pointer_outcome),
-    OPTIONAL_STAGE(BOOT_STAGE_UI_LAYOUT, "OpenRFS layout",
+    OPTIONAL_STAGE(BOOT_STAGE_UI_LAYOUT, "RSD layout",
         BOOT_PHASE_RUNTIME, BOOT_IRREVERSIBLE_NONE, execute_ui_layout),
     REQUIRED_STAGE(BOOT_STAGE_EARLY_SCENARIO, "early scenario gate",
         BOOT_PHASE_RUNTIME, BOOT_IRREVERSIBLE_NONE, execute_early_scenario),
@@ -3092,9 +3092,9 @@ static const struct boot_stage_descriptor installed_descriptors[] = {
     OPTIONAL_STAGE(BOOT_STAGE_DESKTOP_ACTIVATION, "desktop activation",
         BOOT_PHASE_PROOFS, BOOT_IRREVERSIBLE_NONE,
         execute_desktop_activation),
-    OPTIONAL_STAGE(BOOT_STAGE_OPENRFS_INSTALLED_PROOF,
-        "OpenRFS installed proof", BOOT_PHASE_PROOFS,
-        BOOT_IRREVERSIBLE_NONE, execute_openrfs_installed_proof)
+    OPTIONAL_STAGE(BOOT_STAGE_RSD_INSTALLED_PROOF,
+        "RSD installed proof", BOOT_PHASE_PROOFS,
+        BOOT_IRREVERSIBLE_NONE, execute_rsd_installed_proof)
 };
 
 _Static_assert(sizeof(installed_descriptors) /
@@ -3949,7 +3949,7 @@ static bool declare_dependencies(
             BOOT_CAPABILITY_DESKTOP_SHELL_ACTIVATED;
         descriptor->provided_capability_count = 1U;
         break;
-    case BOOT_STAGE_OPENRFS_INSTALLED_PROOF:
+    case BOOT_STAGE_RSD_INSTALLED_PROOF:
         descriptor->required_capabilities[0] =
             BOOT_CAPABILITY_DESKTOP_SHELL_ACTIVATED;
         descriptor->required_capabilities[1] =
@@ -3958,7 +3958,7 @@ static bool declare_dependencies(
             BOOT_CAPABILITY_BOOT_PROOFS_COMPLETE;
         descriptor->required_capability_count = 3U;
         descriptor->provided_capabilities[0] =
-            BOOT_CAPABILITY_OPENRFS_INSTALLED_PROOF_COMPLETE;
+            BOOT_CAPABILITY_RSD_INSTALLED_PROOF_COMPLETE;
         descriptor->provided_capability_count = 1U;
         break;
     case BOOT_STAGE_DRIVER_FRAMEWORK_FOUNDATION:

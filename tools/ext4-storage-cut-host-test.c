@@ -68,11 +68,11 @@ static void configure(const char *command)
 
 int main(void)
 {
-    const char *invalid[] = {"openrfs.ext4-storage-cut=", "openrfs.ext4-storage-cut=-1",
-        "openrfs.ext4-storage-cut=129", "openrfs.ext4-storage-cut=4294967296",
-        "openrfs.ext4-storage-cut=1x", "openrfs.ext4-storage-cut=1 openrfs.ext4-cut=1",
-        "openrfs.ext4-cut=1 openrfs.ext4-storage-cut=0",
-        "openrfs.ext4-storage-cut=0 openrfs.ext4-storage-cut=0", "openrfs.ext4-cut=0"};
+    const char *invalid[] = {"rsd.ext4-storage-cut=", "rsd.ext4-storage-cut=-1",
+        "rsd.ext4-storage-cut=129", "rsd.ext4-storage-cut=4294967296",
+        "rsd.ext4-storage-cut=1x", "rsd.ext4-storage-cut=1 rsd.ext4-cut=1",
+        "rsd.ext4-cut=1 rsd.ext4-storage-cut=0",
+        "rsd.ext4-storage-cut=0 rsd.ext4-storage-cut=0", "rsd.ext4-cut=0"};
     for (size_t index = 0U; index < sizeof(invalid) / sizeof(invalid[0]); ++index) {
         ext4_test_configured = false;
         assert(!ext4_backend_test_configure_power_cut(invalid[index], strlen(invalid[index])));
@@ -86,38 +86,38 @@ int main(void)
     memset(input, 'n', sizeof(input));
     configure("");
     assert(!ext4_backend_test_pause_storage_trace(true));
-    assert(openrfs_ext4_block_write((uintptr_t)mount, 0U, input, sizeof(input)) == 0);
+    assert(rsd_ext4_block_write((uintptr_t)mount, 0U, input, sizeof(input)) == 0);
     assert(writes == 2U && ext4_test_storage_completed == 0U && transcript_length == 0U);
-    configure("openrfs.ext4-storage-cut=0");
+    configure("rsd.ext4-storage-cut=0");
     assert(ext4_backend_test_power_cut_configured() && !ext4_backend_test_fail_storage_once(1U));
     memset(disk, 'o', sizeof(disk));
-    assert(openrfs_ext4_block_write((uintptr_t)mount, 4095U, input, 4098U) == 0);
+    assert(rsd_ext4_block_write((uintptr_t)mount, 4095U, input, 4098U) == 0);
     assert(writes == 3U && ext4_test_storage_completed == 3U);
     assert(disk[4094] == 'o' && disk[4095] == 'n' && disk[8192] == 'n' && disk[8193] == 'o');
     assert(strstr(transcript, "ST EXT4 STORAGE 3 write 2\n") != NULL);
     assert(ext4_backend_test_pause_storage_trace(true));
     assert(!ext4_backend_test_pause_storage_trace(true));
-    assert(openrfs_ext4_block_write((uintptr_t)mount, 0U, input, sizeof(input)) == 0);
-    assert(openrfs_ext4_block_flush((uintptr_t)mount, OPENRFS_EXT4_FLUSH_COMMIT) == 0);
+    assert(rsd_ext4_block_write((uintptr_t)mount, 0U, input, sizeof(input)) == 0);
+    assert(rsd_ext4_block_flush((uintptr_t)mount, RSD_EXT4_FLUSH_COMMIT) == 0);
     assert(ext4_test_storage_completed == 3U && ext4_test_durable_boundary == 0U);
     assert(ext4_backend_test_pause_storage_trace(false));
     assert(!ext4_backend_test_pause_storage_trace(false));
-    assert(openrfs_ext4_block_flush((uintptr_t)mount, OPENRFS_EXT4_FLUSH_COMMIT) == 0);
+    assert(rsd_ext4_block_flush((uintptr_t)mount, RSD_EXT4_FLUSH_COMMIT) == 0);
     assert(ext4_test_storage_completed == 4U && ext4_test_durable_boundary == 1U);
-    configure("openrfs.ext4-storage-cut=0");
+    configure("rsd.ext4-storage-cut=0");
     refuse_write = 2U;
-    assert(openrfs_ext4_block_write((uintptr_t)mount, 0U, input, sizeof(input)) == -1);
+    assert(rsd_ext4_block_write((uintptr_t)mount, 0U, input, sizeof(input)) == -1);
     assert(writes == 2U && ext4_test_storage_completed == 1U);
     refuse_flush = true;
-    assert(openrfs_ext4_block_flush((uintptr_t)mount, OPENRFS_EXT4_FLUSH_COMMIT) == -1);
+    assert(rsd_ext4_block_flush((uintptr_t)mount, RSD_EXT4_FLUSH_COMMIT) == -1);
     assert(ext4_test_storage_completed == 1U && ext4_test_durable_boundary == 0U);
     for (unsigned ordinal = 1U; ordinal <= 3U; ++ordinal) {
         char command[64];
-        (void)snprintf(command, sizeof(command), "openrfs.ext4-storage-cut=%u", ordinal);
+        (void)snprintf(command, sizeof(command), "rsd.ext4-storage-cut=%u", ordinal);
         configure(command);
         if (setjmp(cut_exit) == 0) {
-            assert(openrfs_ext4_block_write((uintptr_t)mount, 0U, input, sizeof(input)) == 0);
-            (void)openrfs_ext4_block_flush((uintptr_t)mount, OPENRFS_EXT4_FLUSH_COMMIT);
+            assert(rsd_ext4_block_write((uintptr_t)mount, 0U, input, sizeof(input)) == 0);
+            (void)rsd_ext4_block_flush((uintptr_t)mount, RSD_EXT4_FLUSH_COMMIT);
             assert(!"configured cut failed to halt");
         }
         assert(exit_port && ext4_test_storage_completed == ordinal);

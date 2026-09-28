@@ -28,8 +28,8 @@ own bounded stack and guard.
 
 Initial registers pass `argc`, `argv`, and environment in `RDI`, `RSI`, and
 `RDX`. The deterministic stack contains the manifest arguments, a
-`OPENRFS_ABI=1` environment entry, and an auxiliary vector containing page size,
-entry address, OpenRFS ABI version, and TLS image/size/alignment records. All
+`RSD_ABI=1` environment entry, and an auxiliary vector containing page size,
+entry address, RSD ABI version, and TLS image/size/alignment records. All
 padding is zero and the resulting stack obeys the x86_64 alignment contract.
 
 Every partial failure unwinds installed pages, aliases, frames, handles, TLS,

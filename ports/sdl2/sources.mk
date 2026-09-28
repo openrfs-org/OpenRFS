@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Zlib
-# SDL 2.32.10 common sources plus OpenRFS's public-ABI platform backends.
+# SDL 2.32.10 common sources plus RSD's public-ABI platform backends.
 
 SDL2_SOURCES := \
 	$(wildcard vendor/sdl2/src/*.c) \
 	$(wildcard vendor/sdl2/src/atomic/*.c) \
 	$(wildcard vendor/sdl2/src/audio/*.c) \
-	$(wildcard vendor/sdl2/src/audio/openrfs/*.c) \
+	$(wildcard vendor/sdl2/src/audio/rsd/*.c) \
 	$(wildcard vendor/sdl2/src/cpuinfo/*.c) \
 	$(wildcard vendor/sdl2/src/events/*.c) \
 	$(wildcard vendor/sdl2/src/file/*.c) \
@@ -16,7 +16,7 @@ SDL2_SOURCES := \
 	$(wildcard vendor/sdl2/src/joystick/dummy/*.c) \
 	$(wildcard vendor/sdl2/src/loadso/dummy/*.c) \
 	$(wildcard vendor/sdl2/src/power/*.c) \
-	$(wildcard vendor/sdl2/src/filesystem/openrfs/*.c) \
+	$(wildcard vendor/sdl2/src/filesystem/rsd/*.c) \
 	$(wildcard vendor/sdl2/src/locale/*.c) \
 	$(wildcard vendor/sdl2/src/locale/dummy/*.c) \
 	$(wildcard vendor/sdl2/src/misc/*.c) \
@@ -28,9 +28,9 @@ SDL2_SOURCES := \
 	$(wildcard vendor/sdl2/src/stdlib/*.c) \
 	$(wildcard vendor/sdl2/src/libm/*.c) \
 	$(wildcard vendor/sdl2/src/thread/*.c) \
-	$(wildcard vendor/sdl2/src/thread/openrfs/*.c) \
+	$(wildcard vendor/sdl2/src/thread/rsd/*.c) \
 	$(wildcard vendor/sdl2/src/timer/*.c) \
-	$(wildcard vendor/sdl2/src/timer/openrfs/*.c) \
+	$(wildcard vendor/sdl2/src/timer/rsd/*.c) \
 	$(wildcard vendor/sdl2/src/video/*.c) \
 	$(wildcard vendor/sdl2/src/video/yuv2rgb/*.c) \
-	$(wildcard vendor/sdl2/src/video/openrfs/*.c)
+	$(wildcard vendor/sdl2/src/video/rsd/*.c)

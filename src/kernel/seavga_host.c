@@ -3,10 +3,10 @@
  * The kernel-facing half of the SeaBIOS VGA drivers: which card-type build
  * drives which adapter, the PCI claim and BAR mappings the adapter needs,
  * and the display registry entry through which the kernel sets a mode. See
- * include/openrfs/seavga_host.h for the boundary.
+ * include/rsd/seavga_host.h for the boundary.
  *
  * Display drivers bind only when named on the command line
- * (openrfs.drivers=bochsvga, ...), never under openrfs.drivers=auto. The
+ * (rsd.drivers=bochsvga, ...), never under rsd.drivers=auto. The
  * primary adapter is the one the loader set a mode on and the kernel's
  * screen console draws to; a driver that takes it over must be asked for.
  */
@@ -14,15 +14,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/console.h>
-#include <openrfs/display.h>
-#include <openrfs/dma_arena.h>
-#include <openrfs/hwdrv.h>
-#include <openrfs/hwdrv_layers.h>
-#include <openrfs/pci.h>
-#include <openrfs/pci_resource.h>
-#include <openrfs/seabios_host.h>
-#include <openrfs/seavga_host.h>
+#include <rsd/console.h>
+#include <rsd/display.h>
+#include <rsd/dma_arena.h>
+#include <rsd/hwdrv.h>
+#include <rsd/hwdrv_layers.h>
+#include <rsd/pci.h>
+#include <rsd/pci_resource.h>
+#include <rsd/seabios_host.h>
+#include <rsd/seavga_host.h>
 
 #define SEAVGA_REVISION "81ec9ec0bcf45df11fb7f98339ec9036b546fca0"
 #define SEAVGA_MAX_ADAPTERS 4U
@@ -310,7 +310,7 @@ static enum display_status adapter_set_mode(void *context, uint32_t width,
         return DISPLAY_STATUS_NO_SUCH_MODE;
     }
     if (call.result != 0) {
-        console_write("OpenRFS: SeaBIOS ");
+        console_write("RSD: SeaBIOS ");
         console_write(adapter->variant->name);
         console_write(" refused the mode (");
         console_write(call.result < 0 ? "-" : "");
@@ -343,7 +343,7 @@ static enum display_status adapter_set_mode(void *context, uint32_t width,
         pixels = (volatile uint8_t *)(uintptr_t)call.framebuffer;
     }
     if (pixels == NULL) {
-        console_write("OpenRFS: SeaBIOS ");
+        console_write("RSD: SeaBIOS ");
         console_write(adapter->variant->name);
         console_write(" reported a framebuffer outside its mapping\n");
         return DISPLAY_STATUS_DEVICE_ERROR;
@@ -432,7 +432,7 @@ static struct seavga_adapter *free_adapter(void)
 static void report_refusal(const struct seavga_variant *variant,
     const char *reason)
 {
-    console_write("OpenRFS: SeaBIOS ");
+    console_write("RSD: SeaBIOS ");
     console_write(variant->name);
     console_write(" not bound: ");
     console_write(reason);
@@ -475,7 +475,7 @@ static bool publish_adapter(struct seavga_adapter *adapter,
         HWDRV_STATUS_OK) {
         return false;
     }
-    console_write("OpenRFS: ");
+    console_write("RSD: ");
     console_write(adapter->name);
     console_write(" bound by SeaBIOS ");
     console_write(variant->name);
@@ -570,7 +570,7 @@ static bool bind_ramfb(const struct seavga_variant *variant)
         .result = -1
     };
     if (!seabios_host_run(variant->dispatch, &call) || call.result != 0) {
-        console_write("OpenRFS: SeaBIOS ramfb found no device\n");
+        console_write("RSD: SeaBIOS ramfb found no device\n");
         return false;
     }
     return publish_adapter(adapter, &call, NULL);
@@ -620,7 +620,7 @@ enum hwdrv_status seavga_layer_bind_all(void)
         }
     }
     if (bound != 0U) {
-        console_write("OpenRFS: SeaBIOS VGA bound ");
+        console_write("RSD: SeaBIOS VGA bound ");
         write_decimal(bound);
         console_write(bound == 1U ? " adapter\n" : " adapters\n");
     }

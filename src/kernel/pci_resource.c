@@ -3,11 +3,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/cpu.h>
-#include <openrfs/memory.h>
-#include <openrfs/paging.h>
-#include <openrfs/pci.h>
-#include <openrfs/pci_resource.h>
+#include <rsd/cpu.h>
+#include <rsd/memory.h>
+#include <rsd/paging.h>
+#include <rsd/pci.h>
+#include <rsd/pci_resource.h>
 
 #define PCI_REGISTER_BAR_BASE UINT16_C(0x10)
 #define PCI_BAR_STRIDE UINT16_C(4)
@@ -1264,7 +1264,7 @@ bool pci_resource_self_test(const struct pci_function *probe_function)
         return false;
     }
     const bool ram_overlap = frame_range_overlaps_allocatable_memory(
-        (uint64_t)ram_page, OPENRFS_PAGE_SIZE);
+        (uint64_t)ram_page, RSD_PAGE_SIZE);
     if (frame_release(ram_page) != FRAME_STATUS_OK || !ram_overlap) {
         return false;
     }

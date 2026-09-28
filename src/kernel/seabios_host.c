@@ -3,26 +3,26 @@
  * The kernel-facing half of the SeaBIOS compatibility layer: one DMA arena
  * for every device the layer binds, a call stack inside that arena, PCI
  * claims through the driver framework, and block devices for the media the
- * drivers find. See include/openrfs/seabios_host.h for the boundary.
+ * drivers find. See include/rsd/seabios_host.h for the boundary.
  */
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/blockdev.h>
-#include <openrfs/console.h>
-#include <openrfs/dma_arena.h>
-#include <openrfs/hwdrv.h>
-#include <openrfs/hwdrv_layers.h>
-#include <openrfs/interrupts.h>
-#include <openrfs/ioapic.h>
-#include <openrfs/keyboard.h>
-#include <openrfs/pci.h>
-#include <openrfs/pci_resource.h>
-#include <openrfs/pointer.h>
-#include <openrfs/seabios_host.h>
-#include <openrfs/thread.h>
-#include <openrfs/tpm.h>
+#include <rsd/blockdev.h>
+#include <rsd/console.h>
+#include <rsd/dma_arena.h>
+#include <rsd/hwdrv.h>
+#include <rsd/hwdrv_layers.h>
+#include <rsd/interrupts.h>
+#include <rsd/ioapic.h>
+#include <rsd/keyboard.h>
+#include <rsd/pci.h>
+#include <rsd/pci_resource.h>
+#include <rsd/pointer.h>
+#include <rsd/seabios_host.h>
+#include <rsd/thread.h>
+#include <rsd/tpm.h>
 
 /*
  * 4 MiB below 4 GiB. Command lists, rings and bounce buffers for every
@@ -603,7 +603,7 @@ bool seabios_host_publish(void *handle, const struct seabios_host_drive *drive,
     record->block_size = drive->block_size;
     record->isa_dma = drive->medium == SEABIOS_HOST_MEDIUM_FLOPPY;
     if (record->isa_dma && !isa_arena_ready()) {
-        console_write("OpenRFS: SeaBIOS floppy needs ISA DMA memory below "
+        console_write("RSD: SeaBIOS floppy needs ISA DMA memory below "
             "16 MiB and none is free\n");
         return false;
     }
@@ -611,7 +611,7 @@ bool seabios_host_publish(void *handle, const struct seabios_host_drive *drive,
         drive->read_only ? &medium_read_only_operations : &medium_operations,
         record, record->name);
     if (status != BLOCKDEV_STATUS_OK) {
-        console_write("OpenRFS: SeaBIOS ");
+        console_write("RSD: SeaBIOS ");
         console_write(drive->driver);
         console_write(" medium refused by the block layer: ");
         console_write(blockdev_status_string(status));
@@ -628,7 +628,7 @@ bool seabios_host_publish(void *handle, const struct seabios_host_drive *drive,
         HWDRV_STATUS_OK) {
         return false;
     }
-    console_write("OpenRFS: ");
+    console_write("RSD: ");
     console_write(record->name);
     console_write(" bound by SeaBIOS ");
     console_write(drive->driver);
@@ -692,7 +692,7 @@ bool seabios_host_record(void *handle, enum seabios_host_device_class kind,
         input_attached = true;
         hwdrv_note_input_device();
     }
-    console_write("OpenRFS: ");
+    console_write("RSD: ");
     console_write(instance);
     console_write(" bound by SeaBIOS ");
     console_write(driver);
@@ -771,7 +771,7 @@ static size_t bind_function(size_t index, int pass)
         return 0U;
     }
     if (call.result <= 0) {
-        console_write("OpenRFS: SeaBIOS ");
+        console_write("RSD: SeaBIOS ");
         console_write(name);
         console_write(" found no devices\n");
         return 0U;
@@ -826,7 +826,7 @@ static size_t bind_tpm(void)
         return 0U;
     }
     if (!seabios_call(&call) || call.result != 0) {
-        console_write("OpenRFS: SeaBIOS TPM driver found no TPM\n");
+        console_write("RSD: SeaBIOS TPM driver found no TPM\n");
         return 0U;
     }
     if (call.tpm_interface == SEABIOS_HOST_TPM_CRB) {
@@ -840,7 +840,7 @@ static size_t bind_tpm(void)
             "TPM 2.0, TIS/FIFO interface" : "TPM 1.2, TIS/FIFO interface";
     }
     if (!hwdrv_driver_enabled(driver)) {
-        console_write("OpenRFS: the TPM uses the interface of ");
+        console_write("RSD: the TPM uses the interface of ");
         console_write(driver);
         console_write(", which was not named\n");
         return 0U;
@@ -853,7 +853,7 @@ static size_t bind_tpm(void)
             NULL) != HWDRV_STATUS_OK) {
         return 0U;
     }
-    console_write("OpenRFS: ");
+    console_write("RSD: ");
     console_write(name);
     console_write(" bound by SeaBIOS ");
     console_write(driver);

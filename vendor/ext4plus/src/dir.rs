@@ -1002,7 +1002,7 @@ impl Dir {
 
     /// Remove an empty directory entry and return its first freed block.
     ///
-    /// OpenRFS uses the returned physical block to require the matching JBD2
+    /// RSD uses the returned physical block to require the matching JBD2
     /// revocation before checkpointing the inode, bitmap, counter, and parent
     /// directory updates. The operation validates everything that can fail
     /// before changing the filesystem through its configured writer.

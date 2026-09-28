@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
  * Time for iPXE drivers (include/ipxe/timer.h). currticks() counts
- * milliseconds of the OpenRFS monotonic clock, so TICKS_PER_SEC is 1000;
+ * milliseconds of the RSD monotonic clock, so TICKS_PER_SEC is 1000;
  * iPXE's BIOS build uses 1024, and drivers only ever scale by the macro.
  */
-#ifndef OPENRFS_IPXE_TIMER_H
-#define OPENRFS_IPXE_TIMER_H
+#ifndef RSD_IPXE_TIMER_H
+#define RSD_IPXE_TIMER_H
 
 #define TICKS_PER_SEC 1000
 #define TICKS_PER_MS 1

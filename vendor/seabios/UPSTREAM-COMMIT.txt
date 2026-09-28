@@ -8,7 +8,7 @@ Licence: GNU LGPL version 3 (COPYING.LESSER, which incorporates COPYING).
 Files that carry a notice say "This file may be distributed under the terms
 of the GNU LGPLv3 license"; files without one are covered by the project
 licence. LGPL-3.0 code may be combined into, and conveyed as part of, a
-GPL-3.0-only work such as OpenRFS.
+GPL-3.0-only work such as RSD.
 
 Vendored paths (byte-for-byte upstream; SOURCE-MANIFEST.sha256):
   src/hw/ahci.c, ahci.h              AHCI SATA disks and ATAPI drives
@@ -64,14 +64,14 @@ ports/seabios/include replaces them. hw/pci_regs.h and hw/pci_ids.h are also
 replaced there with the PCI-specification constants the drivers use, because
 SeaBIOS's copies came from Linux without a licence notice of their own.
 
-Two vendored files are also compiled through OpenRFS wrappers, both for
+Two vendored files are also compiled through RSD wrappers, both for
 the same reason: SeaBIOS builds them for i386, and one structure each
 changes shape on x86-64.
   src/hw/usb-uhci.c is built from ports/seabios/lp64/usb-uhci.c, which first
   includes ports/seabios/lp64/usb-uhci.h - a copy of src/hw/usb-uhci.h
   whose struct uhci_td declares the hardware buffer pointer as u32 instead
   of void *. That copy (LGPL-3.0, like its original) is the only modified
-  SeaBIOS text in OpenRFS.
+  SeaBIOS text in RSD.
   vgasrc/ramfb.c is built from ports/seavga/lp64/ramfb.c, which includes
   every header ramfb.c uses and then ramfb.c itself under #pragma pack(4),
   so struct QemuRAMFBCfg has its i386 size of 28 bytes (QEMU's etc/ramfb).

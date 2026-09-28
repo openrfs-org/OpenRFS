@@ -4,17 +4,17 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/cpu.h>
-#include <openrfs/dma.h>
-#include <openrfs/elf64.h>
-#include <openrfs/filesystem.h>
-#include <openrfs/interrupt_vector.h>
-#include <openrfs/interrupts.h>
-#include <openrfs/memory.h>
-#include <openrfs/msix.h>
-#include <openrfs/paging.h>
-#include <openrfs/pci_resource.h>
-#include <openrfs/process.h>
+#include <rsd/cpu.h>
+#include <rsd/dma.h>
+#include <rsd/elf64.h>
+#include <rsd/filesystem.h>
+#include <rsd/interrupt_vector.h>
+#include <rsd/interrupts.h>
+#include <rsd/memory.h>
+#include <rsd/msix.h>
+#include <rsd/paging.h>
+#include <rsd/pci_resource.h>
+#include <rsd/process.h>
 
 #define PROCESS_EXPECTED_RETURN_RIP (ELF64_ENTRY_ADDRESS + UINT64_C(7))
 #define PROCESS_SENTINEL_BYTES 32U
@@ -500,7 +500,7 @@ bool process_address_space_foundation_self_test(size_t *completed_tests)
 
 bool process_elf64_foundation_self_test(size_t *completed_tests)
 {
-    const uint32_t completed = openrfs_elf64_self_test();
+    const uint32_t completed = rsd_elf64_self_test();
 
     if (completed_tests == NULL) {
         return false;
@@ -569,7 +569,7 @@ static enum process_status process_attempt(
         status = failure_status(failure_point);
         goto cleanup;
     }
-    if (openrfs_elf64_parse(runtime.elf_bytes, sizeof(runtime.elf_bytes),
+    if (rsd_elf64_parse(runtime.elf_bytes, sizeof(runtime.elf_bytes),
             &runtime.image) != ELF64_STATUS_OK) {
         status = PROCESS_STATUS_ELF_PARSER;
         goto cleanup;

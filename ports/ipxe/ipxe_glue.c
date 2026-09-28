@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * The iPXE-facing half of the OpenRFS iPXE compatibility layer.
+ * The iPXE-facing half of the RSD iPXE compatibility layer.
  *
  * This file gives the vendored drivers the runtime they expect - memory, DMA
  * mappings, delays, PCI access and the net_device core - and translates
- * between that runtime and the kernel through include/openrfs/ipxe_host.h.
+ * between that runtime and the kernel through include/rsd/ipxe_host.h.
  *
  * The net_device functions below reproduce the behaviour of iPXE's
  * net/netdevice.c (GPL-2.0-or-later OR UBDL) for the paths a driver can
  * reach: transmit queueing and completion, deferred transmits, receive
  * queueing, link status, open/close and interrupt control. The receive queue
- * is additionally bounded, because OpenRFS drains it from its own service
+ * is additionally bounded, because RSD drains it from its own service
  * loop rather than from iPXE's network stack.
  */
 #include <stdbool.h>
@@ -33,7 +33,7 @@
 #include <ipxe/timer.h>
 #include <nic.h>
 
-#include <openrfs/ipxe_host.h>
+#include <rsd/ipxe_host.h>
 
 #include "usb_glue.h"
 
@@ -59,7 +59,7 @@ struct glue_isa_driver {
     struct isa_driver *driver;
 };
 
-struct openrfs_ipxe_pci {
+struct rsd_ipxe_pci {
     struct pci_device pci;
     /* A legacy ISA card has no PCI function; this describes it instead. */
     struct isa_device isa;
@@ -71,7 +71,7 @@ struct openrfs_ipxe_pci {
      * and the function driver that registered it. It has no claim of its
      * own; the controller's covers the bus.
      */
-    struct openrfs_ipxe_pci *usb_controller;
+    struct rsd_ipxe_pci *usb_controller;
     const char *usb_driver_name;
     const char *usb_driver_path;
     char usb_description[80];
@@ -126,12 +126,12 @@ static const struct glue_isa_driver glue_isa_drivers[] = {
 #define GLUE_ISA_DRIVER_COUNT \
     (sizeof(glue_isa_drivers) / sizeof(glue_isa_drivers[0]))
 
-static struct openrfs_ipxe_pci devices[IPXE_GLUE_MAX_DEVICES];
+static struct rsd_ipxe_pci devices[IPXE_GLUE_MAX_DEVICES];
 /* The device whose driver is running; ioremap() and register_netdev() use it. */
-static struct openrfs_ipxe_pci *current_device;
+static struct rsd_ipxe_pci *current_device;
 
 /* A slot no bound device, claim or pending USB function occupies. */
-static struct openrfs_ipxe_pci *free_slot(void)
+static struct rsd_ipxe_pci *free_slot(void)
 {
     for (size_t slot = 0U; slot < IPXE_GLUE_MAX_DEVICES; ++slot) {
         if (!devices[slot].bound && devices[slot].handle == NULL &&
@@ -333,10 +333,10 @@ void sleep_fixed(unsigned int seconds)
 
 void *pci_ioremap(struct pci_device *pci, unsigned long bus_addr, size_t len)
 {
-    if (pci == NULL || pci->openrfs == NULL) {
+    if (pci == NULL || pci->rsd == NULL) {
         return NULL;
     }
-    return ipxe_host_map(pci->openrfs->handle, bus_addr, len);
+    return ipxe_host_map(pci->rsd->handle, bus_addr, len);
 }
 
 void *ioremap(unsigned long bus_address, size_t length)
@@ -358,11 +358,11 @@ void iounmap(volatile const void *io_address)
 static bool bar_for_register(struct pci_device *pci, unsigned int reg,
     struct ipxe_host_bar *bar)
 {
-    if (pci == NULL || pci->openrfs == NULL || reg < PCI_BASE_ADDRESS_0 ||
+    if (pci == NULL || pci->rsd == NULL || reg < PCI_BASE_ADDRESS_0 ||
         reg > PCI_BASE_ADDRESS_5 || ((reg - PCI_BASE_ADDRESS_0) & 3U) != 0U) {
         return false;
     }
-    return ipxe_host_bar(pci->openrfs->handle,
+    return ipxe_host_bar(pci->rsd->handle,
         (reg - PCI_BASE_ADDRESS_0) / 4U, bar);
 }
 
@@ -405,8 +405,8 @@ void pci_bar_set(struct pci_device *pci, unsigned int reg,
 static int config_read(struct pci_device *pci, unsigned int where,
     unsigned int width, uint32_t *value)
 {
-    if (pci == NULL || pci->openrfs == NULL ||
-        !ipxe_host_config_read(pci->openrfs->handle, where, width, value)) {
+    if (pci == NULL || pci->rsd == NULL ||
+        !ipxe_host_config_read(pci->rsd->handle, where, width, value)) {
         *value = UINT32_MAX;
         return -EIO;
     }
@@ -442,8 +442,8 @@ int pci_read_config_dword(struct pci_device *pci, unsigned int where,
 static int config_write(struct pci_device *pci, unsigned int where,
     unsigned int width, uint32_t value)
 {
-    if (pci == NULL || pci->openrfs == NULL ||
-        !ipxe_host_config_write(pci->openrfs->handle, where, width, value)) {
+    if (pci == NULL || pci->rsd == NULL ||
+        !ipxe_host_config_write(pci->rsd->handle, where, width, value)) {
         return -EACCES;
     }
     return 0;
@@ -478,7 +478,7 @@ void adjust_pci_device(struct pci_device *pci)
     uint8_t latency = 0U;
     bool io_bar = false;
 
-    if (pci == NULL || pci->openrfs == NULL) {
+    if (pci == NULL || pci->rsd == NULL) {
         return;
     }
     for (unsigned int reg = PCI_BASE_ADDRESS_0; reg <= PCI_BASE_ADDRESS_5;
@@ -488,9 +488,9 @@ void adjust_pci_device(struct pci_device *pci)
         }
     }
     if (io_bar) {
-        (void)ipxe_host_enable_io(pci->openrfs->handle);
+        (void)ipxe_host_enable_io(pci->rsd->handle);
     }
-    (void)ipxe_host_enable_bus_master(pci->openrfs->handle);
+    (void)ipxe_host_enable_bus_master(pci->rsd->handle);
     if (pci_read_config_byte(pci, PCI_LATENCY_TIMER, &latency) == 0 &&
         latency < 32U) {
         (void)pci_write_config_byte(pci, PCI_LATENCY_TIMER, 32U);
@@ -778,9 +778,9 @@ static void record_stat(struct net_device_stats *stats, int rc)
  * published when that controller's bind, or the layer's settling pass,
  * finishes enumerating.
  */
-static struct openrfs_ipxe_pci *usb_function_slot(struct net_device *netdev)
+static struct rsd_ipxe_pci *usb_function_slot(struct net_device *netdev)
 {
-    struct openrfs_ipxe_pci *function = free_slot();
+    struct rsd_ipxe_pci *function = free_slot();
     struct device *bus_device = NULL;
 
     if (function == NULL) {
@@ -803,7 +803,7 @@ static struct openrfs_ipxe_pci *usb_function_slot(struct net_device *netdev)
 
 int register_netdev(struct net_device *netdev)
 {
-    struct openrfs_ipxe_pci *owner = current_device;
+    struct rsd_ipxe_pci *owner = current_device;
     bool zero = true;
 
     if (netdev->dev != NULL && netdev->dev->desc.bus_type == BUS_TYPE_USB) {
@@ -821,14 +821,14 @@ int register_netdev(struct net_device *netdev)
     if (zero) {
         netdev->ll_protocol->init_addr(netdev->hw_addr, netdev->ll_addr);
     }
-    netdev->openrfs_owner = owner;
+    netdev->rsd_owner = owner;
     owner->netdev = netdev;
     return 0;
 }
 
 void unregister_netdev(struct net_device *netdev)
 {
-    struct openrfs_ipxe_pci *owner = netdev->openrfs_owner;
+    struct rsd_ipxe_pci *owner = netdev->rsd_owner;
 
     netdev_close(netdev);
     if (owner != NULL) {
@@ -841,7 +841,7 @@ void unregister_netdev(struct net_device *netdev)
             memset(owner, 0, sizeof(*owner));
         }
     }
-    netdev->openrfs_owner = NULL;
+    netdev->rsd_owner = NULL;
 }
 
 void netdev_irq(struct net_device *netdev, int enable)
@@ -982,13 +982,13 @@ void netdev_rx(struct net_device *netdev, struct io_buffer *iobuf)
     if (dma_mapped(&iobuf->map)) {
         iob_unmap(iobuf);
     }
-    if (netdev->openrfs_rx_queued >= IPXE_GLUE_RX_QUEUE_LIMIT) {
+    if (netdev->rsd_rx_queued >= IPXE_GLUE_RX_QUEUE_LIMIT) {
         /* The stack is not draining; drop rather than exhaust the arena. */
         netdev_rx_err(netdev, iobuf, -ENOBUFS);
         return;
     }
     list_add_tail(&iobuf->list, &netdev->rx_queue);
-    ++netdev->openrfs_rx_queued;
+    ++netdev->rsd_rx_queued;
     record_stat(&netdev->rx_stats, 0);
 }
 
@@ -1023,8 +1023,8 @@ struct io_buffer *netdev_rx_dequeue(struct net_device *netdev)
         return NULL;
     }
     list_del(&iobuf->list);
-    if (netdev->openrfs_rx_queued > 0U) {
-        --netdev->openrfs_rx_queued;
+    if (netdev->rsd_rx_queued > 0U) {
+        --netdev->rsd_rx_queued;
     }
     return iobuf;
 }
@@ -1102,13 +1102,13 @@ static struct pci_device_id *match_driver(struct pci_driver *driver,
     return NULL;
 }
 
-static void describe_pci(struct openrfs_ipxe_pci *device,
+static void describe_pci(struct rsd_ipxe_pci *device,
     const struct ipxe_host_pci_info *info)
 {
     struct pci_device *pci = &device->pci;
 
     memset(pci, 0, sizeof(*pci));
-    pci->openrfs = device;
+    pci->rsd = device;
     pci->vendor = info->vendor_id;
     pci->device = info->device_id;
     pci->class = PCI_CLASS(info->class_code, info->subclass, info->prog_if);
@@ -1116,7 +1116,7 @@ static void describe_pci(struct openrfs_ipxe_pci *device,
     pci->irq = info->interrupt_line;
     pci->busdevfn = PCI_BUSDEVFN(info->segment, info->bus, info->device,
         info->function);
-    pci->dma.openrfs_arena = NULL;
+    pci->dma.rsd_arena = NULL;
     snprintf(pci->dev.name, sizeof(pci->dev.name), PCI_FMT, PCI_ARGS(pci));
     pci->dev.desc.bus_type = BUS_TYPE_PCI;
     pci->dev.desc.location = pci->busdevfn;
@@ -1149,7 +1149,7 @@ static void describe_pci(struct openrfs_ipxe_pci *device,
 
 bool ipxe_glue_try_bind(size_t index, const struct ipxe_host_pci_info *info)
 {
-    struct openrfs_ipxe_pci *device = free_slot();
+    struct rsd_ipxe_pci *device = free_slot();
 
     if (device == NULL || info == NULL) {
         return false;
@@ -1190,7 +1190,7 @@ bool ipxe_glue_try_bind(size_t index, const struct ipxe_host_pci_info *info)
 
             if (open_rc != 0) {
                 /* Stay bound; reset() retries the open when selected. */
-                printf("OpenRFS: iPXE %s open failed: %s\n", entry->name,
+                printf("RSD: iPXE %s open failed: %s\n", entry->name,
                     strerror(open_rc));
             }
             snprintf(description, sizeof(description), "%s %s",
@@ -1227,7 +1227,7 @@ bool ipxe_glue_try_bind(size_t index, const struct ipxe_host_pci_info *info)
 bool ipxe_glue_try_bind_isa(size_t isa_index)
 {
     const struct glue_isa_driver *entry;
-    struct openrfs_ipxe_pci *device = NULL;
+    struct rsd_ipxe_pci *device = NULL;
 
     if (isa_index >= GLUE_ISA_DRIVER_COUNT) {
         return false;
@@ -1264,7 +1264,7 @@ bool ipxe_glue_try_bind_isa(size_t isa_index)
             const int open_rc = netdev_open(device->netdev);
 
             if (open_rc != 0) {
-                printf("OpenRFS: iPXE %s open failed: %s\n", entry->name,
+                printf("RSD: iPXE %s open failed: %s\n", entry->name,
                     strerror(open_rc));
             }
             snprintf(description, sizeof(description), "%s at I/O 0x%x",
@@ -1300,7 +1300,7 @@ bool ipxe_glue_try_bind_isa(size_t isa_index)
 static void publish_usb_functions(void)
 {
     for (size_t slot = 0U; slot < IPXE_GLUE_MAX_DEVICES; ++slot) {
-        struct openrfs_ipxe_pci *function = &devices[slot];
+        struct rsd_ipxe_pci *function = &devices[slot];
         int rc;
 
         if (function->usb_controller == NULL || function->bound ||
@@ -1311,7 +1311,7 @@ static void publish_usb_functions(void)
         rc = netdev_open(function->netdev);
         current_device = NULL;
         if (rc != 0) {
-            printf("OpenRFS: iPXE %s open failed: %s\n",
+            printf("RSD: iPXE %s open failed: %s\n",
                 function->usb_driver_name, strerror(rc));
         }
         if (!ipxe_host_publish(function, NULL, function->usb_driver_name,
@@ -1338,7 +1338,7 @@ static void publish_usb_functions(void)
 bool ipxe_glue_try_bind_usb_host(size_t index,
     const struct ipxe_host_pci_info *info)
 {
-    struct openrfs_ipxe_pci *device = free_slot();
+    struct rsd_ipxe_pci *device = free_slot();
 
     if (device == NULL || info == NULL) {
         return false;
@@ -1371,7 +1371,7 @@ bool ipxe_glue_try_bind_usb_host(size_t index,
         rc = driver->probe(&device->pci);
         current_device = NULL;
         if (rc != 0) {
-            printf("OpenRFS: iPXE %s probe failed: %s\n",
+            printf("RSD: iPXE %s probe failed: %s\n",
                 ipxe_usb_host_name(host), strerror(rc));
             ipxe_host_release(device->handle);
             memset(device, 0, sizeof(*device));
@@ -1407,7 +1407,7 @@ bool ipxe_glue_try_bind_usb_host(size_t index,
 void ipxe_glue_usb_settle(unsigned long milliseconds)
 {
     const unsigned long start = ipxe_host_ticks_ms();
-    struct openrfs_ipxe_pci *controller = NULL;
+    struct rsd_ipxe_pci *controller = NULL;
 
     for (size_t slot = 0U; slot < IPXE_GLUE_MAX_DEVICES; ++slot) {
         if (devices[slot].usb_host && devices[slot].bound) {
@@ -1442,7 +1442,7 @@ const char *ipxe_glue_isa_driver_name(size_t isa_index)
 
 enum ipxe_glue_result ipxe_glue_service(void *glue_device)
 {
-    struct openrfs_ipxe_pci *device = glue_device;
+    struct rsd_ipxe_pci *device = glue_device;
     struct net_device *netdev;
 
     if (device == NULL || !device->bound || device->netdev == NULL) {
@@ -1473,7 +1473,7 @@ enum ipxe_glue_result ipxe_glue_service(void *glue_device)
 enum ipxe_glue_result ipxe_glue_transmit(void *glue_device,
     const uint8_t *frame, size_t length)
 {
-    struct openrfs_ipxe_pci *device = glue_device;
+    struct rsd_ipxe_pci *device = glue_device;
     struct io_buffer *iobuf;
     enum ipxe_glue_result serviced;
     int rc;
@@ -1502,7 +1502,7 @@ enum ipxe_glue_result ipxe_glue_transmit(void *glue_device,
 enum ipxe_glue_result ipxe_glue_receive(void *glue_device, uint8_t *frame,
     size_t capacity, size_t *length)
 {
-    struct openrfs_ipxe_pci *device = glue_device;
+    struct rsd_ipxe_pci *device = glue_device;
     struct io_buffer *iobuf;
     enum ipxe_glue_result serviced;
     size_t received;
@@ -1530,7 +1530,7 @@ enum ipxe_glue_result ipxe_glue_receive(void *glue_device, uint8_t *frame,
 
 enum ipxe_glue_result ipxe_glue_reset(void *glue_device)
 {
-    struct openrfs_ipxe_pci *device = glue_device;
+    struct rsd_ipxe_pci *device = glue_device;
     int rc;
 
     if (device == NULL || !device->bound || device->netdev == NULL) {
@@ -1550,7 +1550,7 @@ enum ipxe_glue_result ipxe_glue_reset(void *glue_device)
 
 enum ipxe_glue_result ipxe_glue_quiesce(void *glue_device)
 {
-    struct openrfs_ipxe_pci *device = glue_device;
+    struct rsd_ipxe_pci *device = glue_device;
 
     if (device == NULL || !device->bound || device->netdev == NULL) {
         return IPXE_GLUE_FAILED;
@@ -1562,7 +1562,7 @@ enum ipxe_glue_result ipxe_glue_quiesce(void *glue_device)
 
 void ipxe_glue_link(void *glue_device, struct ipxe_host_link *link)
 {
-    struct openrfs_ipxe_pci *device = glue_device;
+    struct rsd_ipxe_pci *device = glue_device;
     struct net_device *netdev;
 
     memset(link, 0, sizeof(*link));

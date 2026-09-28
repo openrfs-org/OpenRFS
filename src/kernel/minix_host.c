@@ -3,10 +3,10 @@
  * The kernel-facing half of the MINIX 3 audio drivers: which driver drives
  * which card, the claim and the DMA arena a card may master, and the PCM
  * device through which the kernel plays sound. See
- * include/openrfs/minix_host.h for the boundary.
+ * include/rsd/minix_host.h for the boundary.
  *
  * The ES1370 is a PCI function matched by its IDs and binds under
- * openrfs.drivers=auto or when named. The Sound Blaster 16 is an ISA card
+ * rsd.drivers=auto or when named. The Sound Blaster 16 is an ISA card
  * the driver finds by resetting its DSP at the fixed base 0x220, so it
  * binds only when named: probing I/O ports nobody described is not
  * something to do to an arbitrary machine.
@@ -15,14 +15,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/clock.h>
-#include <openrfs/console.h>
-#include <openrfs/dma_arena.h>
-#include <openrfs/hwdrv.h>
-#include <openrfs/hwdrv_layers.h>
-#include <openrfs/minix_host.h>
-#include <openrfs/pci.h>
-#include <openrfs/pcm.h>
+#include <rsd/clock.h>
+#include <rsd/console.h>
+#include <rsd/dma_arena.h>
+#include <rsd/hwdrv.h>
+#include <rsd/hwdrv_layers.h>
+#include <rsd/minix_host.h>
+#include <rsd/pci.h>
+#include <rsd/pcm.h>
 
 #define MINIX_REVISION "4db99f4012570a577414fe2a43697b2f239b699e"
 #define MINIX_MAX_DEVICES 2U
@@ -319,7 +319,7 @@ static bool bind_device(const struct minix_variant *variant,
     if (dma_arena_create(&device->arena, MINIX_ARENA_PAGES,
             variant->pci ? MINIX_PCI_ARENA_LIMIT : MINIX_ISA_ARENA_LIMIT) !=
         DMA_ARENA_STATUS_OK) {
-        console_write("OpenRFS: MINIX ");
+        console_write("RSD: MINIX ");
         console_write(variant->name);
         console_write(" has no DMA memory\n");
         return false;
@@ -334,7 +334,7 @@ static bool bind_device(const struct minix_variant *variant,
         device->device.arena = &device->arena;
     }
     if (!call_driver(device, &call)) {
-        console_write("OpenRFS: MINIX ");
+        console_write("RSD: MINIX ");
         console_write(variant->name);
         console_write(" found no device\n");
         release(device);
@@ -351,7 +351,7 @@ static bool bind_device(const struct minix_variant *variant,
             function) != HWDRV_STATUS_OK) {
         return false;
     }
-    console_write("OpenRFS: ");
+    console_write("RSD: ");
     console_write(device->name);
     console_write(" bound by MINIX ");
     console_write(variant->name);

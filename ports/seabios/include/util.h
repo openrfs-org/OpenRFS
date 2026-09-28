@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * OpenRFS environment for the vendored SeaBIOS drivers: the subset of
+ * RSD environment for the vendored SeaBIOS drivers: the subset of
  * SeaBIOS's util.h the vendored drivers call - boot registration, timers,
  * and the entry points of drivers that have no header of their own.
  */
-#ifndef OPENRFS_SEABIOS_UTIL_H
-#define OPENRFS_SEABIOS_UTIL_H
+#ifndef RSD_SEABIOS_UTIL_H
+#define RSD_SEABIOS_UTIL_H
 
 #include "types.h"
 
@@ -34,7 +34,7 @@ int boot_lchs_find_scsi_device(struct pci_device *pci, int target, int lun,
 int boot_lchs_find_ata_device(struct pci_device *pci, int chanid, int slave,
                               struct chs_s *chs);
 
-/* fw/dsdt_parser.c: OpenRFS lends the drivers no DSDT, so nothing matches. */
+/* fw/dsdt_parser.c: RSD lends the drivers no DSDT, so nothing matches. */
 struct acpi_device;
 struct acpi_device *acpi_dsdt_find_string(struct acpi_device *prev,
                                           const char *hid);
@@ -44,7 +44,7 @@ int acpi_dsdt_find_irq(struct acpi_device *dev, u64 *irq);
 struct acpi_device *acpi_dsdt_find_eisaid(struct acpi_device *prev,
                                           u16 eisaid);
 
-/* fw/coreboot.c: OpenRFS lends the drivers no coreboot tables. */
+/* fw/coreboot.c: RSD lends the drivers no coreboot tables. */
 struct cb_header;
 struct cb_header *find_cb_table(void);
 void *find_cb_subtable(struct cb_header *cbh, u32 tag);

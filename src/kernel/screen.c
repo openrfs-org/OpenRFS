@@ -3,10 +3,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/font.h>
-#include <openrfs/framebuffer.h>
-#include <openrfs/screen.h>
-#include <openrfs/surface.h>
+#include <rsd/font.h>
+#include <rsd/framebuffer.h>
+#include <rsd/screen.h>
+#include <rsd/surface.h>
 
 /*
  * Bitmap text rendered through a cached surface. Scrolling stays in write-back
@@ -99,7 +99,7 @@ static enum screen_status paint_cell_colored(
         code = (uint32_t)REPLACEMENT_CHARACTER;
     }
 
-    if (openrfs_font_glyph(code, glyph_rows, sizeof(glyph_rows)) !=
+    if (rsd_font_glyph(code, glyph_rows, sizeof(glyph_rows)) !=
         FONT_STATUS_OK) {
         return SCREEN_STATUS_DRAW_FAILURE;
     }
@@ -307,7 +307,7 @@ enum screen_status screen_initialize(void)
         return SCREEN_STATUS_NO_FRAMEBUFFER;
     }
 
-    if (openrfs_font_geometry(&width, &height, &first, &count) !=
+    if (rsd_font_geometry(&width, &height, &first, &count) !=
         FONT_STATUS_OK) {
         return SCREEN_STATUS_BAD_FONT;
     }
@@ -933,7 +933,7 @@ enum screen_status screen_verify_cell(
         code = (uint32_t)REPLACEMENT_CHARACTER;
     }
 
-    if (openrfs_font_glyph(code, glyph_rows, sizeof(glyph_rows)) !=
+    if (rsd_font_glyph(code, glyph_rows, sizeof(glyph_rows)) !=
         FONT_STATUS_OK) {
         return SCREEN_STATUS_DRAW_FAILURE;
     }

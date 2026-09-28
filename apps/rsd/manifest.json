@@ -1,0 +1,19 @@
+{
+  "name": "RSD Package Client",
+  "identifier": "RSD",
+  "executable": "RSD.APP",
+  "data_namespace": "RSD",
+  "memory_limit": 67108864,
+  "max_handles": 24,
+  "max_threads": 1,
+  "capabilities": [
+    "console",
+    "data-read",
+    "data-write",
+    "time",
+    "entropy",
+    "network",
+    "packages"
+  ],
+  "arguments": ["install", "org.libsdl.chess"]
+}

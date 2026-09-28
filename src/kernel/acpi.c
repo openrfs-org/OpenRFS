@@ -3,8 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/acpi.h>
-#include <openrfs/acpi_util.h>
+#include <rsd/acpi.h>
+#include <rsd/acpi_util.h>
 
 #define ACPI_RSDP_V1_SIZE 20U
 #define ACPI_RSDP_V2_SIZE 36U

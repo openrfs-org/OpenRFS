@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Bounded validation and text formatting for native teardown diagnostics. */
 
-#include <openrfs/native_teardown_diagnostics.h>
+#include <rsd/native_teardown_diagnostics.h>
 
 struct diagnostic_writer {
     char *output;
@@ -12,8 +12,8 @@ struct diagnostic_writer {
 
 static bool valid_resource_type(uint8_t type)
 {
-    return type >= OPENRFS_HANDLE_FILE &&
-        type <= OPENRFS_HANDLE_PACKAGE_CONTROL;
+    return type >= RSD_HANDLE_FILE &&
+        type <= RSD_HANDLE_PACKAGE_CONTROL;
 }
 
 static bool valid_diagnostic_bool(bool value)
@@ -104,7 +104,7 @@ static bool entry_is_zero(
     const struct native_handle_close_report_entry *entry
 )
 {
-    return entry != NULL && entry->handle == OPENRFS_HANDLE_INVALID &&
+    return entry != NULL && entry->handle == RSD_HANDLE_INVALID &&
         entry->object_index == 0U && entry->references == 0U &&
         entry->type == 0U && entry->outcome == 0U;
 }
@@ -118,7 +118,7 @@ static bool close_entry_handle_encoding_valid(
     const uint8_t reserved = (uint8_t)(entry->handle >> 24U);
     const uint32_t generation = (uint32_t)(entry->handle >> 32U);
 
-    return entry->handle != OPENRFS_HANDLE_INVALID && encoded_index != 0U &&
+    return entry->handle != RSD_HANDLE_INVALID && encoded_index != 0U &&
         encoded_index <= NATIVE_HANDLE_LIMIT &&
         encoded_type == entry->type && reserved == 0U && generation != 0U;
 }
@@ -249,8 +249,8 @@ static bool report_entries_validate(
     if (stored_count != report->attempted_handles) {
         return true;
     }
-    for (size_t type = OPENRFS_HANDLE_FILE;
-         type <= OPENRFS_HANDLE_PACKAGE_CONTROL; ++type) {
+    for (size_t type = RSD_HANDLE_FILE;
+         type <= RSD_HANDLE_PACKAGE_CONTROL; ++type) {
         if (!summaries_equal(&observed[type], &report->types[type])) {
             return false;
         }
@@ -706,37 +706,37 @@ static void writer_type(
 )
 {
     switch (type) {
-    case OPENRFS_HANDLE_FILE:
+    case RSD_HANDLE_FILE:
         WRITER_LITERAL(writer, "file");
         break;
-    case OPENRFS_HANDLE_DIRECTORY:
+    case RSD_HANDLE_DIRECTORY:
         WRITER_LITERAL(writer, "directory");
         break;
-    case OPENRFS_HANDLE_WINDOW:
+    case RSD_HANDLE_WINDOW:
         WRITER_LITERAL(writer, "window");
         break;
-    case OPENRFS_HANDLE_EVENT_QUEUE:
+    case RSD_HANDLE_EVENT_QUEUE:
         WRITER_LITERAL(writer, "event_queue");
         break;
-    case OPENRFS_HANDLE_STREAM:
+    case RSD_HANDLE_STREAM:
         WRITER_LITERAL(writer, "stream");
         break;
-    case OPENRFS_HANDLE_DATAGRAM:
+    case RSD_HANDLE_DATAGRAM:
         WRITER_LITERAL(writer, "datagram");
         break;
-    case OPENRFS_HANDLE_TIMER:
+    case RSD_HANDLE_TIMER:
         WRITER_LITERAL(writer, "timer");
         break;
-    case OPENRFS_HANDLE_THREAD:
+    case RSD_HANDLE_THREAD:
         WRITER_LITERAL(writer, "thread");
         break;
-    case OPENRFS_HANDLE_AUDIO_OUTPUT:
+    case RSD_HANDLE_AUDIO_OUTPUT:
         WRITER_LITERAL(writer, "audio_output");
         break;
-    case OPENRFS_HANDLE_PACKAGE_UPLOAD:
+    case RSD_HANDLE_PACKAGE_UPLOAD:
         WRITER_LITERAL(writer, "package_upload");
         break;
-    case OPENRFS_HANDLE_PACKAGE_CONTROL:
+    case RSD_HANDLE_PACKAGE_CONTROL:
         WRITER_LITERAL(writer, "package_control");
         break;
     default:
@@ -808,9 +808,9 @@ static void writer_classes(
 )
 {
     WRITER_LITERAL(writer, "classes=[");
-    for (size_t type = OPENRFS_HANDLE_FILE;
-         type <= OPENRFS_HANDLE_PACKAGE_CONTROL; ++type) {
-        if (type != OPENRFS_HANDLE_FILE) {
+    for (size_t type = RSD_HANDLE_FILE;
+         type <= RSD_HANDLE_PACKAGE_CONTROL; ++type) {
+        if (type != RSD_HANDLE_FILE) {
             writer_byte(writer, ';');
         }
         writer_type(writer, (uint8_t)type);
@@ -1052,8 +1052,8 @@ static uint32_t report_class_mask(
     if (report == NULL || !native_handle_close_report_validate(report)) {
         return 0U;
     }
-    for (uint8_t type = OPENRFS_HANDLE_FILE;
-         type <= OPENRFS_HANDLE_PACKAGE_CONTROL; ++type) {
+    for (uint8_t type = RSD_HANDLE_FILE;
+         type <= RSD_HANDLE_PACKAGE_CONTROL; ++type) {
         const struct native_handle_close_type_summary *summary =
             &report->types[type];
         const uint16_t value = field == 0U ? summary->retained_resources :
@@ -1111,8 +1111,8 @@ static uint32_t history_class_mask(
         if (blocking_only && !attempt->blocked) {
             continue;
         }
-        for (uint8_t type = OPENRFS_HANDLE_FILE;
-             type <= OPENRFS_HANDLE_PACKAGE_CONTROL; ++type) {
+        for (uint8_t type = RSD_HANDLE_FILE;
+             type <= RSD_HANDLE_PACKAGE_CONTROL; ++type) {
             const struct native_handle_close_type_summary *summary =
                 &attempt->types[type];
             const uint16_t value = field == 0U ? summary->retained_resources :

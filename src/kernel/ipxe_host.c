@@ -3,20 +3,20 @@
  * The kernel-facing half of the iPXE compatibility layer: one DMA arena for
  * every iPXE device, PCI claims through the driver framework, and the netdev
  * operations that let the IPv4 stack use an iPXE driver's interface. See
- * include/openrfs/ipxe_host.h for the boundary.
+ * include/rsd/ipxe_host.h for the boundary.
  */
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/console.h>
-#include <openrfs/dma_arena.h>
-#include <openrfs/hwdrv.h>
-#include <openrfs/hwdrv_layers.h>
-#include <openrfs/ipxe_host.h>
-#include <openrfs/netdev.h>
-#include <openrfs/pci.h>
-#include <openrfs/pci_resource.h>
+#include <rsd/console.h>
+#include <rsd/dma_arena.h>
+#include <rsd/hwdrv.h>
+#include <rsd/hwdrv_layers.h>
+#include <rsd/ipxe_host.h>
+#include <rsd/netdev.h>
+#include <rsd/pci.h>
+#include <rsd/pci_resource.h>
 
 /*
  * 4 MiB below 4 GiB: descriptor rings and packet buffers for every iPXE
@@ -435,7 +435,7 @@ bool ipxe_host_publish(void *glue_device, void *handle,
                 NULL) != HWDRV_STATUS_OK) {
         return false;
     }
-    console_write("OpenRFS: ");
+    console_write("RSD: ");
     console_write(info.name);
     console_write(" bound by iPXE ");
     console_write(driver_name);
@@ -470,7 +470,7 @@ bool ipxe_host_record_usb_host(void *handle, const char *driver_name,
         return false;
     }
     ++usb_host_count;
-    console_write("OpenRFS: ");
+    console_write("RSD: ");
     console_write(instance);
     console_write(" bound by iPXE ");
     console_write(driver_name);

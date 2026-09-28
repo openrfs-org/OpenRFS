@@ -3,13 +3,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/apic.h>
-#include <openrfs/cpu.h>
-#include <openrfs/interrupt_vector.h>
-#include <openrfs/interrupts.h>
-#include <openrfs/msix.h>
-#include <openrfs/pci.h>
-#include <openrfs/pci_resource.h>
+#include <rsd/apic.h>
+#include <rsd/cpu.h>
+#include <rsd/interrupt_vector.h>
+#include <rsd/interrupts.h>
+#include <rsd/msix.h>
+#include <rsd/pci.h>
+#include <rsd/pci_resource.h>
 
 #define MSIX_CAPABILITY_LENGTH UINT16_C(12)
 #define MSIX_CONTROL_OFFSET UINT16_C(2)

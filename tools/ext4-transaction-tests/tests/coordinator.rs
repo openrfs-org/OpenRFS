@@ -118,7 +118,7 @@ mod abi {
 }
 
 fn fixture() -> Option<PathBuf> {
-    let Some(path) = std::env::var_os("OPENRFS_EXT4_RUST_FIXTURE") else {
+    let Some(path) = std::env::var_os("RSD_EXT4_RUST_FIXTURE") else {
         eprintln!("coordinator fixture unavailable; no Linux interoperability gate claimed");
         return None;
     };
@@ -1101,8 +1101,8 @@ fn maximum_vfs_file_growth_keeps_holes_zero_and_reclaims_the_last_extent() {
     let Some(path) = fixture() else { return };
     let maximum = 64 * 1024 * 1024u64;
     // Keep this interoperability boundary tied to the ordinary C backend.
-    assert!(include_str!("../../../include/openrfs/ext4_fs.h")
-        .contains("OPENRFS_EXT4_MAX_MUTABLE_FILE_BYTES UINT64_C(67108864)"));
+    assert!(include_str!("../../../include/rsd/ext4_fs.h")
+        .contains("RSD_EXT4_MAX_MUTABLE_FILE_BYTES UINT64_C(67108864)"));
     let name = b"system/maximum-vfs-file";
     let mut mounted = mount_fixture(&path);
     ext4::create_file_probe(&mut mounted, name, 0o600).unwrap();
@@ -1743,7 +1743,7 @@ fn refresh_fixture_descriptor_checksums(image: &std::path::Path, groups: &[usize
 }
 
 #[test]
-fn e2fsprogs_independently_replays_openrfs_truncate_at_every_barrier() {
+fn e2fsprogs_independently_replays_rsd_truncate_at_every_barrier() {
     let Some(path) = fixture() else { return };
     let mut mounted = mount_fixture(&path);
     let name = b"system/linux-replay";
@@ -2854,7 +2854,7 @@ fn legacy_indirect_mapping_ownership_is_checked_before_writes_or_recovery() {
     std::fs::write(&input, &payload).unwrap();
     std::fs::copy(&path, &image).unwrap();
     // Create only this inode with Linux's legacy block mapping; restore the
-    // filesystem feature before any OpenRFS admission or e2fsck validation.
+    // filesystem feature before any RSD admission or e2fsck validation.
     debugfs(&image, "feature ^extents");
     debugfs(&image, &format!("write \"{}\" /system/legacy-map", input.display()));
     debugfs(&image, "feature extents");
@@ -4200,8 +4200,8 @@ fn freed_checksummed_inode_bodies_do_not_authorize_inode_io() {
 
 #[test]
 #[cfg(unix)]
-fn linux_kernel_mounts_openrfs_results_and_recovers_open_replace_cuts() {
-    if std::env::var("OPENRFS_EXT4_KERNEL_INTEROP").as_deref() != Ok("1") {
+fn linux_kernel_mounts_rsd_results_and_recovers_open_replace_cuts() {
+    if std::env::var("RSD_EXT4_KERNEL_INTEROP").as_deref() != Ok("1") {
         eprintln!("Linux loop-mount interoperability not requested; no kernel interoperability gate claimed");
         return;
     }
@@ -4251,8 +4251,8 @@ fn linux_kernel_mounts_openrfs_results_and_recovers_open_replace_cuts() {
     let target = b"data/user/kernel-target";
     ext4::create_file_probe(&mut mounted, source, 0o644).unwrap();
     ext4::create_file_probe(&mut mounted, target, 0o644).unwrap();
-    ext4::transaction_probe(&mut mounted, source, 0, b"new-from-openrfs").unwrap();
-    ext4::transaction_probe(&mut mounted, target, 0, b"old-from-openrfs").unwrap();
+    ext4::transaction_probe(&mut mounted, source, 0, b"new-from-rsd").unwrap();
+    ext4::transaction_probe(&mut mounted, target, 0, b"old-from-rsd").unwrap();
     ext4::set_xattr(&mut mounted, source, b"user.state", Some(&[b'n'; 601])).unwrap();
     ext4::set_xattr(&mut mounted, target, b"user.state", Some(&[b'o'; 601])).unwrap();
     let source_inode = ext4::stat(&mounted, source).unwrap().inode;
@@ -4271,7 +4271,7 @@ fn linux_kernel_mounts_openrfs_results_and_recovers_open_replace_cuts() {
                 std::fs::write(&image, &prefix).unwrap();
                 let kernel = LoopMount::mount(&image, &directory);
                 let output = linux(&["cat", directory.join("data/user/kernel-target").to_str().unwrap()]);
-                assert_eq!(&output.stdout, if committed { b"new-from-openrfs" } else { b"old-from-openrfs" });
+                assert_eq!(&output.stdout, if committed { b"new-from-rsd" } else { b"old-from-rsd" });
                 linux(&["python3", "-c", "import os,sys; assert os.getxattr(sys.argv[1], 'user.state') == sys.argv[2].encode()*601",
                     directory.join("data/user/kernel-target").to_str().unwrap(), if committed { "n" } else { "o" }]);
                 assert_eq!(directory.join("system/kernel-source").exists(), !committed);
@@ -4284,7 +4284,7 @@ fn linux_kernel_mounts_openrfs_results_and_recovers_open_replace_cuts() {
             }
         }
     }
-    // Kernel-created data must remain mutable after OpenRFS remounts it.
+    // Kernel-created data must remain mutable after RSD remounts it.
     let payload = path.with_extension("kernel-payload");
     std::fs::write(&payload, b"written-by-linux").unwrap();
     let kernel = LoopMount::mount(&image, &directory);
@@ -4308,24 +4308,24 @@ fn linux_kernel_mounts_openrfs_results_and_recovers_open_replace_cuts() {
     assert_eq!(attribute, [b'k'; 701]);
     ext4::set_xattr(&mut mounted, b"system/linux-alias", b"user.kernel", Some(&[b'p'; 3011])).unwrap();
     ext4::set_xattr(&mut mounted, b"system/from-linux", b"user.z", Some(&[b'z'; 701])).unwrap();
-    ext4::append_probe(&mut mounted, b"system/linux-alias", b"+openrfs", 16384).unwrap();
-    ext4::create_file_probe(&mut mounted, b"system/kernel-acl-parent/openrfs-file", 0o666).unwrap();
-    ext4::create_directory_mode(&mut mounted, b"system/kernel-acl-parent/openrfs-dir", 0o1720).unwrap();
-    ext4::symlink_probe(&mut mounted, b"system/kernel-acl-parent/openrfs-sym", b"openrfs-file").unwrap();
-    assert_eq!(ext4::stat(&mounted, b"system/kernel-acl-parent/openrfs-file").unwrap().mode & 0o777, 0o640);
-    ext4::chmod(&mut mounted, b"system/kernel-acl-parent/openrfs-file", 0o702).unwrap();
+    ext4::append_probe(&mut mounted, b"system/linux-alias", b"+rsd", 16384).unwrap();
+    ext4::create_file_probe(&mut mounted, b"system/kernel-acl-parent/rsd-file", 0o666).unwrap();
+    ext4::create_directory_mode(&mut mounted, b"system/kernel-acl-parent/rsd-dir", 0o1720).unwrap();
+    ext4::symlink_probe(&mut mounted, b"system/kernel-acl-parent/rsd-sym", b"rsd-file").unwrap();
+    assert_eq!(ext4::stat(&mounted, b"system/kernel-acl-parent/rsd-file").unwrap().mode & 0o777, 0o640);
+    ext4::chmod(&mut mounted, b"system/kernel-acl-parent/rsd-file", 0o702).unwrap();
     ext4::sync(&mut mounted).unwrap();
     ext4::unmount(&mounted).unwrap();
     fsck(&path, "coordinator-kernel-write-roundtrip");
     DEVICE.with_borrow(|device| std::fs::write(&image, &device.bytes).unwrap());
     let kernel = LoopMount::mount(&image, &directory);
     let output = linux(&["cat", kernel_file.to_str().unwrap()]);
-    assert_eq!(&output.stdout, b"written-by-linux+openrfs");
+    assert_eq!(&output.stdout, b"written-by-linux+rsd");
     linux(&["python3", "-c", "import os,sys; p=sys.argv[1]; assert os.getxattr(p, 'user.kernel') == b'p'*3011; assert os.getxattr(p, 'user.z') == b'z'*701; assert os.getxattr(p, 'user.small') == b'inline'; os.setxattr(p, 'user.kernel', b'l'*903)",
         kernel_file.to_str().unwrap()]);
-    linux(&["python3", "-c", "import os,sys; p=sys.argv[1]; os.chmod(p+'/linux-file', 0o702); assert os.stat(p+'/linux-file').st_mode == os.stat(p+'/openrfs-file').st_mode; assert os.getxattr(p+'/linux-file', 'system.posix_acl_access') == os.getxattr(p+'/openrfs-file', 'system.posix_acl_access'); assert os.stat(p+'/linux-dir').st_mode == os.stat(p+'/openrfs-dir').st_mode; assert os.getxattr(p+'/linux-dir', 'system.posix_acl_access') == os.getxattr(p+'/openrfs-dir', 'system.posix_acl_access'); assert os.getxattr(p+'/linux-dir', 'system.posix_acl_default') == os.getxattr(p+'/openrfs-dir', 'system.posix_acl_default')",
+    linux(&["python3", "-c", "import os,sys; p=sys.argv[1]; os.chmod(p+'/linux-file', 0o702); assert os.stat(p+'/linux-file').st_mode == os.stat(p+'/rsd-file').st_mode; assert os.getxattr(p+'/linux-file', 'system.posix_acl_access') == os.getxattr(p+'/rsd-file', 'system.posix_acl_access'); assert os.stat(p+'/linux-dir').st_mode == os.stat(p+'/rsd-dir').st_mode; assert os.getxattr(p+'/linux-dir', 'system.posix_acl_access') == os.getxattr(p+'/rsd-dir', 'system.posix_acl_access'); assert os.getxattr(p+'/linux-dir', 'system.posix_acl_default') == os.getxattr(p+'/rsd-dir', 'system.posix_acl_default')",
         acl_parent.to_str().unwrap()]);
-    linux(&["python3", "-c", "import os,sys; p=sys.argv[1]; nodes=[os.lstat(p+'/'+creator+'-'+kind) for creator in ['linux','openrfs'] for kind in ['file','dir','sym']]; assert all(n.st_uid == 0 and n.st_gid == 70000 for n in nodes)",
+    linux(&["python3", "-c", "import os,sys; p=sys.argv[1]; nodes=[os.lstat(p+'/'+creator+'-'+kind) for creator in ['linux','rsd'] for kind in ['file','dir','sym']]; assert all(n.st_uid == 0 and n.st_gid == 70000 for n in nodes)",
         acl_parent.to_str().unwrap()]);
     kernel.unmount();
     let mut mounted = mount_fixture(&image);
@@ -4715,7 +4715,7 @@ fn indexed_directory_compaction_preserves_names_links_and_replays_every_boundary
             }
             write_sparse_fixture(&image, &bytes).unwrap();
         }
-        let names: Vec<String> = (0..256).map(|index| format!("indexed/entry-{index:04}-openrfs-fixture")).collect();
+        let names: Vec<String> = (0..256).map(|index| format!("indexed/entry-{index:04}-rsd-fixture")).collect();
         let record_bytes = (8 + names[0].split('/').next_back().unwrap().len() + 3) & !3;
         let capacity = (4096 - 12) / record_bytes;
         assert!(capacity + 1 < names.len());

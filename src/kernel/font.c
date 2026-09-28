@@ -2,7 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/font.h>
+#include <rsd/font.h>
 
 /*
  * The C half of the console font: the names for what the Rust reader can

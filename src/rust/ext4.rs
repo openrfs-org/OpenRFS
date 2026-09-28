@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Checked, journaled ext4 operations over OpenRFS's native block boundary.
+//! Checked, journaled ext4 operations over RSD's native block boundary.
 
 extern crate alloc;
 
@@ -212,7 +212,7 @@ struct BlockReadError;
 
 impl Display for BlockReadError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter.write_str("OpenRFS block read failed")
+        formatter.write_str("RSD block read failed")
     }
 }
 
@@ -223,17 +223,17 @@ struct BlockStorageError;
 
 impl Display for BlockStorageError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter.write_str("OpenRFS block write or flush failed")
+        formatter.write_str("RSD block write or flush failed")
     }
 }
 
 impl Error for BlockStorageError {}
 
-struct OpenRFSOSReader {
+struct RSDOSReader {
     context: usize,
 }
 
-impl Ext4Read for OpenRFSOSReader {
+impl Ext4Read for RSDOSReader {
     fn read(
         &self,
         start_byte: u64,
@@ -247,7 +247,7 @@ impl Ext4Read for OpenRFSOSReader {
     }
 }
 
-struct OpenRFSOSJournalStorage {
+struct RSDOSJournalStorage {
     context: usize,
 }
 
@@ -263,7 +263,7 @@ struct RecoveryValidationReader {
 impl Ext4Read for RecoveryValidationReader {
     fn read(&self, start: u64, destination: &mut [u8])
         -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
-        OpenRFSOSReader { context: self.context }.read(start, destination)?;
+        RSDOSReader { context: self.context }.read(start, destination)?;
         let end = start.checked_add(destination.len() as u64)
             .ok_or_else(|| Box::new(BlockReadError) as Box<dyn Error + Send + Sync>)?;
         let mut overlay = |offset: u64, bytes: &[u8]| {
@@ -280,7 +280,7 @@ impl Ext4Read for RecoveryValidationReader {
     }
 }
 
-impl JournalStorage for OpenRFSOSJournalStorage {
+impl JournalStorage for RSDOSJournalStorage {
     type Error = BlockStorageError;
 
     fn write(&mut self, start_byte: u64, bytes: &[u8]) -> Result<(), Self::Error> {
@@ -312,7 +312,7 @@ fn execute_storage_plan(
     context: usize,
     operations: &[JournalCommitOperation],
 ) -> Result<(), Status> {
-    execute_commit_operations(&mut OpenRFSOSJournalStorage { context }, operations).map_err(|error| {
+    execute_commit_operations(&mut RSDOSJournalStorage { context }, operations).map_err(|error| {
         match error {
             JournalExecutionError::AddressOverflow => Status::Range,
             JournalExecutionError::Storage(_) => Status::Io,
@@ -327,7 +327,7 @@ fn load_staged_view(
     block_limit: usize,
 ) -> Result<(Ext4, Rc<JournalMutationStage>), Status> {
     let stage = Rc::new(
-        JournalMutationStage::with_block_limit(Box::new(OpenRFSOSReader { context }), image_bytes, block_limit)
+        JournalMutationStage::with_block_limit(Box::new(RSDOSReader { context }), image_bytes, block_limit)
             .map_err(|_| Status::Invalid)?,
     );
     let filesystem = if needs_recovery {
@@ -844,10 +844,10 @@ fn validate_namespace(filesystem: &Ext4) -> Result<(), Status> {
     blocks.finish(&mut allocations).map_err(map_error)
 }
 
-/// Load and validate the exact OpenRFS ext4 profile and reachable namespace.
+/// Load and validate the exact RSD ext4 profile and reachable namespace.
 pub(crate) fn mount(context: usize, media_bytes: u64) -> Result<(Box<Mounted>, Identity), Status> {
     let mut image_bytes = validate_profile(context, media_bytes)?;
-    let mut filesystem = Ext4::load(Box::new(OpenRFSOSReader { context })).map_err(map_error)?;
+    let mut filesystem = Ext4::load(Box::new(RSDOSReader { context })).map_err(map_error)?;
     let mut journal = load_journal_inode_map(&filesystem).map_err(map_journal_error)?;
     let mut recovery = RecoveryReport::default();
     let mut recovery_performed = 0u8;
@@ -857,7 +857,7 @@ pub(crate) fn mount(context: usize, media_bytes: u64) -> Result<(Box<Mounted>, I
         drop(journal);
         drop(filesystem);
         image_bytes = validate_profile(context, media_bytes)?;
-        filesystem = Ext4::load(Box::new(OpenRFSOSReader { context })).map_err(map_error)?;
+        filesystem = Ext4::load(Box::new(RSDOSReader { context })).map_err(map_error)?;
         journal = load_journal_inode_map(&filesystem).map_err(map_journal_error)?;
         if journal.filesystem_needs_recovery() && journal.filesystem_superblock().last_orphan() == 0 {
             return Err(Status::Invalid);

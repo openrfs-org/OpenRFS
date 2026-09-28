@@ -16,7 +16,7 @@ static unsigned open_calls;
 static unsigned close_calls;
 static int invalid_request;
 static uint32_t expected_metadata_flags;
-static struct openrfs_path_metadata returned_metadata;
+static struct rsd_path_metadata returned_metadata;
 static int reenter_open;
 static int nested_descriptor = -1;
 static int reenter_close;
@@ -28,15 +28,15 @@ static unsigned file_stat_calls;
 static long metadata_result;
 static unsigned publication_calls;
 
-long openrfs_syscall1(uint64_t number, uint64_t address)
+long rsd_syscall1(uint64_t number, uint64_t address)
 {
-    if (number == OPENRFS_SYS_FUTEX_WAKE) return 0;
-    if (number == OPENRFS_SYS_FILE_SYNC) {
+    if (number == RSD_SYS_FUTEX_WAKE) return 0;
+    if (number == RSD_SYS_FILE_SYNC) {
         if (address != 42U) invalid_request = 1;
         ++file_sync_calls;
         return sync_result;
     }
-    if (number == OPENRFS_SYS_HANDLE_CLOSE) {
+    if (number == RSD_SYS_HANDLE_CLOSE) {
         if (address != 42U) invalid_request = 1;
         ++close_calls;
         if (reenter_close) {
@@ -46,12 +46,12 @@ long openrfs_syscall1(uint64_t number, uint64_t address)
         }
         return close_result;
     }
-    if (number != OPENRFS_SYS_FILE_OPEN) { invalid_request = 1; return -OPENRFS_EINVAL; }
-    const struct openrfs_file_open_request *request = (const struct openrfs_file_open_request *)(uintptr_t)address;
+    if (number != RSD_SYS_FILE_OPEN) { invalid_request = 1; return -RSD_EINVAL; }
+    const struct rsd_file_open_request *request = (const struct rsd_file_open_request *)(uintptr_t)address;
     ++open_calls;
-    if (request->size != sizeof(*request) || request->version != OPENRFS_ABI_VERSION ||
+    if (request->size != sizeof(*request) || request->version != RSD_ABI_VERSION ||
         request->flags != expected_open_flags || request->reserved != expected_mode ||
-        request->path.volume != OPENRFS_VOLUME_DATA || request->path.reserved != 0U ||
+        request->path.volume != RSD_VOLUME_DATA || request->path.reserved != 0U ||
         request->path.length != 6U || memcmp((const void *)(uintptr_t)request->path.address, "nested", 6U) != 0) {
         invalid_request = 1;
     }
@@ -62,45 +62,45 @@ long openrfs_syscall1(uint64_t number, uint64_t address)
     return syscall_result;
 }
 
-long openrfs_syscall2(uint64_t number, uint64_t address, uint64_t value)
+long rsd_syscall2(uint64_t number, uint64_t address, uint64_t value)
 {
-    if (number == OPENRFS_SYS_FILE_PUBLISH || number == OPENRFS_SYS_FILE_UNLINK) {
+    if (number == RSD_SYS_FILE_PUBLISH || number == RSD_SYS_FILE_UNLINK) {
         ++publication_calls;
         if (address != 42U) invalid_request = 1;
-        const struct openrfs_path *source;
-        if (number == OPENRFS_SYS_FILE_PUBLISH) {
-            const struct openrfs_rename_request *request = (const struct openrfs_rename_request *)(uintptr_t)value;
-            if (request->size != sizeof(*request) || request->version != OPENRFS_ABI_VERSION ||
+        const struct rsd_path *source;
+        if (number == RSD_SYS_FILE_PUBLISH) {
+            const struct rsd_rename_request *request = (const struct rsd_rename_request *)(uintptr_t)value;
+            if (request->size != sizeof(*request) || request->version != RSD_ABI_VERSION ||
                 request->flags != 0U || request->reserved != 0U ||
-                request->destination.volume != OPENRFS_VOLUME_DATA || request->destination.reserved != 0U ||
+                request->destination.volume != RSD_VOLUME_DATA || request->destination.reserved != 0U ||
                 request->destination.length != 5U || memcmp((const void *)(uintptr_t)request->destination.address, "saved", 5U) != 0) invalid_request = 1;
             source = &request->source;
-        } else source = (const struct openrfs_path *)(uintptr_t)value;
-        if (source->volume != OPENRFS_VOLUME_DATA || source->reserved != 0U || source->length != 6U ||
+        } else source = (const struct rsd_path *)(uintptr_t)value;
+        if (source->volume != RSD_VOLUME_DATA || source->reserved != 0U || source->length != 6U ||
             memcmp((const void *)(uintptr_t)source->address, "nested", 6U) != 0) invalid_request = 1;
         return syscall_result;
     }
-    if (number == OPENRFS_SYS_FILE_METADATA) {
+    if (number == RSD_SYS_FILE_METADATA) {
         if (address != 42U) invalid_request = 1;
         ++file_stat_calls;
         if (metadata_result >= 0) memcpy((void *)(uintptr_t)value, &returned_metadata, sizeof(returned_metadata));
         return metadata_result;
     }
-    const struct openrfs_path *request = (const struct openrfs_path *)(uintptr_t)address;
+    const struct rsd_path *request = (const struct rsd_path *)(uintptr_t)address;
     ++calls;
-    if (number != OPENRFS_SYS_PATH_MKDIR || value != (OPENRFS_MKDIR_MODE_PRESENT | expected_mode) ||
-        request->volume != OPENRFS_VOLUME_DATA || request->reserved != 0U ||
+    if (number != RSD_SYS_PATH_MKDIR || value != (RSD_MKDIR_MODE_PRESENT | expected_mode) ||
+        request->volume != RSD_VOLUME_DATA || request->reserved != 0U ||
         request->length != 6U || memcmp((const void *)(uintptr_t)request->address, "nested", 6U) != 0) {
         invalid_request = 1;
     }
     return syscall_result;
 }
 
-long openrfs_syscall3(uint64_t number, uint64_t address, uint64_t output, uint64_t flags)
+long rsd_syscall3(uint64_t number, uint64_t address, uint64_t output, uint64_t flags)
 {
-    const struct openrfs_path *request = (const struct openrfs_path *)(uintptr_t)address;
-    if (number != OPENRFS_SYS_PATH_METADATA || flags != expected_metadata_flags ||
-        request->volume != OPENRFS_VOLUME_DATA || request->length != 6U ||
+    const struct rsd_path *request = (const struct rsd_path *)(uintptr_t)address;
+    if (number != RSD_SYS_PATH_METADATA || flags != expected_metadata_flags ||
+        request->volume != RSD_VOLUME_DATA || request->length != 6U ||
         memcmp((const void *)(uintptr_t)request->address, "nested", 6U) != 0) invalid_request = 1;
     if (syscall_result >= 0) memcpy((void *)(uintptr_t)output, &returned_metadata, sizeof(returned_metadata));
     return syscall_result;
@@ -111,17 +111,17 @@ int main(void)
     const mode_t modes[] = {0U, 0700U, 01720U, 07777U};
     for (unsigned index = 0U; index < sizeof(modes) / sizeof(modes[0]); ++index) {
         expected_mode = modes[index];
-        syscall_result = -OPENRFS_EIO;
+        syscall_result = -RSD_EIO;
         if (mkdir("nested", modes[index]) != -1 || errno != EIO) return 1;
         syscall_result = 0;
         if (mkdir("nested", modes[index]) != 0) return 2;
     }
     if (calls != 8U || invalid_request) return 3;
     if (mkdir(NULL, 0700U) != -1 || errno != EINVAL || calls != 8U) return 4;
-    expected_open_flags = OPENRFS_OPEN_CREATE | OPENRFS_OPEN_WRITE | OPENRFS_OPEN_MODE_PRESENT;
+    expected_open_flags = RSD_OPEN_CREATE | RSD_OPEN_WRITE | RSD_OPEN_MODE_PRESENT;
     for (unsigned index = 0U; index < sizeof(modes) / sizeof(modes[0]); ++index) {
         expected_mode = modes[index];
-        syscall_result = -OPENRFS_EIO;
+        syscall_result = -RSD_EIO;
         if (open("Data:/nested", O_CREAT | O_WRONLY, (int)modes[index]) != -1 || errno != EIO) return 5;
         syscall_result = 42;
         int descriptor = open("Data:/nested", O_CREAT | O_WRONLY, (int)modes[index]);
@@ -129,23 +129,23 @@ int main(void)
     }
     if (open_calls != 8U || close_calls != 4U || invalid_request) return 7;
     expected_mode = 0U;
-    expected_open_flags = OPENRFS_OPEN_READ;
+    expected_open_flags = RSD_OPEN_READ;
     int descriptor = open("nested", O_RDONLY); // no variadic argument
     if (descriptor < 3 || close(descriptor) != 0) return 8;
-    expected_open_flags = OPENRFS_OPEN_READ | OPENRFS_OPEN_CREATE;
-    if (openrfs_file_open(OPENRFS_VOLUME_DATA, "nested", expected_open_flags) != 42) return 9;
-    if (openrfs_handle_close(42U) != 0) return 10;
-    if (openrfs_file_open_mode(OPENRFS_VOLUME_DATA, "nested", OPENRFS_OPEN_READ, 0700U) != -OPENRFS_EINVAL ||
-        openrfs_file_open_mode(OPENRFS_VOLUME_DATA, "nested", OPENRFS_OPEN_CREATE, 010000U) != -OPENRFS_EINVAL) return 11;
+    expected_open_flags = RSD_OPEN_READ | RSD_OPEN_CREATE;
+    if (rsd_file_open(RSD_VOLUME_DATA, "nested", expected_open_flags) != 42) return 9;
+    if (rsd_handle_close(42U) != 0) return 10;
+    if (rsd_file_open_mode(RSD_VOLUME_DATA, "nested", RSD_OPEN_READ, 0700U) != -RSD_EINVAL ||
+        rsd_file_open_mode(RSD_VOLUME_DATA, "nested", RSD_OPEN_CREATE, 010000U) != -RSD_EINVAL) return 11;
     if (open_calls != 10U || close_calls != 6U || invalid_request) return 12;
-    returned_metadata = (struct openrfs_path_metadata){
-        .size = sizeof(returned_metadata), .version = OPENRFS_ABI_VERSION,
+    returned_metadata = (struct rsd_path_metadata){
+        .size = sizeof(returned_metadata), .version = RSD_ABI_VERSION,
         .byte_length = UINT64_C(67108864), .object_id = 1234U,
         .mode = 0100640U, .uid = 70000U, .gid = 90000U, .links = 3U,
         .atime_seconds = -1, .atime_nanos = 123U,
         .mtime_seconds = INT64_C(2147483648), .mtime_nanos = 999999999U,
         .ctime_seconds = INT64_C(-2147483648), .ctime_nanos = 0U,
-        .flags = OPENRFS_METADATA_UNIX_FIELDS,
+        .flags = RSD_METADATA_UNIX_FIELDS,
     };
     struct stat metadata;
     syscall_result = 0;
@@ -155,14 +155,14 @@ int main(void)
         metadata.st_atim.tv_sec != -1 || metadata.st_atim.tv_nsec != 123L ||
         metadata.st_mtim.tv_sec != INT64_C(2147483648) || metadata.st_mtim.tv_nsec != 999999999L ||
         metadata.st_ctime != INT64_C(-2147483648) || !S_ISREG(metadata.st_mode)) return 13;
-    expected_metadata_flags = OPENRFS_METADATA_NOFOLLOW;
+    expected_metadata_flags = RSD_METADATA_NOFOLLOW;
     returned_metadata.mode = 0120777U;
     if (lstat("nested", &metadata) != 0 || !S_ISLNK(metadata.st_mode) ||
         S_ISREG(metadata.st_mode) || S_ISDIR(metadata.st_mode)) return 14;
     returned_metadata.mode = 0042751U;
     if (lstat("nested", &metadata) != 0 || !S_ISDIR(metadata.st_mode) || S_ISREG(metadata.st_mode)) return 15;
     const struct stat saved = metadata;
-    syscall_result = -OPENRFS_ENOENT;
+    syscall_result = -RSD_ENOENT;
     if (lstat("nested", &metadata) != -1 || errno != ENOENT || memcmp(&saved, &metadata, sizeof(saved)) != 0) return 16;
     syscall_result = 0;
     returned_metadata.atime_nanos = 1000000000U;
@@ -171,9 +171,9 @@ int main(void)
     returned_metadata.size = 24U;
     if (lstat("nested", &metadata) != -1 || errno != EIO) return 18;
     if (stat("nested", NULL) != -1 || errno != EFAULT || invalid_request) return 19;
-    expected_open_flags = OPENRFS_OPEN_CREATE | OPENRFS_OPEN_WRITE | OPENRFS_OPEN_MODE_PRESENT | OPENRFS_OPEN_EXCLUSIVE;
+    expected_open_flags = RSD_OPEN_CREATE | RSD_OPEN_WRITE | RSD_OPEN_MODE_PRESENT | RSD_OPEN_EXCLUSIVE;
     expected_mode = 0600U;
-    syscall_result = -OPENRFS_EEXIST;
+    syscall_result = -RSD_EEXIST;
     if (open("nested", O_CREAT | O_EXCL | O_WRONLY, 0600) != -1 || errno != EEXIST) return 20;
     syscall_result = 42;
     descriptor = open("nested", O_CREAT | O_EXCL | O_WRONLY, 0600);
@@ -181,7 +181,7 @@ int main(void)
     if (open("nested", O_EXCL | O_WRONLY) != -1 || errno != EINVAL) return 22;
     if (open_calls != 12U || close_calls != 7U || invalid_request) return 23;
     expected_mode = 0U;
-    expected_open_flags = OPENRFS_OPEN_READ;
+    expected_open_flags = RSD_OPEN_READ;
     reenter_open = 1;
     descriptor = open("nested", O_RDONLY);
     if (descriptor < 3 || nested_descriptor < 3 || descriptor == nested_descriptor) return 24;
@@ -201,7 +201,7 @@ int main(void)
     if (closing_descriptor != 3 || close(closing_descriptor) != 0 || nested_descriptor != closing_descriptor) return 30;
     if (close(nested_descriptor) != 0) return 31; // outer close did not erase the new descriptor
     descriptor = open("nested", O_RDONLY);
-    close_result = -OPENRFS_EIO;
+    close_result = -RSD_EIO;
     if (close(descriptor) != -1 || errno != EIO) return 32;
     if (close(descriptor) != -1 || errno != EBADF) return 33;
     close_result = 0;
@@ -209,15 +209,15 @@ int main(void)
     if (descriptor != 3 || close(descriptor) != 0) return 34;
     if (open_calls != 47U || close_calls != 42U || invalid_request) return 35;
     descriptor = open("nested", O_RDONLY);
-    sync_result = -OPENRFS_EIO;
+    sync_result = -RSD_EIO;
     if (fsync(descriptor) != -1 || errno != EIO) return 36;
     sync_result = 0;
     if (fsync(descriptor) != 0 || close(descriptor) != 0) return 37;
     if (fsync(descriptor) != -1 || errno != EBADF || file_sync_calls != 2U) return 38;
     if (open_calls != 48U || close_calls != 43U || invalid_request) return 39;
-    syscall_result = -OPENRFS_ELOOP;
+    syscall_result = -RSD_ELOOP;
     if (open("nested", O_RDONLY) != -1 || errno != ELOOP) return 40;
-    syscall_result = -OPENRFS_ENAMETOOLONG;
+    syscall_result = -RSD_ENAMETOOLONG;
     if (open("nested", O_RDONLY) != -1 || errno != ENAMETOOLONG) return 41;
     if (open_calls != 50U || close_calls != 43U || invalid_request) return 42;
     syscall_result = 42;
@@ -231,20 +231,20 @@ int main(void)
         metadata.st_uid != 70000U || metadata.st_mode != 0100620U ||
         metadata.st_atime != -1 || metadata.st_atim.tv_nsec != 123L) return 43;
     const struct stat before_failed_stat = metadata;
-    metadata_result = -OPENRFS_EIO;
+    metadata_result = -RSD_EIO;
     if (fstat(descriptor, &metadata) != -1 || errno != EIO ||
         memcmp(&before_failed_stat, &metadata, sizeof(metadata)) != 0) return 44;
     if (close(descriptor) != 0 || fstat(descriptor, &metadata) != -1 || errno != EBADF) return 45;
     if (file_stat_calls != 2U || open_calls != 51U || close_calls != 44U || invalid_request) return 46;
-    const long publication_results[] = {0, -OPENRFS_EIO, -OPENRFS_EACCES, -OPENRFS_EBADF, -OPENRFS_ENOSPC};
+    const long publication_results[] = {0, -RSD_EIO, -RSD_EACCES, -RSD_EBADF, -RSD_ENOSPC};
     for (unsigned index = 0; index < sizeof(publication_results) / sizeof(publication_results[0]); ++index) {
         syscall_result = publication_results[index];
-        if (openrfs_file_publish(42U, OPENRFS_VOLUME_DATA, "nested", "saved") != syscall_result ||
-            openrfs_file_unlink(42U, OPENRFS_VOLUME_DATA, "nested") != syscall_result) return 47;
+        if (rsd_file_publish(42U, RSD_VOLUME_DATA, "nested", "saved") != syscall_result ||
+            rsd_file_unlink(42U, RSD_VOLUME_DATA, "nested") != syscall_result) return 47;
     }
-    if (openrfs_file_publish(42U, OPENRFS_VOLUME_DATA, NULL, "saved") != -OPENRFS_EFAULT ||
-        openrfs_file_publish(42U, OPENRFS_VOLUME_DATA, "nested", NULL) != -OPENRFS_EFAULT ||
-        openrfs_file_unlink(42U, OPENRFS_VOLUME_DATA, NULL) != -OPENRFS_EFAULT) return 48;
+    if (rsd_file_publish(42U, RSD_VOLUME_DATA, NULL, "saved") != -RSD_EFAULT ||
+        rsd_file_publish(42U, RSD_VOLUME_DATA, "nested", NULL) != -RSD_EFAULT ||
+        rsd_file_unlink(42U, RSD_VOLUME_DATA, NULL) != -RSD_EFAULT) return 48;
     if (publication_calls != 10U || invalid_request || close_calls != 44U) return 49;
     return 0;
 }

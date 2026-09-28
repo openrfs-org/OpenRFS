@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Process-local, typed, generation-protected native capability handles. */
 
-#include <openrfs/native_handle.h>
+#include <rsd/native_handle.h>
 
 #define HANDLE_INDEX_MASK UINT64_C(0xFFFF)
 #define HANDLE_TYPE_SHIFT 16U
@@ -19,11 +19,11 @@ static void zero_bytes(void *pointer, size_t length)
 
 static bool valid_type(uint8_t type)
 {
-    return type >= OPENRFS_HANDLE_FILE &&
-        type <= OPENRFS_HANDLE_PACKAGE_CONTROL;
+    return type >= RSD_HANDLE_FILE &&
+        type <= RSD_HANDLE_PACKAGE_CONTROL;
 }
 
-static openrfs_handle_t encode_handle(
+static rsd_handle_t encode_handle(
     size_t index,
     uint8_t type,
     uint32_t generation
@@ -35,7 +35,7 @@ static openrfs_handle_t encode_handle(
 
 static bool invalid_handle_encoding(
     const struct native_handle_table *table,
-    openrfs_handle_t handle
+    rsd_handle_t handle
 )
 {
     const uint64_t encoded_index = handle & HANDLE_INDEX_MASK;
@@ -44,14 +44,14 @@ static bool invalid_handle_encoding(
     const uint32_t generation = (uint32_t)(handle >>
         HANDLE_GENERATION_SHIFT);
 
-    return handle == OPENRFS_HANDLE_INVALID || encoded_index == 0U ||
+    return handle == RSD_HANDLE_INVALID || encoded_index == 0U ||
         encoded_index > table->limit || reserved != 0U || generation == 0U ||
         !valid_type(encoded_type);
 }
 
 static enum native_handle_status decode_slot(
     struct native_handle_table *table,
-    openrfs_handle_t handle,
+    rsd_handle_t handle,
     struct native_handle_slot **slot,
     size_t *slot_index
 )
@@ -105,7 +105,7 @@ enum native_handle_status native_handle_install(
     struct native_handle_table *table,
     uint8_t type,
     const struct native_resource *resource,
-    openrfs_handle_t *handle
+    rsd_handle_t *handle
 )
 {
     size_t slot_index = SIZE_MAX;
@@ -114,7 +114,7 @@ enum native_handle_status native_handle_install(
     if (table == NULL || resource == NULL || handle == NULL) {
         return NATIVE_HANDLE_NULL_ARGUMENT;
     }
-    *handle = OPENRFS_HANDLE_INVALID;
+    *handle = RSD_HANDLE_INVALID;
     if (!table->initialized) {
         return NATIVE_HANDLE_BAD_LIMIT;
     }
@@ -148,7 +148,7 @@ enum native_handle_status native_handle_install(
 
 enum native_handle_status native_handle_resolve(
     struct native_handle_table *table,
-    openrfs_handle_t handle,
+    rsd_handle_t handle,
     uint8_t expected_type,
     struct native_resource **resource
 )
@@ -184,8 +184,8 @@ enum native_handle_status native_handle_resolve(
 
 enum native_handle_status native_handle_duplicate(
     struct native_handle_table *table,
-    openrfs_handle_t source,
-    openrfs_handle_t *duplicate
+    rsd_handle_t source,
+    rsd_handle_t *duplicate
 )
 {
     struct native_handle_slot *source_slot;
@@ -197,7 +197,7 @@ enum native_handle_status native_handle_duplicate(
     if (duplicate == NULL) {
         return NATIVE_HANDLE_NULL_ARGUMENT;
     }
-    *duplicate = OPENRFS_HANDLE_INVALID;
+    *duplicate = RSD_HANDLE_INVALID;
     status = decode_slot(table, source, &source_slot, &source_index);
     if (status != NATIVE_HANDLE_OK) {
         return status;
@@ -270,7 +270,7 @@ static void retire_slot(
 
 static void report_record(
     struct native_handle_close_report *report,
-    openrfs_handle_t handle,
+    rsd_handle_t handle,
     uint8_t type,
     uint16_t object_index,
     uint16_t references,
@@ -359,7 +359,7 @@ static enum native_handle_status close_valid_slot(
 {
     struct native_handle_slot *slot = &table->slots[slot_index];
     struct native_handle_object *object = &table->objects[slot->object_index];
-    const openrfs_handle_t handle = encode_handle(slot_index, slot->type,
+    const rsd_handle_t handle = encode_handle(slot_index, slot->type,
         slot->generation);
     const uint8_t type = object->type;
     const uint16_t object_index = slot->object_index;
@@ -414,7 +414,7 @@ static enum native_handle_status close_valid_slot(
 
 enum native_handle_status native_handle_close(
     struct native_handle_table *table,
-    openrfs_handle_t handle,
+    rsd_handle_t handle,
     native_handle_close_fn close_resource,
     void *context
 )
@@ -436,7 +436,7 @@ enum native_handle_status native_handle_close(
 
 enum native_handle_status native_handle_close_with_report(
     struct native_handle_table *table,
-    openrfs_handle_t handle,
+    rsd_handle_t handle,
     native_handle_close_fn close_resource,
     void *context,
     struct native_handle_close_report *report
@@ -647,7 +647,7 @@ static enum native_resource_close_result test_close(
 {
     size_t *closed = context;
 
-    if (type != OPENRFS_HANDLE_FILE || resource == NULL || closed == NULL ||
+    if (type != RSD_HANDLE_FILE || resource == NULL || closed == NULL ||
         resource->words[0] != UINT64_C(0x5341504F5445)) {
         return NATIVE_RESOURCE_RETAINED;
     }
@@ -665,7 +665,7 @@ static enum native_resource_close_result self_test_close(
 {
     size_t *closed = context;
 
-    if (type != OPENRFS_HANDLE_FILE || resource == NULL || closed == NULL ||
+    if (type != RSD_HANDLE_FILE || resource == NULL || closed == NULL ||
         resource->words[0] != UINT64_C(0x5341504F5445)) {
         return NATIVE_RESOURCE_RETAINED;
     }
@@ -681,8 +681,8 @@ bool native_handle_self_test(size_t *completed_tests)
         { UINT64_C(0x5341504F5445), 0U, 0U, 0U }
     };
     struct native_resource *resolved;
-    openrfs_handle_t first;
-    openrfs_handle_t duplicate;
+    rsd_handle_t first;
+    rsd_handle_t duplicate;
     struct native_handle_close_report report;
     size_t closed = 0U;
 
@@ -690,20 +690,20 @@ bool native_handle_self_test(size_t *completed_tests)
         return false;
     }
     *completed_tests = 0U;
-    if (!valid_type(OPENRFS_HANDLE_PACKAGE_CONTROL) ||
-        valid_type((uint8_t)(OPENRFS_HANDLE_PACKAGE_CONTROL + 1U))) {
+    if (!valid_type(RSD_HANDLE_PACKAGE_CONTROL) ||
+        valid_type((uint8_t)(RSD_HANDLE_PACKAGE_CONTROL + 1U))) {
         return false;
     }
     ++*completed_tests;
     if (native_handle_table_initialize(&table, 2U) != NATIVE_HANDLE_OK ||
-        native_handle_install(&table, OPENRFS_HANDLE_FILE, &initial, &first) !=
+        native_handle_install(&table, RSD_HANDLE_FILE, &initial, &first) !=
             NATIVE_HANDLE_OK ||
-        native_handle_resolve(&table, first, OPENRFS_HANDLE_FILE, &resolved) !=
+        native_handle_resolve(&table, first, RSD_HANDLE_FILE, &resolved) !=
             NATIVE_HANDLE_OK || resolved->words[0] != initial.words[0]) {
         return false;
     }
     ++*completed_tests;
-    if (native_handle_resolve(&table, first, OPENRFS_HANDLE_TIMER, &resolved) !=
+    if (native_handle_resolve(&table, first, RSD_HANDLE_TIMER, &resolved) !=
             NATIVE_HANDLE_WRONG_TYPE ||
         native_handle_duplicate(&table, first, &duplicate) !=
             NATIVE_HANDLE_OK || first == duplicate ||
@@ -713,7 +713,7 @@ bool native_handle_self_test(size_t *completed_tests)
     ++*completed_tests;
     if (native_handle_close(&table, first, test_close, &closed) !=
             NATIVE_HANDLE_OK || closed != 0U ||
-        native_handle_resolve(&table, first, OPENRFS_HANDLE_FILE, &resolved) !=
+        native_handle_resolve(&table, first, RSD_HANDLE_FILE, &resolved) !=
             NATIVE_HANDLE_STALE ||
         native_handle_close(&table, first, test_close, &closed) !=
             NATIVE_HANDLE_STALE) {
@@ -723,13 +723,13 @@ bool native_handle_self_test(size_t *completed_tests)
     if (native_handle_close_all(&table, test_close, &closed) !=
             NATIVE_HANDLE_OK || closed != 1U || table.active_handles != 0U ||
         table.active_objects != 0U ||
-        native_handle_resolve(&table, duplicate, OPENRFS_HANDLE_FILE,
+        native_handle_resolve(&table, duplicate, RSD_HANDLE_FILE,
             &resolved) != NATIVE_HANDLE_STALE) {
         return false;
     }
     ++*completed_tests;
     self_test_close_result = NATIVE_RESOURCE_RETAINED;
-    if (native_handle_install(&table, OPENRFS_HANDLE_FILE, &initial, &first) !=
+    if (native_handle_install(&table, RSD_HANDLE_FILE, &initial, &first) !=
             NATIVE_HANDLE_OK) {
         return false;
     }

@@ -1,4 +1,4 @@
-// OpenRFS LP64 copy of SeaBIOS src/hw/usb-uhci.h
+// RSD LP64 copy of SeaBIOS src/hw/usb-uhci.h
 // (commit 81ec9ec0bcf45df11fb7f98339ec9036b546fca0), used only to compile
 // ports/seabios/lp64/usb-uhci.c. The single change: struct uhci_td's
 // buffer field is declared u32, the 32-bit buffer pointer the UHCI
@@ -122,7 +122,7 @@ struct uhci_td {
     u32 link;
     u32 status;
     u32 token;
-    u32 buffer; /* OpenRFS LP64: "void *buffer" upstream */
+    u32 buffer; /* RSD LP64: "void *buffer" upstream */
 } PACKED;
 
 struct uhci_qh {

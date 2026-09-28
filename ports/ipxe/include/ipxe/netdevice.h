@@ -8,11 +8,11 @@
  * open/close/transmit/poll/irq operations, and reports completions with
  * netdev_tx_complete*() and receptions with netdev_rx*(). The queues,
  * statistics and state bits behave as upstream describes them. What is not
- * here is iPXE's upper stack: received buffers go to OpenRFS's IPv4 stack
+ * here is iPXE's upper stack: received buffers go to RSD's IPv4 stack
  * through ports/ipxe/ipxe_glue.c instead of to iPXE's protocols.
  */
-#ifndef OPENRFS_IPXE_NETDEVICE_H
-#define OPENRFS_IPXE_NETDEVICE_H
+#ifndef RSD_IPXE_NETDEVICE_H
+#define RSD_IPXE_NETDEVICE_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -107,9 +107,9 @@ struct net_device {
     struct net_device_stats rx_stats;
     struct generic_settings settings;
     void *priv;
-    /* OpenRFS: the glue record that owns this device. */
-    void *openrfs_owner;
-    size_t openrfs_rx_queued;
+    /* RSD: the glue record that owns this device. */
+    void *rsd_owner;
+    size_t rsd_rx_queued;
 };
 
 extern struct net_device_operations null_netdev_operations;

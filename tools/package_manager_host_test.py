@@ -16,10 +16,10 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
-    "openrfs_repository_for_guest_test", ROOT / "tools" / "openrfs-repository.py"
+    "rsd_repository_for_guest_test", ROOT / "tools" / "rsd-repository.py"
 )
 if SPEC is None or SPEC.loader is None:
-    raise RuntimeError("could not load the OpenRFS repository tool")
+    raise RuntimeError("could not load the RSD repository tool")
 REPOSITORY = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(REPOSITORY)
 PACKAGE = REPOSITORY.PACKAGE
@@ -42,7 +42,7 @@ def package_spec(identifier: str, name: str, *,
         "identifier": identifier,
         "name": name,
         "version": version,
-        "publisher": "OpenRFS Package Test",
+        "publisher": "RSD Package Test",
         "capabilities": ["console"],
         "dependencies": dependencies or [],
         "conflicts": [],
@@ -71,7 +71,7 @@ def repository_spec(packages: list[dict[str, Any]], *,
                     repository_version: int = 42) -> dict[str, Any]:
     return {
         "format": 1,
-        "repository": "org.openrfs.main",
+        "repository": "org.rsd.main",
         "repository_version": repository_version,
         "generated_at": GENERATED,
         "expires_at": EXPIRES,
@@ -94,34 +94,34 @@ def main() -> int:
             "[CONTROL_TEST]"
         )
     if not PACKAGE.ed25519_available():
-        if os.environ.get("OPENRFS_REQUIRE_ED25519") == "1":
+        if os.environ.get("RSD_REQUIRE_ED25519") == "1":
             raise AssertionError("Python Ed25519 support is required")
-        print("OpenRFS guest package-manager tests skipped: Ed25519 unavailable")
+        print("RSD guest package-manager tests skipped: Ed25519 unavailable")
         return 0
 
     root_public = PACKAGE._ed25519_public_bytes_from_private(ROOT_SEED)
     publisher_public = PACKAGE._ed25519_public_bytes_from_private(PUBLISHER_SEED)
     publisher_key_id = hashlib.sha256(publisher_public).hexdigest()
     dependency = [{
-        "identifier": "org.openrfs.lib",
+        "identifier": "org.rsd.lib",
         "constraint": ">=1.0.0,<2.0.0",
     }]
     library = PACKAGE.build_package_v3(
-        package_spec("org.openrfs.lib", "Proof Library"),
+        package_spec("org.rsd.lib", "Proof Library"),
         ({"path": "lib/libproof.so.1", "kind": "library",
           "soname": "libproof.so.1", "payload": b"\x7fELFproof-library"},),
         PUBLISHER_SEED,
     )
     application = PACKAGE.build_package_v3(
-        package_spec("org.openrfs.app", "Proof Application", dependencies=dependency),
+        package_spec("org.rsd.app", "Proof Application", dependencies=dependency),
         ({"path": "bin/proof-app", "kind": "executable",
           "payload": b"\x7fELFproof-application"},),
         PUBLISHER_SEED,
     )
     main_packages = [
-        repository_package("org.openrfs.app", "1.0.0", application,
+        repository_package("org.rsd.app", "1.0.0", application,
                            publisher_key_id, dependencies=dependency),
-        repository_package("org.openrfs.lib", "1.0.0", library,
+        repository_package("org.rsd.lib", "1.0.0", library,
                            publisher_key_id, provides=[{
                                "identifier": "virtual.proof",
                                "version": "1.0.0",
@@ -129,27 +129,27 @@ def main() -> int:
     ]
     main_index = REPOSITORY.build_repository(repository_spec(main_packages), ROOT_SEED)
     replacement_dependency = [{
-        "identifier": "org.openrfs.newlib",
+        "identifier": "org.rsd.newlib",
         "constraint": "^2.0.0",
     }]
     replacement_library = PACKAGE.build_package_v3(
-        package_spec("org.openrfs.newlib", "Replacement Library", version="2.0.0"),
+        package_spec("org.rsd.newlib", "Replacement Library", version="2.0.0"),
         ({"path": "lib/libnew.so.2", "kind": "library",
           "soname": "libnew.so.2", "payload": b"\x7fELFreplacement-library"},),
         PUBLISHER_SEED,
     )
     replacement_application = PACKAGE.build_package_v3(
-        package_spec("org.openrfs.app", "Proof Application", version="2.0.0",
+        package_spec("org.rsd.app", "Proof Application", version="2.0.0",
                      dependencies=replacement_dependency),
         ({"path": "bin/proof-app", "kind": "executable",
           "payload": b"\x7fELFupdated-application"},),
         PUBLISHER_SEED,
     )
     update_index = REPOSITORY.build_repository(repository_spec([
-        repository_package("org.openrfs.app", "2.0.0", replacement_application,
+        repository_package("org.rsd.app", "2.0.0", replacement_application,
                            publisher_key_id,
                            dependencies=replacement_dependency),
-        repository_package("org.openrfs.newlib", "2.0.0", replacement_library,
+        repository_package("org.rsd.newlib", "2.0.0", replacement_library,
                            publisher_key_id),
     ], repository_version=43), ROOT_SEED)
     trusted_root = {hashlib.sha256(root_public).hexdigest(): root_public}
@@ -165,45 +165,45 @@ def main() -> int:
         name, "1.0.0", version, publisher_key_id
     )
     cycle = REPOSITORY.build_repository(repository_spec([
-        {**dummy("org.openrfs.a"), "dependencies": [
-            {"identifier": "org.openrfs.b", "constraint": "*"}]},
-        {**dummy("org.openrfs.b"), "dependencies": [
-            {"identifier": "org.openrfs.a", "constraint": "*"}]},
+        {**dummy("org.rsd.a"), "dependencies": [
+            {"identifier": "org.rsd.b", "constraint": "*"}]},
+        {**dummy("org.rsd.b"), "dependencies": [
+            {"identifier": "org.rsd.a", "constraint": "*"}]},
     ]), ROOT_SEED)
     conflict = REPOSITORY.build_repository(repository_spec([
-        {**dummy("org.openrfs.conflict-app"), "dependencies": [
-            {"identifier": "org.openrfs.conflict-lib", "constraint": "*"}]},
-        {**dummy("org.openrfs.conflict-lib"), "conflicts": [
-            {"identifier": "org.openrfs.conflict-app", "constraint": "*"}]},
+        {**dummy("org.rsd.conflict-app"), "dependencies": [
+            {"identifier": "org.rsd.conflict-lib", "constraint": "*"}]},
+        {**dummy("org.rsd.conflict-lib"), "conflicts": [
+            {"identifier": "org.rsd.conflict-app", "constraint": "*"}]},
     ]), ROOT_SEED)
     ambiguous = REPOSITORY.build_repository(repository_spec([
-        {**dummy("org.openrfs.ambiguous-app"), "dependencies": [
+        {**dummy("org.rsd.ambiguous-app"), "dependencies": [
             {"identifier": "virtual.renderer", "constraint": "*"}]},
-        {**dummy("org.openrfs.renderer-a"), "provides": [
+        {**dummy("org.rsd.renderer-a"), "provides": [
             {"identifier": "virtual.renderer", "version": "1.0.0"}]},
-        {**dummy("org.openrfs.renderer-b"), "provides": [
+        {**dummy("org.rsd.renderer-b"), "provides": [
             {"identifier": "virtual.renderer", "version": "1.0.0"}]},
     ]), ROOT_SEED)
     unsatisfied = REPOSITORY.build_repository(repository_spec([
-        {**dummy("org.openrfs.unsatisfied"), "dependencies": [
-            {"identifier": "org.openrfs.missing", "constraint": "*"}]},
+        {**dummy("org.rsd.unsatisfied"), "dependencies": [
+            {"identifier": "org.rsd.missing", "constraint": "*"}]},
     ]), ROOT_SEED)
     backtrack = REPOSITORY.build_repository(repository_spec([
-        repository_package("org.openrfs.backtrack", "1.0.0", b"old-app",
+        repository_package("org.rsd.backtrack", "1.0.0", b"old-app",
                            publisher_key_id, dependencies=[
-                               {"identifier": "org.openrfs.old-lib",
+                               {"identifier": "org.rsd.old-lib",
                                 "constraint": "^1.0.0"}]),
-        repository_package("org.openrfs.backtrack", "2.0.0", b"new-app",
+        repository_package("org.rsd.backtrack", "2.0.0", b"new-app",
                            publisher_key_id, dependencies=[
-                               {"identifier": "org.openrfs.new-lib",
+                               {"identifier": "org.rsd.new-lib",
                                 "constraint": "^2.0.0"}]),
-        dummy("org.openrfs.old-lib"),
+        dummy("org.rsd.old-lib"),
     ]), ROOT_SEED)
     chain_packages = []
     for index in range(66):
-        identifier = f"org.openrfs.chain{index:02d}"
+        identifier = f"org.rsd.chain{index:02d}"
         dependencies = [] if index == 65 else [{
-            "identifier": f"org.openrfs.chain{index + 1:02d}",
+            "identifier": f"org.rsd.chain{index + 1:02d}",
             "constraint": "*",
         }]
         chain_packages.append({**dummy(identifier), "dependencies": dependencies})
@@ -237,7 +237,7 @@ def main() -> int:
                 [sys.argv[2], *paths[:5], *paths[11:14]], check=True
             )
     print(
-        "OpenRFS guest package-manager host tests passed: real signed bytes, "
+        "RSD guest package-manager host tests passed: real signed bytes, "
         "bounded parser/planner/builder, update pruning, trust refusals"
     )
     return 0

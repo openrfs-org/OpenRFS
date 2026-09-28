@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#include <openrfs/package_trust.h>
+#include <rsd/package_trust.h>
 
 #include <monocypher-ed25519.h>
 

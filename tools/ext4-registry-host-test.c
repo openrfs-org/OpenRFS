@@ -15,7 +15,7 @@
 static unsigned registry_ready;
 static bool registry_proceed;
 static bool registry_churn;
-static openrfsfs_handle registry_shared;
+static rsdfs_handle registry_shared;
 static unsigned registry_closed;
 static unsigned registry_stale;
 
@@ -33,24 +33,24 @@ static void registry_exercise(size_t worker)
     __atomic_fetch_add(&registry_ready, 1U, __ATOMIC_RELEASE);
     while (!__atomic_load_n(&registry_proceed, __ATOMIC_ACQUIRE)) registry_yield();
     if (!registry_churn) {
-        const enum openrfsfs_status status = ext4_backend_close(registry_shared);
-        assert(status == OPENRFSFS_STATUS_OK || status == OPENRFSFS_STATUS_STALE_HANDLE);
-        __atomic_fetch_add(status == OPENRFSFS_STATUS_OK ? &registry_closed : &registry_stale, 1U, __ATOMIC_RELAXED);
+        const enum rsdfs_status status = ext4_backend_close(registry_shared);
+        assert(status == RSDFS_STATUS_OK || status == RSDFS_STATUS_STALE_HANDLE);
+        __atomic_fetch_add(status == RSDFS_STATUS_OK ? &registry_closed : &registry_stale, 1U, __ATOMIC_RELAXED);
         return;
     }
-    const enum openrfsfs_volume volume = (enum openrfsfs_volume)(worker % OPENRFSFS_VOLUME_COUNT);
+    const enum rsdfs_volume volume = (enum rsdfs_volume)(worker % RSDFS_VOLUME_COUNT);
     for (size_t round = 0U; round < 500U; ++round) {
-        openrfsfs_handle handle;
-        enum openrfsfs_status status;
+        rsdfs_handle handle;
+        enum rsdfs_status status;
         do {
             status = allocate_handle(volume, "owned", 1000U + worker, round,
-                OPENRFSFS_ACCESS_READ_WRITE, false, 0U, &handle);
-            if (status == OPENRFSFS_STATUS_NO_HANDLES) registry_yield();
-        } while (status == OPENRFSFS_STATUS_NO_HANDLES);
-        assert(status == OPENRFSFS_STATUS_OK);
+                RSDFS_ACCESS_READ_WRITE, false, 0U, &handle);
+            if (status == RSDFS_STATUS_NO_HANDLES) registry_yield();
+        } while (status == RSDFS_STATUS_NO_HANDLES);
+        assert(status == RSDFS_STATUS_OK);
         registry_yield();
         struct ext4_handle_state snapshot;
-        assert(handle_snapshot(handle, &snapshot) == OPENRFSFS_STATUS_OK);
+        assert(handle_snapshot(handle, &snapshot) == RSDFS_STATUS_OK);
         assert(snapshot.generation == handle >> 8U && snapshot.mount_generation == 17U);
         assert(snapshot.volume == volume && snapshot.inode == 1000U + worker && snapshot.size == round);
         assert(snapshot.offset == 0U && !snapshot.directory && !snapshot.closing && snapshot.active);
@@ -59,13 +59,13 @@ static void registry_exercise(size_t worker)
         bool found = false;
         for (size_t index = 0U; index < count; ++index) {
             assert(inodes[index] >= 1000U && inodes[index] < 1000U + REGISTRY_WORKERS);
-            assert((inodes[index] - 1000U) % OPENRFSFS_VOLUME_COUNT == (uint64_t)volume);
+            assert((inodes[index] - 1000U) % RSDFS_VOLUME_COUNT == (uint64_t)volume);
             if (inodes[index] == 1000U + worker) found = true;
         }
         assert(found && volume_has_open_handles(volume));
-        assert(ext4_backend_close(handle) == OPENRFSFS_STATUS_OK);
-        assert(ext4_backend_close(handle) == OPENRFSFS_STATUS_STALE_HANDLE);
-        assert(handle_snapshot(handle, &snapshot) == OPENRFSFS_STATUS_STALE_HANDLE);
+        assert(ext4_backend_close(handle) == RSDFS_STATUS_OK);
+        assert(ext4_backend_close(handle) == RSDFS_STATUS_STALE_HANDLE);
+        assert(handle_snapshot(handle, &snapshot) == RSDFS_STATUS_STALE_HANDLE);
         assert(cpu_interrupts_enabled());
     }
 }
@@ -117,29 +117,29 @@ int main(void)
 {
     assert(ext4_existing_host_main() == 0);
     ext4_backend_initialize();
-    for (size_t index = 0U; index < OPENRFSFS_VOLUME_COUNT; ++index) {
+    for (size_t index = 0U; index < RSDFS_VOLUME_COUNT; ++index) {
         ext4_mounts[index].active = ext4_mounts[index].healthy = true;
         ext4_mounts[index].generation = 17U;
     }
     for (unsigned round = 0U; round < 32U; ++round) {
         registry_closed = registry_stale = 0U;
-        assert(allocate_handle(OPENRFSFS_VOLUME_DATA, "closing", 42U, 0U,
-            OPENRFSFS_ACCESS_READ, false, 0U, &registry_shared) == OPENRFSFS_STATUS_OK);
+        assert(allocate_handle(RSDFS_VOLUME_DATA, "closing", 42U, 0U,
+            RSDFS_ACCESS_READ, false, 0U, &registry_shared) == RSDFS_STATUS_OK);
         const bool deferred = round % 2U != 0U;
-        if (deferred) assert(reserve_operation(&ext4_mounts[OPENRFSFS_VOLUME_DATA]) == OPENRFSFS_STATUS_OK);
+        if (deferred) assert(reserve_operation(&ext4_mounts[RSDFS_VOLUME_DATA]) == RSDFS_STATUS_OK);
         run_registry_workers();
         assert(registry_closed == 1U && registry_stale == REGISTRY_WORKERS - 1U);
         const size_t slot = (size_t)((registry_shared & UINT64_C(0xff)) - 1U);
         if (deferred) {
             assert(ext4_handle_claims[slot] && ext4_handles[slot].closing && ext4_handles[slot].active);
-            release_operation(&ext4_mounts[OPENRFSFS_VOLUME_DATA]);
+            release_operation(&ext4_mounts[RSDFS_VOLUME_DATA]);
         }
         assert(!ext4_handle_claims[slot] && !ext4_handles[slot].active);
     }
     registry_churn = true;
     run_registry_workers();
-    for (size_t index = 0U; index < OPENRFSFS_VOLUME_COUNT; ++index) {
-        assert(!ext4_mounts[index].operation_active && !volume_has_open_handles((enum openrfsfs_volume)index));
+    for (size_t index = 0U; index < RSDFS_VOLUME_COUNT; ++index) {
+        assert(!ext4_mounts[index].operation_active && !volume_has_open_handles((enum rsdfs_volume)index));
     }
     for (size_t index = 0U; index < EXT4_MAX_HANDLES; ++index)
         assert(!ext4_handle_claims[index] && !ext4_handles[index].active && !ext4_handles[index].closing);

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#include <openrfs/package_manager.h>
+#include <rsd/package_manager.h>
 
 #include <limits.h>
 

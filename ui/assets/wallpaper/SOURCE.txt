@@ -1,0 +1,27 @@
+THE WALLPAPER
+=============
+
+rsd-2.5.png is an edited derivative of the project owner's supplied wallpaper, used at his
+direction. He states he owns it.
+
+  1672 x 941, PNG.
+  sha256 14e452eaa764ae47e0252902882a5b961f5a6971563d634ffd6371666db1c4ab
+
+  A silver gradient with the mark on it and the release beside it:
+  "RSD  Root Software Distribution  release 2.5". It is where the release
+  number in console/include/rsd/version.h comes from - the wallpaper
+  says 2.5, so the system says 2.5.
+
+desktop/src/rsd_wallpaper.h is generated from it by
+tools/make-wallpaper-table.py: scaled to the framebuffer's 1280x800,
+reduced to 64 colours undithered, and run-length encoded, because there
+is no filesystem under the desktop and no image decoder in it - a
+wallpaper has to be a table compiled in rather than a file it opens.
+
+Undithered on purpose. Dithering is the obvious choice and the wrong
+one: it turns a smooth gradient into noise, and noise is the one thing
+run-length encoding cannot compress. A silver gradient compresses far
+better than the sky did - 76,649 runs against 178,704 - because most of
+it is long stretches of one value.
+
+Re-run that script after replacing the JPEG and the desktop picks it up.

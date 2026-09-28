@@ -13,11 +13,11 @@ import fat32_image
 
 
 def load_package_module() -> object:
-    path = Path(__file__).with_name("openrfs-package.py")
+    path = Path(__file__).with_name("rsd-package.py")
     specification = importlib.util.spec_from_file_location(
-        "openrfs_package_tool", path)
+        "rsd_package_tool", path)
     if specification is None or specification.loader is None:
-        raise RuntimeError("could not load the OpenRFS package implementation")
+        raise RuntimeError("could not load the RSD package implementation")
     module = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(module)
     return module

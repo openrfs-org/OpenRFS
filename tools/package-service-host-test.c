@@ -9,9 +9,9 @@ int package_state_core_host_test_main(void);
 #include <stdlib.h>
 #include <string.h>
 
-#include <openrfs/fat32_fs.h>
-#include <openrfs/heap.h>
-#include <openrfs/package_service.h>
+#include <rsd/fat32_fs.h>
+#include <rsd/heap.h>
+#include <rsd/package_service.h>
 
 #define MOCK_MAX_NODES 96U
 #define MOCK_MAX_FILE_BYTES 4096U
@@ -32,7 +32,7 @@ enum mock_event {
 struct mock_node {
     bool active;
     bool directory;
-    char path[OPENRFSFS_MAX_PATH];
+    char path[RSDFS_MAX_PATH];
     uint8_t bytes[MOCK_MAX_FILE_BYTES];
     size_t byte_count;
     uint16_t mode;
@@ -194,9 +194,9 @@ static void add_bootstrap_generation(
         (const uint8_t *)"lib", 3U, UINT16_C(0444));
 }
 
-struct openrfsfs_drive_info openrfsfs_drive(enum openrfsfs_volume volume)
+struct rsdfs_drive_info rsdfs_drive(enum rsdfs_volume volume)
 {
-    struct openrfsfs_drive_info info;
+    struct rsdfs_drive_info info;
     if (drive_observer != NULL) drive_observer();
     memset(&info, 0, sizeof(info));
     info.volume = volume;
@@ -208,28 +208,28 @@ struct openrfsfs_drive_info openrfsfs_drive(enum openrfsfs_volume volume)
     return info;
 }
 
-enum openrfsfs_status openrfsfs_sync(enum openrfsfs_volume volume)
+enum rsdfs_status rsdfs_sync(enum rsdfs_volume volume)
 {
     (void)volume;
     event(MOCK_EVENT_SYNC);
     ++sync_attempts;
     if (fail_next_sync || sync_attempts == fail_sync_ordinal) {
         fail_next_sync = false;
-        return OPENRFSFS_STATUS_WRITEBACK;
+        return RSDFS_STATUS_WRITEBACK;
     }
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_stat_path(
-    enum openrfsfs_volume volume,
+enum rsdfs_status rsdfs_stat_path(
+    enum rsdfs_volume volume,
     const char *path,
-    struct openrfsfs_stat *stat
+    struct rsdfs_stat *stat
 )
 {
     (void)volume;
     size_t index = find_node(path);
     if (index == MOCK_MAX_NODES) {
-        return OPENRFSFS_STATUS_NOT_FOUND;
+        return RSDFS_STATUS_NOT_FOUND;
     }
     memset(stat, 0, sizeof(*stat));
     stat->size = nodes[index].byte_count;
@@ -238,24 +238,24 @@ enum openrfsfs_status openrfsfs_stat_path(
     stat->links = 1U;
     stat->directory = nodes[index].directory;
     stat->read_only = (nodes[index].mode & UINT16_C(0222)) == 0U;
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_open(
-    enum openrfsfs_volume volume,
+enum rsdfs_status rsdfs_open(
+    enum rsdfs_volume volume,
     const char *path,
-    enum openrfsfs_access access,
-    openrfsfs_handle *handle
+    enum rsdfs_access access,
+    rsdfs_handle *handle
 )
 {
     (void)volume;
     (void)access;
     size_t node = find_node(path);
     if (node == MOCK_MAX_NODES) {
-        return OPENRFSFS_STATUS_NOT_FOUND;
+        return RSDFS_STATUS_NOT_FOUND;
     }
     if (nodes[node].directory) {
-        return OPENRFSFS_STATUS_IS_DIRECTORY;
+        return RSDFS_STATUS_IS_DIRECTORY;
     }
     if (verification_fault == 1U && strcmp(path, verified_application) == 0) {
         node = add_node("different-inode", false, (const uint8_t *)"app", 3U, UINT16_C(0555));
@@ -268,37 +268,37 @@ enum openrfsfs_status openrfsfs_open(
             handles[index].node = node;
             handles[index].offset = 0U;
             *handle = index + 1U;
-            return OPENRFSFS_STATUS_OK;
+            return RSDFS_STATUS_OK;
         }
     }
-    return OPENRFSFS_STATUS_NO_HANDLES;
+    return RSDFS_STATUS_NO_HANDLES;
 }
 
-enum openrfsfs_status openrfsfs_open_options(enum openrfsfs_volume volume, const char *path,
-    enum openrfsfs_access access, uint8_t flags, uint16_t mode, openrfsfs_handle *handle)
+enum rsdfs_status rsdfs_open_options(enum rsdfs_volume volume, const char *path,
+    enum rsdfs_access access, uint8_t flags, uint16_t mode, rsdfs_handle *handle)
 {
     (void)volume;
     (void)access;
     *handle = 0U;
-    if (flags != (OPENRFSFS_OPEN_CREATE | OPENRFSFS_OPEN_EXCLUSIVE))
-        return OPENRFSFS_STATUS_INVALID_ARGUMENT;
+    if (flags != (RSDFS_OPEN_CREATE | RSDFS_OPEN_EXCLUSIVE))
+        return RSDFS_STATUS_INVALID_ARGUMENT;
     ++prepared_opens;
     if (prepared_collision) {
         prepared_collision = false;
         add_file(path, (const uint8_t *)"foreign", 7U, UINT16_C(0600));
     }
-    if (find_node(path) != MOCK_MAX_NODES) return OPENRFSFS_STATUS_EXISTS;
+    if (find_node(path) != MOCK_MAX_NODES) return RSDFS_STATUS_EXISTS;
     size_t slot = 0U;
     while (slot < MOCK_MAX_HANDLES && handles[slot].active) ++slot;
-    if (slot == MOCK_MAX_HANDLES) return OPENRFSFS_STATUS_NO_HANDLES;
+    if (slot == MOCK_MAX_HANDLES) return RSDFS_STATUS_NO_HANDLES;
     const size_t node = add_node(path, false, NULL, 0U, mode);
-    if (node == MOCK_MAX_NODES) return OPENRFSFS_STATUS_FULL;
+    if (node == MOCK_MAX_NODES) return RSDFS_STATUS_FULL;
     handles[slot] = (struct mock_handle){ .active = true, .node = node, .offset = 0U };
     *handle = slot + 1U;
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-static struct mock_handle *mock_handle(openrfsfs_handle handle)
+static struct mock_handle *mock_handle(rsdfs_handle handle)
 {
     if (handle == 0U || handle > MOCK_MAX_HANDLES ||
         !handles[handle - 1U].active) {
@@ -307,39 +307,39 @@ static struct mock_handle *mock_handle(openrfsfs_handle handle)
     return &handles[handle - 1U];
 }
 
-enum openrfsfs_status openrfsfs_fstat(openrfsfs_handle handle, struct openrfsfs_stat *stat)
+enum rsdfs_status rsdfs_fstat(rsdfs_handle handle, struct rsdfs_stat *stat)
 {
     memset(stat, 0, sizeof(*stat));
     struct mock_handle *state = mock_handle(handle);
-    if (state == NULL) return OPENRFSFS_STATUS_STALE_HANDLE;
+    if (state == NULL) return RSDFS_STATUS_STALE_HANDLE;
     const struct mock_node *node = &nodes[state->node];
     if (verification_fault == 2U && strcmp(node->path, verified_application) == 0) {
         verification_fault = 0U;
         ++verification_faults_seen;
-        return OPENRFSFS_STATUS_IO;
+        return RSDFS_STATUS_IO;
     }
-    *stat = (struct openrfsfs_stat){ .size = node->byte_count, .object_id = node->object_id,
+    *stat = (struct rsdfs_stat){ .size = node->byte_count, .object_id = node->object_id,
         .mode = node->mode, .links = 1U, .directory = node->directory,
         .read_only = (node->mode & UINT16_C(0222)) == 0U };
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_close(openrfsfs_handle handle)
+enum rsdfs_status rsdfs_close(rsdfs_handle handle)
 {
     struct mock_handle *state = mock_handle(handle);
     if (state == NULL) {
-        return OPENRFSFS_STATUS_STALE_HANDLE;
+        return RSDFS_STATUS_STALE_HANDLE;
     }
     if (restore_application_mode && strcmp(nodes[state->node].path, verified_application) == 0) {
         nodes[state->node].mode = UINT16_C(0555);
         restore_application_mode = false;
     }
     state->active = false;
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_read(
-    openrfsfs_handle handle,
+enum rsdfs_status rsdfs_read(
+    rsdfs_handle handle,
     uint8_t *destination,
     size_t capacity,
     size_t *read_bytes
@@ -347,7 +347,7 @@ enum openrfsfs_status openrfsfs_read(
 {
     struct mock_handle *state = mock_handle(handle);
     if (state == NULL) {
-        return OPENRFSFS_STATUS_STALE_HANDLE;
+        return RSDFS_STATUS_STALE_HANDLE;
     }
     struct mock_node *node = &nodes[state->node];
     size_t available = node->byte_count - state->offset;
@@ -363,11 +363,11 @@ enum openrfsfs_status openrfsfs_read(
         verification_fault = 0U;
         ++verification_faults_seen;
     }
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_write(
-    openrfsfs_handle handle,
+enum rsdfs_status rsdfs_write(
+    rsdfs_handle handle,
     const uint8_t *source,
     size_t source_bytes,
     size_t *written_bytes
@@ -375,10 +375,10 @@ enum openrfsfs_status openrfsfs_write(
 {
     struct mock_handle *state = mock_handle(handle);
     if (state == NULL) {
-        return OPENRFSFS_STATUS_STALE_HANDLE;
+        return RSDFS_STATUS_STALE_HANDLE;
     }
     if (source_bytes > MOCK_MAX_FILE_BYTES - state->offset) {
-        return OPENRFSFS_STATUS_FULL;
+        return RSDFS_STATUS_FULL;
     }
     struct mock_node *node = &nodes[state->node];
     memcpy(node->bytes + state->offset, source, source_bytes);
@@ -390,7 +390,7 @@ enum openrfsfs_status openrfsfs_write(
     if (strcmp(node->path, PACKAGE_SERVICE_AUTHORITY_NEW_PATH) == 0) {
         event(MOCK_EVENT_WRITE_AUTHORITY);
     }
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
 static bool direct_child(
@@ -412,10 +412,10 @@ static bool direct_child(
     return true;
 }
 
-enum openrfsfs_status openrfsfs_list(
-    enum openrfsfs_volume volume,
+enum rsdfs_status rsdfs_list(
+    enum rsdfs_volume volume,
     const char *path,
-    struct openrfsfs_list_entry *entries,
+    struct rsdfs_list_entry *entries,
     size_t capacity,
     size_t *entry_count
 )
@@ -423,10 +423,10 @@ enum openrfsfs_status openrfsfs_list(
     (void)volume;
     size_t parent = find_node(path);
     if (parent == MOCK_MAX_NODES) {
-        return OPENRFSFS_STATUS_NOT_FOUND;
+        return RSDFS_STATUS_NOT_FOUND;
     }
     if (!nodes[parent].directory) {
-        return OPENRFSFS_STATUS_NOT_DIRECTORY;
+        return RSDFS_STATUS_NOT_DIRECTORY;
     }
     size_t count = 0U;
     for (size_t index = 0U; index < MOCK_MAX_NODES; ++index) {
@@ -436,7 +436,7 @@ enum openrfsfs_status openrfsfs_list(
             continue;
         }
         if (count == capacity) {
-            return OPENRFSFS_STATUS_DIRECTORY_FULL;
+            return RSDFS_STATUS_DIRECTORY_FULL;
         }
         memset(&entries[count], 0, sizeof(entries[count]));
         (void)snprintf(entries[count].name, sizeof(entries[count].name),
@@ -448,38 +448,38 @@ enum openrfsfs_status openrfsfs_list(
         ++count;
     }
     *entry_count = count;
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_create(enum openrfsfs_volume volume, const char *path)
+enum rsdfs_status rsdfs_create(enum rsdfs_volume volume, const char *path)
 {
     (void)volume;
     ++legacy_creates;
     if (find_node(path) != MOCK_MAX_NODES) {
-        return OPENRFSFS_STATUS_EXISTS;
+        return RSDFS_STATUS_EXISTS;
     }
     return add_node(path, false, NULL, 0U, 0U) ==
-        MOCK_MAX_NODES ? OPENRFSFS_STATUS_FULL : OPENRFSFS_STATUS_OK;
+        MOCK_MAX_NODES ? RSDFS_STATUS_FULL : RSDFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_create_mode(enum openrfsfs_volume volume,
+enum rsdfs_status rsdfs_create_mode(enum rsdfs_volume volume,
     const char *path, uint16_t mode)
 {
-    enum openrfsfs_status status = openrfsfs_create(volume, path);
+    enum rsdfs_status status = rsdfs_create(volume, path);
 
-    if (status == OPENRFSFS_STATUS_OK) {
+    if (status == RSDFS_STATUS_OK) {
         size_t index = find_node(path);
 
         if (index == MOCK_MAX_NODES) {
-            return OPENRFSFS_STATUS_CORRUPT;
+            return RSDFS_STATUS_CORRUPT;
         }
         nodes[index].mode = mode;
     }
     return status;
 }
 
-enum openrfsfs_status openrfsfs_truncate(
-    enum openrfsfs_volume volume,
+enum rsdfs_status rsdfs_truncate(
+    enum rsdfs_volume volume,
     const char *path,
     uint64_t size
 )
@@ -488,30 +488,30 @@ enum openrfsfs_status openrfsfs_truncate(
     size_t node = find_node(path);
 
     if (node == MOCK_MAX_NODES) {
-        return OPENRFSFS_STATUS_NOT_FOUND;
+        return RSDFS_STATUS_NOT_FOUND;
     }
     if (nodes[node].directory) {
-        return OPENRFSFS_STATUS_IS_DIRECTORY;
+        return RSDFS_STATUS_IS_DIRECTORY;
     }
     if (size > SIZE_MAX) {
-        return OPENRFSFS_STATUS_RANGE;
+        return RSDFS_STATUS_RANGE;
     }
     nodes[node].byte_count = (size_t)size;
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_mkdir(enum openrfsfs_volume volume, const char *path)
+enum rsdfs_status rsdfs_mkdir(enum rsdfs_volume volume, const char *path)
 {
     (void)volume;
     if (find_node(path) != MOCK_MAX_NODES) {
-        return OPENRFSFS_STATUS_EXISTS;
+        return RSDFS_STATUS_EXISTS;
     }
     return add_node(path, true, NULL, 0U, 0U) == MOCK_MAX_NODES ?
-        OPENRFSFS_STATUS_FULL : OPENRFSFS_STATUS_OK;
+        RSDFS_STATUS_FULL : RSDFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_rename(
-    enum openrfsfs_volume volume,
+enum rsdfs_status rsdfs_rename(
+    enum rsdfs_volume volume,
     const char *source,
     const char *destination
 )
@@ -519,10 +519,10 @@ enum openrfsfs_status openrfsfs_rename(
     (void)volume;
     size_t node = find_node(source);
     if (node == MOCK_MAX_NODES) {
-        return OPENRFSFS_STATUS_NOT_FOUND;
+        return RSDFS_STATUS_NOT_FOUND;
     }
     if (find_node(destination) != MOCK_MAX_NODES) {
-        return OPENRFSFS_STATUS_EXISTS;
+        return RSDFS_STATUS_EXISTS;
     }
     (void)snprintf(nodes[node].path, sizeof(nodes[node].path), "%s",
         destination);
@@ -531,46 +531,46 @@ enum openrfsfs_status openrfsfs_rename(
     } else if (strcmp(destination, PACKAGE_SERVICE_AUTHORITY_PATH) == 0) {
         event(MOCK_EVENT_RENAME_AUTHORITY);
     }
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_unlink(enum openrfsfs_volume volume, const char *path)
+enum rsdfs_status rsdfs_unlink(enum rsdfs_volume volume, const char *path)
 {
     (void)volume;
     ++unlink_calls;
     size_t node = find_node(path);
     if (node == MOCK_MAX_NODES) {
-        return OPENRFSFS_STATUS_NOT_FOUND;
+        return RSDFS_STATUS_NOT_FOUND;
     }
     if (nodes[node].directory) {
-        return OPENRFSFS_STATUS_IS_DIRECTORY;
+        return RSDFS_STATUS_IS_DIRECTORY;
     }
     if (strcmp(path, PACKAGE_SERVICE_JOURNAL_PATH) == 0) {
         event(MOCK_EVENT_UNLINK_JOURNAL);
     }
     nodes[node].active = false;
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
-enum openrfsfs_status openrfsfs_rmdir(enum openrfsfs_volume volume, const char *path)
+enum rsdfs_status rsdfs_rmdir(enum rsdfs_volume volume, const char *path)
 {
     (void)volume;
     size_t node = find_node(path);
     if (node == MOCK_MAX_NODES) {
-        return OPENRFSFS_STATUS_NOT_FOUND;
+        return RSDFS_STATUS_NOT_FOUND;
     }
     if (!nodes[node].directory) {
-        return OPENRFSFS_STATUS_NOT_DIRECTORY;
+        return RSDFS_STATUS_NOT_DIRECTORY;
     }
     for (size_t index = 0U; index < MOCK_MAX_NODES; ++index) {
         const char *ignored;
         if (nodes[index].active && direct_child(path, nodes[index].path,
                 &ignored)) {
-            return OPENRFSFS_STATUS_NOT_EMPTY;
+            return RSDFS_STATUS_NOT_EMPTY;
         }
     }
     nodes[node].active = false;
-    return OPENRFSFS_STATUS_OK;
+    return RSDFS_STATUS_OK;
 }
 
 enum heap_status heap_allocate(uint64_t size, void **pointer)
@@ -631,7 +631,7 @@ static bool prepare_workspace(
     struct package_builder_workspace *workspace
 )
 {
-    static const uint8_t target[] = "org.openrfs.app";
+    static const uint8_t target[] = "org.rsd.app";
 
     memset(workspace, 0, sizeof(*workspace));
     if (package_state_database_parse(old_database, OLD_DATABASE_BYTES,
@@ -995,7 +995,7 @@ static int test_prepare_copies_unchanged_installed_file(
     const uint8_t new_authority[PACKAGE_STATE_AUTHORITY_BYTES]
 )
 {
-    static const uint8_t target[] = "org.openrfs.app";
+    static const uint8_t target[] = "org.rsd.app";
     struct package_builder_workspace *workspace = malloc(sizeof(*workspace));
     struct package_state_database_view target_view;
     struct package_state_package_view library;
@@ -1895,23 +1895,23 @@ static int test_service_request_claim(void)
 static int test_prepared_file_ownership(void)
 {
     struct package_service_report report;
-    openrfsfs_handle borrowed[MOCK_MAX_HANDLES];
+    rsdfs_handle borrowed[MOCK_MAX_HANDLES];
     struct mock_handle before[MOCK_MAX_HANDLES];
 
     reset_filesystem();
     add_file("borrowed", (const uint8_t *)"old", 3U, UINT16_C(0600));
     for (size_t index = 0U; index < MOCK_MAX_HANDLES; ++index)
-        CHECK(openrfsfs_open(OPENRFSFS_VOLUME_DATA, "borrowed", OPENRFSFS_ACCESS_READ,
-            &borrowed[index]) == OPENRFSFS_STATUS_OK, 300);
+        CHECK(rsdfs_open(RSDFS_VOLUME_DATA, "borrowed", RSDFS_ACCESS_READ,
+            &borrowed[index]) == RSDFS_STATUS_OK, 300);
     memcpy(before, handles, sizeof(before));
     CHECK(package_service_repository_floor_advance(1U, &report) == PACKAGE_SERVICE_STATUS_FILESYSTEM &&
-        report.filesystem_status == OPENRFSFS_STATUS_NO_HANDLES && prepared_opens == 1U &&
+        report.filesystem_status == RSDFS_STATUS_NO_HANDLES && prepared_opens == 1U &&
         legacy_creates == 0U && unlink_calls == 0U && report.live_file_handles == 0U &&
         report.live_allocations == 0U && memcmp(before, handles, sizeof(before)) == 0 &&
         find_node(PACKAGE_SERVICE_REPOSITORY_FLOOR_NEW_PATH) == MOCK_MAX_NODES &&
         find_node(PACKAGE_SERVICE_REPOSITORY_FLOOR_PATH) == MOCK_MAX_NODES, 301);
     for (size_t index = 0U; index < MOCK_MAX_HANDLES; ++index)
-        CHECK(openrfsfs_close(borrowed[index]) == OPENRFSFS_STATUS_OK, 302);
+        CHECK(rsdfs_close(borrowed[index]) == RSDFS_STATUS_OK, 302);
     CHECK(package_service_repository_floor_advance(1U, &report) == PACKAGE_SERVICE_STATUS_OK &&
         prepared_opens == 2U && legacy_creates == 0U && report.repository_floor == 1U &&
         report.live_file_handles == 0U && report.live_allocations == 0U, 303);
@@ -1921,7 +1921,7 @@ static int test_prepared_file_ownership(void)
     reset_filesystem();
     prepared_collision = true;
     CHECK(package_service_repository_floor_advance(1U, &report) == PACKAGE_SERVICE_STATUS_FILESYSTEM &&
-        report.filesystem_status == OPENRFSFS_STATUS_EXISTS && !prepared_collision && prepared_opens == 1U &&
+        report.filesystem_status == RSDFS_STATUS_EXISTS && !prepared_collision && prepared_opens == 1U &&
         legacy_creates == 0U && unlink_calls == 0U && report.live_file_handles == 0U &&
         report.live_allocations == 0U, 305);
     current = find_node(PACKAGE_SERVICE_REPOSITORY_FLOOR_NEW_PATH);

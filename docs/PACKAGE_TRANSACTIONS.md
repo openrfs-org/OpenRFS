@@ -2,7 +2,7 @@
 
 # Package transaction state and recovery foundation
 
-`tools/openrfs-transaction.py` defines a bounded installed-database format, an
+`tools/rsd-transaction.py` defines a bounded installed-database format, an
 atomic-generation authority record, an immutable transaction journal, and a
 deterministic in-memory reference model for package state transitions. The model
 exercises staging, commit recovery, rollback, removal, dependency retention,
@@ -186,7 +186,7 @@ the complete target database is authoritative for state.
 
 ## Repository rollback floor
 
-`pkgstate/repo.bin` is a checksummed 128-byte `OPENRFSREP1` record containing the
+`pkgstate/repo.bin` is a checksummed 128-byte `RSDREP1` record containing the
 greatest signed repository version accepted for an install, update, or repair.
 Repository admission reads the maximum valid version from `repo.bin` and a
 possible crash-leftover `repo.new`; any present malformed candidate fails
@@ -217,7 +217,7 @@ remove. An interruption after replacement completes it. Recovery never merges
 some old files with some new metadata. Cancellation is permitted only while the
 base authority is still selected; afterward normal recovery is required.
 
-`include/openrfs/package_state.h` and `src/kernel/package_state.c` provide the
+`include/rsd/package_state.h` and `src/kernel/package_state.c` provide the
 allocation-free parsing and decision core. They are freestanding and
 allocation-free: all untrusted integers are decoded from checked little-endian
 byte fields, SHA-256 is computed incrementally in fixed storage, dependency
@@ -270,7 +270,7 @@ are refused.
 
 The C recovery core accepts two database candidates and one explicit
 `owned_files_complete` proof per candidate. A database checksum alone does not
-establish that proof. `include/openrfs/package_service.h` and
+establish that proof. `include/rsd/package_service.h` and
 `src/kernel/package_service.c` now produce it by enumerating the immutable root,
 refusing extra files and multiply linked files, then checking each declared
 file's type, exposed mode, stable object identity, exact length, EOF, and SHA-256
@@ -436,13 +436,13 @@ payloads fail before journal publication and leave the selected base unchanged.
 The CLI exposes byte-format construction and inspection only:
 
 ```sh
-python3 tools/openrfs-transaction.py build-database \
+python3 tools/rsd-transaction.py build-database \
     --spec build/installed-state.json --output build/installed.db
-python3 tools/openrfs-transaction.py inspect-database build/installed.db
-python3 tools/openrfs-transaction.py inspect-authority build/installed.authority
-python3 tools/openrfs-transaction.py inspect-journal build/installed.journal
+python3 tools/rsd-transaction.py inspect-database build/installed.db
+python3 tools/rsd-transaction.py inspect-authority build/installed.authority
+python3 tools/rsd-transaction.py inspect-journal build/installed.journal
 
-python3 tools/openrfs_transaction_host_test.py
+python3 tools/rsd_transaction_host_test.py
 
 gcc -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Iinclude \
     tools/package-state-host-test.c src/kernel/package_state.c \
@@ -495,15 +495,15 @@ The privileged native ABI exposes this core through a typed control handle.
 Callers can enumerate exact plan items, attach sealed uploads, commit, retry a
 prepared durability failure, duplicate the session handle, and release it by
 final close or process teardown without gaining filesystem paths to private
-staging. The `native-openrfs` QEMU path exercises this endpoint as a real Ring 3
+staging. The `native-rsd` QEMU path exercises this endpoint as a real Ring 3
 client. It downloads a signed version-1 repository and payload over HTTPS,
 commits and reboots from writable ext4, updates to signed version 2 and reboots
 again, then refuses the signed version-1 downgrade while retaining generation
 2. The kernel deliberately damages an immutable manifest, proves ordinary
-snapshot and launch quarantine it, and uses `openrfs repair` to authenticate and
+snapshot and launch quarantine it, and uses `rsd repair` to authenticate and
 commit generation 3 from the signed repository. It then launches SDL 2.32.10's
 upstream Chess Board application from the repaired authority, verifies its
 bounded render loop and exact persistent SDL preference output, and checks the
-retained image with `e2fsck`. Removal is exposed by the OpenRFS client, and the
-OpenRFS DE package manager's signed SDL Chess listing queues that same bounded client for
+retained image with `e2fsck`. Removal is exposed by the RSD client, and the
+RSD DE package manager's signed SDL Chess listing queues that same bounded client for
 its real Install / Update action.

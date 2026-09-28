@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* The string functions the vendored drivers call; see ports/ipxe/libc.c. */
-#ifndef OPENRFS_IPXE_STRING_H
-#define OPENRFS_IPXE_STRING_H
+#ifndef RSD_IPXE_STRING_H
+#define RSD_IPXE_STRING_H
 
 #include <stddef.h>
 

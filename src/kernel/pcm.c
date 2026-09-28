@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
  * The registry of PCM playback devices driven by upstream drivers. See
- * include/openrfs/pcm.h.
+ * include/rsd/pcm.h.
  */
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/pcm.h>
+#include <rsd/pcm.h>
 
 struct pcm_device {
     char name[PCM_NAME_CAPACITY];

@@ -7,8 +7,8 @@
 
 static bool ext4, live, exists, appended;
 static unsigned opened_count, closed_count, truncated_count, sync_count;
-static enum openrfsfs_status truncate_result, write_result;
-static enum openrfsfs_status prepared_result;
+static enum rsdfs_status truncate_result, write_result;
+static enum rsdfs_status prepared_result;
 static unsigned prepared_count;
 static bool create_before_prepared_open;
 static char bytes[128];
@@ -23,51 +23,51 @@ void cpu_enable_and_halt(void) { assert(!interrupts_enabled); ++halts; interrupt
 bool keyboard_events_pending(void) { assert(!interrupts_enabled); return queued_keyboard; }
 bool ui_events_pending(void) { assert(!interrupts_enabled); return queued_ui; }
 
-bool openrfsfs_has_atomic_replace(enum openrfsfs_volume volume)
-{ assert(volume == OPENRFSFS_VOLUME_DATA); return ext4; }
-const char *openrfsfs_status_string(enum openrfsfs_status status)
+bool rsdfs_has_atomic_replace(enum rsdfs_volume volume)
+{ assert(volume == RSDFS_VOLUME_DATA); return ext4; }
+const char *rsdfs_status_string(enum rsdfs_status status)
 { (void)status; return "failure"; }
 void console_write(const char *text) { (void)text; }
 void console_putc(char character) { (void)character; }
-enum openrfsfs_status openrfsfs_stat_path(enum openrfsfs_volume volume, const char *path,
-    struct openrfsfs_stat *result)
-{ (void)result; assert(!ext4 && volume == OPENRFSFS_VOLUME_DATA && strcmp(path, "notes.txt") == 0);
-  return exists ? OPENRFSFS_STATUS_OK : OPENRFSFS_STATUS_NOT_FOUND; }
-enum openrfsfs_status openrfsfs_create(enum openrfsfs_volume volume, const char *path)
-{ (void)volume; (void)path; assert(!ext4 && !exists); exists = true; return OPENRFSFS_STATUS_OK; }
-enum openrfsfs_status openrfsfs_open(enum openrfsfs_volume volume, const char *path,
-    enum openrfsfs_access access, openrfsfs_handle *handle)
-{ (void)volume; (void)path; assert(exists && !live && access == OPENRFSFS_ACCESS_WRITE);
-  live = true; appended = false; ++opened_count; *handle = 77U; return OPENRFSFS_STATUS_OK; }
-enum openrfsfs_status openrfsfs_open_options(enum openrfsfs_volume volume, const char *path,
-    enum openrfsfs_access access, uint8_t flags, uint16_t mode, openrfsfs_handle *handle)
-{ assert(ext4 && flags == OPENRFSFS_OPEN_CREATE && mode == UINT16_C(0644));
+enum rsdfs_status rsdfs_stat_path(enum rsdfs_volume volume, const char *path,
+    struct rsdfs_stat *result)
+{ (void)result; assert(!ext4 && volume == RSDFS_VOLUME_DATA && strcmp(path, "notes.txt") == 0);
+  return exists ? RSDFS_STATUS_OK : RSDFS_STATUS_NOT_FOUND; }
+enum rsdfs_status rsdfs_create(enum rsdfs_volume volume, const char *path)
+{ (void)volume; (void)path; assert(!ext4 && !exists); exists = true; return RSDFS_STATUS_OK; }
+enum rsdfs_status rsdfs_open(enum rsdfs_volume volume, const char *path,
+    enum rsdfs_access access, rsdfs_handle *handle)
+{ (void)volume; (void)path; assert(exists && !live && access == RSDFS_ACCESS_WRITE);
+  live = true; appended = false; ++opened_count; *handle = 77U; return RSDFS_STATUS_OK; }
+enum rsdfs_status rsdfs_open_options(enum rsdfs_volume volume, const char *path,
+    enum rsdfs_access access, uint8_t flags, uint16_t mode, rsdfs_handle *handle)
+{ assert(ext4 && flags == RSDFS_OPEN_CREATE && mode == UINT16_C(0644));
   ++prepared_count; *handle = 0U;
-  if (prepared_result != OPENRFSFS_STATUS_OK) return prepared_result;
+  if (prepared_result != RSDFS_STATUS_OK) return prepared_result;
   if (create_before_prepared_open) {
       create_before_prepared_open = false; memcpy(bytes, "racing\n", 7U); length = 7U;
   }
   exists = true;
-  return openrfsfs_open(volume, path, access, handle); }
-static enum openrfsfs_status truncate_bytes(void)
-{ ++truncated_count; if (truncate_result == OPENRFSFS_STATUS_OK) length = 0U;
+  return rsdfs_open(volume, path, access, handle); }
+static enum rsdfs_status truncate_bytes(void)
+{ ++truncated_count; if (truncate_result == RSDFS_STATUS_OK) length = 0U;
   return truncate_result; }
-enum openrfsfs_status openrfsfs_truncate(enum openrfsfs_volume volume, const char *path, uint64_t size)
+enum rsdfs_status rsdfs_truncate(enum rsdfs_volume volume, const char *path, uint64_t size)
 { (void)volume; (void)path; assert(!ext4 && !live && size == 0U); return truncate_bytes(); }
-enum openrfsfs_status openrfsfs_ftruncate(openrfsfs_handle handle, uint64_t size)
+enum rsdfs_status rsdfs_ftruncate(rsdfs_handle handle, uint64_t size)
 { assert(ext4 && live && handle == 77U && size == 0U); return truncate_bytes(); }
-enum openrfsfs_status openrfsfs_set_append(openrfsfs_handle handle, bool append)
-{ assert(live && handle == 77U && append); appended = true; return OPENRFSFS_STATUS_OK; }
-enum openrfsfs_status openrfsfs_write(openrfsfs_handle handle, const uint8_t *buffer, size_t count, size_t *written)
+enum rsdfs_status rsdfs_set_append(rsdfs_handle handle, bool append)
+{ assert(live && handle == 77U && append); appended = true; return RSDFS_STATUS_OK; }
+enum rsdfs_status rsdfs_write(rsdfs_handle handle, const uint8_t *buffer, size_t count, size_t *written)
 { assert(live && handle == 77U); *written = 0U;
-  if (write_result != OPENRFSFS_STATUS_OK) return write_result;
+  if (write_result != RSDFS_STATUS_OK) return write_result;
   size_t offset = appended ? length : 0U; assert(offset + count < sizeof(bytes));
   memcpy(bytes + offset, buffer, count); length = offset + count; *written = count;
-  return OPENRFSFS_STATUS_OK; }
-enum openrfsfs_status openrfsfs_fsync(openrfsfs_handle handle)
-{ assert(live && handle == 77U); ++sync_count; return OPENRFSFS_STATUS_OK; }
-enum openrfsfs_status openrfsfs_close(openrfsfs_handle handle)
-{ assert(live && handle == 77U); live = false; ++closed_count; return OPENRFSFS_STATUS_OK; }
+  return RSDFS_STATUS_OK; }
+enum rsdfs_status rsdfs_fsync(rsdfs_handle handle)
+{ assert(live && handle == 77U); ++sync_count; return RSDFS_STATUS_OK; }
+enum rsdfs_status rsdfs_close(rsdfs_handle handle)
+{ assert(live && handle == 77U); live = false; ++closed_count; return RSDFS_STATUS_OK; }
 
 int main(void)
 {
@@ -88,7 +88,7 @@ int main(void)
     strcpy(filesystem_cwd, ".");
     for (unsigned backend = 0U; backend < 2U; ++backend) {
         ext4 = backend != 0U; exists = false; length = 0U;
-        truncate_result = write_result = OPENRFSFS_STATUS_OK;
+        truncate_result = write_result = RSDFS_STATUS_OK;
         opened_count = closed_count = truncated_count = sync_count = 0U;
         command_write_line("notes.txt \"first cut\"", false);
         command_write_line("notes.txt \"second line\"", true);
@@ -96,18 +96,18 @@ int main(void)
         assert(!live && opened_count == 2U && closed_count == 2U && truncated_count == 1U && sync_count == 2U);
         command_write_line("notes.txt \"short\"", false);
         assert(length == 6U && memcmp(bytes, "short\n", length) == 0);
-        truncate_result = OPENRFSFS_STATUS_IO;
+        truncate_result = RSDFS_STATUS_IO;
         const unsigned before = opened_count;
         command_write_line("notes.txt \"refused\"", false);
         assert(!live && length == 6U && opened_count == before + (ext4 ? 1U : 0U));
         assert(opened_count == closed_count && sync_count == 3U);
-        truncate_result = OPENRFSFS_STATUS_OK; write_result = OPENRFSFS_STATUS_IO;
+        truncate_result = RSDFS_STATUS_OK; write_result = RSDFS_STATUS_IO;
         command_write_line("notes.txt \"refused\"", true);
         assert(!live && length == 6U && opened_count == closed_count && sync_count == 3U);
     }
     const unsigned before_prepared_failure = opened_count;
     const unsigned before_truncate_failure = truncated_count;
-    prepared_result = OPENRFSFS_STATUS_NO_HANDLES;
+    prepared_result = RSDFS_STATUS_NO_HANDLES;
     exists = false; length = 0U;
     command_write_line("notes.txt \"no handle\"", true);
     assert(!exists && !live && opened_count == before_prepared_failure &&
@@ -116,7 +116,7 @@ int main(void)
     command_write_line("notes.txt \"no handle\"", false);
     assert(!live && length == 8U && memcmp(bytes, "retained", 8U) == 0 &&
         opened_count == before_prepared_failure && truncated_count == before_truncate_failure);
-    prepared_result = write_result = OPENRFSFS_STATUS_OK;
+    prepared_result = write_result = RSDFS_STATUS_OK;
     exists = false; length = 0U; create_before_prepared_open = true;
     command_write_line("notes.txt \"tail\"", true);
     assert(!live && !create_before_prepared_open && prepared_count == 8U &&

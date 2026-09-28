@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/cpu.h>
+#include <rsd/cpu.h>
 
 #define GDT_ENTRY_COUNT 7U
 #define TSS_DESCRIPTOR_INDEX 3U
@@ -354,9 +354,9 @@ const char *cpu_status_string(enum cpu_status status)
     case CPU_STATUS_BAD_STACK:
         return "emergency stack validation failed";
     case CPU_STATUS_GDTR_MISMATCH:
-        return "GDTR does not reference the OpenRFS GDT";
+        return "GDTR does not reference the RSD GDT";
     case CPU_STATUS_TR_MISMATCH:
-        return "task register does not reference the OpenRFS TSS";
+        return "task register does not reference the RSD TSS";
     default:
         return "unknown CPU table status";
     }

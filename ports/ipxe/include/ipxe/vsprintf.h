@@ -4,8 +4,8 @@
  * in ports/ipxe/libc.c as upstream's core/vsprintf.c does: a negative buffer
  * size is treated as zero.
  */
-#ifndef OPENRFS_IPXE_VSPRINTF_H
-#define OPENRFS_IPXE_VSPRINTF_H
+#ifndef RSD_IPXE_VSPRINTF_H
+#define RSD_IPXE_VSPRINTF_H
 
 #include <stdarg.h>
 #include <stddef.h>

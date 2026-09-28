@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Run the OpenRFS BearSSL wrapper against deterministic offline peers."""
+"""Run the RSD BearSSL wrapper against deterministic offline peers."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = ROOT / "tests" / "fixtures" / "tls"
-HOSTNAME = "repo.openrfs.test"
+HOSTNAME = "repo.rsd.test"
 TLS_OK = 0
 TLS_ENTROPY = 5
 TLS_TRANSPORT = 7
@@ -178,7 +178,7 @@ def main() -> int:
     if not binary.is_file():
         raise SystemExit(f"missing TLS host client: {binary}")
     entropy_environment = os.environ.copy()
-    entropy_environment["OPENRFS_TEST_ENTROPY_FAILURE"] = "1"
+    entropy_environment["RSD_TEST_ENTROPY_FAILURE"] = "1"
     entropy = subprocess.run([
         str(binary), str(FIXTURE / "anchor.txt"), "443", HOSTNAME,
         str(TLS_ENTROPY), "refusal",
@@ -189,7 +189,7 @@ def main() -> int:
         raise RuntimeError("TLS entropy failure was not refused before transport")
     print("TLS case passed: entropy-failure")
     run_case(binary, "trusted", "valid", HOSTNAME, TLS_OK)
-    run_case(binary, "hostname-mismatch", "valid", "wrong.openrfs.test", TLS_HANDSHAKE)
+    run_case(binary, "hostname-mismatch", "valid", "wrong.rsd.test", TLS_HANDSHAKE)
     run_case(binary, "expired", "expired", HOSTNAME, TLS_HANDSHAKE)
     run_case(binary, "not-yet-valid", "future", HOSTNAME, TLS_HANDSHAKE)
     run_case(binary, "untrusted-root", "untrusted", HOSTNAME, TLS_HANDSHAKE)
@@ -218,7 +218,7 @@ def main() -> int:
                  behavior=behavior)
     run_case(binary, "truncated-handshake", None, HOSTNAME, TLS_TRANSPORT, "truncated")
     run_case(binary, "deadline", None, HOSTNAME, TLS_TRANSPORT, "timeout")
-    print("OpenRFS TLS host tests passed: chain, hostname, time, truncation, deadline, close")
+    print("RSD TLS host tests passed: chain, hostname, time, truncation, deadline, close")
     return 0
 
 

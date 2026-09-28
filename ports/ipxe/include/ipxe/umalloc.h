@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef OPENRFS_IPXE_UMALLOC_H
-#define OPENRFS_IPXE_UMALLOC_H
+#ifndef RSD_IPXE_UMALLOC_H
+#define RSD_IPXE_UMALLOC_H
 
 #include <ipxe/malloc.h>
 

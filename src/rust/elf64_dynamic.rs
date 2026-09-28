@@ -2195,7 +2195,7 @@ pub fn dependency_order(
     Ok(count)
 }
 
-/// Run host-independent ABI and checked-address controls compiled into OpenRFS.
+/// Run host-independent ABI and checked-address controls compiled into RSD.
 #[must_use]
 pub fn self_test() -> u32 {
     if core::mem::size_of::<Name>() != 65

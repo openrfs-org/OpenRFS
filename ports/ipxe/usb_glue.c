@@ -88,7 +88,7 @@ static bool started;
 
 /*
  * ecm.c asks for a system-specific MAC address (iPXE's core/acpimac.c looks
- * for an ACPI AMAC or MACA object, as some docking stations provide). OpenRFS
+ * for an ACPI AMAC or MACA object, as some docking stations provide). RSD
  * has no such lookup, which is what iPXE reports on a system without one: the
  * adapter keeps the address it reports itself.
  */

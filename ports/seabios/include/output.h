@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * OpenRFS environment for the vendored SeaBIOS drivers: diagnostics.
+ * RSD environment for the vendored SeaBIOS drivers: diagnostics.
  *
  * dprintf keeps SeaBIOS's level semantics; messages at or below
  * CONFIG_DEBUG_LEVEL reach the serial console prefixed "SeaBIOS: ". The
  * format engine understands SeaBIOS's %pP (a PCI device's location).
  */
-#ifndef OPENRFS_SEABIOS_OUTPUT_H
-#define OPENRFS_SEABIOS_OUTPUT_H
+#ifndef RSD_SEABIOS_OUTPUT_H
+#define RSD_SEABIOS_OUTPUT_H
 
 #include "config.h"
 #include "types.h"

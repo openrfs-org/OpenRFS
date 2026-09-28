@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #define _GNU_SOURCE
-#include <openrfs/tls.h>
+#include <rsd/tls.h>
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -14,8 +14,8 @@
 #include <sys/time.h>
 #include <unistd.h>
 
-#include <openrfs/network.h>
-#include <openrfs/runtime.h>
+#include <rsd/network.h>
+#include <rsd/runtime.h>
 
 #define TEST_DEADLINE_NS UINT64_C(3000000000)
 #define TEST_DN_BYTES 256U
@@ -24,17 +24,17 @@
 /* The host adapter intentionally uses the kernel ABI declarations from
  * include/ while host libc remains ahead of the freestanding SDK headers.
  * Declare the SDK transport entry points that this translation unit mocks. */
-long openrfs_dns_resolve(const char *hostname, uint64_t deadline_ns);
-long openrfs_stream_open(void);
-long openrfs_stream_connect(openrfs_handle_t stream,
-    const struct openrfs_ipv4_endpoint *endpoint, uint64_t deadline_ns);
-long openrfs_stream_read(openrfs_handle_t stream, void *buffer, size_t length,
+long rsd_dns_resolve(const char *hostname, uint64_t deadline_ns);
+long rsd_stream_open(void);
+long rsd_stream_connect(rsd_handle_t stream,
+    const struct rsd_ipv4_endpoint *endpoint, uint64_t deadline_ns);
+long rsd_stream_read(rsd_handle_t stream, void *buffer, size_t length,
     uint64_t deadline_ns);
-long openrfs_stream_write(openrfs_handle_t stream, const void *buffer,
+long rsd_stream_write(rsd_handle_t stream, const void *buffer,
     size_t length, uint64_t deadline_ns);
-long openrfs_stream_shutdown(openrfs_handle_t stream, uint32_t flags,
+long rsd_stream_shutdown(rsd_handle_t stream, uint32_t flags,
     uint64_t deadline_ns);
-long openrfs_network_cancel(openrfs_handle_t handle);
+long rsd_network_cancel(rsd_handle_t handle);
 
 static uint16_t peer_port;
 
@@ -79,17 +79,17 @@ static int wait_fd(int descriptor, short events, uint64_t deadline_ns)
     }
 }
 
-uint64_t openrfs_monotonic_ns(void)
+uint64_t rsd_monotonic_ns(void)
 {
     return host_now_ns();
 }
 
-long openrfs_realtime_seconds(void)
+long rsd_realtime_seconds(void)
 {
     return 1788177600L;
 }
 
-long openrfs_random(void *buffer, size_t length)
+long rsd_random(void *buffer, size_t length)
 {
     uint8_t *bytes = buffer;
 
@@ -102,27 +102,27 @@ long openrfs_random(void *buffer, size_t length)
     return (long)length;
 }
 
-long openrfs_random_strong(void *buffer, size_t length)
+long rsd_random_strong(void *buffer, size_t length)
 {
-    if (getenv("OPENRFS_TEST_ENTROPY_FAILURE") != NULL) {
+    if (getenv("RSD_TEST_ENTROPY_FAILURE") != NULL) {
         return -1;
     }
-    return openrfs_random(buffer, length);
+    return rsd_random(buffer, length);
 }
 
-long openrfs_dns_resolve(const char *hostname, uint64_t deadline_ns)
+long rsd_dns_resolve(const char *hostname, uint64_t deadline_ns)
 {
     (void)deadline_ns;
     return hostname != NULL && hostname[0] != '\0' ? INT64_C(0x7f000001) : -1;
 }
 
-long openrfs_stream_open(void)
+long rsd_stream_open(void)
 {
     return socket(AF_INET, SOCK_STREAM, 0);
 }
 
-long openrfs_stream_connect(openrfs_handle_t stream,
-    const struct openrfs_ipv4_endpoint *endpoint, uint64_t deadline_ns)
+long rsd_stream_connect(rsd_handle_t stream,
+    const struct rsd_ipv4_endpoint *endpoint, uint64_t deadline_ns)
 {
     const int descriptor = (int)stream;
     struct sockaddr_in address = {0};
@@ -138,7 +138,7 @@ long openrfs_stream_connect(openrfs_handle_t stream,
         sizeof(address));
 }
 
-long openrfs_stream_read(openrfs_handle_t stream, void *buffer, size_t length,
+long rsd_stream_read(rsd_handle_t stream, void *buffer, size_t length,
     uint64_t deadline_ns)
 {
     const int descriptor = (int)stream;
@@ -154,7 +154,7 @@ long openrfs_stream_read(openrfs_handle_t stream, void *buffer, size_t length,
     return count > 0 ? (long)count : -1;
 }
 
-long openrfs_stream_write(openrfs_handle_t stream, const void *buffer,
+long rsd_stream_write(rsd_handle_t stream, const void *buffer,
     size_t length, uint64_t deadline_ns)
 {
     const int descriptor = (int)stream;
@@ -170,7 +170,7 @@ long openrfs_stream_write(openrfs_handle_t stream, const void *buffer,
     return count > 0 ? (long)count : -1;
 }
 
-long openrfs_stream_shutdown(openrfs_handle_t stream, uint32_t flags,
+long rsd_stream_shutdown(rsd_handle_t stream, uint32_t flags,
     uint64_t deadline_ns)
 {
     (void)flags;
@@ -178,12 +178,12 @@ long openrfs_stream_shutdown(openrfs_handle_t stream, uint32_t flags,
     return shutdown((int)stream, SHUT_RDWR);
 }
 
-long openrfs_network_cancel(openrfs_handle_t handle)
+long rsd_network_cancel(rsd_handle_t handle)
 {
     return shutdown((int)handle, SHUT_RDWR);
 }
 
-long openrfs_handle_close(openrfs_handle_t handle)
+long rsd_handle_close(rsd_handle_t handle)
 {
     return close((int)handle);
 }
@@ -267,9 +267,9 @@ int main(int argc, char **argv)
     uint8_t modulus[TEST_RSA_BYTES];
     uint8_t exponent[8];
     br_x509_trust_anchor anchor;
-    struct openrfs_tls_client *client = NULL;
-    struct openrfs_tls_client_config config;
-    enum openrfs_tls_status status;
+    struct rsd_tls_client *client = NULL;
+    struct rsd_tls_client_config config;
+    enum rsd_tls_status status;
     char response[2];
     char *end = NULL;
     unsigned long port;
@@ -286,53 +286,53 @@ int main(int argc, char **argv)
     }
     peer_port = (uint16_t)port;
     expected = strtoul(argv[4], &end, 10);
-    if (end == NULL || *end != '\0' || expected > OPENRFS_TLS_CLOSE) {
+    if (end == NULL || *end != '\0' || expected > RSD_TLS_CLOSE) {
         return 2;
     }
     deadline = host_now_ns() + TEST_DEADLINE_NS;
-    config = (struct openrfs_tls_client_config){
+    config = (struct rsd_tls_client_config){
         argv[3], peer_port, 0U, &anchor, 1U, deadline};
-    status = openrfs_tls_client_open(&config, &client);
-    if (status != (enum openrfs_tls_status)expected) {
+    status = rsd_tls_client_open(&config, &client);
+    if (status != (enum rsd_tls_status)expected) {
         fprintf(stderr, "TLS host test: expected %s, got %s\n",
-            openrfs_tls_status_string((enum openrfs_tls_status)expected),
-            openrfs_tls_status_string(status));
+            rsd_tls_status_string((enum rsd_tls_status)expected),
+            rsd_tls_status_string(status));
         if (client != NULL) {
-            (void)openrfs_tls_client_close(client, deadline);
+            (void)rsd_tls_client_close(client, deadline);
         }
         return 1;
     }
-    if (status != OPENRFS_TLS_OK) {
-        printf("TLS refusal: %s\n", openrfs_tls_status_string(status));
+    if (status != RSD_TLS_OK) {
+        printf("TLS refusal: %s\n", rsd_tls_status_string(status));
         return 0;
     }
     if (strcmp(argv[5], "read-refusal") == 0 ||
         strcmp(argv[5], "replay-refusal") == 0) {
         const bool replay = strcmp(argv[5], "replay-refusal") == 0;
 
-        if (openrfs_tls_client_write(client, "GET / HTTP/1.0\r\n\r\n", 18U,
+        if (rsd_tls_client_write(client, "GET / HTTP/1.0\r\n\r\n", 18U,
                 deadline) != 18 ||
-            openrfs_tls_client_flush(client, deadline) != OPENRFS_TLS_OK ||
-            (replay && (openrfs_tls_client_read(client, response, 1U,
+            rsd_tls_client_flush(client, deadline) != RSD_TLS_OK ||
+            (replay && (rsd_tls_client_read(client, response, 1U,
                 deadline) != 1 || response[0] != 'O')) ||
-            openrfs_tls_client_read(client, response,
+            rsd_tls_client_read(client, response,
                 replay ? 1U : sizeof(response), deadline) >= 0 ||
-            openrfs_tls_client_status(client) != OPENRFS_TLS_IO) {
-            (void)openrfs_tls_client_close(client, deadline);
+            rsd_tls_client_status(client) != RSD_TLS_IO) {
+            (void)rsd_tls_client_close(client, deadline);
             fputs("TLS host test: unauthenticated record accepted\n", stderr);
             return 1;
         }
-        (void)openrfs_tls_client_close(client, deadline);
+        (void)rsd_tls_client_close(client, deadline);
         puts("TLS record authentication refusal passed");
         return 0;
     }
     if (strcmp(argv[5], "request") != 0 ||
-        openrfs_tls_client_write(client, "GET / HTTP/1.0\r\n\r\n", 18U,
+        rsd_tls_client_write(client, "GET / HTTP/1.0\r\n\r\n", 18U,
             deadline) != 18 ||
-        openrfs_tls_client_flush(client, deadline) != OPENRFS_TLS_OK ||
-        openrfs_tls_client_read(client, response, sizeof(response), deadline) !=
+        rsd_tls_client_flush(client, deadline) != RSD_TLS_OK ||
+        rsd_tls_client_read(client, response, sizeof(response), deadline) !=
             (long)sizeof(response) || memcmp(response, "OK", 2U) != 0 ||
-        openrfs_tls_client_close(client, deadline) != OPENRFS_TLS_OK) {
+        rsd_tls_client_close(client, deadline) != RSD_TLS_OK) {
         fputs("TLS host test: authenticated request/close failed\n", stderr);
         return 1;
     }

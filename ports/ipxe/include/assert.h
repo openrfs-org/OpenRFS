@@ -4,8 +4,8 @@
  * vendored drivers are built exactly that way. The condition is still parsed
  * so it cannot rot; it is never evaluated.
  */
-#ifndef OPENRFS_IPXE_ASSERT_H
-#define OPENRFS_IPXE_ASSERT_H
+#ifndef RSD_IPXE_ASSERT_H
+#define RSD_IPXE_ASSERT_H
 
 #define ASSERTING 0
 #define assert(condition) do { \

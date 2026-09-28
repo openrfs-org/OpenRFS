@@ -34,7 +34,7 @@ STORAGE_CONTROLS = {"append": "APPFAIL.BIN", "overwrite": "OVERFAIL.BIN",
 
 def verify_exit(status, transcript, pass_marker=PASS):
     if status != recovery.PASS_EXIT_STATUS or transcript.count(pass_marker) != 1 or \
-            transcript.count(recovery.PASS_MARKER) != 1 or "ST FAIL" in transcript or "OpenRFS PANIC" in transcript:
+            transcript.count(recovery.PASS_MARKER) != 1 or "ST FAIL" in transcript or "RSD PANIC" in transcript:
         raise RuntimeError(f"held-unlink reboot failed ({status}):\n" + recovery._transcript_tail(transcript))
 
 
@@ -476,7 +476,7 @@ def run(args):
 
         def require_cut(status, trace, ordinal):
             if status != recovery.POWER_CUT_EXIT_STATUS or trace.count(f"ST EXT4 STORAGE CUT {ordinal}\n") != 1 or \
-                    pass_marker in trace or "ST FAIL" in trace or "OpenRFS PANIC" in trace:
+                    pass_marker in trace or "ST FAIL" in trace or "RSD PANIC" in trace:
                 raise RuntimeError(f"device-command cut {ordinal} did not terminate exactly:\n" + recovery._transcript_tail(trace))
 
         for number, kind, detail in boundaries:
@@ -629,7 +629,7 @@ def run(args):
             output / f"cut-{cut:02d}.log", args.timeout)
         marker = f"ST EXT4 POWER CUT {cut} {boundary}"
         if status != recovery.POWER_CUT_EXIT_STATUS or transcript.count(marker) != 1 or \
-                "ST FAIL" in transcript or pass_marker in transcript or "OpenRFS PANIC" in transcript:
+                "ST FAIL" in transcript or pass_marker in transcript or "RSD PANIC" in transcript:
             raise RuntimeError(f"held-unlink boundary {cut} did not cut exactly:\n" + recovery._transcript_tail(transcript))
         crashed = output / f"cut-{cut:02d}-crashed.raw"
         shutil.copyfile(image, crashed)
@@ -663,7 +663,7 @@ def run(args):
                     repeated_iso, repeated_image, output / f"{prefix}.log", args.timeout)
                 second_marker = f"ST EXT4 POWER CUT {second_cut} {recovery_boundary}"
                 if second_status != recovery.POWER_CUT_EXIT_STATUS or second_trace.count(second_marker) != 1 or \
-                        state_marker in second_trace or "ST FAIL" in second_trace or "OpenRFS PANIC" in second_trace:
+                        state_marker in second_trace or "ST FAIL" in second_trace or "RSD PANIC" in second_trace:
                     raise RuntimeError(f"held-unlink recovery boundary {second_cut} did not cut during mount")
                 second_crashed = output / f"{prefix}-crashed.raw"
                 shutil.copyfile(repeated_image, second_crashed)

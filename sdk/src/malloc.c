@@ -27,16 +27,16 @@ static size_t align_size(size_t value)
 
 static struct allocation_block *new_arena(size_t minimum)
 {
-    struct openrfs_memory_map_response response;
+    struct rsd_memory_map_response response;
     struct allocation_block *block;
     size_t length = minimum + sizeof(*block);
 
     if (length < ARENA_BYTES) {
         length = ARENA_BYTES;
     }
-    if (openrfs_memory_allocate(length, OPENRFS_MEMORY_READ |
-            OPENRFS_MEMORY_WRITE | OPENRFS_MEMORY_GUARD_BEFORE |
-            OPENRFS_MEMORY_GUARD_AFTER, &response) < 0) {
+    if (rsd_memory_allocate(length, RSD_MEMORY_READ |
+            RSD_MEMORY_WRITE | RSD_MEMORY_GUARD_BEFORE |
+            RSD_MEMORY_GUARD_AFTER, &response) < 0) {
         return NULL;
     }
     block = (struct allocation_block *)(uintptr_t)response.address;
@@ -75,7 +75,7 @@ void *malloc(size_t size)
         return NULL;
     }
     size = align_size(size);
-    openrfs_runtime_lock(&allocator_lock);
+    rsd_runtime_lock(&allocator_lock);
     for (block = blocks; block != NULL; block = block->next) {
         if (block->free && block->size >= size) {
             break;
@@ -88,7 +88,7 @@ void *malloc(size_t size)
         split_block(block, size);
         block->free = 0;
     }
-    openrfs_runtime_unlock(&allocator_lock);
+    rsd_runtime_unlock(&allocator_lock);
     if (block == NULL) {
         errno = ENOMEM;
         return NULL;
@@ -104,9 +104,9 @@ void free(void *pointer)
         return;
     }
     block = (struct allocation_block *)pointer - 1;
-    openrfs_runtime_lock(&allocator_lock);
+    rsd_runtime_lock(&allocator_lock);
     if (block->magic != BLOCK_MAGIC || block->free) {
-        openrfs_runtime_unlock(&allocator_lock);
+        rsd_runtime_unlock(&allocator_lock);
         abort();
     }
     block->free = 1;
@@ -121,10 +121,10 @@ void free(void *pointer)
             cursor->next = cursor->next->next;
         }
     }
-    openrfs_runtime_unlock(&allocator_lock);
+    rsd_runtime_unlock(&allocator_lock);
 }
 
-size_t openrfs_allocation_size(const void *pointer)
+size_t rsd_allocation_size(const void *pointer)
 {
     const struct allocation_block *block =
         (const struct allocation_block *)pointer - 1;
@@ -160,7 +160,7 @@ void *realloc(void *pointer, size_t size)
         free(pointer);
         return NULL;
     }
-    old_size = openrfs_allocation_size(pointer);
+    old_size = rsd_allocation_size(pointer);
     if (old_size >= size) {
         return pointer;
     }

@@ -2,22 +2,22 @@
 /*
  * The upstream driver framework: boot-time configuration, the PCI transitions
  * compatibility layers are allowed to request, and the binding record. See
- * include/openrfs/hwdrv.h.
+ * include/rsd/hwdrv.h.
  */
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/clock.h>
-#include <openrfs/console.h>
-#include <openrfs/cpu.h>
-#include <openrfs/dma_arena.h>
-#include <openrfs/hwdrv.h>
-#include <openrfs/hwdrv_layers.h>
-#include <openrfs/pci.h>
-#include <openrfs/pci_resource.h>
+#include <rsd/clock.h>
+#include <rsd/console.h>
+#include <rsd/cpu.h>
+#include <rsd/dma_arena.h>
+#include <rsd/hwdrv.h>
+#include <rsd/hwdrv_layers.h>
+#include <rsd/pci.h>
+#include <rsd/pci_resource.h>
 
-#define HWDRV_OPTION_PREFIX "openrfs.drivers="
+#define HWDRV_OPTION_PREFIX "rsd.drivers="
 #define PCI_REGISTER_BAR_FIRST UINT16_C(0x10)
 #define PCI_REGISTER_BAR_LIMIT UINT16_C(0x28)
 #define PCI_REGISTER_EXPANSION_ROM UINT16_C(0x30)
@@ -113,7 +113,7 @@ static void irq_restore(bool enabled)
 }
 
 /*
- * Parse one openrfs.drivers= value into a configuration. The value is a
+ * Parse one rsd.drivers= value into a configuration. The value is a
  * comma-separated list of lower-case driver names, or one of the two words.
  * Anything else - an empty list, an over-long name, too many names, a
  * character outside [a-z0-9_-] - leaves binding disabled and marks the
@@ -822,13 +822,13 @@ struct hwdrv_state hwdrv_get_state(void)
  */
 bool hwdrv_self_test(size_t *completed_tests)
 {
-    static const char auto_line[] = "openrfs.test=x openrfs.drivers=auto";
-    static const char list_line[] = "openrfs.drivers=intel,ahci,usb-hid";
-    static const char bad_line[] = "openrfs.drivers=Intel";
+    static const char auto_line[] = "rsd.test=x rsd.drivers=auto";
+    static const char list_line[] = "rsd.drivers=intel,ahci,usb-hid";
+    static const char bad_line[] = "rsd.drivers=Intel";
     static const char twice_line[] =
-        "openrfs.drivers=auto openrfs.drivers=none";
-    static const char empty_item_line[] = "openrfs.drivers=intel,,ahci";
-    static const char absent_line[] = "openrfs.test=normal";
+        "rsd.drivers=auto rsd.drivers=none";
+    static const char empty_item_line[] = "rsd.drivers=intel,,ahci";
+    static const char absent_line[] = "rsd.test=normal";
     struct hwdrv_configuration scratch;
     size_t arena_tests = 0U;
     size_t completed = 0U;

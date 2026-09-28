@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-#ifndef OPENRFS_STDLIB_H
-#define OPENRFS_STDLIB_H
+#ifndef RSD_STDLIB_H
+#define RSD_STDLIB_H
 
 #include <stddef.h>
 

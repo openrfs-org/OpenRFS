@@ -4,16 +4,16 @@
 .section .text, "ax", @progbits
 .code64
 
-.global openrfs_application_entry_probe
-.type openrfs_application_entry_probe, @function
-openrfs_application_entry_probe:
+.global rsd_application_entry_probe
+.type rsd_application_entry_probe, @function
+rsd_application_entry_probe:
     fxsave64 native_initial_fpu_state(%rip)
     /* crt0 must preserve the loader's argc/argv/environment registers. */
     movq $0x11, %rdi
     movq $0x22, %rsi
     movq $0x33, %rdx
     ret
-.size openrfs_application_entry_probe, . - openrfs_application_entry_probe
+.size rsd_application_entry_probe, . - rsd_application_entry_probe
 
 .global native_state_round_trip
 .type native_state_round_trip, @function
@@ -41,7 +41,7 @@ native_state_round_trip:
 
     movq $0x0301, %rdi
     movq 0(%rsp), %rsi
-    call openrfs_syscall1
+    call rsd_syscall1
     movdqu %xmm15, 24(%rsp)
     fstpt 40(%rsp)
     testq %rax, %rax

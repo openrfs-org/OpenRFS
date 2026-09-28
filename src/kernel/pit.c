@@ -3,13 +3,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <openrfs/apic.h>
-#include <openrfs/cpu.h>
-#include <openrfs/interrupts.h>
-#include <openrfs/ioapic.h>
-#include <openrfs/pic.h>
-#include <openrfs/pit.h>
-#include <openrfs/pm_timer.h>
+#include <rsd/apic.h>
+#include <rsd/cpu.h>
+#include <rsd/interrupts.h>
+#include <rsd/ioapic.h>
+#include <rsd/pic.h>
+#include <rsd/pit.h>
+#include <rsd/pm_timer.h>
 
 #define PIT_INPUT_FREQUENCY UINT32_C(1193182)
 #define PIT_CHANNEL_ZERO UINT16_C(0x40)
