@@ -92,8 +92,8 @@ int main(void)
     assert(syscall_process_disposition(&processes[1], 15U, 0U) == 1);
     assert(syscall_process_disposition(&processes[1], 9U, 1U) ==
         -OPENRFS_EINVAL);
-    assert(syscall_process_disposition(&processes[1], 17U, 1U) ==
-        -OPENRFS_ENOSYS);
+    assert(syscall_process_disposition(&processes[1], 17U, 1U) == 0);
+    assert(syscall_process_disposition(&processes[1], 17U, 0U) == 1);
     assert(syscall_process_signal(&processes[0], 4, 0) == -OPENRFS_EPERM);
     assert(syscall_process_signal(&processes[0], 5, 0) == -OPENRFS_ESRCH);
     assert(syscall_process_signal(&processes[0], 0, 0) == 0);

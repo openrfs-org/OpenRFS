@@ -549,7 +549,8 @@ static int pipe_signal_probe(void)
         WTERMSIG(status) != SIGPIPE ||
         signal(SIGPIPE, SIG_DFL) != SIG_IGN ||
         signal(SIGKILL, SIG_IGN) != SIG_ERR || errno != EINVAL ||
-        signal(SIGCHLD, SIG_IGN) != SIG_ERR || errno != ENOSYS ||
+        signal(SIGCHLD, SIG_IGN) != SIG_DFL ||
+        signal(SIGCHLD, SIG_DFL) != SIG_IGN ||
         signal(SIGINT, SIG_IGN) != SIG_DFL ||
         kill(getpid(), SIGINT) != 0 ||
         signal(SIGINT, SIG_DFL) != SIG_IGN) return 102;
@@ -651,6 +652,27 @@ static int process_signal_probe(void)
     if (waitpid(interrupted, &status, 0) != interrupted ||
         !WIFSIGNALED(status) || WTERMSIG(status) != SIGINT) return 93;
     puts("OPENRFS SIGNAL SIGINT SIGTERM SIGKILL default wait PASS");
+    return 0;
+}
+
+static int process_sigchld_ignore_probe(void)
+{
+    int status;
+
+    if (signal(SIGCHLD, SIG_IGN) != SIG_DFL) return 129;
+    const int ignored = fork();
+
+    if (ignored < 0) return 130;
+    if (ignored == 0) _Exit(42);
+    if (waitpid(ignored, &status, 0) != -1 || errno != ECHILD ||
+        signal(SIGCHLD, SIG_DFL) != SIG_IGN) return 131;
+    const int collected = fork();
+
+    if (collected < 0) return 132;
+    if (collected == 0) _Exit(43);
+    if (waitpid(collected, &status, 0) != collected ||
+        !WIFEXITED(status) || WEXITSTATUS(status) != 43) return 133;
+    puts("OPENRFS SIGNAL ignored SIGCHLD auto reap and wait ECHILD PASS");
     return 0;
 }
 
@@ -989,6 +1011,8 @@ int main(int argc, char **argv, char **environment)
     probe = process_fault_probe();
     if (probe != 0) return probe;
     probe = process_signal_probe();
+    if (probe != 0) return probe;
+    probe = process_sigchld_ignore_probe();
     if (probe != 0) return probe;
     probe = process_group_probe();
     if (probe != 0) return probe;

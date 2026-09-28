@@ -7212,7 +7212,8 @@ static int64_t syscall_process_disposition(struct native_process *process,
     if (signal_number == 9U || signal_number == 19U || signal_number == 0U ||
         signal_number > 64U || disposition > 1U) return -OPENRFS_EINVAL;
     if (signal_number != 2U && signal_number != 13U &&
-        signal_number != 15U) return -OPENRFS_ENOSYS;
+        signal_number != 15U && signal_number != 17U)
+        return -OPENRFS_ENOSYS;
     const uint32_t bit = UINT32_C(1) << signal_number;
     const int64_t previous = (process->ignored_signals & bit) != 0U ? 1 : 0;
 
@@ -8675,18 +8676,12 @@ enum native_process_status native_process_run(struct native_process_result *resu
                 &processes[newest],
                 &completed.teardown_report);
             if (process_retired && keep_zombie) {
-                bool parent_live = false;
+                const struct native_process *parent =
+                    process_by_pid(parent_generation);
 
-                for (size_t index = 0U; index < NATIVE_PROCESS_LIMIT;
-                     ++index) {
-                    if (processes[index].active &&
-                        !processes[index].exiting &&
-                        processes[index].generation == parent_generation) {
-                        parent_live = true;
-                        break;
-                    }
-                }
-                if (parent_live) {
+                if (parent != NULL && parent->active && !parent->exiting &&
+                    (parent->ignored_signals &
+                        (UINT32_C(1) << 17U)) == 0U) {
                     processes[newest].generation = completed.generation;
                     processes[newest].parent_generation = parent_generation;
                     processes[newest].session_id = session_id;
