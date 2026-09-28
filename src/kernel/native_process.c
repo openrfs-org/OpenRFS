@@ -6820,12 +6820,29 @@ static int64_t syscall_thread_create(
     index = process->thread_count;
     stack_pages = (request.stack_bytes + PAGING_PAGE_SIZE - 1U) /
         PAGING_PAGE_SIZE;
-    guard = PAGING_NATIVE_STACK_BASE +
-        index * (NATIVE_STACK_PAGES + 1U) * PAGING_PAGE_SIZE;
-    stack_base = guard + PAGING_PAGE_SIZE;
-    if (stack_base + stack_pages * PAGING_PAGE_SIZE > PAGING_NATIVE_STACK_END) {
-        return -OPENRFS_ENOMEM;
+    stack_base = 0U;
+    for (size_t slot = 1U; slot < NATIVE_THREAD_LIMIT; ++slot) {
+        bool occupied = false;
+
+        guard = PAGING_NATIVE_STACK_BASE +
+            slot * (NATIVE_STACK_PAGES + 1U) * PAGING_PAGE_SIZE;
+        const uint64_t candidate = guard + PAGING_PAGE_SIZE;
+
+        if (candidate + stack_pages * PAGING_PAGE_SIZE >
+                PAGING_NATIVE_STACK_END) break;
+        for (size_t page = 0U; page < NATIVE_STACK_PAGES; ++page) {
+            if (page_at(process, candidate + page * PAGING_PAGE_SIZE) !=
+                    NULL) {
+                occupied = true;
+                break;
+            }
+        }
+        if (!occupied) {
+            stack_base = candidate;
+            break;
+        }
     }
+    if (stack_base == 0U) return -OPENRFS_ENOMEM;
     for (size_t page = 0U; page < stack_pages; ++page) {
         uintptr_t physical_address;
         const uint64_t address = stack_base + page * PAGING_PAGE_SIZE;
@@ -7573,6 +7590,10 @@ static int64_t syscall_process_fork(
         const struct native_page *source = &parent->pages[index];
         uintptr_t frame;
 
+        if (source->kind == PAGING_PROCESS_MAPPING_NATIVE_STACK &&
+            (source->virtual_address < caller->stack_base ||
+                source->virtual_address >= caller->stack_end))
+            continue;
         if (source->shared_code) {
             if (source->shared_code_slot >=
                     NATIVE_SHARED_CODE_CACHE_CAPACITY)

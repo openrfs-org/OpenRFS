@@ -19,5 +19,14 @@ int openrfs_posix_exec_restore(const struct openrfs_exec_descriptor *records,
 void openrfs_runtime_lock(volatile uint32_t *lock);
 void openrfs_runtime_unlock(volatile uint32_t *lock);
 size_t openrfs_allocation_size(const void *pointer);
+void openrfs_allocator_fork_prepare(void);
+void openrfs_allocator_fork_parent(void);
+void openrfs_thread_fork_prepare(void);
+void openrfs_thread_fork_parent(void);
+void openrfs_thread_fork_child(void);
+void openrfs_stdio_fork_prepare(void);
+void openrfs_stdio_fork_parent(void);
+void openrfs_runtime_fork_prepare(void);
+void openrfs_runtime_fork_parent(void);
 
 #endif

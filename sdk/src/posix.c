@@ -601,6 +601,12 @@ int getsid(int pid)
 }
 int fork(void)
 {
+#ifndef OPENRFS_HOSTED
+    openrfs_allocator_fork_prepare();
+    openrfs_stdio_fork_prepare();
+    openrfs_thread_fork_prepare();
+    openrfs_runtime_fork_prepare();
+#endif
     openrfs_runtime_lock(&descriptor_lock);
     const long native_result = openrfs_syscall0(OPENRFS_SYS_PROCESS_FORK);
 
@@ -615,8 +621,20 @@ int fork(void)
                 (void)close(index);
             }
         }
+#ifndef OPENRFS_HOSTED
+        openrfs_runtime_fork_parent();
+        openrfs_thread_fork_child();
+        openrfs_stdio_fork_parent();
+        openrfs_allocator_fork_parent();
+#endif
     } else {
         openrfs_runtime_unlock(&descriptor_lock);
+#ifndef OPENRFS_HOSTED
+        openrfs_runtime_fork_parent();
+        openrfs_thread_fork_parent();
+        openrfs_stdio_fork_parent();
+        openrfs_allocator_fork_parent();
+#endif
     }
     return openrfs_result(native_result);
 }

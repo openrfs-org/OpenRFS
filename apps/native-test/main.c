@@ -836,27 +836,63 @@ static void *sleeping_thread(void *unused)
     return NULL;
 }
 
+static void *forking_thread(void *unused)
+{
+    pthread_t replacement;
+    int status;
+    int child;
+
+    (void)unused;
+    child = fork();
+    if (child < 0) return (void *)(uintptr_t)1U;
+    if (child == 0) {
+        if (pthread_create(&replacement, NULL, sleeping_thread, NULL) != 0 ||
+            pthread_join(replacement, NULL) != 0) _Exit(135);
+        _Exit(0);
+    }
+    if (waitpid(child, &status, 0) != child)
+        return (void *)(uintptr_t)2U;
+    if (!WIFEXITED(status)) return (void *)(uintptr_t)3U;
+    if (WEXITSTATUS(status) != 0)
+        return (void *)(uintptr_t)WEXITSTATUS(status);
+    (void)usleep(100000U);
+    return NULL;
+}
+
 static int multithread_fork_probe(void)
 {
     pthread_t worker;
+    void *result;
     int status;
 
-    if (pthread_create(&worker, NULL, sleeping_thread, NULL) != 0) return 54;
+    if (pthread_create(&worker, NULL, forking_thread, NULL) != 0) return 54;
     const int child = fork();
 
     if (child < 0) return 55;
     if (child == 0) {
+        pthread_t replacement;
+        void *allocation;
+
         if (openrfs_syscall1(OPENRFS_SYS_THREAD_JOIN, worker) !=
                 -OPENRFS_ESTALE) {
             _Exit(56);
         }
+        if (pthread_join(worker, NULL) != EINVAL) _Exit(128);
+        allocation = malloc(32U);
+        if (allocation == NULL) _Exit(129);
+        free(allocation);
+        if (puts("OPENRFS PROCESS child SDK state PASS") == EOF)
+            _Exit(130);
+        if (pthread_create(&replacement, NULL, sleeping_thread, NULL) != 0)
+            _Exit(131);
+        if (pthread_join(replacement, NULL) != 0) _Exit(134);
         _Exit(0);
     }
-    if (waitpid(child, &status, 0) != child ||
-        !WIFEXITED(status) || WEXITSTATUS(status) != 0 ||
-        pthread_join(worker, NULL) != 0) {
-        return 57;
-    }
+    if (waitpid(child, &status, 0) != child) return 57;
+    if (!WIFEXITED(status)) return 132;
+    if (WEXITSTATUS(status) != 0) return WEXITSTATUS(status);
+    if (pthread_join(worker, &result) != 0) return 133;
+    if (result != NULL) return (int)(uintptr_t)result;
     puts("OPENRFS PROCESS fork retains only calling thread PASS");
     return 0;
 }

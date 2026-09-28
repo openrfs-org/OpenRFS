@@ -44,6 +44,20 @@ FILE *stdin = &input_stream;
 FILE *stdout = &output_stream;
 FILE *stderr = &error_stream;
 
+void openrfs_stdio_fork_prepare(void)
+{
+    openrfs_runtime_lock(&input_stream.lock);
+    openrfs_runtime_lock(&output_stream.lock);
+    openrfs_runtime_lock(&error_stream.lock);
+}
+
+void openrfs_stdio_fork_parent(void)
+{
+    openrfs_runtime_unlock(&error_stream.lock);
+    openrfs_runtime_unlock(&output_stream.lock);
+    openrfs_runtime_unlock(&input_stream.lock);
+}
+
 static int flush_locked(FILE *stream)
 {
     size_t offset = 0U;

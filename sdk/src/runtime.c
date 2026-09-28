@@ -23,6 +23,11 @@ static struct openrfs_startup startup;
 static void (*exit_functions[OPENRFS_ATEXIT_MAX])(void);
 static size_t exit_function_count;
 static volatile uint32_t exit_lock;
+
+void openrfs_runtime_fork_prepare(void)
+{ openrfs_runtime_lock(&exit_lock); }
+void openrfs_runtime_fork_parent(void)
+{ openrfs_runtime_unlock(&exit_lock); }
 #endif
 
 void openrfs_runtime_initialize(int argc, char **argv, char **environment)
